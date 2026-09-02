@@ -1,0 +1,620 @@
+<title>Pinged Direction Study</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Archivo:wght@400;500;600&family=Instrument+Serif&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Public+Sans:wght@400;500;600&family=Baloo+2:wght@500;600;700&family=Mulish:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#f2f2ef; --panel:#fbfbf9; --ink:#1a1b1e; --ink-2:#5c5e64; --ink-3:#8a8c92;
+  --line:rgba(26,27,30,0.13); --line-soft:rgba(26,27,30,0.07);
+  --accent:#3c5a72; --accent-soft:rgba(60,90,114,0.10);
+  --shadow:rgba(26,27,30,0.10);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#131417; --panel:#1a1c20; --ink:#ececeb; --ink-2:#a7a9af; --ink-3:#7c7e85;
+    --line:rgba(236,236,235,0.14); --line-soft:rgba(236,236,235,0.07);
+    --accent:#8fb4ce; --accent-soft:rgba(143,180,206,0.13);
+    --shadow:rgba(0,0,0,0.45);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#131417; --panel:#1a1c20; --ink:#ececeb; --ink-2:#a7a9af; --ink-3:#7c7e85;
+  --line:rgba(236,236,235,0.14); --line-soft:rgba(236,236,235,0.07);
+  --accent:#8fb4ce; --accent-soft:rgba(143,180,206,0.13);
+  --shadow:rgba(0,0,0,0.45);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:Archivo,system-ui,-apple-system,sans-serif;
+  font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px; margin:0 auto; padding:56px 28px 80px}
+.eyebrow{
+  font-size:11.5px; letter-spacing:0.15em; text-transform:uppercase;
+  color:var(--ink-3); margin:0 0 18px;
+}
+h1{
+  font-family:Newsreader,Georgia,serif; font-weight:400; font-size:clamp(34px,5vw,52px);
+  line-height:1.08; letter-spacing:-0.015em; margin:0 0 20px; text-wrap:balance;
+}
+.stand{max-width:62ch; color:var(--ink-2); font-size:17px; margin:0 0 10px}
+.stand strong{color:var(--ink); font-weight:500}
+.controls{display:flex; align-items:center; gap:14px; margin:34px 0 26px; flex-wrap:wrap}
+button.sizer{
+  font-family:Archivo,sans-serif; font-size:13px; font-weight:500; color:var(--ink);
+  background:var(--panel); border:1px solid var(--line); border-radius:7px;
+  padding:9px 15px; cursor:pointer; min-height:40px;
+}
+button.sizer:hover{border-color:var(--accent); color:var(--accent)}
+button.sizer:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.hint{font-size:13px; color:var(--ink-3)}
+.strip{
+  display:flex; gap:34px; overflow-x:auto; padding:6px 6px 26px;
+  scrollbar-width:thin;
+}
+.col{display:flex; flex-direction:column; gap:16px; flex:none; width:calc(390px * var(--s))}
+.cap{display:flex; flex-direction:column; gap:8px; min-height:200px}
+.cap h2{
+  font-family:Newsreader,Georgia,serif; font-weight:500; font-size:23px;
+  line-height:1.15; margin:0; letter-spacing:-0.01em;
+}
+.pill{
+  align-self:flex-start; font-size:10.5px; letter-spacing:0.12em; text-transform:uppercase;
+  color:var(--accent); background:var(--accent-soft); border-radius:4px; padding:4px 9px;
+  font-weight:600;
+}
+.cap p{margin:0; font-size:14px; line-height:1.6; color:var(--ink-2)}
+.cap .trade{color:var(--ink-3); font-size:13.5px}
+.cap .trade b{
+  color:var(--ink-3); font-weight:600; letter-spacing:0.07em; text-transform:uppercase;
+  font-size:10.5px; display:block; margin-bottom:3px;
+}
+.frame{
+  width:calc(390px * var(--s)); height:calc(844px * var(--s));
+  border:1px solid var(--line); border-radius:calc(26px * var(--s));
+  overflow:hidden; box-shadow:0 14px 34px -18px var(--shadow); flex:none;
+}
+.frame > *{transform:scale(var(--s)); transform-origin:top left}
+.tablewrap{overflow-x:auto; margin:52px 0 0; border-top:1px solid var(--line)}
+table{border-collapse:collapse; width:100%; min-width:760px; font-size:14px}
+caption{
+  caption-side:top; text-align:left; padding:26px 0 16px;
+  font-family:Newsreader,Georgia,serif; font-size:22px; font-weight:500; color:var(--ink);
+}
+th,td{text-align:left; padding:13px 16px 13px 0; border-bottom:1px solid var(--line-soft); vertical-align:top}
+thead th{
+  font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; border-bottom:1px solid var(--line); padding-top:0;
+}
+tbody th{font-weight:500; color:var(--ink-2); width:150px; font-size:13.5px}
+tbody td{color:var(--ink)}
+.close{margin:52px 0 0; border-top:1px solid var(--line); padding-top:34px; max-width:64ch}
+.close h2{font-family:Newsreader,Georgia,serif; font-weight:500; font-size:26px; margin:0 0 14px; letter-spacing:-0.01em}
+.close p{margin:0 0 14px; color:var(--ink-2)}
+.close p strong{color:var(--ink); font-weight:500}
+@media (prefers-reduced-motion:no-preference){
+  .col,.frame,.frame>*{transition:width .28s ease,height .28s ease,transform .28s ease,border-radius .28s ease}
+}
+</style>
+<div class="wrap">
+  <p class="eyebrow">Pinged &middot; direction study</p>
+  <h1>Four ways this app could look</h1>
+  <p class="stand">Every artboard shows the <strong>same screen</strong> so the comparison is fair: the transaction list home for September, carrying the states that actually decide the design &mdash; a row that needs a category, an excluded Touch &rsquo;n Go reload, day subtotals, and the review-inbox badge.</p>
+  <p class="stand">Pick one and the remaining five screens get built in it: onboarding and permissions, the capture-source allow-list, the review inbox, charts, and manual cash entry.</p>
+
+  <div class="controls">
+    <button class="sizer" id="sizer" type="button">View at actual size</button>
+    <span class="hint">Shown at 72% so more than one fits at a time. Frames are 390 &times; 844.</span>
+  </div>
+
+  <div class="strip" id="strip" style="--s:0.72">
+      <div class="col">
+        <div class="cap">
+          <span class="pill">Recommended</span>
+          <h2>Receipt</h2>
+          <p>The metaphor is the product — this app collects receipts you never asked for. Mono numerals, dot leaders, a torn edge under the summary.</p>
+          <p class="trade"><b>Trade-off</b>Strongest identity of the four, but ornament is what wears thin first. Mono stays on numbers and metadata only; body copy never gets it.</p>
+        </div>
+        <div class="frame"><div style="width: 390px; height: 844px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+
+  <div style="padding: 26px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #6b6459;">SEPTEMBER 2026</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.8" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 7px; border: 1px solid #ded5c4; border-radius: 2px; padding: 7px 10px; min-height: 30px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2.5-7h13L21 12v7H3v-7z"/><path d="M3 12h5l1.2 2h5.6L16 12h5"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; color: #a03826;">4</span>
+    </div>
+  </div>
+
+  <div style="padding: 20px 20px 0;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.16em; color: #8a8175;">SPENT SO FAR</div>
+    <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 54px; line-height: 1.02; margin-top: 4px; font-variant-numeric: tabular-nums lining-nums;">RM2,847<span style="font-size: 30px; color: #6b6459;">.30</span></div>
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.08em; color: #8a8175; margin-top: 6px;">112 CAPTURED &middot; 0 TYPED BY YOU</div>
+  </div>
+
+  <div style="padding: 18px 20px 0; display: flex; flex-direction: column; gap: 7px;">
+    <div style="display: flex; align-items: baseline; font-size: 13px;"><span>Makan</span><span style="flex: 1; border-bottom: 1px dotted #cfc4ae; margin: 0 8px 4px;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;">842.50</span></div>
+    <div style="display: flex; align-items: baseline; font-size: 13px;"><span>Groceries</span><span style="flex: 1; border-bottom: 1px dotted #cfc4ae; margin: 0 8px 4px;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;">621.80</span></div>
+    <div style="display: flex; align-items: baseline; font-size: 13px;"><span>Bills &amp; utilities</span><span style="flex: 1; border-bottom: 1px dotted #cfc4ae; margin: 0 8px 4px;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;">465.60</span></div>
+  </div>
+
+  <div style="height: 9px; margin-top: 18px; background-image: linear-gradient(45deg, transparent 50%, #efe7d8 50%), linear-gradient(-45deg, transparent 50%, #efe7d8 50%); background-size: 12px 9px; background-repeat: repeat-x;"></div>
+
+  <div style="flex: 1; background: #efe7d8; padding: 14px 20px 0; display: flex; flex-direction: column; gap: 14px;">
+
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8a8175;">WED 30 SEP</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b6459; font-variant-numeric: tabular-nums;">68.40</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l1.8-5A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1L20 13v4h-2m-12 0H4v-4"/><circle cx="7.5" cy="16.8" r="1.7"/><circle cx="16.5" cy="16.8" r="1.7"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Grab</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Transport &middot; GrabPay</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">18.40</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.6 9H5.6L4 9z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">99 Speedmart</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Groceries &middot; Touch 'n Go</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">32.00</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a03826" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 8.5v7M8.5 12h7"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Restoran Nasi Kandar</div>
+          <div style="display: inline-flex; align-items: center; margin-top: 4px; border: 1px dashed #a03826; border-radius: 2px; padding: 3px 7px; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: #a03826;">+ CATEGORY</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">18.00</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8a8175;">TUE 29 SEP</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b6459; font-variant-numeric: tabular-nums;">233.50</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="16" rx="1.5"/><path d="M7 8h5"/><path d="M14 10h2.5a1.5 1.5 0 0 1 1.5 1.5V16a1.5 1.5 0 0 0 3 0v-4"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Shell Jalan Ampang</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Petrol &middot; Setel</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">70.00</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; opacity: 0.45;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h9l-3-3M16 17H7l3 3"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Touch 'n Go reload</div>
+          <div style="display: inline-flex; margin-top: 4px; border: 1px solid #8a8175; border-radius: 2px; padding: 2px 6px; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; color: #6b6459;">NOT SPENDING</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; text-decoration: line-through;">100.00</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; right: 20px; bottom: 78px; width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbf6ea" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #fbf6ea;">CASH</span>
+  </div>
+  <div style="border-top: 1px dotted #cfc4ae; background: #fbf6ea; display: flex; align-items: stretch;">
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-top: 2px solid #a03826; margin-top: -1px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #1a1714;">SPENDING</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a8175" stroke-width="1.6" stroke-linecap="round"><path d="M5 19V10M12 19V5M19 19v-6"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #8a8175;">CHARTS</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a8175" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h6M14 7h6M4 12h10M18 12h2M4 17h3M11 17h9"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #8a8175;">SETTINGS</span>
+    </div>
+  </div>
+</div></div>
+      </div>
+      <div class="col">
+        <div class="cap">
+          
+          <h2>Quiet utility</h2>
+          <p>One typeface, near-monochrome, hairline rules, information first. Sits closest to the spec’s honesty stance.</p>
+          <p class="trade"><b>Trade-off</b>Safe. Reads as a well-built tool rather than something you’d mention to a friend.</p>
+        </div>
+        <div class="frame"><div style="width: 390px; height: 844px; background: #fbfaf8; font-family: 'Public Sans', system-ui, sans-serif; color: #17171a; display: flex; flex-direction: column; overflow: hidden; font-feature-settings: 'tnum';">
+
+  <div style="padding: 26px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex; align-items: center; gap: 5px;">
+      <span style="font-size: 16px; font-weight: 600;">September</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b8880" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 4px;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#17171a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2.5-7h13L21 12v7H3v-7z"/><path d="M3 12h5l1.2 2h5.6L16 12h5"/></svg>
+      <span style="min-width: 18px; height: 18px; border-radius: 9px; background: #2f5d50; color: #fbfaf8; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center;">4</span>
+    </div>
+  </div>
+
+  <div style="padding: 22px 20px 20px;">
+    <div style="font-size: 12.5px; color: #8b8880;">Spent so far in September</div>
+    <div style="font-size: 40px; font-weight: 600; letter-spacing: -0.02em; margin-top: 5px;">RM2,847.30</div>
+    <div style="display: flex; gap: 14px; margin-top: 14px;">
+      <div style="flex: 1;">
+        <div style="height: 3px; background: #17171a;"></div>
+        <div style="font-size: 11.5px; color: #56544f; margin-top: 7px;">Makan</div>
+        <div style="font-size: 13px; font-weight: 500;">842.50</div>
+      </div>
+      <div style="flex: 1;">
+        <div style="height: 3px; background: #7a776f;"></div>
+        <div style="font-size: 11.5px; color: #56544f; margin-top: 7px;">Groceries</div>
+        <div style="font-size: 13px; font-weight: 500;">621.80</div>
+      </div>
+      <div style="flex: 1;">
+        <div style="height: 3px; background: #c5c2b9;"></div>
+        <div style="font-size: 11.5px; color: #56544f; margin-top: 7px;">Bills</div>
+        <div style="font-size: 13px; font-weight: 500;">465.60</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: 1; display: flex; flex-direction: column; border-top: 1px solid #eceae5;">
+
+    <div style="padding: 11px 20px 7px; display: flex; justify-content: space-between; background: #f5f3ef;">
+      <span style="font-size: 11.5px; font-weight: 600; color: #56544f;">Wed 30 Sep</span>
+      <span style="font-size: 11.5px; color: #8b8880;">RM68.40</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 13px 20px; border-bottom: 1px solid #f0eee9; min-height: 44px;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#8b8880" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l1.8-5A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1L20 13v4h-2m-12 0H4v-4"/><circle cx="7.5" cy="16.8" r="1.7"/><circle cx="16.5" cy="16.8" r="1.7"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500;">Grab</div>
+        <div style="font-size: 11.5px; color: #8b8880; margin-top: 1px;">Transport &middot; GrabPay</div>
+      </div>
+      <span style="font-size: 14.5px; font-weight: 500;">18.40</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 13px 20px; border-bottom: 1px solid #f0eee9; min-height: 44px;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#8b8880" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.6 9H5.6L4 9z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500;">99 Speedmart</div>
+        <div style="font-size: 11.5px; color: #8b8880; margin-top: 1px;">Groceries &middot; Touch 'n Go</div>
+      </div>
+      <span style="font-size: 14.5px; font-weight: 500;">32.00</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 13px 20px; border-bottom: 1px solid #f0eee9; min-height: 44px;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#2f5d50" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 8.5v7M8.5 12h7"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500;">Restoran Nasi Kandar</div>
+        <div style="display: inline-flex; margin-top: 5px; border: 1px solid #2f5d50; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 500; color: #2f5d50;">Add category</div>
+      </div>
+      <span style="font-size: 14.5px; font-weight: 500;">18.00</span>
+    </div>
+
+    <div style="padding: 11px 20px 7px; display: flex; justify-content: space-between; background: #f5f3ef;">
+      <span style="font-size: 11.5px; font-weight: 600; color: #56544f;">Tue 29 Sep</span>
+      <span style="font-size: 11.5px; color: #8b8880;">RM233.50</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 13px 20px; border-bottom: 1px solid #f0eee9; min-height: 44px;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#8b8880" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="16" rx="1.5"/><path d="M7 8h5"/><path d="M14 10h2.5a1.5 1.5 0 0 1 1.5 1.5V16a1.5 1.5 0 0 0 3 0v-4"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500;">Shell Jalan Ampang</div>
+        <div style="font-size: 11.5px; color: #8b8880; margin-top: 1px;">Petrol &middot; Setel</div>
+      </div>
+      <span style="font-size: 14.5px; font-weight: 500;">70.00</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 13px 20px; border-bottom: 1px solid #f0eee9; min-height: 44px; background: #f7f6f3;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#b0ada5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h9l-3-3M16 17H7l3 3"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500; color: #8b8880;">Touch 'n Go reload</div>
+        <div style="font-size: 11.5px; color: #b0ada5; margin-top: 1px;">Not spending &middot; transfer</div>
+      </div>
+      <span style="font-size: 14.5px; font-weight: 500; color: #b0ada5;">100.00</span>
+    </div>
+  </div>
+
+  <div style="border-top: 1px solid #eceae5; display: flex; align-items: stretch;">
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#17171a" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span style="font-size: 10px; font-weight: 500;">Spending</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #8b8880;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#8b8880" stroke-width="1.7" stroke-linecap="round"><path d="M5 19V10M12 19V5M19 19v-6"/></svg>
+      <span style="font-size: 10px;">Charts</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #8b8880;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#8b8880" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span style="font-size: 10px;">Cash</span>
+    </div>
+  </div>
+</div></div>
+      </div>
+      <div class="col">
+        <div class="cap">
+          
+          <h2>Warung warmth</h2>
+          <p>Malay-first copy, kopi and pandan palette, rounded cards, a friendly display face.</p>
+          <p class="trade"><b>Trade-off</b>Most local and most likeable. Hardest to keep credible once real money is on screen.</p>
+        </div>
+        <div class="frame"><div style="width: 390px; height: 844px; background: #fdf6e9; font-family: Mulish, system-ui, sans-serif; color: #3b2415; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="padding: 26px 18px 0; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex; align-items: center; gap: 5px;">
+      <span style="font-family: 'Baloo 2', system-ui, sans-serif; font-size: 20px; font-weight: 600;">September</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a6a4a" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px; background: #fff; border-radius: 999px; padding: 8px 12px; min-height: 32px;">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#3b2415" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2.5-7h13L21 12v7H3v-7z"/><path d="M3 12h5l1.2 2h5.6L16 12h5"/></svg>
+      <span style="min-width: 19px; height: 19px; border-radius: 999px; background: #c0451f; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">4</span>
+    </div>
+  </div>
+
+  <div style="margin: 18px 18px 0; background: #4a7c3f; border-radius: 20px; padding: 20px;">
+    <div style="font-size: 12.5px; color: #cde3c4; font-weight: 500;">Belanja bulan ni</div>
+    <div style="font-family: 'Baloo 2', system-ui, sans-serif; font-size: 42px; font-weight: 700; color: #fdf6e9; line-height: 1.15; margin-top: 2px;">RM2,847.30</div>
+    <div style="display: flex; gap: 8px; margin-top: 16px;">
+      <div style="flex: 1; background: rgba(253,246,233,0.16); border-radius: 12px; padding: 9px 10px;">
+        <div style="font-size: 10.5px; color: #cde3c4;">Makan</div>
+        <div style="font-size: 13.5px; font-weight: 700; color: #fdf6e9; margin-top: 2px;">842.50</div>
+      </div>
+      <div style="flex: 1; background: rgba(253,246,233,0.16); border-radius: 12px; padding: 9px 10px;">
+        <div style="font-size: 10.5px; color: #cde3c4;">Barang</div>
+        <div style="font-size: 13.5px; font-weight: 700; color: #fdf6e9; margin-top: 2px;">621.80</div>
+      </div>
+      <div style="flex: 1; background: rgba(253,246,233,0.16); border-radius: 12px; padding: 9px 10px;">
+        <div style="font-size: 10.5px; color: #cde3c4;">Bil</div>
+        <div style="font-size: 13.5px; font-weight: 700; color: #fdf6e9; margin-top: 2px;">465.60</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: 1; padding: 18px 18px 0; display: flex; flex-direction: column; gap: 13px; overflow: hidden;">
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px;">
+        <span style="font-family: 'Baloo 2', system-ui, sans-serif; font-size: 14px; font-weight: 600; color: #8a6a4a;">Rabu, 30 Sep</span>
+        <span style="font-size: 12px; font-weight: 600; color: #8a6a4a;">RM68.40</span>
+      </div>
+
+      <div style="background: #fff; border-radius: 16px; padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 44px;">
+        <div style="width: 36px; height: 36px; border-radius: 12px; background: #e8f0e2; display: flex; align-items: center; justify-content: center; flex: none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#4a7c3f" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l1.8-5A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1L20 13v4h-2m-12 0H4v-4"/><circle cx="7.5" cy="16.8" r="1.7"/><circle cx="16.5" cy="16.8" r="1.7"/></svg>
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 700;">Grab</div>
+          <div style="font-size: 11.5px; color: #8a6a4a; margin-top: 1px;">Transport &middot; GrabPay</div>
+        </div>
+        <span style="font-size: 15.5px; font-weight: 700;">18.40</span>
+      </div>
+
+      <div style="background: #fff; border-radius: 16px; padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 44px;">
+        <div style="width: 36px; height: 36px; border-radius: 12px; background: #fdeccf; display: flex; align-items: center; justify-content: center; flex: none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#a8641a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.6 9H5.6L4 9z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 700;">99 Speedmart</div>
+          <div style="font-size: 11.5px; color: #8a6a4a; margin-top: 1px;">Barang &middot; Touch 'n Go</div>
+        </div>
+        <span style="font-size: 15.5px; font-weight: 700;">32.00</span>
+      </div>
+
+      <div style="background: #fff; border: 1.5px dashed #c0451f; border-radius: 16px; padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 44px;">
+        <div style="width: 36px; height: 36px; border-radius: 12px; background: #fbe3dc; display: flex; align-items: center; justify-content: center; flex: none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#c0451f" stroke-width="1.8" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 700;">Restoran Nasi Kandar</div>
+          <div style="font-size: 11.5px; color: #c0451f; font-weight: 600; margin-top: 2px;">Apa ni? Pilih kategori</div>
+        </div>
+        <span style="font-size: 15.5px; font-weight: 700;">18.00</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px;">
+        <span style="font-family: 'Baloo 2', system-ui, sans-serif; font-size: 14px; font-weight: 600; color: #8a6a4a;">Selasa, 29 Sep</span>
+        <span style="font-size: 12px; font-weight: 600; color: #8a6a4a;">RM233.50</span>
+      </div>
+
+      <div style="background: #fff; border-radius: 16px; padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 44px;">
+        <div style="width: 36px; height: 36px; border-radius: 12px; background: #fdeccf; display: flex; align-items: center; justify-content: center; flex: none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#a8641a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="16" rx="1.5"/><path d="M7 8h5"/><path d="M14 10h2.5a1.5 1.5 0 0 1 1.5 1.5V16a1.5 1.5 0 0 0 3 0v-4"/></svg>
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 700;">Shell Jalan Ampang</div>
+          <div style="font-size: 11.5px; color: #8a6a4a; margin-top: 1px;">Minyak &middot; Setel</div>
+        </div>
+        <span style="font-size: 15.5px; font-weight: 700;">70.00</span>
+      </div>
+
+      <div style="background: #f6efe1; border-radius: 16px; padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: 44px;">
+        <div style="width: 36px; height: 36px; border-radius: 12px; background: #ece2ce; display: flex; align-items: center; justify-content: center; flex: none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#a0917a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h9l-3-3M16 17H7l3 3"/></svg>
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 700; color: #a0917a;">Touch 'n Go reload</div>
+          <div style="font-size: 11.5px; color: #b8ab97; margin-top: 1px;">Pindah duit, bukan belanja</div>
+        </div>
+        <span style="font-size: 15.5px; font-weight: 700; color: #b8ab97;">100.00</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="background: #fff; display: flex; align-items: stretch; border-radius: 22px 22px 0 0; margin-top: 12px;">
+    <div style="flex: 1; min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#4a7c3f" stroke-width="1.9" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span style="font-size: 10px; font-weight: 700; color: #4a7c3f;">Belanja</span>
+    </div>
+    <div style="flex: 1; min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#a0917a" stroke-width="1.9" stroke-linecap="round"><path d="M5 19V10M12 19V5M19 19v-6"/></svg>
+      <span style="font-size: 10px; font-weight: 600; color: #a0917a;">Graf</span>
+    </div>
+    <div style="flex: 1; min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#a0917a" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span style="font-size: 10px; font-weight: 600; color: #a0917a;">Tunai</span>
+    </div>
+  </div>
+</div></div>
+      </div>
+      <div class="col">
+        <div class="cap">
+          
+          <h2>Data-first dark</h2>
+          <p>Tabular numerals throughout, category bars promoted onto home instead of hidden behind a charts tab.</p>
+          <p class="trade"><b>Trade-off</b>Best for the numbers. Dark-only is a big commitment for an app checked in daylight.</p>
+        </div>
+        <div class="frame"><div style="width: 390px; height: 844px; background: #0f1113; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #eceff1; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="padding: 26px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex; align-items: center; gap: 5px;">
+      <span style="font-size: 15px; font-weight: 500; color: #eceff1;">September</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b9299" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 7px; border: 1px solid #262b30; border-radius: 6px; padding: 7px 10px; min-height: 32px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eceff1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2.5-7h13L21 12v7H3v-7z"/><path d="M3 12h5l1.2 2h5.6L16 12h5"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; color: #5fb98a;">4</span>
+    </div>
+  </div>
+
+  <div style="padding: 22px 20px 0;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #6d757c;">SEPTEMBER SPEND</div>
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 40px; font-weight: 500; letter-spacing: -0.02em; margin-top: 6px; font-variant-numeric: tabular-nums;">RM2,847.30</div>
+    <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8b9299;">112 captured</span>
+      <span style="width: 3px; height: 3px; border-radius: 2px; background: #3a4046;"></span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8b9299;">day 30 of 30</span>
+    </div>
+  </div>
+
+  <div style="padding: 20px 20px 0; display: flex; flex-direction: column; gap: 9px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="width: 74px; font-size: 11.5px; color: #8b9299; flex: none;">Makan</span>
+      <span style="flex: 1; height: 8px; background: #1a1e21; border-radius: 2px; overflow: hidden;"><span style="display: block; width: 100%; height: 8px; background: #5fb98a;"></span></span>
+      <span style="width: 54px; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none;">842.50</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="width: 74px; font-size: 11.5px; color: #8b9299; flex: none;">Groceries</span>
+      <span style="flex: 1; height: 8px; background: #1a1e21; border-radius: 2px; overflow: hidden;"><span style="display: block; width: 74%; height: 8px; background: #4a9c73;"></span></span>
+      <span style="width: 54px; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none;">621.80</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="width: 74px; font-size: 11.5px; color: #8b9299; flex: none;">Bills</span>
+      <span style="flex: 1; height: 8px; background: #1a1e21; border-radius: 2px; overflow: hidden;"><span style="display: block; width: 55%; height: 8px; background: #3a7f5d;"></span></span>
+      <span style="width: 54px; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none;">465.60</span>
+    </div>
+  </div>
+
+  <div style="flex: 1; margin-top: 20px; display: flex; flex-direction: column; border-top: 1px solid #1c2125;">
+
+    <div style="padding: 10px 20px 6px; display: flex; justify-content: space-between;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #6d757c;">WED 30 SEP</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6d757c; font-variant-numeric: tabular-nums;">68.40</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 12px 20px; border-top: 1px solid #16191c; min-height: 44px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b9299" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l1.8-5A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1L20 13v4h-2m-12 0H4v-4"/><circle cx="7.5" cy="16.8" r="1.7"/><circle cx="16.5" cy="16.8" r="1.7"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500;">Grab</div>
+        <div style="font-size: 11px; color: #6d757c; margin-top: 1px;">Transport &middot; GrabPay</div>
+      </div>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">18.40</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 12px 20px; border-top: 1px solid #16191c; min-height: 44px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b9299" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.6 9H5.6L4 9z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500;">99 Speedmart</div>
+        <div style="font-size: 11px; color: #6d757c; margin-top: 1px;">Groceries &middot; Touch 'n Go</div>
+      </div>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">32.00</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 12px 20px; border-top: 1px solid #16191c; min-height: 44px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5fb98a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 8.5v7M8.5 12h7"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500;">Restoran Nasi Kandar</div>
+        <div style="display: inline-flex; margin-top: 5px; border: 1px solid #2c5f47; border-radius: 4px; padding: 3px 8px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: #5fb98a;">+ CATEGORY</div>
+      </div>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">18.00</span>
+    </div>
+
+    <div style="padding: 10px 20px 6px; display: flex; justify-content: space-between; border-top: 1px solid #16191c;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #6d757c;">TUE 29 SEP</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6d757c; font-variant-numeric: tabular-nums;">233.50</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 12px 20px; border-top: 1px solid #16191c; min-height: 44px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b9299" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="16" rx="1.5"/><path d="M7 8h5"/><path d="M14 10h2.5a1.5 1.5 0 0 1 1.5 1.5V16a1.5 1.5 0 0 0 3 0v-4"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500;">Shell Jalan Ampang</div>
+        <div style="font-size: 11px; color: #6d757c; margin-top: 1px;">Petrol &middot; Setel</div>
+      </div>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">70.00</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 13px; padding: 12px 20px; border-top: 1px solid #16191c; min-height: 44px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4a5057" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h9l-3-3M16 17H7l3 3"/></svg>
+      <div style="flex: 1;">
+        <div style="font-size: 14.5px; font-weight: 500; color: #6d757c;">Touch 'n Go reload</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: #4a5057; margin-top: 3px;">EXCLUDED &middot; TRANSFER</div>
+      </div>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: #4a5057;">100.00</span>
+    </div>
+  </div>
+
+  <div style="border-top: 1px solid #1c2125; display: flex; align-items: stretch; background: #131619;">
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5fb98a" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: #5fb98a;">SPENDING</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6d757c" stroke-width="1.7" stroke-linecap="round"><path d="M5 19V10M12 19V5M19 19v-6"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: #6d757c;">CHARTS</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6d757c" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: #6d757c;">CASH</span>
+    </div>
+  </div>
+</div></div>
+      </div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <caption>What actually differs</caption>
+      <thead><tr><th scope="col">&nbsp;</th><th scope='col'>Receipt</th><th scope='col'>Quiet utility</th><th scope='col'>Warung warmth</th><th scope='col'>Data-first dark</th></tr></thead>
+      <tbody>
+<tr><th scope='row'>Typeface</th><td>Instrument Serif, Karla, Plex Mono</td><td>Public Sans alone</td><td>Baloo 2, Mulish</td><td>Plex Sans, Plex Mono</td></tr>
+<tr><th scope='row'>Ground</th><td>Warm paper</td><td>Warm off-white</td><td>Cream</td><td>Near-black</td></tr>
+<tr><th scope='row'>Accent</th><td>Stamp red</td><td>Deep pine</td><td>Pandan and ochre</td><td>Mint</td></tr>
+<tr><th scope='row'>Density</th><td>Dense, dot leaders</td><td>Dense, hairline rows</td><td>Roomy cards</td><td>Dense, bar-forward</td></tr>
+<tr><th scope='row'>Copy language</th><td>English</td><td>English</td><td>Malay first</td><td>English</td></tr>
+<tr><th scope='row'>Numerals</th><td>Mono tabular</td><td>Sans tabular</td><td>Sans bold</td><td>Mono tabular</td></tr>
+<tr><th scope='row'>Excluded transfer</th><td>Struck through, stamped label</td><td>Greyed and tinted row</td><td>Faded card, Malay label</td><td>Dimmed, mono label</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="close">
+    <h2>The recommendation</h2>
+    <p><strong>Receipt.</strong> The app&rsquo;s whole premise is that it quietly collects proof of spending you never wrote down, and that is what a receipt is. It is also the only one of the four that nobody would mistake for another fintech app.</p>
+    <p>The honest risk is ornament fatigue: dot leaders and a torn edge are charming on day one and can grate by week three. The mitigation is already in the mockup &mdash; mono type carries numerals and metadata only, never body copy, and the ornament appears once per screen rather than on every row.</p>
+    <p>If you want the safest daily-use choice instead, take <strong>Quiet utility</strong>. If you want the one people would actually talk about, <strong>Warung warmth</strong> is the risk worth considering &mdash; it just needs discipline to stay credible around money.</p>
+  </div>
+</div>
+<script>
+(function(){
+  var b = document.getElementById('sizer'), s = document.getElementById('strip'), full = false;
+  b.addEventListener('click', function(){
+    full = !full;
+    s.style.setProperty('--s', full ? '1' : '0.72');
+    b.textContent = full ? 'Fit more on screen' : 'View at actual size';
+  });
+})();
+</script>

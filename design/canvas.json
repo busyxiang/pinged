@@ -1,0 +1,212 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Receipt screens"
+    },
+    {
+      "id": "page-2",
+      "name": "Rejected directions"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Onboarding.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Battery.dc.html",
+      "x": 490,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Sources.dc.html",
+      "x": 980,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Empty.dc.html",
+      "x": 1470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Inbox.dc.html",
+      "x": 490,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Detail.dc.html",
+      "x": 980,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Cash.dc.html",
+      "x": 1470,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Charts.dc.html",
+      "x": 0,
+      "y": 2000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Search.dc.html",
+      "x": 490,
+      "y": 2000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Stopped.dc.html",
+      "x": 980,
+      "y": 2000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Settings.dc.html",
+      "x": 1470,
+      "y": 2000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Chooser.dc.html",
+      "x": 0,
+      "y": 3000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Category.dc.html",
+      "x": 490,
+      "y": 3000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Months.dc.html",
+      "x": 980,
+      "y": 3000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Export.dc.html",
+      "x": 1470,
+      "y": 3000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Wipe.dc.html",
+      "x": 0,
+      "y": 4000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Rules.dc.html",
+      "x": 490,
+      "y": 4000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Unread.dc.html",
+      "x": 980,
+      "y": 4000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Quiet.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
+    },
+    {
+      "file": "Warung.dc.html",
+      "x": 490,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
+    },
+    {
+      "file": "Dark.dc.html",
+      "x": 980,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-2"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-rows",
+      "x": 0,
+      "y": -190,
+      "w": 1400,
+      "page": "page-1",
+      "text": "Pinged, Receipt direction, nineteen screens.\nRow 1 first run. Row 2 every day. Row 3 looking back and when it breaks. Rows 4 and 5 the sheets and lists behind them.\nPopulated scenario is Wednesday 30 September 2026, month end: RM2,847.30 across 112 transactions, RM100.00 of transfers excluded, four items awaiting review."
+    },
+    {
+      "id": "note-rejected",
+      "x": 0,
+      "y": -130,
+      "w": 900,
+      "page": "page-2",
+      "text": "Directions not taken. Kept as a record of the choice, not for further work."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}

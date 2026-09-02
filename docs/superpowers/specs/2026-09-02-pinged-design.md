@@ -14,6 +14,11 @@ different app to Android, forcing a reinstall and discarding the database.
 Since raw captures cannot be backfilled from before install (section 10),
 that loss is permanent.
 
+**Launcher icon.** Adaptive icon, ink ground with a cream receipt stub and
+one stamp-red line. Artwork stays inside the central 72dp of the 108dp
+canvas, with the stub inside 66dp so no launcher mask clips it. A monochrome
+layer ships for themed icons.
+
 **Outstanding check.** Play Store name collision and a MyIPO trademark
 search in class 9 (software) and class 36 (financial services). If Pinged is
 taken by a finance app, the fallback is Notiflow, which changes nothing in
@@ -149,6 +154,7 @@ conversion, then convert to `Long`).
 | matched_rule_id | Text? | |
 | pack_version | Int | pack that produced this outcome |
 | duplicate_of_id | Long? | |
+| user_reject_rule_id | Long? | hidden from the unread list, section 5.7 |
 
 Raw captures are never deleted by the app. They are the audit trail, they
 let a rule change be validated against real history, and they make any field
@@ -200,9 +206,101 @@ Flat, no hierarchy. Seeded: Makan, Groceries, Transport, Petrol & tolls,
 Bills & utilities, Telco & internet, Shopping, Health, Education, Family,
 Religious & zakat, Government & fees, Entertainment, Uncategorized.
 
-Each has a name, a Tabler-equivalent icon key, and a colour key. Categories
-are user-editable (rename, add, delete-if-unused). Uncategorized cannot be
-deleted.
+Columns: `id`, `name`, `icon_key`, `sort_order`, `is_protected`.
+
+**Icons.** `icon_key` holds a Lucide icon name. The icons are imported as
+vector drawables rather than through a library dependency: single-colour
+stroke paths on a 24px grid, tinted at runtime from the `ink` and `muted`
+tokens. The seeded mapping is fixed:
+
+| Category | `icon_key` | Category | `icon_key` |
+|---|---|---|---|
+| Makan | `utensils` | Family | `users` |
+| Groceries | `shopping-basket` | Religious & zakat | `hand-heart` |
+| Transport | `car` | Government & fees | `landmark` |
+| Petrol & tolls | `fuel` | Entertainment | `ticket` |
+| Bills & utilities | `zap` | Uncategorized | `circle-dashed` |
+| Telco & internet | `wifi` | Shopping | `shopping-bag` |
+| Health | `heart-pulse` | Education | `graduation-cap` |
+
+Religious & zakat deliberately uses a giving gesture rather than a place of
+worship. The category covers zakat, church tithes, temple donations and
+festival giving; a building would exclude most of its users.
+
+**There is no category colour, and this is load-bearing.** Charts encode
+magnitude on a single-hue ramp (section 8), so category identity is carried
+by icon and name alone. A colour column would be dead weight and would
+invite categorical colour back in, breaking the chart rule.
+
+**Editing.** Categories are user-editable: rename, change icon, add, reorder,
+and delete only when unused. Uncategorized has `is_protected = true` and can
+be neither renamed, re-iconed, nor deleted, because the confidence gate and
+the categorizer both resolve to it by name-independent id.
+
+Changing an icon behaves exactly like renaming: the icon is resolved from the
+category row at render time, so it changes everywhere at once, including in
+past months. A renamed category with a stale icon is worse than no icon at
+all, which is why the two are edited from the same sheet.
+
+**The picker set.** Because icons ship as bundled vector drawables rather
+than a library, only bundled icons can be offered. Seeding just the
+fourteen defaults would make "add a category" impossible to complete, so the
+app bundles a picker set of roughly forty-eight icons, grouped so the sheet
+is scannable:
+
+| Group | Icons |
+|---|---|
+| Food and drink | `utensils` `coffee` `pizza` `soup` `ice-cream-cone` `beer` |
+| Shops | `shopping-basket` `shopping-bag` `shopping-cart` `store` `gift` `shirt` |
+| Getting around | `car` `bus` `train-front` `plane` `bike` `fuel` `ship` |
+| Home and bills | `zap` `wifi` `droplet` `flame` `house` `wrench` `trash-2` |
+| Money and admin | `banknote` `wallet` `credit-card` `piggy-bank` `receipt` `landmark` `hand-coins` |
+| People and health | `users` `baby` `heart-pulse` `stethoscope` `pill` `dog` |
+| Learning and work | `graduation-cap` `briefcase` `book-open` `smartphone` |
+| Enjoying yourself | `ticket` `gamepad-2` `music` `film` `dumbbell` `palette` |
+| Anything else | `hand-heart` `scissors` `tag` `circle-dashed` |
+
+At roughly 1 KB per drawable this costs about 50 KB, so bundling the set
+rather than the minimum is not a size decision worth agonising over.
+
+Icon names must be checked against the pinned Lucide release when they are
+imported. The grouping above is the design decision; an individual name that
+has been renamed upstream is a cheap correction, not a redesign.
+
+**No places of worship in the picker, deliberately.** Bundling a mosque
+without a church and a temple would ship a default about who this app is
+for. `hand-heart` and `landmark` cover the need. If the set is ever extended
+here it has to be all of them or none.
+
+**Rename is global and retroactive, by design.** `transaction.category_id`
+is a foreign key; no transaction stores a category name. So renaming a
+category relabels every transaction that references it, in every past month,
+in the charts, and in future exports. That is correct for fixing a label
+("Makan" to "Food") and wrong for repurposing one ("Shopping" to "Baby
+things"), which would silently rewrite history. The rename dialog therefore
+states the blast radius before committing: "412 transactions will show the
+new name", with a suggestion to create a new category instead when the
+intent is repurposing.
+
+Two consequences worth stating so they are not treated as bugs:
+`merchant_rule` rows also reference `category_id`, so learned rules follow a
+rename automatically; and a CSV export written before a rename keeps the old
+name, because export writes the name resolved at the moment of export rather
+than a live reference.
+
+### `user_reject_rule`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | Long PK | |
+| source_package | Text | scoped to one app |
+| skeleton | Text, indexed | digit-stripped signature, see section 5.7 |
+| sample_text | Text | the notification that created it, for review |
+| created_at | Long | |
+| hit_count | Int | |
+
+Rules the user creates by tapping "never a transaction" on an unread
+capture. They do not affect the ledger; see section 5.7.
 
 ### `capture_source`
 
@@ -341,6 +439,46 @@ Coverage grows through a fixed loop, supported by in-app tooling:
 
 Fixtures are redacted of account numbers before being committed.
 
+### 5.7 Notifications that are shaped like money but never are
+
+Some packages emit notifications that look transactional and are not: a
+fixed-deposit maturity notice, a statement-ready alert, a balance summary, a
+"you spent RM23.50 this week" digest. They carry an amount, they come from a
+bank, and no transaction template will ever match them. Left alone they
+accumulate in the unread list (section 9.6) and bury the notifications that
+genuinely need a new rule.
+
+So the unread list offers a third outcome beside "copy as test case":
+**never a transaction**, which writes a `user_reject_rule`.
+
+**These rules cannot suppress a transaction.** Ordering is deliberate: pack
+reject patterns, then transaction templates, and only if nothing matched are
+user reject rules consulted. A user rule therefore decides *whether an
+unmatched capture is shown in the unread list*, never whether a transaction
+is created. A fumbled tap can clutter or de-clutter that list and can do
+nothing else. The raw capture is still stored, as always, so the decision is
+fully reversible.
+
+**Matching is by digit-stripped skeleton.** The full text is useless as a
+pattern because the amount changes every time. On creating the rule, the
+capture text is normalized: lowercased, whitespace collapsed, and every run
+of digits with its embedded separators replaced by a single placeholder.
+
+```
+"Your FD of RM5,000.00 has matured. View details in MAE."
+  -> "your fd of rm# has matured. view details in mae."
+```
+
+A later capture is hidden only when its skeleton is equal to a stored one
+for the same package. Equality rather than substring matching is chosen on
+purpose: it makes over-rejection almost impossible, at the cost of needing
+one rule per distinct message shape, which is the right trade for something
+the user cannot see working.
+
+**Review.** User reject rules are listed in settings beside learned
+merchants, each showing its `sample_text` and hit count, and each deletable.
+Deleting one returns its captures to the unread list.
+
 ## 6. Categorization
 
 Resolution order, first hit wins:
@@ -457,9 +595,15 @@ actionable.
   partial-month shape that reads as a trend.
 - **Excluded and pending rows never enter a total.**
 
+Category bars use a single-hue ramp, darkest for the largest category.
+Categorical colour is not used anywhere in the app: category identity is
+icon plus name (section 4), which keeps filtering from repainting the chart
+and keeps the ramp meaning magnitude and nothing else.
+
 ### Explicitly rejected
 
-Pie and donut charts, dual-axis charts, animated counters.
+Pie and donut charts, dual-axis charts, animated counters, categorical
+colour palettes.
 
 ### Charting dependency policy
 
@@ -512,6 +656,7 @@ settings tile.
 - Capture sources (section 9.6)
 - Unmatched captures (rule authoring aid, section 5.6)
 - Learned merchant rules: review, edit, delete
+- User reject rules: review with sample text, delete (section 5.7)
 - Categories: add, rename, delete-if-unused
 - Review threshold amount
 - Export
@@ -635,6 +780,12 @@ ordering.
 
 `:core:categorize` — learned rules outrank bundled, unknown falls through to
 Uncategorized, retroactive application of a new learned rule.
+
+User reject rules — skeleton normalization over amounts, thousands
+separators and mixed-language text; a stored skeleton hides a later matching
+capture from the unread list; and the load-bearing negative case, that a
+user reject rule whose skeleton also matches a real transaction template
+does **not** suppress the transaction.
 
 Dedup — identical notification repeats collapse; cross-package same-amount
 pairs flag; two genuine same-amount purchases outside the window do **not**
