@@ -96,26 +96,24 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.stage.outputs.version }}
+          APK_SHA256: ${{ steps.stage.outputs.sha256 }}
         run: |
-          cat > notes.md <<EOF
-          Pinged ${{ steps.stage.outputs.version }}
-
-          Sideload the APK below. Pinged needs notification access, which on
-          Android 13 and later sits behind restricted settings for apps installed
-          outside an app store: App info, then the overflow menu, then
-          **Allow restricted settings**, before the toggle becomes available.
-
-          Capture starts the moment you grant access. Android does not hand over
-          notifications from before then, so nothing earlier can be recovered.
-
-          \`\`\`
-          sha256  ${{ steps.stage.outputs.sha256 }}
-          \`\`\`
-          EOF
+          {
+            printf 'Sideload the APK below.\n\n'
+            printf 'Pinged needs notification access. On Android 13 and later that sits\n'
+            printf 'behind restricted settings for apps installed outside an app store:\n'
+            printf 'open App info, then the overflow menu, then **Allow restricted\n'
+            printf 'settings**, and the toggle becomes available.\n\n'
+            printf 'Capture starts the moment you grant access. Android does not hand\n'
+            printf 'over notifications from before then, so nothing earlier can be\n'
+            printf 'recovered.\n\n'
+            printf '    sha256  %s\n' "$APK_SHA256"
+          } > notes.md
+          cat notes.md
           gh release create "$GITHUB_REF_NAME" \
-            --title "Pinged ${{ steps.stage.outputs.version }}" \
+            --title "Pinged $VERSION" \
             --notes-file notes.md \
-            --generate-notes \
             out/*
 
       - name: Shred the keystore
