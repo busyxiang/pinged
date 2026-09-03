@@ -497,10 +497,97 @@ Selangor, Syabas, IWK), retail (Shopee, Lazada, Watsons, Guardian, Uniqlo,
 Mr DIY), and government and statutory (LHDN, KWSP/EPF, PERKESO/SOCSO, JPJ,
 MyEG, PTPTN, zakat bodies).
 
+### 6.1 Choosing the pattern for a learned rule
+
 When the user categorizes an uncategorized transaction, the app writes a
-`LEARNED` rule keyed on a `CONTAINS` match of a stable token from
-`merchant_raw`, and offers to apply it retroactively to matching existing
-transactions. The user can review and delete learned rules in settings.
+`LEARNED` rule. The hard part is not writing it but choosing what it matches
+on. `CONTAINS "RESTORAN YUEN KEE HOME TOWN CAFE"` is useless: the same
+merchant arrives next month as `YUEN KEE HOME TOWN` because acquirers
+truncate. `CONTAINS "RESTORAN"` is worse: it silently swallows every
+restaurant the user ever pays.
+
+Selection runs on `merchant_raw`, not the display name, because raw is what
+future notifications will carry:
+
+1. **Normalize.** Uppercase, replace any character that is not a letter,
+   digit or space with a space, collapse runs of whitespace.
+2. **Drop generic tokens** wherever they appear (list below).
+3. **Drop location tokens, but only from the tail** — locations in Malaysian
+   merchant strings are suffixes (`SHELL JALAN AMPANG`, `MACHINES MID
+   VALLEY`), whereas a leading place name is often part of the identity
+   (`BANGSAR SEAFOOD`). Stripping anywhere would destroy the latter.
+4. **Drop pure-digit tokens and tokens of one or two characters.**
+5. **Take the first two surviving tokens**, joined by one space. Leading
+   tokens are preferred because truncation removes the tail, so the head is
+   the stable end of the string.
+6. **Fall back** to the full normalized string if nothing survives.
+
+```
+"Restoran Yuen Kee Home Town Cafe"  ->  "YUEN KEE"
+"TNG*99SPEEDMART"                   ->  "99SPEEDMART"
+"SHELL JALAN AMPANG"                ->  "SHELL"
+"MACHINES MID VALLEY SDN BHD"       ->  "MACHINES"
+"WARUNG PAK ALI"                    ->  "PAK ALI"
+```
+
+**Two specificity guards.** A pattern shorter than six characters excluding
+spaces, or one whose whole text appears in the too-generic list, does not
+become a cross-app rule: it is written scoped to `source_package` instead,
+so a vague token cannot reach beyond the app it came from. Too-generic
+singles: `RIDE` `TRIP` `ORDER` `FOOD` `MART` `SHOP` `STORE` `BILL` `TOPUP`
+`RELOAD` `PAYMENT` `TRANSFER` `ONLINE` `MOBILE`.
+
+Learned rules are otherwise **unscoped by default**, matching across every
+capture source. This is deliberate for Malaysia, where one merchant reaches
+the user through several apps: 99 Speedmart via Touch 'n Go today and via a
+debit card next week should not need teaching twice.
+
+**Conflict check before retroactive application.** The chooser sheet counts
+the existing transactions a proposed pattern would match and offers to fix
+them. If those matches span more than one category that is not
+Uncategorized, the pattern is too broad: the app does not apply
+retroactively and instead names the conflict, because silently recategorizing
+a user's confirmed history is the one thing this feature must never do.
+
+**The proposal is always visible and editable.** The chooser sheet shows the
+pattern in full ("any merchant containing 99SPEEDMART") before saving, so a
+poor guess is correctable in the moment rather than discovered three months
+later. Learned rules are also reviewable and deletable in settings, and
+deleting one leaves already-categorized transactions untouched.
+
+### 6.2 Token lists
+
+**Generic tokens, removed anywhere.**
+
+Business form: `SDN` `BHD` `BERHAD` `SB` `PLT` `LLP` `ENTERPRISE` `ENT`
+`TRADING` `HOLDINGS` `GROUP` `RESOURCES` `VENTURES` `SERVICES` `SERVICE`
+`SOLUTIONS` `MARKETING` `INDUSTRIES` `CORPORATION` `CORP` `COMPANY` `CO`
+
+Food outlets: `RESTORAN` `RESTAURANT` `KEDAI` `WARUNG` `WARONG` `GERAI`
+`CAFE` `KAFE` `KOPITIAM` `MAKAN` `BISTRO` `EATERY` `CATERING` `BAKERY`
+`FOODCOURT`
+
+Retail and services: `MART` `MINIMART` `SUPERMARKET` `HYPERMARKET`
+`PASARAYA` `EMPORIUM` `STORE` `SHOP` `OUTLET` `PHARMACY` `FARMASI` `KLINIK`
+`CLINIC`
+
+Payment rails, in case the normalizer left one behind: `DUITNOW` `QR` `FPX`
+`IBG` `PYMT` `POS` `TERMINAL`
+
+**Location tokens, removed from the tail only.**
+
+`MALAYSIA` `MSIA` `MY` `KUALA` `LUMPUR` `KL` `KLCC` `SELANGOR` `PETALING`
+`JAYA` `PJ` `SHAH` `ALAM` `SUBANG` `PENANG` `JOHOR` `BAHRU` `JB` `IPOH`
+`MELAKA` `SEREMBAN` `KUCHING` `SABAH` `SARAWAK` `PUTRAJAYA` `CYBERJAYA`
+`BANGSAR` `MONT` `KIARA` `JALAN` `LORONG` `TAMAN` `BANDAR` `CAWANGAN`
+`BRANCH`
+
+Both lists ship in the parser pack, not in code, so a bad entry is a data
+fix. They are lists of Malaysian commercial vocabulary and will need
+extending from real captures; the unread-captures screen is where the
+evidence for that arrives.
+
+The user can review and delete learned rules in settings.
 
 ## 7. Confidence, duplicates, transfers
 
@@ -780,6 +867,14 @@ ordering.
 
 `:core:categorize` — learned rules outrank bundled, unknown falls through to
 Uncategorized, retroactive application of a new learned rule.
+
+Token selection — the five worked examples in section 6.1 as fixtures;
+generic tokens stripped anywhere but location tokens only from the tail, so
+that `BANGSAR SEAFOOD` keeps its leading place name while `SHELL JALAN
+AMPANG` loses its trailing one; a pattern under six characters is written
+scoped to its source package; and the conflict case, where a proposed
+pattern matching two different non-Uncategorized categories is refused
+retroactive application.
 
 User reject rules — skeleton normalization over amounts, thousands
 separators and mixed-language text; a stored skeleton hides a later matching
