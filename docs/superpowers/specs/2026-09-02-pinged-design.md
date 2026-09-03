@@ -302,6 +302,22 @@ than a live reference.
 Rules the user creates by tapping "never a transaction" on an unread
 capture. They do not affect the ledger; see section 5.7.
 
+### `user_template_rule`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | Long PK | |
+| source_package | Text | always scoped to one app |
+| pattern | Text | derived, see section 5.8 |
+| direction | Enum | `EXPENSE` or `REFUND`, chosen by the user |
+| has_merchant_group | Bool | false yields missing-merchant review |
+| match_count | Int | first three matches are forced to `REVIEW` |
+| sample_text | Text | the capture it was derived from |
+| created_at | Long | |
+
+Templates the user derived by tapping an amount and a merchant. Consulted
+only after every pack template for the package has failed.
+
 ### `capture_source`
 
 | Column | Type | Notes |
@@ -478,6 +494,91 @@ the user cannot see working.
 **Review.** User reject rules are listed in settings beside learned
 merchants, each showing its `sample_text` and hit count, and each deletable.
 Deleting one returns its captures to the unread list.
+
+### 5.8 Teaching a rule by example
+
+Exposing a regex field to the user is not an option. A malformed pattern does
+not fail loudly: it fabricates transactions, or silently stops matching a
+bank that worked yesterday. That is precisely what default-deny exists to
+prevent.
+
+But the unread-captures screen already shows the exact text, and the user
+knows what it means. So the app asks for the two facts it cannot infer
+rather than for a pattern: **tap the amount, then tap the merchant**.
+
+Everything the user did not tap becomes a literal, escaped. Every remaining
+run of digits becomes `\d+`, which is the same skeleton normalization used
+for reject rules in section 5.7 — one mechanism serving two purposes.
+
+```
+raw       "Transaksi berjaya. RM88.00 telah ditolak dari akaun anda 1234."
+tapped     amount = 88.00, no merchant present in this message
+
+derived    Transaksi berjaya\. RM(?<amount>[\d,]+\.\d{2}) telah ditolak
+           dari akaun anda \d+\.
+```
+
+Where no merchant is present the derived rule captures amount only, and its
+transactions land in the review inbox under the existing missing-merchant
+reason (section 7.1) rather than needing a new state.
+
+**This is safe for the same reason exact merchant matching is safe.** The
+pattern is the whole message shape with only digits generalized, so it
+cannot over-match. It is narrow by default and self-healing: a message shape
+the rule does not cover simply stays unread, visible, and teachable again.
+
+**Three guards.**
+
+- A user-derived template yields `confidence: REVIEW` for its first three
+  matches, so the amounts are eyeballed before it commits silently.
+- Derived templates are stored in a `user_template_rule` table, listed in
+  settings beside learned merchants and reject rules, and deletable. Deleting
+  one leaves transactions it already produced untouched.
+- Pack rules always win. A user template is consulted only after every pack
+  template for that package has failed, so a user cannot shadow a rule that
+  ships correct.
+
+**Why this matters beyond convenience.** Without it, every Malaysian bank
+that changes a message format needs a release from the developer. With it,
+coverage grows wherever the app is installed. Sharing derived templates
+between users is deliberately out of scope: it needs `INTERNET`, and a
+stranger's rule that misreads amounts is a bad failure with no local
+evidence. That is a v2 conversation with a trust model attached.
+
+### 5.9 Importing a parser pack
+
+A pack arrives as a single JSON file through the Storage Access Framework.
+Import is validated and previewed, never applied on trust.
+
+**Validation, all of which must pass before the preview is offered:** the
+file parses; `pack_version` is an integer greater than the installed one;
+every rule declares an `id` unique within its package; every `pattern`
+compiles and declares an `amount` group; every condition uses only the five
+predicates in section 5.2; and every package with rules also declares its
+reject patterns first.
+
+**Dry run against stored history.** Because raw captures are never deleted
+(section 4), an incoming pack can be tested against the user's own
+notifications before it is accepted. The preview reports what would change:
+
+```
+Pack 8 adds rules for Bank Islam, Boost and BigPay.
+
+Against your stored notifications it would newly match 31 captures
+worth RM740.20, and change nothing already recorded.
+```
+
+The preview is computed by running the candidate pack over `raw_capture`
+rows in memory. It never writes. Three figures are reported: captures newly
+matched, their total, and the count of existing transactions the pack would
+have parsed differently — which must be zero for a well-formed pack, since
+re-parse only touches `UNMATCHED` captures, and is surfaced loudly if it is
+not.
+
+Accepting the import stores the pack, bumps the installed version, and
+enqueues the section 5.5 re-parse job. The previous pack is retained so an
+import can be rolled back, which matters because a pack is the one artifact
+that can change how every future notification is read.
 
 ## 6. Categorization
 
@@ -739,6 +840,8 @@ settings tile.
 - Unmatched captures (rule authoring aid, section 5.6)
 - Learned merchant rules: review, edit, delete
 - User reject rules: review with sample text, delete (section 5.7)
+- Rules you taught: review with sample text and match count, delete (5.8)
+- Import a parser pack, with validation and dry run (section 5.9)
 - Categories: add, rename, delete-if-unused
 - Review threshold amount
 - Export
@@ -872,6 +975,16 @@ substring is generic; and the conflict case, where a rule matching two
 different non-Uncategorized categories is applied going forward but refused
 retroactive application.
 
+Derived templates — literal spans are escaped so a message containing regex
+metacharacters cannot break the pattern; untapped digit runs generalize to
+`\d+` while the tapped amount keeps its capture group; a derived template is
+forced to `REVIEW` for exactly its first three matches; and the ordering
+case, that a pack template matching the same text wins over a user template.
+
+Pack import — every validation rule rejects its own malformed case; the dry
+run reports counts without writing; and a pack that would reparse an already
+matched capture differently is reported rather than applied quietly.
+
 User reject rules — skeleton normalization over amounts, thousands
 separators and mixed-language text; a stored skeleton hides a later matching
 capture from the unread list; and the load-bearing negative case, that a
@@ -915,6 +1028,7 @@ onward, driven by the authoring loop in section 5.6.
 and subscription detection.
 
 **v1.2+** — six-month stacked trend (adopting Vico); accounts and observed
-balances with gap detection; remote parser-pack updates (introduces
-`INTERNET`); per-package Kotlin handlers if the declarative vocabulary
-proves insufficient.
+balances with gap detection; remote parser-pack updates, and sharing derived
+templates between users, both of which introduce `INTERNET` and need a trust
+model; per-package Kotlin handlers if the declarative vocabulary proves
+insufficient.
