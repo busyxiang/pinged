@@ -14,7 +14,7 @@ These are the source of truth; the pages below are generated from them.
 | Every day | `Main` `Inbox` `Detail` `Cash` |
 | Looking back | `Charts` `Search` |
 | When it breaks | `Stopped` `Settings` |
-| Sheets and lists | `Chooser` `Category` `Months` `Export` `Wipe` `Rules` `Unread` |
+| Sheets and lists | `Chooser` `Category` `Months` `Export` `Wipe` `Teach` `PackImport` `Rules` `Unread` |
 | Rejected directions | `Quiet` `Warung` `Dark` |
 
 `canvas.json` — artboard layout, two pages. Only consumed by the Claude

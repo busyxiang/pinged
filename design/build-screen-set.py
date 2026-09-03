@@ -35,7 +35,7 @@ groups = [
  ("When it breaks", "The failure this whole category gets wrong, plus the small print.", [
   ("Capture stopped", "Stopped.dc.html", "The banner that keeps step 2 honest",
    "Xiaomi killed the listener on 27 September. The total goes grey and is labelled do-not-trust, and the missing days are drawn as a dashed hole reading &ldquo;not because you did not spend&rdquo;. The app admits the gap rather than serving a confident wrong number."),
-  ("Settings", "Settings.dc.html", "Third tab",
+  ("Settings", "Settings.dc.html", "Changed, third tab",
    "A tab, not a drawer. In the first weeks this is where you live &mdash; adding banks, checking capture is alive, teaching merchants &mdash; so capture sits at the top and export and delete at the bottom. Named in plain words: &ldquo;merchants you have taught Pinged&rdquo;, &ldquo;notifications Pinged could not read&rdquo;. The footer states the privacy claim as fact, because a missing permission enforces it."),
  ]),
  ("Sheets, pickers and lists", "The layer behind the twelve. I called these derivative before drawing them; three turned out to carry real decisions.", [
@@ -49,10 +49,14 @@ groups = [
    "Whether transfers and pending items are included was an assumption until this screen forced it into the open. Both default to out, since neither counts toward a total."),
   ("Delete everything", "Wipe.dc.html", "The destructive one",
    "Counts what dies, states plainly that no copy exists anywhere, offers an export first, and requires typing DELETE. Harsher than a normal confirmation because there is no cloud to restore from and Android will not replay the past."),
-  ("Merchants you taught", "Rules.dc.html", "The recovery path",
-   "Where a mis-taught rule gets undone. The matcher in mono, the merchant and category it produces, and how many transactions lean on it. Bundled merchants are not listed &mdash; only your own, so the list stays yours."),
-  ("Could not read", "Unread.dc.html", "The authoring loop",
-   "Where new bank support comes from. Note the third card: an FD maturity notice is not spending, so it offers &ldquo;never a transaction&rdquo; rather than &ldquo;copy as test case&rdquo;. The Malay debit message above it is exactly the format a new rule needs."),
+  ("Things you taught Pinged", "Rules.dc.html", "Changed, now three lists in one",
+   "Merchants, message rules and ignored messages are all &ldquo;things you taught&rdquo;, so they share one screen rather than adding two more settings rows. Bundled merchants stay unlisted, so the list is only ever yours."),
+  ("Teach Pinged to read this", "Teach.dc.html", "New, and the reason the rest changed",
+   "No regex field, ever &mdash; a bad pattern does not fail loudly, it invents transactions. So it asks for the two facts it cannot infer: tap the amount, tap the merchant. Every other word stays literal and every other number generalises, so the rule matches this message shape and nothing else."),
+  ("A pack of new rules", "PackImport.dc.html", "New, import with a dry run",
+   "The payoff for never deleting a raw capture: a pack is tried against your own notifications before you accept it. Thirty-one more would be read; zero of the 112 you already have would change. That second number should always be zero, and it is shown whether or not it is."),
+  ("Could not read", "Unread.dc.html", "Changed, the authoring loop",
+   "Its primary action was &ldquo;copy as test case&rdquo;, which is a developer loop, not a user one. It now leads with teaching. The third card still inverts the pair, because an FD maturity notice is genuinely never spending &mdash; and copy-as-fixture survives as the small icon by each timestamp."),
  ]),
 ]
 
@@ -242,7 +246,7 @@ page = f'''<title>Pinged Screen Set</title>
 <style>{css}</style>
 <div class="wrap">
   <p class="eyebrow">Pinged &middot; Receipt direction</p>
-  <h1>Nineteen screens, one paper trail</h1>
+  <h1>Twenty-one screens, one paper trail</h1>
   <p class="stand">The whole v1 surface &mdash; every screen, sheet and list &mdash; grouped the way a person meets it. The populated scenario is pinned to <strong>Wednesday 30 September 2026</strong>, month end, so every figure reconciles: RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded, four items awaiting review.</p>
   <p class="stand">The system below is the handoff &mdash; those hex values and type roles become the Compose theme directly.</p>
 

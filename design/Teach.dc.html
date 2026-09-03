@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body { margin: 0; }
+a { color: #a03826; } a:hover { color: #7a2a1c; }
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="padding: 28px 20px 16px; border-bottom: 1px dotted #cfc4ae;">
+    <div style="display: flex; align-items: center; gap: 11px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M15 6l-6 6 6 6"/></svg>
+      <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 22px;">Teach Pinged to read this</span>
+    </div>
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; color: #8a8175; margin-top: 6px; padding-left: 31px;">HONG LEONG CONNECT &middot; 30 SEP, 9.14 AM</div>
+  </div>
+
+  <div style="padding: 22px 20px 0;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.14em; color: #a03826;">STEP 2 OF 2 &middot; NOW TAP THE MERCHANT</div>
+    <div style="border: 1px dotted #cfc4ae; background: #f5eddd; padding: 14px 12px; margin-top: 11px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 2.1; color: #4a423a;">Transaksi berjaya. <span style="border: 1.5px solid #a03826; padding: 3px 5px; color: #a03826; background: #fbf6ea;">RM88.00</span> telah ditolak dari akaun anda <span style="border-bottom: 1px dashed #8a8175; padding-bottom: 2px;">1234</span>.</div>
+    <div style="display: flex; align-items: center; gap: 7px; margin-top: 10px;">
+      <span style="width: 9px; height: 9px; border: 1.5px solid #a03826; flex: none;"></span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; color: #8a8175;">AMOUNT, TAPPED &middot; TAP AGAIN TO CHANGE</span>
+    </div>
+    <div style="margin-top: 12px; font-size: 13px; color: #a03826; text-decoration: underline; text-underline-offset: 3px;">This message has no merchant in it</div>
+  </div>
+
+  <div style="height: 9px; margin-top: 22px; background-image: linear-gradient(45deg, transparent 50%, #efe7d8 50%), linear-gradient(-45deg, transparent 50%, #efe7d8 50%); background-size: 12px 9px; background-repeat: repeat-x;"></div>
+
+  <div style="flex: 1; background: #efe7d8; padding: 18px 20px 0;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.14em; color: #6b6459;">WHAT PINGED WILL LOOK FOR</div>
+    <div style="border: 1px solid #ded5c4; background: #fbf6ea; padding: 13px 12px; margin-top: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; line-height: 2; color: #4a423a;">Transaksi berjaya. RM<span style="background: #a03826; color: #fbf6ea; padding: 2px 6px;">amount</span> telah ditolak dari akaun anda <span style="background: #cfc4ae; color: #4a423a; padding: 2px 6px;">any number</span>.</div>
+    <div style="font-size: 12.5px; line-height: 1.55; color: #6b6459; margin-top: 10px;">Every other word has to match exactly, so this rule cannot pick up a message it was not meant for.</div>
+
+    <div style="margin-top: 22px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.14em; color: #6b6459;">IS THIS MONEY OUT, OR IN?</div>
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <div style="flex: 1; min-height: 44px; background: #a03826; color: #fbf6ea; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500;">Money out</div>
+        <div style="flex: 1; min-height: 44px; border: 1px solid #ded5c4; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #6b6459;">A refund</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="background: #fbf6ea; border-top: 1px dotted #cfc4ae; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; line-height: 1.7; letter-spacing: 0.04em; color: #8a8175;">THE FIRST THREE MATCHES WILL ASK YOU TO CHECK THE AMOUNT</div>
+    <div style="min-height: 52px; background: #a03826; color: #fbf6ea; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 15.5px; font-weight: 500;">Save this rule</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
