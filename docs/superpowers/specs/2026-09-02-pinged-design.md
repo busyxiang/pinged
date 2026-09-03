@@ -14,6 +14,28 @@ different app to Android, forcing a reinstall and discarding the database.
 Since raw captures cannot be backfilled from before install (section 10),
 that loss is permanent.
 
+**API levels.** `minSdk 27`, `targetSdk` current-1 as Play requires.
+Twenty-seven is not a preference, it is forced: named regex group access
+(`Matcher.group(String)`, which the whole parser pack format in section 5
+depends on) arrives at **API 26**, and
+`NotificationManager.isNotificationListenerAccessGranted()` — the most
+safety-critical check in the app — arrives at **API 27**. Below 27 that
+check means hand-parsing `Settings.Secure.enabled_notification_listeners`.
+Adaptive icons are also API 26; the `<monochrome>` layer needs
+`compileSdk 33+` and is ignored below API 33.
+
+If minSdk ever has to drop below 26, the pack compiler must resolve group
+names to indices at load time and the runtime must use `group(int)`. That
+changes rule compilation, so it is a decision to take now rather than
+discover.
+
+**Service class name.** The notification-access grant is stored by the
+system against the flattened `ComponentName` of the listener service, in
+`Settings.Secure.enabled_notification_listeners`. Renaming or moving that
+class silently voids the grant with no user-visible event and no callback.
+The fully-qualified name of the listener service is therefore as frozen as
+`applicationId`.
+
 **Launcher icon.** Adaptive icon, ink ground with a cream receipt stub and
 one stamp-red line. Artwork stays inside the central 72dp of the 108dp
 canvas, with the stub inside 66dp so no launcher mask clips it. A monochrome
@@ -63,7 +85,7 @@ transaction. That stream is a complete expense feed nobody is reading.
 | Confirmation | Confidence-based hybrid | Only uncertain captures cost the user attention |
 | Parse engine | Declarative parser pack (rules as data) | Format fixes need no app release |
 | Charting | No chart library in v1 | v1 charts are rows, squares and lists |
-| Network | No `INTERNET` permission | Strongest possible privacy claim; forces local design |
+| Network | No `INTERNET` permission | No network access at all; forces local design. Not the same as "cannot exfiltrate" — see 11.1 |
 
 ### Accepted risk
 
@@ -95,33 +117,59 @@ the design.
 
 ### Capture flow
 
+Capture is two stages with a durable boundary between them. Stage one only
+writes; stage two reads the table, never a queue.
+
 ```
-NotificationListenerService.onNotificationPosted(sbn)
+STAGE 1 — onNotificationPosted(sbn), listener main thread
   │
-  ├─ package not in enabled allow-list → return immediately, nothing stored
+  ├─ sbn.packageName is our own package        → return
+  ├─ sbn.notification.flags & FLAG_GROUP_SUMMARY → return
+  ├─ package not in enabled allow-list         → heartbeat only, return
   │
-  ├─ extract extras: title, text, bigText, subText, postTime
-  ├─ compute dedupe_hash = sha256(package | normalized_text | postTime/1000)
-  ├─ INSERT raw_capture                      ← always, even if unparseable
+  ├─ extract via getCharSequence(...)?.toString():
+  │     EXTRA_TITLE, EXTRA_TEXT, EXTRA_BIG_TEXT, EXTRA_SUB_TEXT
+  │     plus sbn.key, sbn.id, sbn.tag, sbn.user, channelId, flags
+  │     posted_at = sbn.postTime          (never notification.when)
   │
-  ├─ hash seen within 60s → mark DUPLICATE_OF, stop
+  └─ hand off to the write dispatcher (single thread)
+        └─ INSERT raw_capture             ← the durable boundary
+              content_hash = sha256(package | user | normalized_text)
+              no timestamp in the hash
+
+STAGE 2 — parse worker, reads raw_capture where parse_status = NEW
+  │
+  ├─ same sbn.key and same content_hash as a prior row   → UPDATE_OF, stop
+  ├─ same content_hash within 60s                        → DUPLICATE_OF, stop
+  ├─ title, text and bigText all null                    → NO_EXTRAS, stop
   │
   ├─ RuleMatcher(package)
-  │     1. reject patterns  (promo / OTP-TAC / failed / reversal-notice)
-  │     2. transaction templates, highest priority first
-  │     no match → parse_status = UNMATCHED, stop
+  │     1. transaction templates, highest priority first
+  │     2. no template matched → consult reject patterns
+  │            matched a reject → REJECTED
+  │            matched nothing  → UNMATCHED
+  │     (a capture matching BOTH a template and a reject is MATCHED,
+  │      and the collision is logged for rule review — see 5.3)
   │
-  ├─ Normalizer      amount → sen, occurred_at, merchant cleanup
+  ├─ Normalizer      amount → sen, occurred_at, local_date, merchant cleanup
   ├─ Categorizer     learned rule → bundled dictionary → Uncategorized
-  ├─ DuplicateDetector  cross-package same-amount window check
+  ├─ DuplicateDetector  same amount, different package, inside the window
   ├─ ConfidenceGate  → COMMITTED or PENDING
-  └─ INSERT transaction; UI updates via Room Flow
+  └─ INSERT txn; UI updates via Room Flow
 ```
 
-**The callback does three things only:** extract extras, check the allow-list,
-and enqueue. Everything downstream — the insert, matching, categorization,
-duplicate detection — runs on a single-threaded dispatcher with a bounded
-queue.
+**Why the boundary is a table and not a queue.** An in-memory queue between
+the callback and the insert loses captures on process death, which is the
+failure this whole design is organised against, and the first notification
+after a cold start is exactly when the process is least stable. So stage one
+does the smallest possible durable write and nothing else; stage two is
+free to be slow because its input is already safe. There is no
+queue-saturation case to handle, because there is no queue holding
+unwritten data.
+
+**Stage one must stay small.** Extract, filter, hand off. Everything else —
+matching, categorization, duplicate detection, the confidence gate — is
+stage two's work on a background dispatcher.
 
 An earlier draft of this design had parsing run inline in the callback on
 the grounds that the regex is sub-millisecond. The regex is; the work around
@@ -131,13 +179,58 @@ listener's main thread is an ANR risk that gets worse as data accumulates,
 which is exactly the failure mode this app cannot afford, because a killed
 listener is a silent gap in the ledger.
 
-Ordering within the queue is preserved so that duplicate detection sees
-captures in arrival order. If the queue saturates, captures are still
-written to `raw_capture` and marked for the re-parse job rather than
-dropped.
+Stage two processes rows in `posted_at` order so duplicate detection sees
+captures as they arrived. Because its input is a table, an interrupted run
+simply resumes: any row still at `parse_status = NEW` is unfinished work.
 
 WorkManager is used for the daily health check, bulk re-parse after a pack
 upgrade, and the pack-import dry run.
+
+### Reading a notification is not straightforward
+
+Four facts about the payload that the parse design depends on:
+
+**Extras must be read as `CharSequence`.** `Bundle.getString(EXTRA_TEXT)`
+returns **null** when the value is a `SpannableString`, because it casts
+internally and swallows the failure. Banks and wallets very commonly bold
+the amount, which makes the value a `Spannable`. Every field is read with
+`extras.getCharSequence(key)?.toString()`. This single line decides whether
+Maybank is captured at all.
+
+**Some notifications carry no text.** An app that draws its notification
+entirely with custom `RemoteViews` has null title, text and bigText, and the
+content lives only inside the views — unreachable since hidden-API
+restrictions landed in API 28. Such captures are classified `NO_EXTRAS`
+rather than `UNMATCHED`, so the unread list (section 9.6) does not invite the
+user to teach a rule for a message the app cannot see.
+
+**Group summaries are skipped.** A notification with `FLAG_GROUP_SUMMARY`
+carries aggregated or system-generated text, which produces either unread
+noise or a duplicate of its own child.
+
+**Work profiles post under the same package name.** A listener in the
+personal profile receives managed-profile notifications, and the same bank
+app in both profiles shares a package identifier — so `sbn.user` is part of
+`content_hash` and is stored on every capture, or cross-profile posts
+collapse into each other. `PackageManager` in the personal profile also
+cannot resolve a work-profile-only package's label or icon, which the
+capture-source screen handles the same way it handles any unresolvable
+package (section 9.6). Capture is per user handle; the ledger is not split.
+
+**Reconnecting recovers what is still on screen.** On
+`onListenerConnected`, `getActiveNotifications()` returns notifications
+still in the shade, and bank notifications often sit there for hours. Those
+are ingested through the same stage-one path and deduplicated by
+`content_hash` like anything else. This narrows but does not close the gap
+after a kill: the honest claim is that history cannot be recovered beyond
+what is still in the notification shade.
+
+Android 15 may also redact notifications its classifier considers sensitive
+from listeners without the privileged `RECEIVE_SENSITIVE_NOTIFICATIONS`
+permission. The classifier targets one-time codes, which section 5.3 rejects
+anyway, but a success message carrying a reference number could plausibly be
+caught. Verify against a real corpus on an API 35 device before assuming
+section 5.3's traps are the only obstacle between the app and a bank's text.
 
 ### Design stance: default-deny
 
@@ -158,27 +251,49 @@ conversion, then convert to `Long`).
 |---|---|---|
 | id | Long PK | |
 | source_package | Text | |
-| posted_at | Long | notification `when`, epoch millis |
+| posted_at | Long | `sbn.postTime`, system-assigned, always valid |
+| when_millis | Long? | `notification.when`, kept but only trusted if non-zero |
 | captured_at | Long | when this app saw it |
-| title | Text? | |
+| sbn_key | Text, indexed | `sbn.key`, identifies the notification slot |
+| notif_id | Int | `sbn.id` |
+| notif_tag | Text? | `sbn.tag` |
+| user_handle | Int | `sbn.user`, distinguishes work profile from personal |
+| channel_id | Text? | so a muted channel can be diagnosed |
+| flags | Int | `notification.flags` |
+| title | Text? | all four read via `getCharSequence(...)` |
 | text | Text? | |
 | big_text | Text? | |
 | sub_text | Text? | |
 | extras_json | Text? | whitelisted extras only, see section 15.6 |
-| dedupe_hash | Text, indexed | |
-| parse_status | Enum | `MATCHED`, `UNMATCHED`, `REJECTED`, `DUPLICATE_OF` |
+| content_hash | Text, indexed | sha256(package, user, normalized text). No timestamp |
+| parse_status | Enum | `NEW`, `MATCHED`, `UNMATCHED`, `REJECTED`, `DUPLICATE_OF`, `UPDATE_OF`, `NO_EXTRAS` |
 | rejected_by_rule_id | Text? | which reject pattern fired |
 | matched_rule_id | Text? | |
 | pack_version | Int | pack that produced this outcome |
 | duplicate_of_id | Long? | |
 | user_reject_rule_id | Long? | hidden from the unread list, section 5.7 |
 
+`posted_at` is `sbn.postTime`, not `notification.when`. `when` is an
+app-controlled field that is regularly left at or set to zero; trusting it
+dates a transaction to January 1970, where it vanishes from every month
+view and every chart while still counting as captured. `when` is kept
+separately and used only when non-zero and within a sane window of
+`postTime`. A rule-extracted `occurred_at` still outranks both.
+
+`content_hash` deliberately excludes time. An earlier draft hashed
+`postTime/1000` alongside the text and then looked for repeats "within 60
+seconds" — which can never fire, because two posts a second apart hash
+differently. Identity comes from content; recency is a separate predicate.
+`sbn_key` is stored because Android already tells us whether a post is a new
+notification or an update to an existing slot, and inferring that from text
+is strictly worse.
+
 Raw captures are never deleted by the app. They are the audit trail, they
 let a rule change be validated against real history, and they make any field
 we failed to extract recoverable later by re-parsing. A user-initiated
 "delete all data" wipes them along with everything else.
 
-### `transaction`
+### `txn`
 
 | Column | Type | Notes |
 |---|---|---|
@@ -187,7 +302,8 @@ we failed to extract recoverable later by re-parsing. A user-initiated
 | amount_sen | Long | always positive |
 | currency | Text | `MYR` default |
 | direction | Enum | `EXPENSE`, `REFUND` |
-| occurred_at | Long | |
+| occurred_at | Long | epoch millis |
+| local_date | Int, indexed | `yyyymmdd` in the fixed zone, see section 15.7 |
 | merchant_raw | Text? | exactly as parsed |
 | merchant_display | Text? | after cleanup, user-editable |
 | category_id | Long | FK, defaults to Uncategorized |
@@ -201,8 +317,20 @@ we failed to extract recoverable later by re-parsing. A user-initiated
 | user_edited | Bool | blocks re-parse overwrite |
 | created_at, updated_at | Long | |
 
-`REFUND` rows subtract from totals. `is_excluded` rows appear in the list
-greyed out and are absent from every total and chart.
+The table is named `txn`, not `transaction`, because `transaction` is a
+SQLite reserved keyword. Room quotes its generated DDL so it would work, but
+every hand-written query, trigger and FTS `content=` reference would need
+escaping forever. Renaming costs nothing now.
+
+`local_date` is a precomputed `yyyymmdd` integer, not a derived value.
+Grouping by day through `strftime(..., 'localtime')` depends on the process
+timezone, cannot use an index, and silently reshuffles history when the user
+travels. Section 15.7 fixes the zone.
+
+`REFUND` rows subtract from totals, which means a category total can be
+zero or negative. Section 15.3 specifies how that is clamped before it
+reaches a bar width. `is_excluded` rows appear in the list greyed out and
+are absent from every total and chart.
 
 ### `merchant_rule`
 
@@ -289,7 +417,7 @@ without a church and a temple would ship a default about who this app is
 for. `hand-heart` and `landmark` cover the need. If the set is ever extended
 here it has to be all of them or none.
 
-**Rename is global and retroactive, by design.** `transaction.category_id`
+**Rename is global and retroactive, by design.** `txn.category_id`
 is a foreign key; no transaction stores a category name. So renaming a
 category relabels every transaction that references it, in every past month,
 in the charts, and in future exports. That is correct for fixing a label
@@ -342,8 +470,10 @@ only after every pack template for the package has failed.
 | package | Text PK | |
 | label | Text | display name |
 | enabled | Bool | allow-list gate |
-| is_authoritative | Bool | see section 7.2 |
+| is_authoritative | Bool | wins duplicate pairs, see section 7.2 |
 | first_seen_at | Long | |
+| last_notification_at | Long? | per-source liveness, see section 10 |
+| expected_monthly_count | Int? | rolling average, for the same check |
 
 Rows are created by the discovery screen (section 9.5), not hardcoded.
 
@@ -388,7 +518,9 @@ are observed on device through the capture-source screen (section 9.6)
 rather than guessed, because a wrong identifier fails silently and would be
 indistinguishable from a bank that simply never notifies.
 
-Reject patterns are evaluated before any transaction template, always.
+**Transaction templates are evaluated first; reject patterns are consulted
+only when no template matched.** An earlier draft had rejects run first,
+always. That is unsafe, and section 5.3 explains why.
 
 Named groups: `amount` is required; `merchant`, `occurred_at`, `balance`,
 `account_tail`, `ref` are optional. In v1 only `amount`, `merchant` and
@@ -409,13 +541,51 @@ nesting, no arithmetic:
 
 All string comparison is case-insensitive and whitespace-normalized.
 
+**Regex flags are fixed for every `pattern`,** because leaving them implicit
+makes each rule's behaviour a guess: `CASE_INSENSITIVE | UNICODE_CASE |
+DOTALL`, and never `MULTILINE`. `DOTALL` matters — `bigText` contains
+newlines, and without it `(?<merchant>.+?)` silently fails to match across
+one. The `pattern` runs against the same field the conditions select.
+
+**Whitespace and digits are normalized for Unicode before matching.** Java's
+`\s` does not match U+00A0 or U+202F, and bank notifications carry
+non-breaking spaces around amounts routinely; `\d` matches ASCII only unless
+`UNICODE_CHARACTER_CLASS` is set. Normalization replaces `\p{Zs}` with a
+plain space, strips zero-width and bidi marks, and only then matches. Exact
+skeleton equality in sections 5.7 and 5.8 depends on this, and would
+otherwise fail invisibly on precisely the messages it exists to handle.
+
+**The amount fragment is a shared primitive, not retyped per rule.** The
+pack declares it once, tolerant of a space after `RM`, of `MYR`, of thousands
+separators and of a missing decimal part, and rules reference it. Every rule
+author reinventing `RM(?<amount>[\d,]+\.\d{2})` guarantees that half of
+them reject "RM 50" and "MYR50.00".
+
 If a real Malaysian format cannot be expressed within this vocabulary, that
 is the signal to reconsider a per-package Kotlin handler — not to grow the
 rule language.
 
 ### 5.3 The traps the reject patterns exist for
 
-These are the real reason default-deny is non-negotiable:
+These are the real reason default-deny is non-negotiable.
+
+**But rejects run after templates, not before.** Malaysian wallets append
+reward copy to genuine success messages: *"Payment of RM52.30 to 99
+Speedmart successful. You earned RM1.05 cashback."* That is a real expense
+whose text contains `cashback`. Under reject-first ordering it is discarded
+before any template runs, producing exactly the silent under-report that
+section 2 admits the flat model cannot detect. A matched transaction
+template is strictly stronger evidence than a keyword, so it wins.
+
+A capture that matches both a template and a reject pattern is recorded as
+`MATCHED` and the collision is logged against both rule ids, so it surfaces
+in rule review rather than being silently resolved either way. Reject
+patterns are also the reason the word list must be treated with suspicion:
+`"jom "` is an ordinary Malay word that appears in campaign and merchant
+names, and any keyword short enough to be convenient is long enough to be
+wrong.
+
+The traps themselves:
 
 1. **Promotional pushes.** Grab, Shopee, foodpanda and every wallet push
    marketing copy containing ringgit amounts ("Get RM10 off your next
@@ -438,10 +608,16 @@ These are the real reason default-deny is non-negotiable:
 - **Merchant.** Strip known acquirer prefixes (`TNG*`, `GRAB*`, `PYMT-`,
   `DUITNOWQR-`, `FPX-`, `IBG-`, `MBB-`), strip trailing corporate and
   location noise (`SDN BHD`, `SDN. BHD.`, `S/B`, trailing ` MY`, trailing
-  terminal codes matching `-[A-Z0-9]{2,4}$`), collapse whitespace, title-case
-  for display. `merchant_raw` is preserved untouched.
-- **Date.** The notification `when` timestamp is authoritative unless a rule
-  extracts `occurred_at` (relevant for card postings that backdate).
+  terminal codes matching `-[A-Z0-9]{2,4}$`), collapse whitespace.
+  `merchant_raw` is preserved untouched. Title-casing is applied **only when
+  the raw string is entirely uppercase**, with an exception list in the pack:
+  applied unconditionally it produces "Tng 99speedmart", "Kk Super Mart" and
+  "Mcdonald's", which is worse than leaving the acquirer's shouting alone.
+- **Date.** `sbn.postTime` is authoritative unless a rule extracts
+  `occurred_at` (relevant for card postings that backdate).
+  `notification.when` is never authoritative; see section 4.
+- **Local date.** `local_date` is computed at parse time from `occurred_at`
+  in the fixed zone (section 15.7) and stored, never derived at query time.
 - **Direction.** Comes from the matched rule only, never inferred from text.
 
 The prefix and suffix lists live in the pack, not in code, so they are
@@ -451,11 +627,30 @@ editable without a release.
 
 Each transaction records the `pack_version` and `matched_rule_id` that
 produced it. On pack upgrade, a WorkManager job re-parses raw captures whose
-`parse_status = UNMATCHED`.
+`parse_status` is `UNMATCHED` **or** `REJECTED`.
 
-Re-parse never modifies a transaction where `user_edited = true` or
-`state != PENDING`. Newly matched captures produce new transactions subject
-to the normal confidence gate.
+Including `REJECTED` is not optional. Fixing an over-broad reject pattern is
+one of the most likely reasons to ship a pack at all, and a design that
+never revisits rejected captures cannot recover the transactions that
+pattern ate.
+
+Re-parse in this mode never modifies an existing transaction: it only
+creates new ones, subject to the normal confidence gate.
+
+**A third mode handles captures that were parsed wrongly.** A rule that
+captured the wrong group and recorded RM1,234.00 as RM1.23 across three
+hundred committed transactions is not repairable by the two modes above, and
+"rules as data, format fixes need no release" is hollow if only the absence
+of a match can be fixed. So a pack upgrade also re-runs `MATCHED` captures
+and compares the result against the stored transaction. Differences are not
+applied silently — they are presented as a reviewable list with old and new
+values, and the user accepts or declines. Transactions with
+`user_edited = true` are excluded from the comparison entirely, because a
+human decision outranks any rule.
+
+Section 5.9's dry run already computes this count; it is the same
+calculation, and treating a non-zero result as a reviewable diff rather than
+as a validation failure is what makes packs able to fix real damage.
 
 ### 5.6 Rule authoring loop
 
@@ -571,8 +766,16 @@ Import is validated and previewed, never applied on trust.
 file parses; `pack_version` is an integer greater than the installed one;
 every rule declares an `id` unique within its package; every `pattern`
 compiles and declares an `amount` group; every condition uses only the five
-predicates in section 5.2; and every package with rules also declares its
+predicates listed in section 5.2; and every package with rules also declares its
 reject patterns first.
+
+**Regex safety, which compiling does not give you.** A pattern that compiles
+can still backtrack catastrophically, and a pack arrives as a file. So
+validation also runs each pattern against a pathological input, and both the
+dry run and the re-parse job match against a `CharSequence` wrapper that
+throws once a per-match wall-clock budget expires, with a hard cap on input
+length. Without this, one nested quantifier in an imported pack hangs a
+worker over 50,000 captures with no way out.
 
 **Dry run against stored history.** Because raw captures are never deleted
 (section 4), an incoming pack can be tested against the user's own
@@ -735,10 +938,23 @@ numeric score, so the app can always state exactly why an item needs review.
 
 ### 7.2 Duplicate detection, two layers
 
-**Layer 1 — same notification re-posted.** Android fires
-`onNotificationPosted` on updates as well as new posts. `dedupe_hash`
-(package + normalized text + second-bucketed `postTime`) repeating within
-60 seconds is stored as `DUPLICATE_OF` and produces no transaction.
+**Layer 1 — the same notification, again.** Android fires
+`onNotificationPosted` for updates as well as new posts, and it tells you
+which is which: `sbn.key` identifies the notification slot. Two rules,
+in order:
+
+- Same `sbn_key` **and** same `content_hash` as an earlier row → `UPDATE_OF`,
+  no transaction, regardless of how much time has passed. An app that
+  refreshes its notification an hour later has not spent money twice.
+- Same `content_hash` from the same package and user within 60 seconds, with
+  a different `sbn_key` → `DUPLICATE_OF`.
+
+`content_hash` contains no timestamp (section 4). An earlier draft hashed
+the second-bucketed `postTime` into it and then looked for repeats within
+sixty seconds, which is self-cancelling: two posts a second apart hash
+differently, so the window could only ever fire inside a single second,
+where it was redundant. Every real notification update would have produced a
+second transaction.
 
 **Layer 2 — same purchase seen twice.** One card swipe can fire both the
 banking app and a separate card-alert notification. Flag
@@ -751,8 +967,12 @@ Duplicates are never dropped automatically. Two genuine RM5.00 parking
 payments in one afternoon are entirely normal, and silently deleting one
 would be a wrong total the user cannot detect.
 
-The coarse control that removes most of this class: marking one
-`capture_source` as `is_authoritative` and disabling the others.
+`is_authoritative` gives the coarse control real behaviour rather than
+leaving it as a synonym for `enabled`: when a `DUPLICATE_SUSPECT` pair spans
+an authoritative source and a non-authoritative one, the pair resolves
+toward the authoritative source automatically and does not reach the review
+inbox. Pairs between two authoritative sources, or two ordinary ones, still
+ask.
 
 ### 7.3 Transfers, reloads, card payments
 
@@ -825,7 +1045,12 @@ repositories.
 
 ### 9.1 Transaction list (home)
 
-Chronological, grouped by day, with day subtotals. Compact month summary
+Chronological, grouped by day, with day subtotals. Three queries, not one:
+a `PagingSource` for the rows, an aggregate keyed by `local_date` for the
+day subtotals, and a separate month aggregate for the pinned summary. Day
+subtotals cannot be summed inside a paged list, because a page boundary can
+fall mid-day; Paging's separator support inserts the day header, and the
+subtotal is joined in from the aggregate. Compact month summary
 pinned at top (total + top three categories). Each row shows merchant
 display name, category icon, source app, amount. Uncategorized rows carry a
 tappable chip. Excluded rows are greyed with an exclusion badge. Search and
@@ -852,8 +1077,12 @@ The two v1 visualizations, with a month selector.
 
 For cash. Amount keypad open and focused on launch, category as a chip row
 of most-used-first, merchant optional, note optional. Target three taps to
-save. Reachable from a FAB on the list and from a home-screen quick
-settings tile.
+save. Reachable from the cash button on the list, and from a launcher shortcut
+(`ShortcutManager`, a long-press on the app icon). Not a Quick Settings
+tile: those are `TileService`, they live in the notification shade rather
+than the home screen, the user has to add them by hand, and on API 34
+launching an activity from one needs the `PendingIntent` overload of
+`startActivityAndCollapse`. A shortcut is discoverable and free.
 
 ### 9.5 Settings
 
@@ -878,12 +1107,25 @@ user-facing screen and the mechanism the privacy claim rests on.
 
 **Two stages.**
 
-*Stage 1, metadata only.* For a package with `enabled = false`, the listener
-writes only `package`, `last_seen_at` and a seen count to `capture_source`.
-No title, no text, no extras. The discard happens in the first statements of
-`onNotificationPosted`, before any content-bearing write. The app can
-therefore display "some messaging app, 340 notifications seen" while holding
-none of their content.
+*Stage 1, metadata only.* For a package with `enabled = false`, the app
+records only the package identifier and a seen count. No title, no text, no
+extras. The discard happens in the first statements of
+`onNotificationPosted`, before any content-bearing write.
+
+Two honest corrections to how this used to be described. First, the app
+cannot avoid *receiving* content: the system hands the process a full
+`StatusBarNotification`, extras and all, before any of this code runs. What
+is promised is that nothing unrelated is *stored*, which is a real and
+testable promise, but a narrower one. Second, these counters live in
+`DataStore`, not in `capture_source` — see section 10 for why a per-
+notification Room write is unaffordable.
+
+Third, and this is a decision rather than a correction: a durable per-package
+seen count is itself a record of which apps the user has and how often each
+one speaks, which for some apps is more sensitive per byte than the ledger.
+So only a count is kept, never a last-seen timestamp, and packages the user
+has never enabled and never interacted with in the picker are dropped after
+30 days.
 
 *Stage 2, content capture.* Only once the user enables a package does that
 package's notification content get stored in `raw_capture`.
@@ -891,16 +1133,33 @@ package's notification content get stored in `raw_capture`.
 **Screen structure.**
 
 - **Suggested** — known Malaysian bank and wallet packages that are actually
-  installed on this device, resolved through `PackageManager`, so the list
-  is useful on first run rather than empty. The suggested identifier list
-  ships in the parser pack and is refined as identifiers are verified on
-  real devices.
+  installed on this device.
 - **Recently seen** — packages observed posting notifications, with counts,
   so a source the suggested list missed is discoverable.
-- **All apps** — searchable fallback.
 
-Each row shows app icon, label, seen count, an enable toggle, and the
-`is_authoritative` flag described in section 7.2.
+Each row shows the app label and icon where they can be resolved, a seen
+count, an enable toggle, and the `is_authoritative` flag from section 7.2.
+
+**Package visibility is the constraint here, and it is a hard one.** From
+API 30, `PackageManager` results are filtered: an app sees only packages it
+declares an interest in. Resolving a label, an icon or "is it installed"
+for an arbitrary package needs either `QUERY_ALL_PACKAGES` or a static
+`<queries>` list in the manifest. `QUERY_ALL_PACKAGES` is a Play-restricted
+permission granted for device search, antivirus, file managers and similar;
+an expense tracker will not qualify, and an earlier draft of this spec was
+wrong to claim nothing here blocked a public release.
+
+So: the known bank and wallet identifiers are declared in `<queries>` at
+build time, and "All apps" is dropped as a browsing surface. The consequence
+has to be stated because it undercuts a claim made elsewhere — the
+*suggested list* now needs an app release to grow, even though *parse rules*
+still do not. Packages outside the manifest list are shown by identifier
+alone when they post something, which is enough to enable them but not
+pretty.
+
+Whether receiving a notification from a package grants visibility to that
+package must be verified on a real API 30+ device before onboarding copy is
+written. This design assumes it does not.
 
 **Just-in-time prompt.** When an installed package from the suggested list
 posts a notification while still disabled, the app raises a single one-time
@@ -919,57 +1178,242 @@ Xiaomi, Oppo, Vivo and Realme are dominant in Malaysia and aggressively kill
 notification listeners. A stopped listener that says nothing leaves the user
 trusting a fabricated total for weeks.
 
-Three defences:
+### 10.1 Rebinding, which is where this app dies first
 
-1. **Heartbeat.** The listener updates `last_any_notification_at` on every
-   notification from any app, and `last_listener_connected_at` on every
-   `onListenerConnected`. Liveness is therefore observable independently of
-   whether the user spent money. Heartbeat updates for non-allow-listed
-   packages write only a timestamp — no notification content is stored.
-2. **Daily WorkManager check.** If `isNotificationListenerAccessGranted` is
-   false, or no notification of any kind has been seen in 24 hours, raise a
-   persistent in-app banner: "Capture stopped N days ago — tap to fix",
-   linking to a remediation screen. The app never fails silently.
-3. **OEM onboarding.** At first run, detect manufacturer and deep-link the
-   relevant autostart or background-power screen (MIUI autostart, Oppo and
-   Realme startup manager, Vivo background power management), with
-   `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` as the generic fallback. Deep
-   links are attempted defensively: an unresolvable intent falls back to
-   app settings plus written instructions.
+**Replacing the APK unbinds the listener and nothing rebinds it.** The
+system does not restore the binding until a reboot or a permission toggle.
+This is long-standing behaviour and it is the most common cause of "it
+worked, then it stopped" in this whole product category. During development
+it means capture dies on every build installed.
 
-Additionally: `onListenerDisconnected` is handled by requesting rebind, and
-the notification-access grant state is re-checked on every app foreground.
+Three things address it, and all three are required:
+
+- A manifest receiver for `ACTION_MY_PACKAGE_REPLACED` and
+  `BOOT_COMPLETED` (with `RECEIVE_BOOT_COMPLETED`) calling
+  `NotificationListenerService.requestRebind(ComponentName)`, API 24.
+- `requestRebind` on every app foreground while the grant is present.
+- `onListenerDisconnected` requesting rebind, which covers only the case
+  where the process survives.
+
+The fallback when `requestRebind` does not take is toggling the service
+component with `setComponentEnabledSetting`, which forces the system to
+re-evaluate the binding.
+
+**The grant and the binding are independent.**
+`isNotificationListenerAccessGranted` can return true while nothing is
+bound — that is precisely the OEM-kill signature, and naming it matters
+because the two are easy to conflate. The check is still worth making,
+because it is the only thing that detects the voided-`ComponentName` case
+described in the front matter.
+
+### 10.2 Detecting a dead listener, honestly
+
+**Heartbeat.** A timestamp is updated on every notification from any app,
+and on every `onListenerConnected`, so liveness is observable regardless of
+whether the user spent money. These writes go to `DataStore`, throttled to
+at most one write every five minutes, and never to Room: a phone posts
+100-300 notifications a day, Room's invalidation tracker is table-granular,
+and a heartbeat row in the database would re-emit every `Flow` observing
+that table on every notification on the device.
+
+**Foreground check is the primary detector.** On every app foreground: is
+the grant present, is anything bound, and when was the last notification of
+any kind seen? A stale answer raises the capture-stopped banner (section 9,
+`Stopped`).
+
+**A daily WorkManager check is best-effort, not a guarantee, and the spec
+previously overclaimed here.** The worker runs in the same process the OEM
+killed; on MIUI, ColorOS and FuntouchOS with autostart denied, it does not
+run after the app is killed or swiped away. On AOSP, an app in the
+`RESTRICTED` standby bucket gets roughly one window a day and periodic work
+has no timing guarantee under Doze. So the worker is a bonus that sometimes
+catches the problem earlier, and the claim made to the user is corrected to
+match: Pinged notices when you open it, and tells you then.
+
+**Reaching a user who is not opening the app needs a notification**, which
+needs `POST_NOTIFICATIONS` (API 33+ runtime permission) and a channel. This
+is declared and requested — it was missing from an earlier draft, along with
+the same requirement for the section 9.6 just-in-time prompt. The app also
+skips its own package at the top of `onNotificationPosted`, since its own
+notifications reach its own listener.
+
+**The always-visible signal costs nothing and is the most honest one:** the
+home screen carries "last captured N minutes ago". No worker, no permission,
+no promise that can turn out to be false.
+
+### 10.3 Per-source liveness, which catches the likelier failure
+
+A global "no notifications in 24 hours" check catches a dead listener. It
+does not catch the more common and equally destructive case: the listener is
+alive, other apps are notifying, and one bank's transaction channel has been
+muted — by the user, by an app update, or by the OEM's notification manager.
+The ledger silently loses one source while capture health reports green.
+
+So `capture_source` carries `last_notification_at` and a rolling
+`expected_monthly_count`, and the check is per source: "no Touch 'n Go
+notifications in 14 days, and there were 40 last month". For a model with no
+balances to reconcile against, this is the closest thing to a gap detector
+the design has, and the data is already being written.
+
+### 10.4 OEM onboarding
+
+At first run, detect manufacturer and deep-link the relevant autostart or
+background-power screen (MIUI autostart, Oppo and Realme startup manager,
+Vivo background power management), with
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` as the generic fallback.
+
+Two corrections to how defensively this has to be written. Those OEM
+activities are frequently `exported="false"`, which means `resolveActivity`
+returns non-null and `startActivity` then throws `SecurityException` — not
+`ActivityNotFoundException`. Every deep link is wrapped against `Throwable`,
+and the intent table is pack data that is expected to rot, not code. And
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` does very little on those ROMs,
+whose process killers are independent of AOSP Doze; it is a fallback for
+stock Android, not for the devices this section exists for.
+
+Prefer `ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS` (API 30) for the
+grant itself, which opens this app's own toggle rather than a list, falling
+back to `ACTION_NOTIFICATION_LISTENER_SETTINGS`.
+
+### 10.5 Two states with no automatic recovery
+
+**Force stop.** After Settings, Force stop, the app is in the stopped state:
+the listener stays unbound and manifest broadcasts, including
+`BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`, are not delivered until the user
+launches the app. Nothing recovers on its own. The remediation screen says
+so.
+
+**Before first unlock.** Listeners are not bound before the first unlock
+after a reboot, and neither the Keystore key nor credential-encrypted
+storage is available. Notifications posted in that window are lost. Small,
+and a stated gap rather than a mystery.
+
+**Restricted settings, API 33+.** For an app installed from outside an app
+store — which is exactly the personal build — notification access sits
+behind restricted settings: the toggle is greyed with "For your security,
+this setting is currently unavailable", and the user must first use App
+info, then the overflow menu, then Allow restricted settings. Android 15
+generalises this as Enhanced Confirmation Mode. Onboarding must walk the
+user through it or the app cannot be granted access at all. Whether an
+`adb install` is exempt differs from a file-manager install and must be
+tested on API 33 and API 35 before the onboarding copy is written.
 
 ## 11. Privacy and security
 
-- **No `INTERNET` permission in the manifest.** The app cannot exfiltrate
-  data, by construction.
-- **Allow-list before storage.** Notifications from packages not enabled in
-  `capture_source` are discarded at the top of `onNotificationPosted`,
-  before any write. The app never holds unrelated notification content,
-  even transiently.
-- **Encryption at rest.** Room over SQLCipher, passphrase generated on
-  first run and stored in the Android Keystore.
+- **No `INTERNET` permission in the manifest.** The app itself has no
+  network access. This is not the same as "cannot exfiltrate by
+  construction", which an earlier draft claimed — see the backup section
+  below, which is the hole in that claim.
+- **Allow-list before storage.** Notifications from packages not enabled are
+  discarded at the top of `onNotificationPosted`, before any write. The
+  precise promise is that nothing unrelated is *stored*: the system hands
+  the process the full notification before any of this code runs, so
+  receiving it is not optional and it is dishonest to imply otherwise.
+- **Encryption at rest.** Room over SQLCipher, key generated on first run
+  and wrapped by the Android Keystore.
 - **No analytics, no crash reporting, no ads, no third-party SDKs.**
 - **Export is user-initiated only**, through the Storage Access Framework,
   so the app never holds broad storage permission.
-- **Delete all data** wipes transactions, raw captures, learned rules and
-  health state in one action, with confirmation.
 
-Play Store readiness note: public release will require a privacy policy and
-a notification-access justification, and would add `INTERNET` only if a
-remote parser-pack channel is introduced. Nothing in this design blocks
-either.
+### 11.1 Backup, and the ways the user loses everything
+
+Four facts that compound, and the last draft of this spec addressed none of
+them.
+
+**`android:allowBackup` defaults to true.** Left alone, Android Auto Backup
+uploads the app's files — the SQLCipher database among them — to the user's
+Google Drive, through a system process that does not care that this app has
+no `INTERNET` permission. That is both a privacy hole and useless, because:
+
+**Keystore keys are not backed up and cannot be.** They are non-exportable,
+app-scoped, and destroyed by uninstall and factory reset. They do not travel
+with Google Backup or with device-to-device transfer. So a restored database
+arrives without the key that opens it.
+
+**`allowBackup="false"` alone is insufficient on API 31+.** Cloud backup and
+device-to-device transfer are configured separately in
+`android:dataExtractionRules`, under `<cloud-backup>` and
+`<device-transfer>`. A new phone set up by D2D transfer would otherwise
+receive the database with no key and SQLCipher would fail to open it, most
+likely as a crash loop on first launch.
+
+So: `allowBackup="false"`, the database and key excluded under **both**
+`dataExtractionRules` sections, and the wrapped key held in
+`getNoBackupFilesDir()`.
+
+**Corruption has to have a path too.** An OEM process-killer landing
+mid-write, or power loss, can leave a database that fails to open or fails
+`PRAGMA integrity_check`. Because raw captures are irreplaceable, this is
+detected at open and handled explicitly: tell the user, offer to export
+whatever still reads, offer to start fresh. Silence or a crash loop here
+destroys the one thing the app cannot rebuild.
+
+**The database-without-key state must be handled, not crashed.** It arises
+from D2D transfer, from a Keystore key invalidated by an OTA
+(`KeyPermanentlyInvalidatedException` happens on real OEM devices), and from
+partial restores. On detecting it the app says plainly what happened and
+offers to start fresh or restore from an export. It never crash-loops.
+
+### 11.2 Restore is a v1 feature, not a v1.1 feature
+
+Section 12 claims the JSON export is "sufficient to rebuild the database".
+Nothing in the spec read it back, which made that claim untrue, and left the
+user with no recovery path at all from any of the states above.
+
+JSON import is therefore built in **build step 1**, not step 7. The
+development argument is as strong as the user-facing one: without it, every
+debug reinstall destroys real capture history that provably cannot be
+recovered, because Android will not replay the past.
+
+### 11.3 Delete all data
+
+Deleting everything means the database file plus its `-wal` and `-shm`
+companions, the FTS shadow tables, the `DataStore` counters, and the
+Keystore alias — deleted and regenerated. Then `VACUUM`, because
+`clearAllTables()` does not shrink the file and section 15.6 promises the
+user an honest storage figure.
+
+### 11.4 Play Store readiness
+
+Public release needs a privacy policy, a notification-access justification,
+and a Data Safety declaration — which, with no network access and no
+analytics, is genuinely "no data collected or shared".
+
+One thing in this design **does** constrain a public release, and section
+9.6 explains it: broad package visibility needs `QUERY_ALL_PACKAGES`, which
+an expense tracker will not be granted, so the suggested-source list is
+declared in `<queries>` at build time. An earlier draft's claim that nothing
+here blocked a public release was wrong.
 
 ## 12. Export
 
 - **CSV** for spreadsheets: date, amount, currency, direction, merchant
   display, merchant raw, category, source app, excluded flag, note.
 - **JSON** for full fidelity: transactions plus raw captures plus learned
-  rules plus categories, sufficient to rebuild the database.
+  rules plus categories, sufficient to rebuild the database — and read back
+  by the importer in section 11.2, which is what makes that claim true.
 
-Both are generated on demand and written through the Storage Access
-Framework.
+Both are written through the Storage Access Framework.
+
+**Both must stream.** At 50,000 raw captures with full text the JSON export
+is tens of megabytes; it is written with `JsonWriter` straight to the SAF
+`OutputStream`, off the main thread, with progress and cancellation. Nothing
+is assembled in memory first.
+
+**CSV has three requirements that are easy to miss.** RFC 4180 quoting,
+because merchant names and notes contain commas, quotes and newlines. A
+UTF-8 BOM, because Excel is an intended destination and mangles UTF-8
+without one. And neutralisation of leading `=`, `+`, `-` and `@` in any
+field, because a merchant string arrives from outside the app and a
+spreadsheet will treat it as a formula.
+
+**Numbers and dates are formatted with `Locale.ROOT`.** `String.format`
+under a comma-decimal locale writes `12,34` into a CSV field and corrupts
+the file.
+
+On import, `ACTION_OPEN_DOCUMENT` MIME filtering on `application/json` is
+unreliable across document providers, so the picker accepts `*/*` and the
+content is validated after reading.
 
 ## 13. Testing
 
@@ -1022,30 +1466,75 @@ negative case that a clean known-merchant capture commits.
 `:core:data` — Room migration tests. The schema will move; migrations are
 tested from every released version.
 
+**Extraction, which the JVM corpus does not cover.** The corpus tests
+`:core:parse` from strings onward; nothing tested `Notification` to strings,
+which is where the bugs are. A Robolectric or instrumented suite builds real
+`Notification.Builder` objects in each style and asserts the extracted field
+set: `SpannableString` values (which `getString` returns null for),
+`bigText` versus `text` selection, `MessagingStyle`'s `EXTRA_MESSAGES`,
+`InboxStyle`'s `EXTRA_TEXT_LINES`, group summaries, and a fully custom
+`RemoteViews` notification, which must classify as `NO_EXTRAS`.
+
+**Room and SQLCipher seams, settled in week one rather than at step 6.**
+`MigrationTestHelper` opens a plain unencrypted database unless it is given
+the SQLCipher `SupportSQLiteOpenHelper.Factory`, so without that the
+migration tests exercise a database the app does not ship. `exportSchema`
+is on and the schema JSON is committed from v1, because "migrations are
+tested from every released version" is impossible retroactively without it.
+And whether FTS4 with the `unicode61` tokenizer is available in the pinned
+SQLCipher build is verified before search is designed around it.
+
+**The seeded-scale fixture** from section 15.8 is a real database of 50,000
+raw captures and 6,700 transactions, used for the timing assertions there.
+
 Instrumented — two tests guarding wiring that unit tests cannot reach:
 a synthetic notification from an enabled package posted through a real
 `NotificationListenerService` produces a committed transaction; and a
 notification from a disabled package produces no `raw_capture` row and no
 stored content, enforcing the section 9.6 invariant.
 
+Granting notification access in an instrumented test is done with
+`UiAutomation.executeShellCommand("cmd notification allow_listener <flattened
+component>")`, then waiting for `onListenerConnected`; API 33+ also needs a
+`POST_NOTIFICATIONS` grant. Feasible, but not free, and the plan should not
+read as though it were.
+
+**What no emulator can test.** OEM process-killing cannot be reproduced in
+CI. The mitigation is a manual device matrix — one Xiaomi, one Oppo or
+Realme, one Vivo, one Samsung, one Pixel — and a documented multi-day soak
+with a known notification cadence, checked against expected capture counts.
+Stated here so that it gets scheduled rather than assumed.
+
 ## 14. Build order
 
-1. `:core:data` schema, plus `:core:parse` with the rule engine and a
-   fixture corpus for a single wallet.
+1. `:core:data` schema, `:core:parse` with the rule engine and a fixture
+   corpus for a single wallet, **and JSON export plus import**. Import is
+   first, not last: without it every debug reinstall destroys capture
+   history that cannot be recovered (section 11.2).
 2. `:feature:capture` listener, allow-list, discovery screen, raw capture
    persistence.
 3. Confidence gate, review inbox, transaction list.
 4. Categorization with bundled dictionary and learned rules.
 5. Dedup layers and transfer handling.
 6. The two visualizations.
-7. Manual entry, export, capture health, OEM onboarding.
+7. Manual entry, capture health, OEM onboarding, and the rebinding
+   receivers from section 10.1 — which in practice want doing on day one,
+   because without them capture dies on every build installed.
 
 Rule coverage for additional banks and wallets is continuous from step 1
 onward, driven by the authoring loop in section 5.6.
 
 ## 15. Performance at rest
 
-Volume is not the risk. Using the figures in the design mockups — around
+Volume is not the risk, and the numbers below are for *captured* rows only.
+The listener sees far more than it captures: a normal phone posts 100-300
+notifications a day. Those touch nothing in the database — heartbeat and
+per-package counters live in `DataStore` and are throttled (sections 9.6 and
+10.2), because Room's invalidation tracker is table-granular and a
+per-notification row write would re-emit every `Flow` observing that table
+on every notification on the device.
+
+Using the figures in the design mockups — around
 112 transactions and roughly 850 captured notifications a month — five years
 of use is about 6,700 transactions, 50,000 raw captures and 40MB on disk.
 SQLite on a phone is untroubled by that. The risks are all in access
@@ -1058,34 +1547,81 @@ Every query that runs per-capture or per-frame has an index behind it.
 
 | Query | Index |
 |---|---|
-| Duplicate layer 1, by hash | `raw_capture(dedupe_hash)` |
-| Duplicate layer 2, same amount in a window | `transaction(amount_sen, occurred_at)` |
-| Month list, charts, month picker | `transaction(occurred_at)` |
-| Review inbox badge and list | `transaction(state)` where state is `PENDING` |
-| Excluded rows filtered from totals | covered by the `occurred_at` index plus a `state`/`is_excluded` predicate |
+| Duplicate layer 1, by content and slot | `raw_capture(content_hash)`, `raw_capture(sbn_key)` |
+| Duplicate layer 2, same amount in a window | `txn(amount_sen, occurred_at)` |
+| Month list, charts, month picker | `txn(local_date)` |
+| Review inbox badge and list | `txn(state, occurred_at)` |
+| Excluded rows filtered from totals | covered by the `local_date` index plus a `state`/`is_excluded` predicate |
 | Unread captures list | `raw_capture(parse_status, posted_at)` |
+| Stage two work queue | `raw_capture(parse_status, posted_at)`, same index |
 | Learned rule lookup | `merchant_rule(pattern)` |
 | Reject rule lookup | `user_reject_rule(source_package, skeleton)` |
 
 Duplicate layer 2 deserves the note: it runs on every single capture, and
-without `(amount_sen, occurred_at)` it is a full scan of the transaction
-table each time. It is the query most likely to be missed and the one that
+without `(amount_sen, occurred_at)` it is a full scan of the `txn` table
+each time. It is the query most likely to be missed and the one that
 degrades most predictably.
+
+**None of these are partial indexes.** Room's `@Index` supports `value`,
+`name`, `unique` and `orders` — there is no `where` clause. An earlier draft
+specified a partial index on `PENDING` rows; creating that in raw migration
+SQL would put the database permanently out of step with Room's expected
+schema and fail validation. A plain composite on `(state, occurred_at)`
+serves both the badge count and the ordered inbox, and is expressible.
 
 ### 15.2 Search
 
-`LIKE '%grab%'` cannot use a B-tree index, so a naive search scans every row
-on every keystroke. Search is backed by a Room `@Fts4` table mirroring
-`merchant_display`, `merchant_raw` and `note`, kept in step with the
-`transaction` table by trigger or by the same DAO write. Filters (category,
-source, date range, amount range) are ordinary indexed predicates applied
-alongside the FTS match.
+`LIKE '%grab%'` cannot use a B-tree index. At 6,700 transactions a scan of
+two text columns is a few milliseconds, so the honest reason to move off it
+is ranking and multi-token queries rather than raw speed — and the first fix
+is a **debounce on the query**, which no earlier draft specified and which
+matters more than the index.
+
+Search is then backed by a Room `@Fts4` table with
+`contentEntity = Txn::class`, mirroring `merchant_display`, `merchant_raw`
+and `note`. External-content FTS means **Room generates the sync triggers**;
+hand-maintaining them through DAO writes is a bug farm. The FTS entity's
+`rowid` maps to the content entity's `INTEGER PRIMARY KEY`, and FTS tables
+can carry neither indices nor foreign keys.
+
+**Adopting FTS changes the feature, not only its performance, and that is a
+product decision.** FTS4 matches token prefixes: `grab*` finds "Grab", but
+nothing finds "Grab" from the query `rab`. Infix matching needs trigram
+tokenization, which is FTS5-only and not available here. Prefix search is
+accepted as the behaviour; the search field's placeholder says "starts
+with".
+
+The tokenizer is `unicode61`, not the default `simple`, which splits on
+ASCII non-alphanumerics only and handles "Touch 'n Go" and non-ASCII
+merchant names badly. Its availability in the pinned SQLCipher build is
+verified in week one (section 13).
+
+**SQLCipher's key derivation is the one performance decision that dwarfs the
+rest.** SQLCipher 4 defaults to 256,000 PBKDF2-HMAC-SHA512 iterations, paid
+on *every* database open — including every cold listener process start, on
+the critical path of capturing a notification. Because the passphrase is a
+random Keystore-wrapped value rather than a human password, key derivation
+buys nothing: raw key mode
+(`PRAGMA key = "x'<64 hex key><32 hex salt>'"`) skips it entirely.
+
+Filters (category, source, date range, amount range) are ordinary indexed
+predicates applied alongside the FTS match.
 
 ### 15.3 Aggregates in SQL, never in Kotlin
 
 Category totals, merchant rankings, month totals and day subtotals are all
-`SUM` and `GROUP BY` queries. Rows are never loaded to be summed in
-application code. The chart composables take
+`SUM` and `GROUP BY` queries, keyed on `local_date`. Rows are never loaded
+to be summed in application code.
+
+Refunds subtract, so the aggregate is
+`SUM(CASE WHEN direction = 'REFUND' THEN -amount_sen ELSE amount_sen END)`
+— which can return zero or a negative for a category, or for a whole month.
+`Box(Modifier.fillMaxWidth(fraction))` requires a fraction in `(0f, 1f]`,
+and a month total of zero makes the denominator zero. So the mapping layer
+clamps: a net-negative category renders at zero width with its true
+signed amount shown as text, and a zero or negative month total suppresses
+the bars entirely rather than dividing by it. Both cases are in the fixture
+set, because both arrive on a real refund. The chart composables take
 `List<CategoryTotal>`/`List<MerchantTotal>` — already the shape section 8
 requires for a possible later chart library — so the aggregate is computed
 once by SQLite and the UI holds only the result.
@@ -1123,8 +1659,37 @@ Title, text and bigText are kept in full, forever, which is what every
 stated benefit actually depends on.
 
 Settings shows storage used, so growth is observable rather than mysterious.
+That figure will read higher than the 40MB estimate above, which counts row
+data only: the FTS index typically costs 30-50% of the text it indexes, the
+ordinary indexes cost more, SQLCipher pads pages, and the write-ahead log
+adds its own. Worth saying so here, so it is not filed as a bug later.
 
-### 15.7 Tests
+### 15.7 Time zone, currency and locale
+
+Three formatting decisions that silently corrupt data if left implicit.
+
+**One fixed zone, stored as a column.** `occurred_at` is epoch millis, but
+every grouping the app does is by local day or month. The zone is the
+device's current zone, resolved once at parse time into the `local_date`
+column (`yyyymmdd`). Grouping through `strftime(..., 'localtime')` instead
+would depend on the process time zone, could not use an index, and would
+silently reshuffle history when the user travels — a month total that
+changes because someone flew to Bangkok is a bug nobody would diagnose.
+
+**Currency is formatted explicitly, never by default locale.**
+`NumberFormat.getCurrencyInstance()` on a phone set to en-US renders MYR as
+"MYR 12.34" or worse. An explicit MYR formatter produces "RM12.34"
+everywhere.
+
+**`Locale.ROOT` for every machine-facing operation** — amount parsing, CSV
+writing, and every `uppercase()`/`lowercase()` in normalization, skeleton
+matching and token comparison. `String.format("%.2f")` under a
+comma-decimal locale writes `12,34`, which corrupts both the CSV export and
+any amount parsed back from it. The Turkish dotless-i is the classic reason
+`uppercase()` without a locale is a latent bug in exactly this kind of
+string matching.
+
+### 15.8 Tests
 
 Performance claims are cheap to assert and expensive to discover late:
 
@@ -1132,9 +1697,14 @@ Performance claims are cheap to assert and expensive to discover late:
   fixture, not a thought experiment. Duplicate detection, the month
   aggregate and a search query each run against it with an upper bound on
   query time.
-- A Room query-plan test asserts that duplicate layer 2 and the month
-  aggregate use their indexes rather than scanning, so an index dropped in a
-  later migration fails the build instead of the app.
+- A query-plan check asserts that duplicate layer 2 and the month aggregate
+  do not scan, so an index dropped in a later migration fails the build
+  instead of the app. It is a substring assertion — plan output is not
+  stable across SQLite versions, SQLCipher bundles its own build distinct
+  from the platform's, and results depend on whether `ANALYZE` has run — so
+  it asserts `SEARCH` rather than `SCAN TABLE` on named queries only, and
+  is expected to need maintenance. The timing test above is the one that
+  carries real weight.
 - The re-parse job is tested for resumption after cancellation mid-run.
 
 ## 16. Deferred
