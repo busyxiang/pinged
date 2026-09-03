@@ -118,9 +118,26 @@ NotificationListenerService.onNotificationPosted(sbn)
   └─ INSERT transaction; UI updates via Room Flow
 ```
 
-Parsing runs inline in the listener callback (it is regex over a short
-string, sub-millisecond). WorkManager is used only for the daily health
-check and for bulk re-parse after a pack upgrade.
+**The callback does three things only:** extract extras, check the allow-list,
+and enqueue. Everything downstream — the insert, matching, categorization,
+duplicate detection — runs on a single-threaded dispatcher with a bounded
+queue.
+
+An earlier draft of this design had parsing run inline in the callback on
+the grounds that the regex is sub-millisecond. The regex is; the work around
+it is not. A SQLCipher insert costs 5-20ms, index maintenance grows with the
+table, and duplicate detection is a query. Doing that synchronously on the
+listener's main thread is an ANR risk that gets worse as data accumulates,
+which is exactly the failure mode this app cannot afford, because a killed
+listener is a silent gap in the ledger.
+
+Ordering within the queue is preserved so that duplicate detection sees
+captures in arrival order. If the queue saturates, captures are still
+written to `raw_capture` and marked for the re-parse job rather than
+dropped.
+
+WorkManager is used for the daily health check, bulk re-parse after a pack
+upgrade, and the pack-import dry run.
 
 ### Design stance: default-deny
 
@@ -147,7 +164,7 @@ conversion, then convert to `Long`).
 | text | Text? | |
 | big_text | Text? | |
 | sub_text | Text? | |
-| extras_json | Text? | remaining extras, for future extraction |
+| extras_json | Text? | whitelisted extras only, see section 15.6 |
 | dedupe_hash | Text, indexed | |
 | parse_status | Enum | `MATCHED`, `UNMATCHED`, `REJECTED`, `DUPLICATE_OF` |
 | rejected_by_rule_id | Text? | which reject pattern fired |
@@ -568,8 +585,12 @@ Against your stored notifications it would newly match 31 captures
 worth RM740.20, and change nothing already recorded.
 ```
 
-The preview is computed by running the candidate pack over `raw_capture`
-rows in memory. It never writes. Three figures are reported: captures newly
+The preview is computed by running the candidate pack over the most recent
+5,000 `raw_capture` rows, on a background worker, with progress shown. It
+never writes. The cap is stated in the UI copy — "tried against your last
+5,000 notifications" — rather than sampling silently, because a preview the
+user cannot size is a preview they cannot trust. Section 16 explains the
+bound. Three figures are reported: captures newly
 matched, their total, and the count of existing transactions the pack would
 have parsed differently — which must be zero for a well-formed pack, since
 re-parse only touches `UNMATCHED` captures, and is surfaced loudly if it is
@@ -1022,7 +1043,101 @@ stored content, enforcing the section 9.6 invariant.
 Rule coverage for additional banks and wallets is continuous from step 1
 onward, driven by the authoring loop in section 5.6.
 
-## 15. Deferred
+## 15. Performance at rest
+
+Volume is not the risk. Using the figures in the design mockups — around
+112 transactions and roughly 850 captured notifications a month — five years
+of use is about 6,700 transactions, 50,000 raw captures and 40MB on disk.
+SQLite on a phone is untroubled by that. The risks are all in access
+patterns and thread placement, so they are specified rather than left to
+discovery.
+
+### 15.1 Indexes
+
+Every query that runs per-capture or per-frame has an index behind it.
+
+| Query | Index |
+|---|---|
+| Duplicate layer 1, by hash | `raw_capture(dedupe_hash)` |
+| Duplicate layer 2, same amount in a window | `transaction(amount_sen, occurred_at)` |
+| Month list, charts, month picker | `transaction(occurred_at)` |
+| Review inbox badge and list | `transaction(state)` where state is `PENDING` |
+| Excluded rows filtered from totals | covered by the `occurred_at` index plus a `state`/`is_excluded` predicate |
+| Unread captures list | `raw_capture(parse_status, posted_at)` |
+| Learned rule lookup | `merchant_rule(pattern)` |
+| Reject rule lookup | `user_reject_rule(source_package, skeleton)` |
+
+Duplicate layer 2 deserves the note: it runs on every single capture, and
+without `(amount_sen, occurred_at)` it is a full scan of the transaction
+table each time. It is the query most likely to be missed and the one that
+degrades most predictably.
+
+### 15.2 Search
+
+`LIKE '%grab%'` cannot use a B-tree index, so a naive search scans every row
+on every keystroke. Search is backed by a Room `@Fts4` table mirroring
+`merchant_display`, `merchant_raw` and `note`, kept in step with the
+`transaction` table by trigger or by the same DAO write. Filters (category,
+source, date range, amount range) are ordinary indexed predicates applied
+alongside the FTS match.
+
+### 15.3 Aggregates in SQL, never in Kotlin
+
+Category totals, merchant rankings, month totals and day subtotals are all
+`SUM` and `GROUP BY` queries. Rows are never loaded to be summed in
+application code. The chart composables take
+`List<CategoryTotal>`/`List<MerchantTotal>` — already the shape section 8
+requires for a possible later chart library — so the aggregate is computed
+once by SQLite and the UI holds only the result.
+
+### 15.4 The transaction list is paged
+
+Home observes a Room `PagingSource`, not `Flow<List<Transaction>>`. The
+latter re-emits every row on every insert, which at a few thousand rows is
+visible jank on the screen the user looks at most. The pinned month summary
+is a separate aggregate query, so a new capture updates the total without
+re-reading the list.
+
+### 15.5 Batch jobs are chunked, cancellable and bounded
+
+Two jobs read the whole capture history and both are bounded:
+
+**Re-parse after a pack upgrade** (section 5.5) walks `UNMATCHED` captures
+with a keyset cursor in chunks, commits per chunk, and records its position
+so an interrupted run resumes rather than restarting. It never holds the
+result set in memory.
+
+**Pack import dry run** (section 5.9) is capped at the most recent 5,000
+captures. At 50,000 captures and 46 rules an uncapped preview is over two
+million regex evaluations, and it grows for as long as the app is installed.
+The cap is stated in the UI rather than applied silently.
+
+### 15.6 What grows, and the one thing that is trimmed
+
+Raw captures are never deleted; that decision earns its keep three times
+over (re-parse, reject-rule sample text, and the import dry run). But
+`extras_json` is the fat column and exists only for extraction nobody has
+specified yet. So only a whitelist of keys is stored — the ones the parse
+pipeline reads — and the rest of the bundle is discarded at capture time.
+Title, text and bigText are kept in full, forever, which is what every
+stated benefit actually depends on.
+
+Settings shows storage used, so growth is observable rather than mysterious.
+
+### 15.7 Tests
+
+Performance claims are cheap to assert and expensive to discover late:
+
+- A seeded database of 50,000 raw captures and 6,700 transactions is a test
+  fixture, not a thought experiment. Duplicate detection, the month
+  aggregate and a search query each run against it with an upper bound on
+  query time.
+- A Room query-plan test asserts that duplicate layer 2 and the month
+  aggregate use their indexes rather than scanning, so an index dropped in a
+  later migration fails the build instead of the app.
+- The re-parse job is tested for resumption after cancellation mid-run.
+
+## 16. Deferred
 
 **v1.1** — daily-rhythm calendar heatmap; budgets per category; recurring
 and subscription detection.
