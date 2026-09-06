@@ -17,6 +17,18 @@ jobs:
     name: Build and publish APK
     runs-on: ubuntu-latest
 
+    # The four signing secrets are environment secrets, not repository ones,
+    # and a job that does not name its environment reads them as empty. The
+    # guard below then fails naming all four while the repository's secrets
+    # page shows all four present, which is a long way to go for a typo.
+    #
+    # Environment rather than repository scope is the point rather than an
+    # accident: this environment's deployment rule admits only `v*`, so the
+    # keystore is unreachable from a run on any other ref. A workflow file is
+    # a file anyone with push access can edit, and repository secrets would be
+    # readable from whatever that edit said.
+    environment: release
+
     steps:
       - uses: actions/checkout@v7
 
@@ -48,7 +60,7 @@ jobs:
           [ -n "$KEY_ALIAS" ]         || missing="$missing KEY_ALIAS"
           [ -n "$KEY_PASSWORD" ]      || missing="$missing KEY_PASSWORD"
           if [ -n "$missing" ]; then
-            echo "::error::Missing repository secrets:$missing. See docs/release.md for how to create the keystore and add them."
+            echo "::error::Missing secrets in the 'release' environment:$missing. They are environment secrets, so check the environment and not the repository secrets page. See docs/release.md."
             exit 1
           fi
 

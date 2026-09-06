@@ -48,9 +48,14 @@ explains why that history cannot be recovered.
 Store `pinged-release.jks` outside the repository. It is covered by
 `.gitignore` (`*.jks`, `*.keystore`) as a second line of defence.
 
-### 2. Add four repository secrets
+### 2. Add four secrets to a `release` environment
 
-Settings, then Secrets and variables, then Actions:
+**Environment secrets, not repository secrets**, and the distinction is not
+cosmetic: the two live on different settings pages, look identical once
+stored, and a job reads an environment secret as an empty string unless it
+names that environment. `release.yml` names it.
+
+Settings, then Environments, then an environment called `release`:
 
 | Secret | Value |
 |---|---|
@@ -58,6 +63,15 @@ Settings, then Secrets and variables, then Actions:
 | `KEYSTORE_PASSWORD` | the keystore password |
 | `KEY_ALIAS` | `pinged` |
 | `KEY_PASSWORD` | the key password |
+
+Then set the environment's deployment branch rule to **selected branches and
+tags** with the single pattern `v*`. That is the reason for the environment:
+a repository secret is readable by any workflow in the repository, including
+one added by an edit to a workflow file, and a signing key that can only be
+released to a run on a release tag is a much smaller thing to get wrong.
+
+Leave the reviewer and wait-timer rules off unless you want a manual approval
+before every release; they gate the job, not the secrets.
 
 The workflow checks all four are present before it builds anything, so a
 missing secret fails in seconds with a message naming it rather than after a
@@ -106,9 +120,17 @@ The workflow then runs the tests, builds `assembleRelease`, attaches
 `pinged-0.1.0.apk` (and the R8 mapping file if minification is on), and
 publishes the release with its SHA-256 and the sideloading instructions.
 
-Version numbers come from the tag. Keep `versionName` in Gradle in step with
-it, or read it from the tag in the build script — the workflow does not
-enforce agreement.
+Version numbers come from the tag and nowhere else. `app/build.gradle.kts`
+reads `PINGED_VERSION`, which the workflow sets to the tag without its leading
+`v`, and derives `versionCode` from it as `major * 10000 + minor * 100 +
+patch`. A build without that variable calls itself `0.0.0-dev`, code 1, which
+is deliberately not a plausible version.
+
+The workflow then re-derives both from the tag and compares them against the
+merged manifest before uploading anything. `versionCode` is the field that
+matters: it is the only one Android compares, so an APK named after the right
+tag carrying a stale code is an update the package manager will not treat as
+one.
 
 ## What the workflow deliberately does not do
 
