@@ -1,0 +1,5 @@
+package: my.com.tngdigital.ewallet
+title: Touch 'n Go
+expect: rejected
+
+Reload of RM50.00 to your eWallet was unsuccessful.

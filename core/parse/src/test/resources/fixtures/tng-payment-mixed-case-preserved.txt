@@ -1,0 +1,9 @@
+package: my.com.tngdigital.ewallet
+title: Touch 'n Go eWallet
+expect: matched
+rule: tng-payment-v1
+amount_sen: 2340
+merchant: McDonald's Mid Valley
+merchant_display: McDonald's Mid Valley
+
+Payment of RM23.40 to McDonald's Mid Valley successful

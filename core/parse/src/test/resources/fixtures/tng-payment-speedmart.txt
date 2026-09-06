@@ -1,0 +1,8 @@
+package: my.com.tngdigital.ewallet
+title: Touch 'n Go eWallet
+expect: matched
+rule: tng-payment-v1
+amount_sen: 3200
+merchant: 99 SPEEDMART
+
+Payment of RM32.00 to 99 SPEEDMART successful. Balance: RM88.00

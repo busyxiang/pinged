@@ -139,8 +139,17 @@ STAGE 1 — onNotificationPosted(sbn), listener main thread
 
 STAGE 2 — parse worker, reads raw_capture where parse_status = NEW
   │
-  ├─ same sbn.key and same content_hash as a prior row   → UPDATE_OF, stop
-  ├─ same content_hash within 60s                        → DUPLICATE_OF, stop
+  │  duplicate layer 1, and the id comparison is not optional: stage one
+  │  inserts before stage two claims, so a query without it matches the
+  │  row being processed and NOTHING is ever a transaction
+  │
+  ├─ earlier row, same sbn.key + content_hash, arrival = CATCHUP
+  │                                                       → UPDATE_OF, stop
+  ├─ earlier row, same sbn.key + content_hash, within 10 min, POSTED
+  │                                                       → UPDATE_OF, stop
+  ├─ same, BEYOND 10 min                       → carry on; becomes a txn
+  │                                              flagged DUPLICATE_SUSPECT
+  ├─ same content_hash within ±60s, different sbn.key   → DUPLICATE_OF, stop
   ├─ title, text and bigText all null                    → NO_EXTRAS, stop
   │
   ├─ RuleMatcher(package)
@@ -148,14 +157,20 @@ STAGE 2 — parse worker, reads raw_capture where parse_status = NEW
   │     2. no template matched → consult reject patterns
   │            matched a reject → REJECTED
   │            matched nothing  → UNMATCHED
+  │     3. a pattern ran out of time → GAVE_UP, and re-parse revisits it;
+  │        never folded into UNMATCHED, because a timeout is not evidence
+  │        that no rule matches
   │     (a capture matching BOTH a template and a reject is MATCHED,
   │      and the collision is logged for rule review — see 5.3)
   │
   ├─ Normalizer      amount → sen, occurred_at, local_date, merchant cleanup
   ├─ Categorizer     learned rule → bundled dictionary → Uncategorized
-  ├─ DuplicateDetector  same amount, different package, inside the window
-  ├─ ConfidenceGate  → COMMITTED or PENDING
-  └─ INSERT txn; UI updates via Room Flow
+  ├─ DuplicateDetector  layer 2: same amount, different package, ±10 min
+  ├─ ConfidenceGate  → COMMITTED, or PENDING with the pending_reason that
+  │                    fired; a PENDING row with no reason is refused
+  └─ commitCapture: INSERT txn AND mark the capture, in ONE transaction.
+     Two statements would leave a kill between them with a transaction
+     whose capture is still NEW, which then sorts first forever.
 ```
 
 **Why the boundary is a table and not a queue.** An in-memory queue between
@@ -252,7 +267,7 @@ conversion, then convert to `Long`).
 | id | Long PK | |
 | source_package | Text | |
 | posted_at | Long | `sbn.postTime`, system-assigned, always valid |
-| when_millis | Long? | `notification.when`, kept but only trusted if non-zero |
+| when_millis | Long? | `notification.when`, kept always, trusted only when non-zero, not later than `posted_at`, and within 24h before it — see below for why the window is asymmetric |
 | captured_at | Long | when this app saw it |
 | sbn_key | Text, indexed | `sbn.key`, identifies the notification slot |
 | notif_id | Int | `sbn.id` |
@@ -260,13 +275,14 @@ conversion, then convert to `Long`).
 | user_handle | Int | `sbn.user`, distinguishes work profile from personal |
 | channel_id | Text? | so a muted channel can be diagnosed |
 | flags | Int | `notification.flags` |
+| arrival | Text | `POSTED` or `CATCHUP`. Which path delivered this capture: `onNotificationPosted`, or section 10.1's `getActiveNotifications()` rebind catch-up. Section 7.2's duplicate layer 1 rule 1 needs it — a catch-up post is by definition still live, which is what "the app refreshed its notification" actually means, so it is exempt from rule 1's ten-minute window. Recorded at capture time because nothing can reconstruct it afterwards |
 | title | Text? | all four read via `getCharSequence(...)` |
 | text | Text? | |
 | big_text | Text? | |
 | sub_text | Text? | |
 | extras_json | Text? | whitelisted extras only, see section 15.6 |
 | content_hash | Text, indexed | sha256(package, user, normalized text). No timestamp |
-| parse_status | Enum | `NEW`, `MATCHED`, `UNMATCHED`, `REJECTED`, `DUPLICATE_OF`, `UPDATE_OF`, `NO_EXTRAS` |
+| parse_status | Enum | `NEW`, `MATCHED`, `UNMATCHED`, `REJECTED`, `DUPLICATE_OF`, `UPDATE_OF`, `NO_EXTRAS`, `GAVE_UP` |
 | rejected_by_rule_id | Text? | which reject pattern fired |
 | matched_rule_id | Text? | |
 | pack_version | Int | pack that produced this outcome |
@@ -277,8 +293,24 @@ conversion, then convert to `Long`).
 app-controlled field that is regularly left at or set to zero; trusting it
 dates a transaction to January 1970, where it vanishes from every month
 view and every chart while still counting as captured. `when` is kept
-separately and used only when non-zero and within a sane window of
-`postTime`. A rule-extracted `occurred_at` still outranks both.
+separately, and "a sane window" is now specified, because a symmetric
+tolerance is wrong in a way that only shows up against a real
+`Notification`.
+
+**The window is asymmetric: non-zero, not in the future relative to
+`postTime`, and no more than 24 hours before it.** A symmetric
+`abs(when - postTime) < N` mis-dates genuine notifications, and this was
+caught by a real end-to-end test rather than by reading. `Notification.when`
+defaults to the moment `build()` is called, which is *after* a `postTime`
+that the system assigned earlier or that a test backdated — so a symmetric
+rule accepted a `when` five seconds in the future and dated the transaction
+by it, and would accept one a week ahead. There is also no legitimate reason
+for `when` to be later than the post: the event cannot happen after the
+notification announcing it. Earlier is legitimate, because a bank may
+announce a transaction some time after it cleared, which is the case the
+field exists for.
+
+A rule-extracted `occurred_at` still outranks both.
 
 `content_hash` deliberately excludes time. An earlier draft hashed
 `postTime/1000` alongside the text and then looked for repeats "within 60
@@ -306,11 +338,12 @@ we failed to extract recoverable later by re-parsing. A user-initiated
 | local_date | Int, indexed | `yyyymmdd` in the fixed zone, see section 15.7 |
 | merchant_raw | Text? | exactly as parsed |
 | merchant_display | Text? | after cleanup, user-editable |
-| category_id | Long | FK, defaults to Uncategorized |
+| category_id | Long, indexed | FK to `category.id`, `ON DELETE RESTRICT`. Falls back to Uncategorized, but that is **applied by the writer**, not a column default: SQLite `DEFAULT` takes a constant and the Uncategorized id is a seeded row, i.e. data. There is no DDL default and there cannot be one. With the FK live, an insert that forgets to resolve it fails with SQLite error 787 instead of landing somewhere plausible |
 | source_package | Text? | null for manual |
 | source_label | Text? | e.g. `Touch 'n Go eWallet` |
 | confidence | Enum | `HIGH`, `REVIEW` |
 | state | Enum | `COMMITTED`, `PENDING`, `REJECTED` |
+| pending_reason | Enum? | `RULE_REVIEW`, `TRANSFER_SUSPECT`, `MERCHANT_MISSING`, `DUPLICATE_SUSPECT`, `OVER_THRESHOLD` — which of section 7.1's gates fired. Non-null exactly when `state` is `PENDING`, and the review inbox (section 9.2) cannot choose its per-card prompt without it |
 | is_excluded | Bool | transfers/reloads: kept, not counted |
 | exclusion_reason | Enum? | `TRANSFER`, `CARD_PAYMENT`, `ATM_WITHDRAWAL`, `USER` |
 | note | Text? | |
@@ -338,16 +371,22 @@ are absent from every total and chart.
 |---|---|---|
 | id | Long PK | |
 | match_type | Enum | `EXACT` on save, `CONTAINS` only after section 6.2 |
-| pattern | Text | matched against `merchant_raw`, case-insensitive |
+| pattern | Text, `COLLATE NOCASE` | matched against `merchant_raw`, case-insensitive. The collation is on the **column**, not only in the matching code: under SQLite's default `BINARY`, the unique index below treats `MCD KLCC` and `mcd klcc` as different rules while a case-insensitive lookup matches both, so one merchant resolves to two categories depending on which row the plan reaches first. Section 6.1's writer uppercases, so the exposure is a bundled or imported pack (section 5.9) — and normalization being the only thing holding it is the same enforced-only-incidentally shape this design keeps having to remove |
 | merchant_display | Text | |
-| category_id | Long | |
+| category_id | Long, indexed | FK to `category.id`, `ON DELETE RESTRICT` |
 | origin | Enum | `BUNDLED`, `LEARNED` |
 | priority | Int | `LEARNED` always outranks `BUNDLED` |
 | hit_count | Int | |
+| scoped_package | Text NOT NULL, default `''` | empty string means "not scoped to a package". **Not nullable, deliberately:** SQLite treats NULLs in a unique index as distinct, so a nullable column lets the unique index below accept two *unscoped* rules for one pattern — which is the shape section 6.1's learned-rule writer produces, i.e. the only shape that mattered. Room's `@Index` cannot express a `COALESCE` expression index, so the sentinel lives on the column |
+
+Unique on (`match_type`, `pattern`, `scoped_package`), so a second learned
+rule for one merchant is refused rather than leaving the resolved category a
+function of the query plan. Section 6.1's "tap once more to correct it"
+therefore updates the existing row rather than writing a rival to it.
 
 ### `category`
 
-Flat, no hierarchy. Seeded: Makan, Groceries, Transport, Petrol & tolls,
+Flat, no hierarchy. Seeded: Food & Drinks, Groceries, Transport, Petrol & tolls,
 Bills & utilities, Telco & internet, Shopping, Health, Education, Family,
 Religious & zakat, Government & fees, Entertainment, Uncategorized.
 
@@ -360,7 +399,7 @@ tokens. The seeded mapping is fixed:
 
 | Category | `icon_key` | Category | `icon_key` |
 |---|---|---|---|
-| Makan | `utensils` | Family | `users` |
+| Food & Drinks | `utensils` | Family | `users` |
 | Groceries | `shopping-basket` | Religious & zakat | `hand-heart` |
 | Transport | `car` | Government & fees | `landmark` |
 | Petrol & tolls | `fuel` | Entertainment | `ticket` |
@@ -378,9 +417,50 @@ by icon and name alone. A colour column would be dead weight and would
 invite categorical colour back in, breaking the chart rule.
 
 **Editing.** Categories are user-editable: rename, change icon, add, reorder,
-and delete only when unused. Uncategorized has `is_protected = true` and can
-be neither renamed, re-iconed, nor deleted, because the confidence gate and
-the categorizer both resolve to it by name-independent id.
+merge, and delete only when unused. Uncategorized has `is_protected = true`
+and can be neither renamed, re-iconed, nor deleted, because the confidence
+gate and the categorizer both resolve to it by name-independent id.
+
+**Uncategorized is refused as a merge source and allowed as a merge
+target**, and the asymmetry is deliberate. Merging it away deletes it, which
+is fatal for the reason above. Merging *into* it renames nothing, re-icons
+nothing and deletes nothing — the row is untouched — and §7.1 already
+designates it as where "we don't know what this is" lives, which is exactly
+what a transaction becomes when the category it was filed under goes away.
+Forbidding it as a target would leave a user wanting to remove a
+little-used category with only bad options: nominate an unrelated category
+and deliberately mis-file their own history, or keep a category they do not
+want. Protection that forces mis-filing is not protection.
+
+**"Only when unused" is enforced by the database, not by the dialog.**
+`txn.category_id` and `merchant_rule.category_id` are real foreign keys to
+`category.id` with `ON DELETE RESTRICT`, and both columns are indexed. An
+earlier draft called `category_id` a foreign key while the schema declared
+none, which is worth recording because of how it would have failed: nothing
+stops the delete, the rows orphan, and the damage appears later and
+elsewhere. An inner join drops the orphans out of every total, so money
+disappears with no error anywhere; a left join feeds nulls into non-null
+fields and crashes on a screen far from the delete that caused it. A
+constraint the schema does not hold is not a rule, it is a comment.
+
+**Which means a blocked delete needs a way out: merge.** A category in use
+offers "move its transactions to another category, then delete this one"
+rather than a greyed-out button. The sheet states the blast radius first —
+"412 transactions and 3 learned rules will move to Groceries" — and states
+plainly that it cannot be undone, because unlike a rename a merge destroys
+information: afterwards nothing records which transactions came from which
+category, so it cannot be split back.
+
+Merge is one transaction that reassigns `txn`, reassigns `merchant_rule`,
+and only then deletes the source row. That order is deliberate. `RESTRICT`
+means a merge that forgets one of the two tables fails at the delete instead
+of silently orphaning the rows it missed, so the constraint converts a
+future editing mistake into a loud failure at the point of the mistake. Both
+tables matter: learned rules also carry `category_id`, and an orphaned rule
+is a merchant the user taught that quietly stops categorizing.
+
+Deleting a category is therefore never a way to lose transactions. The
+money is never in the category row.
 
 Changing an icon behaves exactly like renaming: the icon is resolved from the
 category row at render time, so it changes everywhere at once, including in
@@ -421,8 +501,9 @@ here it has to be all of them or none.
 is a foreign key; no transaction stores a category name. So renaming a
 category relabels every transaction that references it, in every past month,
 in the charts, and in future exports. That is correct for fixing a label
-("Makan" to "Food") and wrong for repurposing one ("Shopping" to "Baby
-things"), which would silently rewrite history. The rename dialog therefore
+("Food & Drinks" to "Makan", if a user prefers it) and wrong for
+repurposing one ("Shopping" to "Baby things"), which would silently rewrite
+history. The rename dialog therefore
 states the blast radius before committing: "412 transactions will show the
 new name", with a suggestion to create a new category instead when the
 intent is repurposing.
@@ -467,7 +548,7 @@ only after every pack template for the package has failed.
 
 | Column | Type | Notes |
 |---|---|---|
-| package | Text PK | |
+| pkg | Text PK | the package identifier; named `pkg` and not `package` because the latter is a Kotlin hard keyword, so the property could never carry the spec's name and a column that differs from its property is a trap in raw SQL |
 | label | Text | display name |
 | enabled | Bool | allow-list gate |
 | is_authoritative | Bool | wins duplicate pairs, see section 7.2 |
@@ -477,10 +558,44 @@ only after every pack template for the package has failed.
 
 Rows are created by the discovery screen (section 9.5), not hardcoded.
 
-### `capture_health`
+### `capture_day`
 
-Single-row table: `last_listener_connected_at`, `last_any_notification_at`,
-`last_matched_notification_at`, `consecutive_silent_days`.
+| Column | Type | Notes |
+|---|---|---|
+| local_date | Int PK | `yyyymmdd` in the fixed zone, same encoding as `txn` |
+| listener_bound | Bool | the grant was present and something was bound |
+| saw_any_notification | Bool | at least one notification from any app arrived |
+
+One row per day, upserted at most once per day from the same throttled path
+that writes the `DataStore` heartbeat, gated on the local date having
+changed since the last upsert. It exists so the daily rhythm grid
+(section 8) can tell "you spent nothing" apart from "Pinged was not
+watching" — a distinction no aggregate over `txn` can recover, because both
+cases are an absence of rows.
+
+At roughly 365 rows a year this is the smallest table in the database, and
+one write a day does not carry the invalidation cost that keeps the
+per-notification heartbeat out of Room.
+
+### `capture_health` — removed, and why it is worth saying so
+
+An earlier draft specified a single-row Room table holding
+`last_listener_connected_at`, `last_any_notification_at`,
+`last_matched_notification_at` and `consecutive_silent_days`. It
+contradicted section 10.2, which was written later and reasoned the
+question through properly: `last_any_notification_at` changes on every
+notification on the device, 100-300 times a day, and Room's invalidation
+tracker is table-granular, so that column in Room re-emits every `Flow`
+observing it on every notification. Section 10.2 wins. There is no
+`capture_health` table.
+
+Liveness is therefore answered in two places, by design:
+
+- **Now** — `DataStore`, throttled to one write per five minutes
+  (section 10.2). Drives the capture-stopped banner.
+- **Historically, per day** — `capture_day` above. Drives the hatched cells
+  in the daily rhythm grid and the "N days not captured" labels on the
+  month picker.
 
 ## 5. Parser pack
 
@@ -943,11 +1058,55 @@ numeric score, so the app can always state exactly why an item needs review.
 which is which: `sbn.key` identifies the notification slot. Two rules,
 in order:
 
-- Same `sbn_key` **and** same `content_hash` as an earlier row → `UPDATE_OF`,
-  no transaction, regardless of how much time has passed. An app that
-  refreshes its notification an hour later has not spent money twice.
+- Same `sbn_key` **and** same `content_hash` as an earlier row, **within 10
+  minutes** → `UPDATE_OF`, no transaction. An app that refreshes its own
+  notification has not spent money twice.
 - Same `content_hash` from the same package and user within 60 seconds, with
   a different `sbn_key` → `DUPLICATE_OF`.
+- Same `sbn_key` and same `content_hash` **beyond** 10 minutes → a
+  transaction **is** created, flagged `DUPLICATE_SUSPECT` and therefore
+  `PENDING` (section 7.1), landing in the review inbox with Merge / Keep
+  both. This extends layer 2 to the same-package case, which its own
+  conditions exclude.
+
+**Rule 1 used to have no window, and that was a wrong-money bug.**
+`content_hash` deliberately contains no timestamp (section 4), and
+normalization preserves digits, so the hash is a function of amount plus
+merchant plus wording — which means **two genuinely separate identical
+payments have the same identity by construction.** With no window, a wallet
+that posts through one reused notification slot would produce this: "Payment
+of RM10.00 to Touch 'n Go Reload successful" on Monday, byte-identical text
+on Wednesday, same slot, so the same `sbn_key` and the same `content_hash`.
+Rule 1 fires, no transaction is created, and RM10 is missing from the ledger
+with no error, no review item, and no way for the user to notice except by
+reconciling against a bank statement — the exact task this app exists to
+remove. It also contradicted this section's own closing rule that duplicates
+are never dropped automatically. The reasoning that produced a time-free
+hash was sound; "identity comes from content" is simply only safe when
+content is unique per event, and for recurring identical spend it is not.
+
+**Why the window is short, and why the boundary is safe in one direction
+only.** Inside the window a match is dropped silently, so a false positive
+there loses money undetectably. Outside it, the same pair becomes a review
+item, so a false negative costs the user one tap. The asymmetry means the
+window should be as short as tolerable rather than as long as plausible. Ten
+minutes reuses layer 2's number so the design carries two windows rather
+than three, and two byte-identical payments through one slot inside ten
+minutes is rare enough to accept.
+
+**The rebind catch-up path is exempt, because there the liveness signal is
+free.** Section 10.1's catch-up calls `getActiveNotifications()` on
+`onListenerConnected`, which by definition returns only posts that are
+**still live** — and "the notification is still posted" is what rule 1
+actually means by a refresh, far more precisely than elapsed time does. So a
+capture arriving through the catch-up path applies rule 1 with no window,
+while a capture arriving through `onNotificationPosted` applies the ten
+minutes. Without that exemption every rebind after an app update or a reboot
+would re-deliver each live banking notification as a review item, and
+rebinding is already the thing section 10.1 says this app dies of first.
+
+`raw_capture` records which path a capture arrived by, so this is decidable
+at parse time rather than guessed.
 
 `content_hash` contains no timestamp (section 4). An earlier draft hashed
 the second-bucketed `postTime` into it and then looked for repeats within
@@ -967,18 +1126,44 @@ Duplicates are never dropped automatically. Two genuine RM5.00 parking
 payments in one afternoon are entirely normal, and silently deleting one
 would be a wrong total the user cannot detect.
 
-`is_authoritative` gives the coarse control real behaviour rather than
-leaving it as a synonym for `enabled`: when a `DUPLICATE_SUSPECT` pair spans
-an authoritative source and a non-authoritative one, the pair resolves
-toward the authoritative source automatically and does not reach the review
-inbox. Pairs between two authoritative sources, or two ordinary ones, still
-ask.
+`is_authoritative` **orders the pair; it does not resolve it.** An earlier
+draft said a pair spanning an authoritative and a non-authoritative source
+"resolves toward the authoritative source automatically and does not reach
+the review inbox". That contradicted the paragraph immediately above it, and
+it never said what became of the losing side — which is the whole question.
+Committing both double-counts the money; discarding one drops money
+automatically, which is exactly what this section forbids. There is no third
+option that skips the inbox.
+
+So every `DUPLICATE_SUSPECT` pair reaches the review inbox. What
+`is_authoritative` does is decide **which row is presented as the keeper**
+and which as the candidate to merge away, so the common case is one tap on a
+pre-selected correct answer rather than a decision from scratch. That is a
+real benefit and it costs no silent deletion.
+
+Note also that nothing in the capture milestone writes this column — there
+is no caller for it yet — so the ordering is specified and inert until the
+capture-source screen offers the toggle.
 
 ### 7.3 Transfers, reloads, card payments
 
 Rules tag wallet reloads, credit-card bill payments, DuitNow transfers to
 self, and ATM withdrawals as `kind: TRANSFER_SUSPECT` with an
-`exclusion_reason`. These land in the review inbox with a targeted prompt —
+`exclusion_reason`.
+
+**Nothing is auto-excluded at parse time, and the wording elsewhere in this
+section should not be read as saying otherwise.** A tagged capture is
+written with `is_excluded = false` and `exclusion_reason = null`, and lands
+`PENDING` — so it is not in any total, but it has not been silently removed
+from one either. The distinction matters: auto-exclusion would mean money
+left the totals without the user being asked, which is the same class of
+silent wrongness as dropping a duplicate. The pack's `exclusion_reason` is a
+**suggestion**, used to pre-select the inbox's answer, and it needs no
+storage at parse time because it is re-derivable from `matched_rule_id`.
+`is_excluded` and `exclusion_reason` are written only when the user answers,
+or when a persistent rule they created earlier answers for them.
+
+These land in the review inbox with a targeted prompt —
 "Reload Touch 'n Go RM100 — exclude from spending?" — offering **Exclude**,
 **Keep as expense**, or **Always exclude Touch 'n Go reloads**, the last of
 which writes a persistent rule.
@@ -993,7 +1178,7 @@ wallet.
 
 ## 8. Visualization
 
-v1 ships two, both without a charting dependency.
+v1 ships three, none of which needs a charting dependency.
 
 **Month at a glance.** A hero total for the selected month, followed by
 horizontal bars per category ordered by magnitude, each showing category
@@ -1001,6 +1186,56 @@ name, proportional bar, and ringgit amount. Horizontal bars rather than a
 pie: Malaysian category names are long, and the top three categories will
 have similar magnitudes, which pies compare badly. Implementation is a
 column of `Row`s containing `Box(Modifier.fillMaxWidth(fraction))`.
+
+**Daily rhythm.** A calendar grid for the selected month, one cell per
+day, Monday-first, on the same single-hue ramp as the category bars. It
+answers a question neither of the other two can: *when* the money goes.
+Malaysian spending is rhythmic — payday, weekend makan, the monthly grocery
+run, the bills cluster — and a month total flattens all of it. Thirty
+squares are also the cheapest visualization in the app: a `Row` of `Box`es
+per week, reading the `local_date` aggregate that section 9.1 already
+computes for the day subtotals. No new query.
+
+**A cell has three states, and conflating any two of them is a lie.**
+
+| State | Rendering | Means |
+|---|---|---|
+| Spent | filled, ramp step by magnitude | there were transactions, and this is their total |
+| Nothing spent | outlined, unfilled | Pinged was watching and saw no spending |
+| Not captured | hatched | Pinged was **not** watching, so nothing is known |
+
+The third state is the one that makes this visualization honest, and the
+reason a naive heatmap must not ship. An empty cell for a day the listener
+was unbound tells the user they spent nothing on a day they may well have
+spent hundreds. That is the same wrong-money failure the parser's
+default-deny posture exists to prevent, arriving through the presentation
+layer instead.
+
+**Which means the heatmap needs evidence of liveness per day, and the
+heartbeat in section 10.2 cannot supply it.** That heartbeat is a single
+`DataStore` timestamp, deliberately: it is written on every notification
+from any app and must not touch Room. One timestamp answers "is capture
+alive now", which is all the capture-stopped banner needs, and it cannot
+answer "was capture alive on 14 August". So the heatmap adds `capture_day`
+(section 4) — one row per local date, upserted at most once a day from the
+same throttled path that writes the heartbeat, gated on the date having
+changed. One Room write per day does not have the invalidation problem that
+put the heartbeat in `DataStore`.
+
+Days before the install date are outside the grid's range entirely, drawn
+blank rather than hatched, with the install date named in the footer — the
+`Months` screen already establishes that vocabulary. Days after today in an
+open month are likewise blank, never "nothing spent".
+
+**Ramp buckets are quartiles of the displayed month's non-zero days, and
+the legend prints the ringgit range they span.** A ramp keyed to the
+month's own distribution keeps a quiet month legible instead of uniformly
+pale, but it makes two months' colours incomparable, so the absolute
+anchors are always on screen. Never let the colour be the only reading.
+
+Zero-spend days are outlined rather than given a fifth ramp step: zero is
+categorically different from "the least you spent", and the ramp means
+magnitude and nothing else (see below).
 
 **Top merchants.** A ranked list of merchants for the period with total
 amount and transaction count. Not a chart, and the highest
@@ -1017,12 +1252,63 @@ actionable.
 - **No charts on thin data.** Below 14 days of capture history, show
   "collecting — N days of data" in place of the chart rather than a
   partial-month shape that reads as a trend.
-- **Excluded and pending rows never enter a total.**
+- **Excluded and pending rows never enter a total.** A day whose only
+  transactions are excluded therefore reads as "nothing spent", which is
+  correct for the total and misleading for the day. Tapping the cell opens
+  that day filtered, excluded rows visible and struck through, so the money
+  that moved is never hidden — only kept out of the arithmetic.
+- **A gap in capture is never drawn as a zero.** See the three cell states
+  above. This applies to every visualization: the month total goes grey and
+  is labelled do-not-trust when the month contains uncaptured days
+  (section 9, `Stopped`).
 
 Category bars use a single-hue ramp, darkest for the largest category.
 Categorical colour is not used anywhere in the app: category identity is
 icon plus name (section 4), which keeps filtering from repainting the chart
 and keeps the ramp meaning magnitude and nothing else.
+
+### Typefaces, and how they ship
+
+The Receipt design uses three families: **Instrument Serif** for hero
+numerals and sheet titles, **Karla** for body text, and **IBM Plex Mono**
+for the small-caps labels, amounts and every machine-voiced line. 
+**Only the mono carries tabular numerals, and the division of duties follows
+from that.** An earlier version of this paragraph claimed the serif's
+numerals were tabular too. Measured from the shipped file, they are not:
+Instrument Serif Regular's digit advances run 249–460 per 1000 em — a "1" is
+249 and a "0" is 460, 1.85× apart — and the font contains no `tnum` feature
+at all, so no `fontFeatureSettings` can conjure one. IBM Plex Mono's digits
+are all 600, monospaced by construction.
+
+So **every column of amounts is IBM Plex Mono**, which is where alignment is
+load-bearing and where a proportional fallback would break it in exactly the
+place accuracy is being claimed. **Instrument Serif is for single display
+numbers** — the hero total, a sheet's headline figure — where proportional
+digits are not a defect but the reason the face reads like money set in a
+book rather than in a spreadsheet.
+
+The consequence to design around: a serif hero number changes width as its
+digits change, so nothing may be positioned relative to its right edge, and
+two serif figures must never be stacked and expected to align. If a column
+ever appears to want the serif, that is the moment to re-measure the file
+rather than assume.
+
+**They are bundled as resources, not fetched.** All three are SIL Open Font
+License, so bundling is permitted, and the OFL text ships with the app
+(a licences entry in settings). Only the weights actually used are
+included — Instrument Serif Regular, Karla 400/500/700, IBM Plex Mono
+400/500 — which is a few hundred KB against an APK already over ten MB.
+
+The alternative, `androidx.compose.ui.text.googlefonts`, is rejected on two
+grounds. It resolves through the Play Services font provider, so a device
+without Play, or a user who sideloaded from GitHub onto a de-Googled ROM,
+silently gets the fallback font — and this app's whole distribution story
+is sideloading. Second, "the amounts are aligned" is a property that must
+not depend on a network-adjacent component resolving at runtime.
+
+A missing glyph must never fall back silently in the money path: the mono
+family is declared with an explicit fallback chain, and the numerals are
+verified in the screenshot tests rather than assumed.
 
 ### Explicitly rejected
 
@@ -1031,14 +1317,14 @@ colour palettes.
 
 ### Charting dependency policy
 
-No chart library while the visualizations are rows, squares and lists.
+No chart library while the visualizations are rows, squares, a grid of squares, and lists.
 Adopt Vico (Compose-native and maintained; MPAndroidChart is View-based and
 requires interop) at the point of building an axis-bearing time-series
 chart or interactive tooltips. Never grow a homemade charting framework in
 between.
 
 To keep that switch cheap, chart composables accept plain data classes
-(`List<CategoryTotal>`, `List<MerchantTotal>`) and know nothing of Room or
+(`List<CategoryTotal>`, `List<MerchantTotal>`, `List<DayTotal>`) and know nothing of Room or
 repositories.
 
 ## 9. Screens
@@ -1071,7 +1357,9 @@ saw.
 
 ### 9.3 Charts
 
-The two v1 visualizations, with a month selector.
+The three v1 visualizations, with a month selector: the daily rhythm grid
+first, because it is the month's shape and the smallest of the three, then
+category bars, then the merchant ranking.
 
 ### 9.4 Manual entry
 
@@ -1123,9 +1411,27 @@ notification Room write is unaffordable.
 Third, and this is a decision rather than a correction: a durable per-package
 seen count is itself a record of which apps the user has and how often each
 one speaks, which for some apps is more sensitive per byte than the ledger.
-So only a count is kept, never a last-seen timestamp, and packages the user
-has never enabled and never interacted with in the picker are dropped after
-30 days.
+So only a count is kept, never a **last**-seen timestamp.
+
+**The 30-day drop is measured from first seen, and the distinction is the
+whole point.** An earlier draft said "only a count is kept, never a
+timestamp" and, in the same breath, that unenabled packages are "dropped
+after 30 days" — thirty days since *what* being unanswerable, which made
+the cleanup unimplementable as written. The resolution is that
+`capture_source.first_seen_at` already exists and is not the thing the
+privacy rule forbids: one datum recorded when a package is first discovered
+says the app is installed, which the picker shows anyway. A **last**-seen
+timestamp, updated on every notification, is a different object entirely —
+it is a record of when the user talks to whom, from which sleep, work
+patterns and absences read off directly. That is what must never exist, and
+a count cannot reconstruct it.
+
+So the rule is: a package that has never been enabled, and that the user has
+never touched in the picker, is dropped once `first_seen_at` is more than 30
+days old. Two consequences, neither a bug: a rediscovered package returns
+with a fresh `first_seen_at` and a count of 1, losing its old count; and an
+app that posts rarely can cycle in and out of the list, which is the
+discovery list working rather than failing.
 
 *Stage 2, content capture.* Only once the user enables a package does that
 package's notification content get stored in `raw_capture`.
@@ -1180,11 +1486,27 @@ trusting a fabricated total for weeks.
 
 ### 10.1 Rebinding, which is where this app dies first
 
-**Replacing the APK unbinds the listener and nothing rebinds it.** The
-system does not restore the binding until a reboot or a permission toggle.
-This is long-standing behaviour and it is the most common cause of "it
-worked, then it stopped" in this whole product category. During development
-it means capture dies on every build installed.
+**Replacing the APK unbinds the listener, and on some platforms nothing
+rebinds it.** This is long-standing behaviour and the most common cause of
+"it worked, then it stopped" in this whole product category.
+
+**Measured, and the premise is narrower than it was written.** On an AOSP
+emulator at API 37 the system rebinds the listener *by itself*. A/B with the
+receiver removed from the manifest entirely, and the process genuinely
+replaced — pid and binder proxy both changed — the listener came back with
+none of this app's code running. With the receiver present, logcat shows the
+system binding **143ms before** the receiver runs, and `requestRebind` being
+answered `is already bound`.
+
+So on current AOSP the receiver is redundant. It stays, for two reasons that
+are not the original one: `minSdk` is 27 and this is not measured across
+that range, and the OEM ROMs the rest of this section exists for are exactly
+the platforms that diverge from AOSP here. What changes is the framing — the
+receiver is insurance against the platforms section 10 was written for, not
+a fix for something every install breaks.
+
+Do not delete it on the strength of one emulator, and do not describe it to
+a user as the thing keeping capture alive.
 
 Three things address it, and all three are required:
 
@@ -1385,6 +1707,38 @@ an expense tracker will not be granted, so the suggested-source list is
 declared in `<queries>` at build time. An earlier draft's claim that nothing
 here blocked a public release was wrong.
 
+**The shipped permission set is six, not two, and the difference is
+WorkManager's.** The app declares `RECEIVE_BOOT_COMPLETED` and
+`POST_NOTIFICATIONS`. `androidx.work`'s own manifest merges in `WAKE_LOCK`,
+`ACCESS_NETWORK_STATE` and `FOREGROUND_SERVICE`, and `androidx.core` adds a
+signature-level `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. An earlier draft
+of this spec and a comment in the manifest both claimed the set was "exactly
+these two", which stopped being true the moment section 3 chose WorkManager
+for stage two.
+
+None of the three is a hole in the privacy claim, and the reason is worth
+being precise about rather than reassuring: `ACCESS_NETWORK_STATE` reads
+connectivity state and **cannot open a socket** — sending anything still
+needs `INTERNET`, which is absent, so the Data Safety declaration is
+unaffected. `WAKE_LOCK` keeps the CPU awake for a worker run.
+`FOREGROUND_SERVICE` is declared by the library and unused by this app,
+since nothing calls `setForeground`.
+
+They are not removed with `tools:node="remove"`, deliberately: WorkManager
+takes `WAKE_LOCK` on every run and reads `ACCESS_NETWORK_STATE` from its
+constraint trackers at startup, so removing either fails at runtime *inside
+the library*, where nothing in this app would notice. `FOREGROUND_SERVICE`
+is the one plausibly removable and is left in place until a Play submission
+makes it worth the risk — Play policy scrutinises a declared
+`FOREGROUND_SERVICE` without a service type, so **revisit this before any
+Play upload**, not before sideloading.
+
+WorkManager also merges two exported components: its `SystemJobService`
+(guarded by `BIND_JOB_SERVICE`) and `DiagnosticsReceiver` (guarded by
+`DUMP`), plus `ProfileInstallReceiver` from `profileinstaller` (also `DUMP`).
+All three are reachable only by the system or by shell, so none widens the
+app's attack surface to other apps.
+
 ## 12. Export
 
 - **CSV** for spreadsheets: date, amount, currency, direction, merchant
@@ -1427,6 +1781,33 @@ Every newly supported bank contributes fixtures before rules are written.
 separators, `MYR` prefix, three decimals rejected, zero rejected, sanity
 ceiling), merchant cleanup, rule priority ordering, and reject-before-match
 ordering.
+
+**Two constraints in this design pass their tests while doing nothing, and
+both have to be tested for enforcement rather than declaration.** They are
+the same trap wearing different clothes, and both were caught only because
+a test was written to fail:
+
+- **Encryption.** Every test of opening, migrating and querying the database
+  passes identically against a plaintext file. So one test reads the first
+  sixteen bytes off disk and asserts they are not `SQLite format 3\u0000`,
+  and another asserts the platform's keyless SQLite cannot open the file at
+  all. Removing `.openHelperFactory` must fail them both.
+- **Foreign keys.** Room's generated `onOpen` does issue
+  `PRAGMA foreign_keys = ON`, so the constraint looks handled. But that
+  pragma is **per-connection**, and SQLCipher — unlike the framework helper
+  — runs a connection pool behind one `SQLiteDatabase`. Room's `execSQL` is
+  a write, so it lands on the pool's primary connection and nowhere else.
+  Deletes and inserts are also writes, which is why constraint tests passed
+  anyway: enforcement by accident of statement routing. Reading the pragma
+  back off the readable connection returned 0. The fix is
+  `SupportSQLiteDatabase.setForeignKeyConstraintsEnabled(true)` from a
+  `RoomDatabase.Callback`, which reconfigures the whole pool rather than one
+  connection. So the test suite reads `PRAGMA foreign_keys` back from every
+  reachable connection, and separately proves a constraint violation throws.
+
+The general rule both cases teach: **a guard that cannot be observed failing
+has not been tested.** Assert the guard's effect, then break the guard on
+purpose and watch the assertion go red.
 
 `:core:categorize` — learned rules outrank bundled, unknown falls through to
 Uncategorized, retroactive application of a new learned rule.
@@ -1549,12 +1930,14 @@ Every query that runs per-capture or per-frame has an index behind it.
 |---|---|
 | Duplicate layer 1, by content and slot | `raw_capture(content_hash)`, `raw_capture(sbn_key)` |
 | Duplicate layer 2, same amount in a window | `txn(amount_sen, occurred_at)` |
-| Month list, charts, month picker | `txn(local_date)` |
+| Month list, charts, month picker, daily rhythm grid | `txn(local_date)` |
+| Which days capture was alive | `capture_day` PK is `local_date` |
 | Review inbox badge and list | `txn(state, occurred_at)` |
 | Excluded rows filtered from totals | covered by the `local_date` index plus a `state`/`is_excluded` predicate |
 | Unread captures list | `raw_capture(parse_status, posted_at)` |
 | Stage two work queue | `raw_capture(parse_status, posted_at)`, same index |
 | Learned rule lookup | `merchant_rule(pattern)` |
+| "used by N transactions", and the category foreign keys | `txn(category_id)`, `merchant_rule(category_id)` |
 | Reject rule lookup | `user_reject_rule(source_package, skeleton)` |
 
 Duplicate layer 2 deserves the note: it runs on every single capture, and
@@ -1709,7 +2092,7 @@ Performance claims are cheap to assert and expensive to discover late:
 
 ## 16. Deferred
 
-**v1.1** — daily-rhythm calendar heatmap; budgets per category; recurring
+**v1.1** — budgets per category; recurring
 and subscription detection.
 
 **v1.2+** — six-month stacked trend (adopting Vico); accounts and observed

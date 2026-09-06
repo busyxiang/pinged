@@ -1,0 +1,666 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "df4a012a7acc76b228bb61a22185d5bc",
+    "entities": [
+      {
+        "tableName": "raw_capture",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `source_package` TEXT NOT NULL, `posted_at` INTEGER NOT NULL, `when_millis` INTEGER, `captured_at` INTEGER NOT NULL, `sbn_key` TEXT NOT NULL, `notif_id` INTEGER NOT NULL, `notif_tag` TEXT, `user_handle` INTEGER NOT NULL, `channel_id` TEXT, `flags` INTEGER NOT NULL, `arrival` TEXT NOT NULL, `title` TEXT, `text` TEXT, `big_text` TEXT, `sub_text` TEXT, `extras_json` TEXT, `content_hash` TEXT NOT NULL, `parse_status` TEXT NOT NULL, `rejected_by_rule_id` TEXT, `matched_rule_id` TEXT, `reject_collision_id` TEXT, `pack_version` INTEGER NOT NULL, `duplicate_of_id` INTEGER, `user_reject_rule_id` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourcePackage",
+            "columnName": "source_package",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "postedAt",
+            "columnName": "posted_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "whenMillis",
+            "columnName": "when_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "captured_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sbnKey",
+            "columnName": "sbn_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notifId",
+            "columnName": "notif_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notifTag",
+            "columnName": "notif_tag",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userHandle",
+            "columnName": "user_handle",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelId",
+            "columnName": "channel_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "flags",
+            "columnName": "flags",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "arrival",
+            "columnName": "arrival",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "bigText",
+            "columnName": "big_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subText",
+            "columnName": "sub_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "extrasJson",
+            "columnName": "extras_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "contentHash",
+            "columnName": "content_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parseStatus",
+            "columnName": "parse_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rejectedByRuleId",
+            "columnName": "rejected_by_rule_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "matchedRuleId",
+            "columnName": "matched_rule_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rejectCollisionId",
+            "columnName": "reject_collision_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "packVersion",
+            "columnName": "pack_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "duplicateOfId",
+            "columnName": "duplicate_of_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "userRejectRuleId",
+            "columnName": "user_reject_rule_id",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_raw_capture_content_hash_posted_at",
+            "unique": false,
+            "columnNames": [
+              "content_hash",
+              "posted_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_capture_content_hash_posted_at` ON `${TABLE_NAME}` (`content_hash`, `posted_at`)"
+          },
+          {
+            "name": "index_raw_capture_sbn_key",
+            "unique": false,
+            "columnNames": [
+              "sbn_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_capture_sbn_key` ON `${TABLE_NAME}` (`sbn_key`)"
+          },
+          {
+            "name": "index_raw_capture_parse_status_posted_at",
+            "unique": false,
+            "columnNames": [
+              "parse_status",
+              "posted_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_capture_parse_status_posted_at` ON `${TABLE_NAME}` (`parse_status`, `posted_at`)"
+          },
+          {
+            "name": "index_raw_capture_parse_status_id",
+            "unique": false,
+            "columnNames": [
+              "parse_status",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_capture_parse_status_id` ON `${TABLE_NAME}` (`parse_status`, `id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "txn",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `raw_capture_id` INTEGER, `amount_sen` INTEGER NOT NULL, `currency` TEXT NOT NULL, `direction` TEXT NOT NULL, `occurred_at` INTEGER NOT NULL, `local_date` INTEGER NOT NULL, `merchant_raw` TEXT, `merchant_display` TEXT, `merchant_key` TEXT, `category_id` INTEGER NOT NULL, `source_package` TEXT, `source_label` TEXT, `confidence` TEXT NOT NULL, `state` TEXT NOT NULL, `pending_reason` TEXT, `is_excluded` INTEGER NOT NULL, `exclusion_reason` TEXT, `note` TEXT, `user_edited` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, FOREIGN KEY(`category_id`) REFERENCES `category`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawCaptureId",
+            "columnName": "raw_capture_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "amountSen",
+            "columnName": "amount_sen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "direction",
+            "columnName": "direction",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAt",
+            "columnName": "occurred_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localDate",
+            "columnName": "local_date",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchantRaw",
+            "columnName": "merchant_raw",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "merchantDisplay",
+            "columnName": "merchant_display",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "merchantKey",
+            "columnName": "merchant_key",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "categoryId",
+            "columnName": "category_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourcePackage",
+            "columnName": "source_package",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceLabel",
+            "columnName": "source_label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pendingReason",
+            "columnName": "pending_reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isExcluded",
+            "columnName": "is_excluded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exclusionReason",
+            "columnName": "exclusion_reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userEdited",
+            "columnName": "user_edited",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_occurred_at",
+            "unique": false,
+            "columnNames": [
+              "occurred_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_occurred_at` ON `${TABLE_NAME}` (`occurred_at`)"
+          },
+          {
+            "name": "index_txn_local_date_occurred_at",
+            "unique": false,
+            "columnNames": [
+              "local_date",
+              "occurred_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_local_date_occurred_at` ON `${TABLE_NAME}` (`local_date`, `occurred_at`)"
+          },
+          {
+            "name": "index_txn_amount_sen_occurred_at",
+            "unique": false,
+            "columnNames": [
+              "amount_sen",
+              "occurred_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_amount_sen_occurred_at` ON `${TABLE_NAME}` (`amount_sen`, `occurred_at`)"
+          },
+          {
+            "name": "index_txn_state_occurred_at",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "occurred_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_state_occurred_at` ON `${TABLE_NAME}` (`state`, `occurred_at`)"
+          },
+          {
+            "name": "index_txn_raw_capture_id",
+            "unique": true,
+            "columnNames": [
+              "raw_capture_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_raw_capture_id` ON `${TABLE_NAME}` (`raw_capture_id`)"
+          },
+          {
+            "name": "index_txn_category_id",
+            "unique": false,
+            "columnNames": [
+              "category_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_category_id` ON `${TABLE_NAME}` (`category_id`)"
+          },
+          {
+            "name": "index_txn_merchant_key",
+            "unique": false,
+            "columnNames": [
+              "merchant_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_merchant_key` ON `${TABLE_NAME}` (`merchant_key`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "category",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "category_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "category",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `icon_key` TEXT NOT NULL, `sort_order` INTEGER NOT NULL, `is_protected` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "iconKey",
+            "columnName": "icon_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isProtected",
+            "columnName": "is_protected",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_category_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_category_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "capture_source",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pkg` TEXT NOT NULL, `label` TEXT NOT NULL, `enabled` INTEGER NOT NULL, `is_authoritative` INTEGER NOT NULL, `first_seen_at` INTEGER NOT NULL, `last_notification_at` INTEGER, `expected_monthly_count` INTEGER, PRIMARY KEY(`pkg`))",
+        "fields": [
+          {
+            "fieldPath": "pkg",
+            "columnName": "pkg",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isAuthoritative",
+            "columnName": "is_authoritative",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSeenAt",
+            "columnName": "first_seen_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastNotificationAt",
+            "columnName": "last_notification_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "expectedMonthlyCount",
+            "columnName": "expected_monthly_count",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pkg"
+          ]
+        }
+      },
+      {
+        "tableName": "merchant_rule",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `match_type` TEXT NOT NULL, `pattern` TEXT NOT NULL COLLATE NOCASE, `merchant_display` TEXT NOT NULL, `category_id` INTEGER NOT NULL, `origin` TEXT NOT NULL, `priority` INTEGER NOT NULL, `hit_count` INTEGER NOT NULL, `scoped_package` TEXT NOT NULL DEFAULT '', FOREIGN KEY(`category_id`) REFERENCES `category`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchType",
+            "columnName": "match_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pattern",
+            "columnName": "pattern",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchantDisplay",
+            "columnName": "merchant_display",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryId",
+            "columnName": "category_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "origin",
+            "columnName": "origin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priority",
+            "columnName": "priority",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hitCount",
+            "columnName": "hit_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scopedPackage",
+            "columnName": "scoped_package",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_merchant_rule_pattern_priority",
+            "unique": false,
+            "columnNames": [
+              "pattern",
+              "priority"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_merchant_rule_pattern_priority` ON `${TABLE_NAME}` (`pattern`, `priority`)"
+          },
+          {
+            "name": "index_merchant_rule_category_id",
+            "unique": false,
+            "columnNames": [
+              "category_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_merchant_rule_category_id` ON `${TABLE_NAME}` (`category_id`)"
+          },
+          {
+            "name": "index_merchant_rule_match_type_pattern_scoped_package",
+            "unique": true,
+            "columnNames": [
+              "match_type",
+              "pattern",
+              "scoped_package"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_merchant_rule_match_type_pattern_scoped_package` ON `${TABLE_NAME}` (`match_type`, `pattern`, `scoped_package`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "category",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "category_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "capture_day",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`local_date` INTEGER NOT NULL, `listener_bound` INTEGER NOT NULL, `saw_any_notification` INTEGER NOT NULL, PRIMARY KEY(`local_date`))",
+        "fields": [
+          {
+            "fieldPath": "localDate",
+            "columnName": "local_date",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "listenerBound",
+            "columnName": "listener_bound",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sawAnyNotification",
+            "columnName": "saw_any_notification",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "local_date"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'df4a012a7acc76b228bb61a22185d5bc')"
+    ]
+  }
+}

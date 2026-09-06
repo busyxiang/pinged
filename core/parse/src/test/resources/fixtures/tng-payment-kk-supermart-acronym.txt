@@ -1,0 +1,9 @@
+package: my.com.tngdigital.ewallet
+title: Touch 'n Go eWallet
+expect: matched
+rule: tng-payment-v1
+amount_sen: 1590
+merchant: KK SUPERMART
+merchant_display: KK Supermart
+
+Payment of RM15.90 to KK SUPERMART successful. Balance: RM64.10

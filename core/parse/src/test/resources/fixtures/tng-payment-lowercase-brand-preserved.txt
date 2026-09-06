@@ -1,0 +1,9 @@
+package: my.com.tngdigital.ewallet
+title: Touch 'n Go eWallet
+expect: matched
+rule: tng-payment-v1
+amount_sen: 1850
+merchant: foodpanda KLCC
+merchant_display: foodpanda KLCC
+
+Payment of RM18.50 to foodpanda KLCC successful

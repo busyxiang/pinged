@@ -1,0 +1,5 @@
+package: com.maybank2u.life
+title: Maybank
+expect: rejected
+
+Bayaran balik RM25.50 daripada SHOPEE MY telah gagal.

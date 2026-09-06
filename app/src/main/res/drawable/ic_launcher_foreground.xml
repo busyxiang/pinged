@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon's foreground layer: the receipt stub, one red line,
+     nothing else. The silhouette is shared with ic_launcher_monochrome.xml
+     through @string/ic_launcher_stub_path, which is where the geometry and
+     its reasoning live. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="@string/ic_launcher_stub_path"
+        android:fillColor="@color/paper" />
+
+    <!-- The one line of colour on the icon. In the app this red means only
+         'this needs you', which is why it is a single short rule here. -->
+    <path
+        android:pathData="M40,43 h22 v5 h-22 z"
+        android:fillColor="@color/stamp" />
+
+    <path
+        android:pathData="M40,54 h14 v4 h-14 z"
+        android:fillColor="@color/rule" />
+</vector>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The window theme, which is not the Compose theme.
+
+     Everything the user sees is drawn by PingedTheme in :feature:ledger. This
+     file exists for the frame around it: the window background painted before
+     the first composition, and the system bars. Getting the window background
+     wrong is visible as a white flash on every cold start against a screen
+     that is Paper from edge to edge.
+
+     Still parented on a platform theme rather than a Material Components one.
+     MainActivity is a ComponentActivity, not an AppCompatActivity, so nothing
+     requires a Theme.AppCompat ancestor, and adding one would pull in a View
+     toolkit this app does not use. -->
+<resources>
+    <!-- Paper, and the rest of the palette, live in colors.xml. -->
+    <style name="Theme.Pinged" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <!-- Dark icons on a light bar. API 23 and API 27 respectively, both at
+             or below this project's minSdk of 27. -->
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

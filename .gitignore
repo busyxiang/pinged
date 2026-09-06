@@ -13,3 +13,18 @@ captures/
 *.jks
 .worktrees/
 .superpowers/
+
+# Python bytecode. `.github/scripts/` is run by CI and by hand, and a stray
+# `__pycache__` was committed by a `git add -A` -- in front of the gate that
+# fails the build on any generated file left in the tree. A `.pyc` records the
+# source's mtime, so a fresh checkout regenerates it and the gate reports a
+# drift that is entirely its own.
+__pycache__/
+*.pyc
+
+# JVM crash artefacts. A heap dump is large and can contain anything that
+# was in memory, so it must never be committed by an `add -A`.
+*.hprof
+hs_err_pid*.log
+replay_pid*.log
+.kotlin/

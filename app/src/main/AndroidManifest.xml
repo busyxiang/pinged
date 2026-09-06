@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- These two are the only permissions this project declares. Note what
+         is absent: no internet access, and no all-package-visibility
+         permission. The allow-list resolves labels and icons through the
+         explicit <queries> list below instead (spec 9.6). Neither absent
+         permission is named here in full, so grepping this tree for either
+         string stays a meaningful check.
+
+         The MERGED manifest is no longer exactly these two, and saying so
+         here is cheaper than discovering it during a Play Store review.
+         androidx.work's own AAR manifest declares WAKE_LOCK,
+         ACCESS_NETWORK_STATE, FOREGROUND_SERVICE and RECEIVE_BOOT_COMPLETED,
+         and androidx.core adds its signature level
+         DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, so a build carrying the
+         stage two parse worker ships six. None of them is network access or
+         package visibility, and spec 11.4's Data Safety claim of "no data
+         collected or shared" is unaffected, but the set is not two and
+         nothing in this file could have told you that. The components
+         WorkManager merges in are its own. The two that are exported
+         (SystemJobService, DiagnosticsReceiver) are guarded by
+         BIND_JOB_SERVICE and DUMP respectively, both of which only the system
+         and the shell hold. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <queries>
+        <package android:name="my.com.tngdigital.ewallet" />
+        <package android:name="com.maybank2u.life" />
+    </queries>
+
+    <!--
+         On tools:ignore below. Lint asks for fullBackupContent alongside
+         dataExtractionRules because minSdk is 27 and the latter only applies
+         from 31. It is wrong for this configuration, and adding a
+         fullBackupContent file to satisfy it would be dead weight implying a
+         backup this app never permits:
+
+           API 27 to 30   allowBackup="false" disables backup outright. There
+                          is nothing for fullBackupContent to scope.
+           API 31+        allowBackup="false" stops cloud backup but NOT
+                          device to device transfer, which is exactly what the
+                          device-transfer block in data_extraction_rules.xml
+                          is there to exclude (spec 11.1).
+
+         Suppressed rather than left standing, because a warning known to be
+         noise is a warning that hides the next real one.
+    -->
+    <application
+        android:name="my.pinged.PingedApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Pinged"
+        android:theme="@style/Theme.Pinged"
+        tools:ignore="DataExtractionRules">
+
+        <!--
+            WorkManager on demand, rather than at every process start.
+
+            androidx.startup's WorkManagerInitializer builds WorkManagerImpl,
+            opens WorkManager's own Room database and posts ForceStopRunnable
+            during Application.onCreate. This app's processes are created
+            constantly and for one reason: the system binding the listener to
+            deliver a notification, most of which are discarded at the
+            allow-list gate without any work ever being enqueued.
+
+            Removing the initializer and implementing Configuration.Provider
+            moves that to the first WorkManager.getInstance call, which is
+            ParseWorker.enqueue, i.e. only once a row has actually been
+            written, or on the rebind and foreground paths that enqueue
+            anyway. See PingedApp.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                tools:node="remove" />
+        </provider>
+
+        <!-- The only Activity, and the only exported component this project
+             declares. Exported because a launcher entry requires it: without
+             android:exported="true" alongside the LAUNCHER category the app
+             has no icon and cannot be started at all, and on API 31+ the
+             build fails outright rather than installing something unlaunchable.
+
+             No android:launchMode. The default (standard) is what a single
+             launcher activity wants; singleTask here would silently change
+             how a future deep link into a transaction behaves.
+
+             windowSoftInputMode is deliberately absent, because nothing on
+             this screen takes text. -->
+        <activity
+            android:name="my.pinged.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Pinged">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Stage one. The class name is frozen: the notification-access
+             grant is stored against this flattened ComponentName, so renaming
+             or moving the class voids the grant silently, with no callback
+             and nothing the user can see (spec 10.1). -->
+        <service
+            android:name="my.pinged.capture.PingedNotificationListener"
+            android:exported="false"
+            android:label="Pinged"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- The first of spec 10.1's three rebind paths. Replacing the APK
+             unbinds the listener; where nothing rebinds it, capture dies on
+             every build installed and the symptom looks like a parser that
+             stopped matching rather than a binding that went away.
+
+             Measured on this project's emulator (AOSP API 37, 2026-09-05):
+             the platform DOES rebind on its own after a package update.
+             NotificationManagerService rebound the listener 143ms before this
+             receiver ran, and the receiver's requestRebind was answered with
+             "is already bound". Spec 10.1 asserts flatly that nothing rebinds
+             until a reboot or a permission toggle, and on current AOSP that is
+             no longer true. The receiver stays because the OEM ROMs the whole
+             reliability section exists for are exactly the ones that do not do
+             this, because the claim held on the platform versions this app
+             supports down to minSdk 27, and because when it is redundant it
+             costs one no-op call. What it can no longer be called is the thing
+             standing between a reinstall and silent capture death on every
+             device.
+
+             exported="false" is correct even though the sender is the system.
+             Both actions are protected broadcasts that only the system may
+             send, and the system is exempt from the exported check.
+             androidx.work's own RescheduleReceiver, which this manifest merges,
+             is declared the same way for BOOT_COMPLETED.
+
+             MY_PACKAGE_REPLACED needs no <data> element; PACKAGE_REPLACED, the
+             one that reports about *other* apps, is the one that does. Both
+             actions are also exempt from the API 26 implicit-broadcast ban.
+
+             Not directBootAware: BOOT_COMPLETED arrives after the first unlock,
+             which is what is wanted here, because before it neither the
+             Keystore key nor credential-encrypted storage exists (spec 10.5)
+             and a listener bound then could not open the database. -->
+        <receiver
+            android:name="my.pinged.capture.RebindReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

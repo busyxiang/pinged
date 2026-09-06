@@ -1,0 +1,78 @@
+{
+  "pack_version": 7,
+  "fragments": {
+    "amount": "(?:RM|MYR)\\s?(?<amount>[0-9,]+(?:\\.[0-9]{1,2})?)"
+  },
+  "merchant_normalization": {
+    "acquirer_prefixes": [
+      "TNG*", "GRAB*", "PYMT-", "DUITNOWQR-", "DUITNOW-", "FPX-", "IBG-", "MBB-"
+    ],
+    "trailing_noise_suffixes": [
+      " SDN BHD", " SDN. BHD.", " SDN BHD.", " S/B", " BERHAD", " MY",
+      " via DuitNow QR", " via DuitNow", " via FPX", " via IBG"
+    ],
+    "title_case_exceptions": [
+      "TNG", "KK", "McDonald's"
+    ]
+  },
+  "packages": [
+    {
+      "package": "my.com.tngdigital.ewallet",
+      "label": "Touch 'n Go eWallet",
+      "reject": [
+        { "id": "tng-otp", "any_of": ["OTP", "TAC", "do not share", "jangan kongsi"] },
+        { "id": "tng-failed", "any_of": ["unsuccessful", "gagal", "failed", "declined"] },
+        { "id": "tng-promo", "any_of": ["voucher", "diskaun", "% off"] }
+      ],
+      "rules": [
+        {
+          "id": "tng-payment-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": { "text_contains_all": ["Payment of", "successful"] },
+          "pattern": "Payment of {{amount}} to (?<merchant>.+?) successful"
+        },
+        {
+          "id": "tng-reload-v1", "priority": 90,
+          "direction": "EXPENSE", "confidence": "REVIEW",
+          "kind": "TRANSFER_SUSPECT", "exclusion_reason": "TRANSFER",
+          "requires": {
+            "text_contains_all": ["Reload"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
+          },
+          "pattern": "Reload of {{amount}}"
+        }
+      ]
+    },
+    {
+      "package": "com.maybank2u.life",
+      "label": "Maybank MAE",
+      "reject": [
+        { "id": "mae-otp", "any_of": ["TAC", "one-time", "do not share"] },
+        { "id": "mae-failed", "any_of": ["unsuccessful", "gagal", "declined"] }
+      ],
+      "rules": [
+        {
+          "id": "mae-duitnow-paid-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": { "text_contains_all": ["You have paid"], "field": "text" },
+          "pattern": "You have paid {{amount}} to (?<merchant>.+)$"
+        },
+        {
+          "id": "mae-duitnow-paid-body-v1", "priority": 90,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": { "text_contains_all": ["You have paid"] },
+          "pattern": "You have paid {{amount}} to "
+        },
+        {
+          "id": "mae-refund-my-v1", "priority": 95,
+          "direction": "REFUND", "confidence": "HIGH",
+          "requires": {
+            "text_contains_any": ["bayaran balik", "pemulangan wang"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "declined"]
+          },
+          "pattern": "(?:Bayaran balik|Pemulangan wang) {{amount}} daripada (?<merchant>.+?) telah"
+        }
+      ]
+    }
+  ]
+}

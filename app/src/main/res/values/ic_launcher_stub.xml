@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The receipt stub with a torn foot: four teeth, and nothing else.
+
+     Held here rather than inline in each vector because both the standard
+     icon and the monochrome layer draw the identical silhouette, and two
+     copies of a 12-command path is two chances to change one of them.
+
+     The geometry is the STUB constant in design/build-screen-set.py. The
+     108 unit canvas is the adaptive-icon canvas: the stub spans x 32..76 and
+     y 29..78, so it sits inside the central 72 the mask keeps, and its 65.9
+     diagonal sits inside the 66 circle guaranteed visible under every mask
+     shape. No mask clips a tooth. -->
+<resources>
+    <string name="ic_launcher_stub_path" translatable="false">M32,29 H76 V71 L70.5,78 L65,71 L59.5,78 L54,71 L48.5,78 L43,71 L37.5,78 L32,71 Z</string>
+</resources>

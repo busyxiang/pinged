@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The service is declared here as well as in app/src/main/AndroidManifest.xml
+    because a library's androidTest APK is its own application: without this
+    declaration the system has nothing to bind, and ListenerTest could only
+    simulate the delivery path rather than use it.
+
+    POST_NOTIFICATIONS is declared so the test can be granted it at runtime and
+    post the notification it expects to capture. It is the same permission the
+    app itself declares (spec 10.2).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <service
+            android:name="my.pinged.capture.PingedNotificationListener"
+            android:exported="false"
+            android:label="Pinged"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Declared here for the same reason the service is: a library's
+             androidTest APK is its own application, and without this entry
+             RebindTest could only construct the receiver and call onReceive on
+             it, which proves the body and nothing about whether the system
+             would ever run it. With it, the test resolves the declaration
+             through PackageManager and delivers a real broadcast.
+
+             This is a copy of the declaration in
+             app/src/main/AndroidManifest.xml, which is the one that ships. The
+             receiver's own class name is not frozen the way the listener's is,
+             because nothing stores a grant against it, so a drift between the
+             two copies costs a red test rather than silent capture death. -->
+        <receiver
+            android:name="my.pinged.capture.RebindReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

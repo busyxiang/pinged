@@ -26,9 +26,9 @@ groups = [
   ("Cash", "Cash.dc.html", "Manual entry",
    "The only typing in the whole app. Keypad open and focused, category chips ordered by what you use most, merchant optional."),
  ]),
- ("Looking back", "Two ways of asking where the money went. Neither needs a charting library.", [
+ ("Looking back", "Three ways of asking where the money went. None of them needs a charting library.", [
   ("September", "Charts.dc.html", "Charts",
-   "Category bars on a single-hue ramp and a merchant ranking. The comparison against August appears only because the month is complete."),
+   "A daily rhythm grid, category bars on the same single-hue ramp, and a merchant ranking. The grid is the one that needed a rule: a day Pinged was not watching is hatched, never left empty &mdash; an empty cell would claim you spent nothing on a day it knows nothing about. The comparison against August appears only because the month is complete."),
   ("Search", "Search.dc.html", "Search and filter",
    "Any query becomes its own total. Searching &ldquo;grab&rdquo; answers the question a category total buries: eighteen rides, RM312.40, RM17.36 each &mdash; more than a month of petrol."),
  ]),
@@ -42,7 +42,9 @@ groups = [
   ("What was this?", "Chooser.dc.html", "Assigning a category",
    "The most repeated action in the app. It shows the acquirer string it is deciding about, and the rule it is about to write &mdash; on by default, with the ten past transactions it will retroactively fix. Teaching Pinged is visible, not a side effect."),
   ("Edit a category", "Category.dc.html", "Name and icon",
-   "Name and icon in one sheet, because a renamed category carrying a stale icon is worse than no icon. The rename blast radius is stated before you commit, and Makan cannot be deleted while 412 transactions point at it &mdash; the sheet says so rather than greying out a button and explaining nothing."),
+   "Name and icon in one sheet, because a renamed category carrying a stale icon is worse than no icon. The rename blast radius is stated before you commit, and Food &amp; Drinks cannot be deleted while 412 transactions point at it &mdash; the sheet says so rather than greying out a button and explaining nothing."),
+  ("Move and delete", "Merge.dc.html", "New, the way out of a blocked delete",
+   "A category with transactions in it cannot be deleted &mdash; that is a real foreign key with ON DELETE RESTRICT, not a greyed-out button. Which means blocking needs a way out, or it is just a dead end. So the destructive action is really a move: pick where the 412 go, see Groceries climb from 118 to 530 before you commit, and read the one thing a rename never has to admit &mdash; a merge destroys information, so afterwards those transactions cannot remember where they came from. The footer answers the question the screen actually provokes: not one transaction is deleted, because the money is never in the category row."),
   ("Jump to", "Months.dc.html", "Month picker",
    "Every month with its total, and May flagged &ldquo;3 days not captured&rdquo; so a low month is never mistaken for a frugal one. The footer names your install date, because that is where history genuinely stops."),
   ("Export", "Export.dc.html", "Two real decisions",
