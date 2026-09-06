@@ -27,6 +27,19 @@ Every task's requirements implicitly include this section. Values are copied ver
 - **Every string comparison and case change uses `Locale.ROOT`.**
 - **The table is `txn`, not `transaction`** — the latter is a SQLite reserved keyword.
 - **`raw_capture` rows are never deleted** except by the user's delete-all action.
+- **Bytecode target is Java 17 (class-file major 61), not the toolchain JDK.**
+  `jvmToolchain(25)` selects the compiler but also emits major 69, which D8
+  rejects; every module pins `jvmTarget` explicitly. See Task 1 Step 6.
+- **A behaviour with no falsifying test has not landed.** A fix whose removal
+  leaves the suite green is indistinguishable from no fix, and this branch
+  shipped thirteen such behaviours before they were caught by mutation.
+
+> **On the per-task test counts below.** Each `Expected: PASS, N tests` is a
+> snapshot as of that task's own commit. The final whole-branch review's fix
+> wave added tests and one fixture after Task 6, so the branch total is now
+> **90 tests and 7 fixtures**, not the 59 and 6 the Task 6 numbers imply.
+> Treat the per-task numbers as historical, and the current
+> `./gradlew :core:parse:test` output as authoritative.
 
 ---
 
@@ -44,7 +57,11 @@ core/parse/                                PURE KOTLIN — no Android
     Skeleton.kt                            digit-stripped signature (spec 5.7, 5.8)
     Merchant.kt                            acquirer prefix and suffix stripping
     Pack.kt                                pack data model + kotlinx.serialization
-    Conditions.kt                          the five predicates
+    Conditions.kt                          condition evaluation (the four
+                                           predicates plus the field selector;
+                                           the `Conditions` data class itself
+                                           lives in Pack.kt with the rest of
+                                           the serialized model)
     Deadline.kt                            interruptible CharSequence, regex budget
     RuleMatcher.kt                          templates-then-rejects, the heart
     Outcome.kt                             sealed result type crossing the module boundary
@@ -175,18 +192,36 @@ Both sections are required. `allowBackup="false"` alone does not cover device-to
 `settings.gradle.kts` gains `include(":core:parse")`. `core/parse/build.gradle.kts`:
 
 ```kotlin
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.jetbrains.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
 }
 
-kotlin { jvmToolchain(25) }
+// The compiler runs on JDK 25, but the emitted bytecode must stay at 17
+// (class-file major 61). Toolchain 25 alone emits major 69, which D8
+// rejects, so the first Android module to depend on this one fails to dex.
+kotlin {
+    jvmToolchain(25)
+    compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
 
 dependencies {
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
 }
 ```
+
+**The toolchain is not the target.** `jvmToolchain(25)` selects the JDK that
+runs the compiler; on its own it also sets the emitted class-file version to
+69. Verify with `javap -verbose` on a built class in
+`core/parse/build/classes/kotlin/main/` — the major version must read 61.
 
 Add `kotlin("jvm")`, `kotlin("plugin.serialization")`, `kotlinx-serialization-json` and `junit` to `gradle/libs.versions.toml`, taking the newest versions the catalog editor or Maven Central offers.
 
@@ -371,7 +406,7 @@ object Amount {
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `./gradlew :core:parse:test`
-Expected: PASS, 20 tests.
+Expected: PASS, 21 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -439,7 +474,7 @@ class MerchantTest {
         assertEquals("MACHINES", Merchant.clean("MACHINES SDN BHD"))
 
     @Test fun `strips trailing terminal code`() =
-        assertEquals("GRAB RIDE", Merchant.clean("GRAB* RIDE-3KL"))
+        assertEquals("RIDE", Merchant.clean("GRAB* RIDE-3KL"))
 
     @Test fun `title cases an all caps string`() =
         assertEquals("Restoran Ali", Merchant.display("RESTORAN ALI"))
@@ -510,7 +545,7 @@ Both prefix and suffix lists belong in the pack rather than in code eventually (
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `./gradlew :core:parse:test`
-Expected: PASS, 31 tests.
+Expected: PASS, 33 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -673,11 +708,22 @@ class PackValidationException(message: String) : IllegalArgumentException(messag
  * than on RuleMatcher because PackLoader validates patterns and must not
  * depend on the matcher.
  *
- * DOTALL matters: bigText contains newlines, and without it `(?<merchant>.+?)`
- * silently fails to match across one. MULTILINE is deliberately absent.
+ * Regex flags are fixed for every pattern (spec 5.2):
+ * CASE_INSENSITIVE | UNICODE_CASE | DOTALL, never MULTILINE.
+ *
+ * Kotlin's RegexOption enum has no UNICODE_CASE member, so patterns are
+ * compiled through java.util.regex.Pattern and converted. DOTALL matters
+ * because bigText contains newlines and without it `(?<merchant>.+?)`
+ * silently fails to match across one.
  */
 object PackRegex {
-    val FLAGS: Set<RegexOption> = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+    private const val FLAGS =
+        java.util.regex.Pattern.CASE_INSENSITIVE or
+        java.util.regex.Pattern.UNICODE_CASE or
+        java.util.regex.Pattern.DOTALL
+
+    fun compile(pattern: String): Regex =
+        java.util.regex.Pattern.compile(pattern, FLAGS).toRegex()
 }
 
 @Serializable
@@ -746,7 +792,7 @@ object PackLoader {
                 throw PackValidationException("Rule '${rule.id}' declares no amount group")
             }
             try {
-                Regex(rule.pattern, PackRegex.FLAGS)
+                PackRegex.compile(rule.pattern)
             } catch (e: Exception) {
                 throw PackValidationException("Rule '${rule.id}' pattern does not compile: ${e.message}")
             }
@@ -842,7 +888,7 @@ This is the heart of the app. Everything else is plumbing around it.
 
 **Interfaces:**
 - Consumes: `TextNormalizer`, `Amount`, `Merchant`, the Task 4 model
-- Produces: `RuleMatcher(pack: ParsePack)` with `match(pkg: String, title: String?, text: String?, bigText: String?): MatchOutcome`, and `RuleMatcher.FLAGS`
+- Produces: `RuleMatcher(pack: ParsePack)` with `match(pkg: String, title: String?, text: String?, bigText: String?): MatchOutcome`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -881,8 +927,13 @@ class RuleMatcherTest {
         assertEquals("Restoran Yuen Kee Home Town Cafe", out.merchantRaw)
     }
 
-    // The load-bearing test. Spec 5.3.
-    @Test fun `a success message mentioning cashback is still an expense`() {
+    // Trailing reward copy must not perturb the amount extraction. Note this
+    // does NOT by itself prove templates run before rejects: none of the
+    // bundled tng reject terms (OTP, TAC, do not share, jangan kongsi,
+    // unsuccessful, gagal, failed, declined, voucher, diskaun, % off) appear
+    // in this message, so it passes identically under a reject-first
+    // implementation. The actual ordering guard is the collision test below.
+    @Test fun `trailing reward copy does not change the amount`() {
         val out = matcher.match(
             tng, "Touch 'n Go",
             "Payment of RM52.30 to 99 SPEEDMART successful. You earned RM1.05 cashback.",
@@ -890,6 +941,48 @@ class RuleMatcherTest {
         )
         out as MatchOutcome.Matched
         assertEquals(5230L, out.amountSen)
+    }
+
+    // The load-bearing test. Spec 5.3. A test-local pack deliberately puts a
+    // reject keyword ("bonus") inside a message that also matches a
+    // template, so a reject-first implementation fails this immediately.
+    // The bundled production pack.json intentionally omits "cashback" from
+    // its reject lists (see its comment), so it cannot exercise this path;
+    // this pack exists only to construct a real collision without polluting
+    // the production pack.
+    @Test fun `a template match wins over a colliding reject and records the collision`() {
+        val collidePack = """
+            {
+              "pack_version": 1,
+              "packages": [
+                {
+                  "package": "com.example.collide",
+                  "label": "Collision Test",
+                  "reject": [
+                    { "id": "collide-bonus", "any_of": ["bonus"] }
+                  ],
+                  "rules": [
+                    {
+                      "id": "collide-payment-v1", "priority": 100,
+                      "direction": "EXPENSE", "confidence": "HIGH",
+                      "requires": { "text_contains_all": ["Payment of", "successful"] },
+                      "pattern": "Payment of RM\\s?(?<amount>[\\d,]+(?:\\.\\d{1,2})?) to (?<merchant>.+?) successful"
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+        val collideMatcher = RuleMatcher(PackLoader.load(collidePack))
+
+        val out = collideMatcher.match(
+            "com.example.collide", "Test",
+            "Payment of RM20.00 to Test Merchant successful. You earned a bonus.",
+            null,
+        )
+        out as MatchOutcome.Matched
+        assertEquals(2000L, out.amountSen)
+        assertEquals("collide-bonus", out.rejectCollisionId)
     }
 
     @Test fun `a reload is flagged as a transfer suspect`() {
@@ -939,7 +1032,7 @@ class RuleMatcherTest {
     }
 
     @Test fun `a non breaking space in the amount still matches`() {
-        val out = matcher.match(tng, "Touch 'n Go", "Payment of RM 12.00 to 99 SPEEDMART successful", null)
+        val out = matcher.match(tng, "Touch 'n Go", "Payment of RM\u00A012.00 to 99 SPEEDMART successful", null)
         assertEquals(1200L, (out as MatchOutcome.Matched).amountSen)
     }
 
@@ -951,7 +1044,7 @@ class RuleMatcherTest {
 
 class DeadlineTest {
     @Test fun `a catastrophic pattern gives up instead of hanging`() {
-        val evil = Regex("(a+)+b", RuleMatcher.FLAGS)
+        val evil = PackRegex.compile("(a+)+b")
         val input = "a".repeat(40)
         val started = System.nanoTime()
         val result = runCatching {
@@ -1045,17 +1138,13 @@ object RuleMatcherFlags {
 
 class RuleMatcher(pack: ParsePack) {
 
-    companion object {
-        val FLAGS: Set<RegexOption> = PackRegex.FLAGS
-    }
-
     /** Recorded on every capture this matcher parses, so an outcome is traceable to a pack. */
     val packVersion: Int = pack.packVersion
 
     private val byPackage: Map<String, PackagePack> = pack.packages.associateBy { it.pkg }
     private val compiled: Map<String, Regex> = pack.packages
         .flatMap { it.rules }
-        .associate { it.id to Regex(it.pattern, FLAGS) }
+        .associate { it.id to PackRegex.compile(it.pattern) }
 
     fun match(pkg: String, title: String?, text: String?, bigText: String?): MatchOutcome {
         if (title == null && text == null && bigText == null) return MatchOutcome.NoExtras
@@ -1113,7 +1202,7 @@ class RuleMatcher(pack: ParsePack) {
 
 Three things in there are load-bearing and easy to undo by accident:
 
-`rejectCollisionId` records that a reject also fired but does not act on it (spec §5.3). Someone will eventually "simplify" this into an early return; the cashback test is what stops them.
+`rejectCollisionId` records that a reject also fired but does not act on it (spec §5.3). Someone will eventually "simplify" this into an early return; `a template match wins over a colliding reject and records the collision` is what stops them — it constructs a test-local pack with a deliberate reject/template collision, since the bundled production pack.json intentionally has no such collision to exercise. (An earlier draft of this plan pointed to the "cashback" test for this job; that test cannot detect a reject-first regression because none of the bundled tng reject terms appear in its input, so it passes identically either way. It is still useful — it proves trailing reward copy doesn't perturb the amount — just not as the ordering guard.)
 
 `Amount.toSen(...) ?: continue` means a template that matches text but yields an unusable amount falls through to the next rule rather than producing a zero-value transaction.
 
@@ -1122,7 +1211,7 @@ Three things in there are load-bearing and easy to undo by accident:
 - [ ] **Step 6: Run to verify they pass**
 
 Run: `./gradlew :core:parse:test`
-Expected: PASS, 45 tests.
+Expected: PASS, 57 tests.
 
 - [ ] **Step 7: Commit**
 
@@ -1130,11 +1219,13 @@ Expected: PASS, 45 tests.
 git add core/parse
 git commit -m "Add the rule matcher: templates before rejects
 
-The load-bearing test is 'a success message mentioning cashback is still an
-expense'. Malaysian wallets append reward copy to genuine success
-notifications, so a reject list consulted first eats real expenses — exactly
-the silent under-report the flat model cannot detect. Templates win, and a
-reject that also fired is recorded as a collision rather than acted on.
+The load-bearing test is 'a template match wins over a colliding reject and
+records the collision', which builds a test-local pack with a deliberate
+reject/template collision (the bundled pack.json has none to exercise).
+Malaysian wallets append reward copy to genuine success notifications, so a
+reject list consulted first eats real expenses — exactly the silent
+under-report the flat model cannot detect. Templates win, and a reject that
+also fired is recorded as a collision rather than acted on.
 
 DeadlineCharSequence bounds regex backtracking by throwing from charAt,
 which is the only way to interrupt a match in progress. Imported packs are
@@ -1334,12 +1425,14 @@ Expected: PASS, 2 tests, 6 fixtures exercised.
 
 - [ ] **Step 4: Break something on purpose and confirm the corpus catches it**
 
-Temporarily add `"cashback"` to the `tng-promo` reject list in `pack.json`.
+Temporarily change `tng-payment-v1`'s `requires.text_contains_all` from `["Payment of", "successful"]` to `["Payment of", "successfully"]` (one letter) in `pack.json`. No fixture text contains "successfully", so that template stops matching.
 
 Run: `./gradlew :core:parse:test --tests '*CorpusTest*'`
-Expected: FAIL naming `tng-payment-with-cashback.txt`.
+Expected: FAIL naming BOTH `tng-payment-speedmart.txt` AND `tng-payment-with-cashback.txt`.
 
-Revert the change. This step is not ceremony: it proves the corpus actually fails when the parser regresses, which is the only thing that makes the other 45 tests trustworthy.
+The double naming proves the harness's collect-all-failures design works: a rule change reports every fixture it broke, not just the first. Revert the change and confirm the corpus passes again. This step is not ceremony: it proves the corpus actually fails when the parser regresses, which is the only thing that makes the other 57 tests trustworthy.
+
+Reject patterns checked first cannot work for this experiment because templates are now evaluated before rejects (spec §5.3): once a template matches, reject patterns are never consulted, so a reject-list change cannot break a matching fixture.
 
 - [ ] **Step 5: Commit**
 
@@ -1362,14 +1455,21 @@ drift is invisible without a guard."
 
 **Files:**
 - Create: `core/data/build.gradle.kts`
-- Create: `core/data/src/main/kotlin/my/pinged/data/entity/{RawCapture,Txn,Category,CaptureSource,MerchantRule}.kt`
+- Create: `core/data/src/main/kotlin/my/pinged/data/entity/{RawCapture,Txn,Category,CaptureSource,MerchantRule,CaptureDay}.kt`
 - Create: `core/data/src/main/kotlin/my/pinged/data/{PingedDatabase,DatabaseKey,DatabaseFactory}.kt`
+- Create: `core/data/src/main/kotlin/my/pinged/data/dao/{RawCaptureDao,TxnDao,CategoryDao,CaptureSourceDao,CaptureDayDao}.kt`
+  as **minimal `@Dao` interfaces only**. `PingedDatabase` below declares an
+  accessor for each, so Room's processor fails at compile time if the
+  interface is absent -- this task cannot compile without them. Task 8 adds
+  the query methods to these same files; it does not create them.
 - Create: `core/data/schemas/` (committed, generated)
 - Test: `core/data/src/androidTest/kotlin/my/pinged/data/{OpenTest,MigrationTest,QueryPlanTest}.kt`
+- Test: `core/data/src/androidTest/kotlin/my/pinged/data/Fixtures.kt` — moved
+  here from Task 8, because Task 7's own OpenTest calls `sampleCapture()`.
 
 **Interfaces:**
 - Consumes: `Direction`, `Confidence` from `:core:parse`
-- Produces: `PingedDatabase` with `rawCaptureDao()`, `txnDao()`, `categoryDao()`, `captureSourceDao()`; `DatabaseFactory.build(Context): PingedDatabase`; entity classes and `ParseStatus`
+- Produces: `PingedDatabase` with `rawCaptureDao()`, `txnDao()`, `categoryDao()`, `captureSourceDao()`, `captureDayDao()`; `DatabaseFactory.build(Context): PingedDatabase`; entity classes and `ParseStatus`
 
 - [ ] **Step 1: Add the module**
 
@@ -1377,14 +1477,22 @@ drift is invisible without a guard."
 
 ```kotlin
 plugins {
+    // AGP 9 has built-in Kotlin support. Applying org.jetbrains.kotlin.android
+    // alongside it is a HARD ERROR, not a warning: "The
+    // 'org.jetbrains.kotlin.android' plugin is no longer required for Kotlin
+    // support since AGP 9.0." Verified during Task 1b, which is why :app
+    // applies only the AGP plugin. Every Android module in this plan follows
+    // that shape, and the kotlin-android catalog alias does not exist.
     alias(libs.plugins.android.library)
-    alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "my.pinged.data"
     compileSdk = 36
+    // Bytecode target is set through compileOptions, not a kotlin{} block:
+    // with AGP's built-in Kotlin there is no kotlin extension to configure
+    // here. :app does the same (Task 1b).
     defaultConfig {
         minSdk = 27
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -1406,7 +1514,31 @@ dependencies {
 }
 ```
 
-Add `androidx.room`, `net.zetetic:sqlcipher-android`, `androidx.sqlite`, `com.google.devtools.ksp` and `androidx.test:runner` to the version catalog, taking current versions from the catalog editor or Maven Central.
+Add `androidx.room`, `net.zetetic:sqlcipher-android`, `androidx.sqlite`, `com.google.devtools.ksp` and `androidx.test:runner` to the version catalog.
+
+**As built, with the two version choices that are not "newest wins":**
+
+| Coordinate | Version | Why not the newest |
+|---|---|---|
+| `androidx.room:*` | 2.8.4 | newest |
+| `net.zetetic:sqlcipher-android` | **4.17.0** | 4.18.0 declares `minCompileSdk=37` in its AAR metadata and fails the build outright against `compileSdk 36`. Verified by reading the metadata of both: 4.18.0 is 37, 4.17.0 is 1. **Do not bump this without bumping `compileSdk`**, which is a spec decision, not a dependency chore. |
+| `androidx.sqlite:sqlite` | **2.6.2** | 2.7.0 exists, but `room-runtime-2.8.4.pom` declares 2.6.2, and Room's generated code plus SQLCipher's `SupportOpenHelperFactory` both sit on this API surface. Match Room's own pin. |
+| `com.google.devtools.ksp` | 2.3.11 | newest. KSP2 versions no longer encode the Kotlin version; there is no 2.4.x. Works against Kotlin 2.4.10. |
+| `androidx.test:runner` | 1.7.0 | newest |
+| `androidx.test.ext:junit` | 1.3.0 | newest |
+
+Also note two build-file facts the original text omitted: the root
+`build.gradle.kts` needs `alias(libs.plugins.android.library) apply false`
+and the same for `ksp`, or the subproject fails with "already on the
+classpath with an unknown version"; and `androidTest.assets.srcDirs` must
+include `$projectDir/schemas`, because `MigrationTestHelper` reads the
+exported schema from the test APK's assets and `room.schemaLocation` alone
+does not put it there.
+
+`:core:data` depends on `:core:parse` with `api`, not `implementation`:
+`Txn` exposes `Direction` and `Confidence` in its public signature, so
+`implementation` would leave consumers unable to name the types they get
+back.
 
 `room.schemaLocation` and committing `schemas/` from v1 is not optional. Spec §13 promises migrations tested from every released version, and that is impossible retroactively without the exported schema.
 
@@ -1559,6 +1691,17 @@ data class MerchantRule(
     val hitCount: Int = 0,
     val scopedPackage: String? = null,
 )
+
+// Spec section 4. One row per local date, so the daily rhythm grid can tell
+// "you spent nothing" apart from "Pinged was not watching" -- both of which
+// are an absence of txn rows. Nothing reads this until charts ship, and
+// nothing can backfill it, which is why it is recorded from milestone 1.
+@Entity(tableName = "capture_day")
+data class CaptureDay(
+    @PrimaryKey val localDate: Int,
+    val listenerBound: Boolean,
+    val sawAnyNotification: Boolean,
+)
 ```
 
 - [ ] **Step 3: Write the Keystore-wrapped raw key**
@@ -1675,7 +1818,10 @@ import my.pinged.data.entity.Txn
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
-    entities = [RawCapture::class, Txn::class, Category::class, CaptureSource::class, MerchantRule::class],
+    entities = [
+        RawCapture::class, Txn::class, Category::class, CaptureSource::class,
+        MerchantRule::class, CaptureDay::class,
+    ],
     version = 1,
     exportSchema = true,
 )
@@ -1684,6 +1830,7 @@ abstract class PingedDatabase : RoomDatabase() {
     abstract fun txnDao(): TxnDao
     abstract fun categoryDao(): CategoryDao
     abstract fun captureSourceDao(): CaptureSourceDao
+    abstract fun captureDayDao(): CaptureDayDao
 }
 
 object DatabaseFactory {
@@ -1824,9 +1971,18 @@ uses a composite on (state, occurred_at)."
 ### Task 8: DAOs and the stage-two queue
 
 **Files:**
-- Create: `core/data/src/main/kotlin/my/pinged/data/dao/{RawCaptureDao,TxnDao,CategoryDao,CaptureSourceDao}.kt`
-- Create: `core/data/src/main/kotlin/my/pinged/data/LocalDate.kt`
+- Modify: `core/data/src/main/kotlin/my/pinged/data/dao/{RawCaptureDao,TxnDao,CategoryDao,CaptureSourceDao}.kt`
+  — Task 7 created these as minimal `@Dao` interfaces so its `@Database` could
+  compile. This task adds the query methods. `CaptureDayDao` needs only an
+  `upsert`, which Task 7 already wrote.
+- Create: `core/data/src/main/kotlin/my/pinged/data/LocalDate.kt` — Task 7's
+  `Fixtures.kt` deliberately ships only `sampleCapture()`, because
+  `sampleTxn()` calls `LocalDates.of(...)` which does not exist until this
+  file does.
 - Create: `core/data/src/main/kotlin/my/pinged/data/Seed.kt`
+- Modify: `core/data/src/androidTest/kotlin/my/pinged/data/Fixtures.kt` — add
+  `sampleTxn`, `enabledSource`, `disabledSource`. The file and its `useDb {}`
+  helper already exist from Task 7.
 - Test: `core/data/src/androidTest/kotlin/my/pinged/data/DaoTest.kt`
 
 **Interfaces:**
@@ -1934,7 +2090,7 @@ import my.pinged.data.entity.Category
 object Seed {
     /** Spec section 4. Order and icon keys are fixed. */
     fun categories(): List<Category> = listOf(
-        Category(name = "Makan", iconKey = "utensils", sortOrder = 0),
+        Category(name = "Food & Drinks", iconKey = "utensils", sortOrder = 0),
         Category(name = "Groceries", iconKey = "shopping-basket", sortOrder = 1),
         Category(name = "Transport", iconKey = "car", sortOrder = 2),
         Category(name = "Petrol & tolls", iconKey = "fuel", sortOrder = 3),
@@ -1978,9 +2134,23 @@ interface RawCaptureDao {
     )
     fun claimNext(limit: Int, status: ParseStatus = ParseStatus.NEW): List<RawCapture>
 
+    // No parse_status filter. An earlier version of this query carried
+    // "AND parse_status != 'NEW'", which contradicted this task's own test
+    // and would have disabled duplicate detection in the exact case it
+    // exists for. Spec 7.2 layer 1 rule 2 is "same content_hash from the
+    // same package and user within 60 seconds, with a different sbn_key" --
+    // it says nothing about parse status, and the common duplicate is two
+    // notifications seconds apart, where the first is still NEW because the
+    // stage-two worker has not run yet. Excluding NEW rows means the
+    // 60-second window can only fire against captures that were already
+    // parsed, i.e. almost never.
+    //
+    // Same package and user need no clause: content_hash is computed from
+    // (pkg, user, text), so an equal hash already implies both (Task 9's
+    // ContentHash.of).
     @Query(
         "SELECT * FROM raw_capture WHERE content_hash = :hash " +
-            "AND posted_at >= :sinceMillis AND parse_status != 'NEW'"
+            "AND posted_at >= :sinceMillis"
     )
     fun findByContentHash(hash: String, sinceMillis: Long): List<RawCapture>
 
@@ -2160,10 +2330,16 @@ fun disabledSource(pkg: String) = my.pinged.data.entity.CaptureSource(
 )
 ```
 
-`Category.sortOrder` needs `@ColumnInfo(name = "sort_order")` for the
-`CategoryDao.all()` query above to resolve, and `CaptureSource` needs
-`@ColumnInfo` on `is_authoritative`, `first_seen_at`, `last_notification_at`
-and `expected_monthly_count` for the same reason.
+**Nothing to do here about column names — and doing it here would have been
+a bug.** An earlier version of this step told Task 8 to add
+`@ColumnInfo(name = "sort_order")` to `Category` and `@ColumnInfo` to four
+`CaptureSource` fields. Those are column *renames*, and Task 7 is where
+`schemas/1.json` is generated and version 1 frozen. Renaming columns here
+would rewrite the v1 schema under an unchanged version number, which is
+exactly the "a migration harness that cannot see the previous schema"
+failure Task 7 exists to prevent. Task 7 therefore applied the snake_case
+names to every entity up front, matching spec section 4 verbatim. Verify
+against the committed `1.json` rather than adding annotations.
 
 - [ ] **Step 5: Run to verify they pass**
 
@@ -2224,7 +2400,14 @@ class NotificationFieldsTest {
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
 
     private fun sbn(notification: Notification): StatusBarNotification =
-        StatusBarNotification("com.example", null, 1, "tag", 0, 0, notification, android.os.Process.myUserHandle(), 0L, 1_000L)
+        // The only usable public constructor, verified with javap against
+        // platforms/android-36/android.jar:
+        //   (String pkg, String opPkg, int id, String tag, int uid, int initialPid,
+        //    int score, Notification n, UserHandle user, long postTime)
+        // Three ints before the notification, one trailing long. An earlier
+        // draft passed two ints and two longs and did not compile.
+        @Suppress("DEPRECATION")
+        StatusBarNotification("com.example", null, 1, "tag", 0, 0, 0, notification, android.os.Process.myUserHandle(), 1_000L)
 
     // The bug that decides whether this product works at all.
     @Test fun `a spannable text field is extracted, not dropped`() {
@@ -2402,6 +2585,36 @@ object CaptureHealth {
 
     suspend fun lastSeenAt(context: Context): Long =
         context.captureStore.data.first()[LAST_SEEN] ?: 0L
+
+    /**
+     * The one thing that does go to Room, at most once per calendar day.
+     *
+     * DataStore answers "is capture alive now", which is all the banner
+     * needs. It cannot answer "was capture alive on 14 August", and the
+     * daily rhythm grid (spec section 8) has to tell "you spent nothing"
+     * apart from "Pinged was not watching" -- both of which are an absence
+     * of txn rows. Nothing can backfill this, so it is recorded from
+     * milestone 1 even though nothing reads it until charts ship.
+     *
+     * Gated on the local date having changed, so this is one write a day,
+     * not one per notification. That is why it may live in Room while
+     * LAST_SEEN may not.
+     */
+    private val LAST_DAY_MARKED = intPreferencesKey("last_day_marked")
+
+    suspend fun markDayCaptured(context: Context, localDate: Int, dao: CaptureDayDao) {
+        val marked = context.captureStore.data.first()[LAST_DAY_MARKED] ?: 0
+        if (marked == localDate) return
+        // recordNotificationSeen, NOT a whole-row upsert. Task 8 deleted
+        // CaptureDayDao.upsert precisely because REPLACE is a delete-and-insert
+        // that erases the other writer's column: this writer knows a
+        // notification arrived and knows nothing about listener_bound, so a
+        // whole-row write would clear a binding observation made earlier today.
+        // capture_day is the only thing that distinguishes "spent nothing" from
+        // "was not watching", so that erasure is not recoverable.
+        dao.recordNotificationSeen(localDate)
+        context.captureStore.edit { it[LAST_DAY_MARKED] = localDate }
+    }
 }
 
 object SourceCounters {
@@ -2450,7 +2663,16 @@ class PingedNotificationListener : NotificationListenerService() {
             CaptureHealth.recordConnected(applicationContext, System.currentTimeMillis())
             // Narrows the gap after a kill: bank notifications often sit in the
             // shade for hours (spec section 3).
-            activeNotifications?.forEach { ingest(it) }
+            //
+            // Arrival.CATCHUP is not bookkeeping. getActiveNotifications()
+            // returns only posts that are STILL LIVE, and "the notification is
+            // still posted" is what spec 7.2's duplicate rule 1 actually means
+            // by a refresh -- far more precisely than elapsed time does. So a
+            // capture arriving this way is exempt from rule 1's ten-minute
+            // window, and without the distinction every rebind after an app
+            // update or a reboot would re-deliver each live banking
+            // notification as a review item.
+            activeNotifications?.forEach { ingest(it, Arrival.CATCHUP) }
         }
     }
 
@@ -2459,10 +2681,14 @@ class PingedNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        scope.launch { ingest(sbn) }
+        scope.launch { ingest(sbn, Arrival.POSTED) }
     }
 
-    private suspend fun ingest(sbn: StatusBarNotification) {
+    // `arrival` is a parameter and not derived inside, because both delivery
+    // paths funnel through here and nothing observable inside tells them
+    // apart. Nothing can reconstruct it afterwards either, which is why spec 4
+    // records it on the row.
+    private suspend fun ingest(sbn: StatusBarNotification, arrival: Arrival) {
         val now = System.currentTimeMillis()
 
         if (sbn.packageName == applicationContext.packageName) return
@@ -2491,6 +2717,9 @@ class PingedNotificationListener : NotificationListenerService() {
                 userHandle = fields.userHandle,
                 channelId = fields.channelId,
                 flags = fields.flags,
+                // Required: RawCapture declares `arrival` with no default, on
+                // purpose, so a new call site cannot silently omit it.
+                arrival = arrival,
                 title = fields.title,
                 text = fields.text,
                 bigText = fields.bigText,
@@ -2689,7 +2918,79 @@ ComponentName."
 
 ---
 
+### Gaps Task 9 surfaced and correctly did not absorb
+
+Recorded here rather than in the execution ledger, because the ledger decays
+and this file is what the next implementer reads.
+
+**`capture_source.last_notification_at` has no writer anywhere in this plan.**
+A grep for `setLastNotificationAt` across every task returns nothing. Spec
+section 10.3 makes per-source liveness the detector for the likelier failure —
+the listener is alive but one bank's notification channel got muted, so
+capture looks healthy while one source has gone quiet — and asserts "the data
+is already being written". It is not. Task 9 correctly left it alone: stage
+one is extraction, the allow-list gate and one insert, and this would be a
+second write on the per-notification path. It belongs in Task 11, next to the
+rest of the liveness work, and it must be a targeted column update rather than
+a whole-row upsert for the reason Task 8 removed `CaptureSourceDao.upsert`.
+
+**Where stage one's boundary actually falls.** "No parsing in stage one" cannot
+be read as "no `:core:parse` calls at all": `content_hash` is a column of the
+row stage one writes, spec section 4 defines it as sha256 over *normalized*
+text, so `TextNormalizer.forCompare` necessarily runs there. What stage one
+does not do is rule matching, reject patterns, `RuleMatcher`, the duplicate
+queries or the confidence gate — the expensive, pack-versioned work whose
+results have to be re-derivable on a pack upgrade. Normalization is none of
+those: it is stable, cheap, and the hash would be useless without it. The
+stricter reading, storing raw text and hashing in stage two, would make
+`content_hash` nullable and cost the duplicate check its index on the write
+path; it is rejected on those grounds and not merely for convenience.
+
+---
+
 ### Task 10: Stage two, the parse worker
+
+> **The Kotlin in this task predates the database review and is stale in
+> seven specific ways. Treat the snippets as intent and write against the
+> real `:core:data` surface, which you must read first.** Each divergence
+> below exists because a defect was fixed after this task was written, so
+> copying the snippet reintroduces the defect.
+>
+> 1. **`findBySlotAndContent(sbnKey, contentHash)` no longer exists.** It is
+>    `findEarlierInSlot(key, hash, selfId)`, and `selfId` is not optional:
+>    stage one inserts before stage two claims, so without it the query
+>    matches *the row being processed* and every capture becomes an
+>    `UPDATE_OF` with no transaction ever created.
+> 2. **Duplicate layer 1 rule 1 now has a ten-minute window, and a
+>    `CATCHUP` exemption.** Use `findEarlierInSlotSince` for an
+>    `Arrival.POSTED` capture and the unwindowed form for
+>    `Arrival.CATCHUP`, per spec section 7.2 — which I rewrote. Beyond the
+>    window the pair is not dropped: it becomes a transaction flagged
+>    `DUPLICATE_SUSPECT` and therefore `PENDING`.
+> 3. **`findByContentHash` takes three arguments now** — `hash`,
+>    `sinceMillis`, `untilMillis`. The upper bound has no default on
+>    purpose: unbounded, it marks an older capture a duplicate of a purchase
+>    that happened months later, during re-parse.
+> 4. **Do not `runCatching { txns.insert(txn) }`.** Use
+>    `RawCaptureDao.commitCapture`, the `@Transaction` that inserts the
+>    transaction and marks the capture together. The snippet's shape is the
+>    exact lost-atomicity bug: a kill between the two leaves the capture
+>    `NEW` with its transaction already written, it sorts first under
+>    `claimNext`, and the unique index then throws forever.
+> 5. **`state = TxnState.COMMITTED` unconditionally is wrong.** Spec
+>    section 7.1's gate decides, and whatever it decides must be recorded in
+>    the new `pending_reason` column, which is non-null exactly when `state`
+>    is `PENDING` and enforced at the write path. A `PENDING` row with no
+>    reason throws.
+> 6. **The `when` has no `GaveUp` branch.** `MatchOutcome.GaveUp` exists and
+>    now has a home, `ParseStatus.GAVE_UP`. Do not fold it into
+>    `UNMATCHED`: a timeout is not evidence that no rule matches, section
+>    5.5 says re-parse must revisit it, and folding it makes a descheduled
+>    worker look like a rule gap in section 5.6's authoring loop.
+> 7. **`markOutcome` takes an `expected` status and returns `Int`.** A
+>    zero-row update means another writer got there first; treat that as a
+>    signal, not as success.
+
 
 **Files:**
 - Create: `feature/capture/src/main/kotlin/my/pinged/capture/{ParseWorker,Dedup}.kt`
@@ -2763,15 +3064,36 @@ class ParseWorkerTest {
         assertEquals(1, Graph.txnDao(context).countAll())
     }
 
-    @Test fun anHourLaterIsStillAnUpdateIfTheSlotAndContentMatch() {
+    // INVERTED. This test used to assert UPDATE_OF and one transaction an hour
+    // later, and that assertion was itself the wrong-money bug: content_hash
+    // carries no timestamp, so two genuinely separate identical payments have
+    // the same identity by construction, and an unbounded rule 1 dropped the
+    // second one silently. Spec 7.2 was rewritten to bound it. An hour is
+    // beyond the ten-minute window, so the second payment must reach the
+    // ledger -- as a DUPLICATE_SUSPECT the user can Merge or Keep both, never
+    // as a silent drop.
+    @Test fun anHourLaterIsASecondTransactionForReview() {
         insertNewCapture("Payment of RM32.00 to 99 SPEEDMART successful", sbnKey = "k1", postedAt = 0)
         runWorker()
         val later = insertNewCapture(
             "Payment of RM32.00 to 99 SPEEDMART successful", sbnKey = "k1", postedAt = 3_600_000,
         )
         runWorker()
-        // The old design hashed postTime, so this produced a second transaction.
-        assertEquals(ParseStatus.UPDATE_OF, Graph.rawCaptureDao(context).byId(later).parseStatus)
+        assertEquals(ParseStatus.MATCHED, Graph.rawCaptureDao(context).byId(later).parseStatus)
+        assertEquals(2, Graph.txnDao(context).countAll())
+        val second = Graph.txnDao(context).recent(1).single()
+        assertEquals(TxnState.PENDING, second.state)
+        assertEquals(PendingReason.DUPLICATE_SUSPECT, second.pendingReason)
+    }
+
+    @Test fun withinTenMinutesTheSameSlotAndContentIsStillAnUpdate() {
+        insertNewCapture("Payment of RM32.00 to 99 SPEEDMART successful", sbnKey = "k1", postedAt = 0)
+        runWorker()
+        val soon = insertNewCapture(
+            "Payment of RM32.00 to 99 SPEEDMART successful", sbnKey = "k1", postedAt = 60_000,
+        )
+        runWorker()
+        assertEquals(ParseStatus.UPDATE_OF, Graph.rawCaptureDao(context).byId(soon).parseStatus)
         assertEquals(1, Graph.txnDao(context).countAll())
     }
 
@@ -2947,13 +3269,17 @@ Reads raw_capture rather than a queue, so process death loses nothing and an
 interrupted run resumes: any row still at NEW is unfinished work. A test
 asserts no capture is left at NEW after a run.
 
-Dedup has two layers with the ordering the spec requires. Same slot and same
-content is an update however long ago, which the old timestamp-in-hash design
-got wrong — a test posts the same notification an hour later and asserts one
-transaction, not two.
+Dedup has two layers with the ordering the spec requires, and rule 1 is
+bounded. Same slot and same content inside ten minutes is an update; beyond
+it the second payment reaches the ledger as a DUPLICATE_SUSPECT for review,
+because content_hash carries no timestamp and so two genuinely separate
+identical payments have the same identity by construction. A rebind catch-up
+capture is exempt from the window, since getActiveNotifications returns only
+posts that are still live -- which is what a refresh actually means.
 
-Every match commits in this milestone. Confidence is recorded but does not
-withhold the row; the gate and the review inbox are the next plan."
+The confidence gate decides COMMITTED or PENDING, and whichever of section
+7.1's five conditions fired is recorded in pending_reason, so the review
+inbox can say why rather than guess."
 ```
 
 ---
@@ -3026,13 +3352,11 @@ import android.content.ComponentName
 import android.content.Context
 import android.service.notification.NotificationListenerService
 
-object PingedComponents {
-    /** Frozen. The grant is stored against this flattened name. */
-    fun listener(context: Context) = ComponentName(
-        context.packageName,
-        "my.pinged.capture.PingedNotificationListener",
-    )
-}
+// PingedComponents is NOT declared here. Ruling 5 moved it into Task 9 so
+// that task could compile on its own, and it now exists at
+// feature/capture/src/main/kotlin/my/pinged/capture/PingedComponents.kt.
+// Declaring it again is a duplicate-class error, and the frozen listener
+// name lives in exactly one place for the same reason the name is frozen.
 
 data class CaptureReport(
     val granted: Boolean,
@@ -3154,6 +3478,37 @@ boolean hides it."
 
 ---
 
+- [ ] **Step 5: Wire per-source liveness, which no task currently does**
+
+`CaptureSourceDao.setLastNotificationAt` exists and has **no caller
+anywhere**. Spec section 10.3 makes per-source liveness the detector for the
+likelier failure — the listener is alive and healthy while one bank's
+notification channel has been muted, so global capture looks fine and one
+source has silently gone quiet — and it asserts "the data is already being
+written". It is not.
+
+Task 9 correctly refused to absorb this: stage one is extraction, the
+allow-list gate and one insert, and this would have been a second Room write
+on the per-notification path. It belongs here, with the rest of the liveness
+work, and it must be **throttled the same way the heartbeat is** — at most
+one write per source per throttle window, not one per notification. A phone
+posts 100-300 notifications a day and Room's invalidation tracker is
+table-granular, which is the entire reason section 10.2 keeps the global
+heartbeat in `DataStore`.
+
+Use the targeted column update, never a whole-row upsert. Task 8 removed
+`CaptureSourceDao.upsert` precisely because `REPLACE` is a delete-and-insert
+that writes back every column a partial caller did not know about — and the
+column it would silently reset here is `enabled`, which is the user's
+allow-list consent. A liveness write that disables a source makes every
+later notification from that bank unrecoverable, because the default-deny
+gate discards them before any write.
+
+Test that a liveness write leaves `enabled`, `is_authoritative` and
+`first_seen_at` untouched, and that the throttle actually throttles.
+
+---
+
 ### Task 12: The Receipt theme and the capture-source screen
 
 Without a way to enable a package, nothing can be verified on a device. This task builds the minimum UI that makes the milestone provable, in the design system so it is not thrown away.
@@ -3167,6 +3522,23 @@ Without a way to enable a package, nothing can be verified on a device. This tas
 
 **Interfaces:**
 - Consumes: `CaptureSourceDao`, `SourceCounters`, `ListenerStatus`
+
+`SourceRow` is the screen's own view type, defined in `SourcesViewModel.kt`.
+It is used by the test below and was previously defined nowhere:
+
+```kotlin
+data class SourceRow(
+    val pkg: String,
+    val label: String,
+    val seenCount: Int,
+    val enabled: Boolean,
+)
+```
+
+Deliberately not the `CaptureSource` entity. `seen_count` lives in
+`DataStore`, not in that table (spec 9.6), so the row is a join of two
+stores and the screen should say so in its type rather than pretend one
+query produces it.
 - Produces: `PingedTheme { }`, `SourcesScreen(viewModel)`
 
 - [ ] **Step 1: Write the design tokens**
@@ -3284,6 +3656,26 @@ declared in <queries>."
 
 ### Task 13: JSON export and import
 
+> **This task predates every schema change made after it was written, and its
+> snippets enumerate fields by hand.** `RawCapture` now has 25 fields and
+> `Txn` has 21 -- counted from their constructors; an earlier version of
+> this note said 27 and 22, from a grep that counted every `val` in the
+> file -- including `pending_reason`, `arrival` and `scoped_package`,
+> none of which appear anywhere below. Section 12 calls the JSON export "full
+> fidelity", so a writer that omits a column is not a formatting bug — it
+> loses the reason a transaction needs review, or the arrival path duplicate
+> layer 1 depends on, with no error at either end.
+>
+> **A field-by-field round-trip assertion is necessary but not sufficient**,
+> because it only tests the fields someone remembered to write. The guard that
+> matters catches the *class*: enumerate each entity's constructor parameters
+> reflectively and assert every one appears in the exported object, so adding
+> a column to an entity without adding it to the export fails immediately.
+> That is the same shape as the enum-vocabulary test and the harness-DDL
+> comparison, and it exists for the same reason — this schema has changed
+> under a downstream consumer four times today alone.
+
+
 Import is in this milestone, not a later one, for a development reason as much as a user-facing one: without it, every debug reinstall destroys capture history that Android will not replay.
 
 **Files:**
@@ -3312,6 +3704,23 @@ class RoundTripTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test fun everythingSurvivesAnExportAndReimport() {
+        // Defined in this file. It was previously used by five tests and
+        // declared nowhere, which is the same decay that hit SourceRow.
+        //
+        //   private fun freshDatabaseWith(captures: Int, txns: Int): PingedDatabase {
+        //       context.deleteDatabase(DatabaseFactory.NAME)
+        //       Graph.reset()
+        //       val db = DatabaseFactory.build(context)     // seeds categories
+        //       val uncategorized = db.categoryDao().requireUncategorizedId()
+        //       repeat(captures) { db.rawCaptureDao().insert(sampleCapture(hash = "h$it")) }
+        //       repeat(txns) { db.txnDao().insert(sampleTxn(categoryId = uncategorized)) }
+        //       return db
+        //   }
+        //
+        // Build through DatabaseFactory, never Room.inMemoryDatabaseBuilder:
+        // export/import is exactly where the encrypted-open path and the
+        // seeded categories have to hold, and an in-memory database proves
+        // neither.
         val db = freshDatabaseWith(captures = 120, txns = 40)
         val out = ByteArrayOutputStream()
         ExportJson.write(db, out) {}
@@ -3518,7 +3927,11 @@ without touching any setting."
 
 ## Milestone Complete
 
-At this point the app: captures notifications from packages the user enabled, into an encrypted database whose key never leaves the device and never enters a backup; parses them with a data-driven pack validated at load; writes transactions idempotently; survives reinstall and reboot; and can export and re-import everything as JSON.
+At this point the app: captures notifications from packages the user enabled, into an encrypted database whose key never leaves the device and never enters a backup; parses them with a data-driven pack validated at load; writes transactions idempotently; and survives reinstall and reboot.
+
+**Correction, written after the milestone was built.** This paragraph used to end "and can export and re-import everything as JSON". It cannot. `ExportJson` and `ImportJson` are implemented and tested end to end, and no production code calls either: reaching them needs the settings screen of spec 9.5, which Task 12 correctly left out of scope. The capability exists at the module boundary and not in the app, and the difference matters to anyone reading this as a statement of what ships.
+
+Two further corrections to the table below, in the other direction -- three rows describe work this milestone turned out to include.
 
 It does **not** yet do any of the following, each of which is a later plan:
 
@@ -3529,12 +3942,12 @@ It does **not** yet do any of the following, each of which is a later plan:
 | §5.8 | Teach a rule by example |
 | §5.9 | Pack import, validation and the dry run |
 | §6 | Categorization beyond Uncategorized, and learned merchant rules |
-| §7.1 | The confidence gate and the review inbox — every match commits |
-| §7.2 | Duplicate layer 2, cross-source same-amount suspects |
+| §7.1 | ~~The confidence gate~~ — **built**: `ConfidenceGate` returns every condition that fired and `pending_reason` records the most specific. The review inbox that reads it is not |
+| §7.2 | ~~Duplicate layer 2~~ — **built**: `Dedup.layerTwo` flags cross-source same-amount suspects. Resolving one (Merge / Keep both) needs the inbox, so it is not |
 | §7.3 | Transfer and reload confirmation — `kind` is recorded, not acted on |
 | §8 | Charts, and the transaction list itself |
 | §9.1–9.5 | Every screen except capture sources |
-| §10.3 | Per-source liveness checks |
+| §10.3 | ~~Per-source liveness checks~~ — **built**: `SourceLiveness` writes `capture_source.last_notification_at` past the allow-list gate. Nothing reads it to raise an alert yet |
 | §11.3 | Delete all data |
 | §12 | CSV export |
 | §15.2, §15.4 | FTS search and paging — neither has a consumer yet |

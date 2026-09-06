@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The themed-icon layer, which Android 13+ tints to the user's wallpaper.
+
+     Both interior lines are deliberately absent. At tint-only fidelity the
+     silhouette carries the mark, and two bars 4dp tall would fill in against
+     a single-colour ground rather than read as lines. That is the whole
+     difference from the foreground layer: same silhouette, no interior. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="@string/ic_launcher_stub_path"
+        android:fillColor="#000000" />
+</vector>

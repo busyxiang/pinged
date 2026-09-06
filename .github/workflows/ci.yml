@@ -1,0 +1,196 @@
+name: CI
+
+# Both jobs gate `refs/pull/N/merge`, not the branch tip: those differ the
+# moment base advances, and the merge result is the thing being merged. That is
+# also why `push` is main only -- a branch push and its PR were running `checks`
+# twice over near-identical trees -- and why `synchronize` is in the list, since
+# without it the emulator job only ever saw a PR's first commit.
+#
+# A push to a fork does not fire this workflow at all, so a fork PR is covered
+# only by the `pull_request` events.
+#
+# A push to a branch with no PR now runs nothing. Open the PR as a draft: drafts
+# fire `opened` and `synchronize` like any other.
+on:
+  push:
+    # Naming `branches` already excludes tag pushes, so release.yml keeps v* to
+    # itself without a tags-ignore.
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  workflow_dispatch:
+
+# `github.ref` is refs/pull/N/merge on a PR and refs/heads/main on the only push
+# this takes, so one expression collapses both.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Unit tests, lint and the debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-android
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      # Robolectric resolves its ~190 MiB android-all-instrumented image into
+      # ~/.m2 at test runtime, which setup-gradle does not cache: it caches
+      # Gradle User Home only.
+      - name: Cache the Robolectric SDK image
+        uses: actions/cache@v6
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml', '**/robolectric.properties') }}
+          restore-keys: robolectric-
+
+      # :app:assembleDebug, not the root assembleDebug: the latter also builds
+      # an AAR per library module that nothing here consumes.
+      # processReleaseMainManifest is the shipped manifest the permission guard
+      # reads -- a manifest merge, no dexing or signing.
+      - name: Unit tests, lint and assemble
+        run: >-
+          ./gradlew --stacktrace
+          test lint :app:assembleDebug :app:processReleaseMainManifest
+
+      - name: The shipped permission surface is exactly what is declared
+        run: python3 .github/scripts/check_permissions.py
+
+      # Room only rewrites the schema when the committed file's identity hash
+      # differs from the entities, so a drifted `createSql` under an unchanged
+      # hash survives every build and the comparison is against itself.
+      #
+      # Deleting the file is not enough either: `room.schemaLocation` is a raw
+      # KSP argument, not a declared task output, so KSP comes back FROM-CACHE
+      # and the guard reports a deletion on a PR that changed nothing. Hence its
+      # own invocation with a forced rerun -- `--rerun`, which scopes to the
+      # requested task, not `--rerun-tasks`, which invalidates all fourteen.
+      - name: Regenerate the exported schema from the entities
+        run: |
+          rm -rf core/data/schemas
+          ./gradlew --stacktrace :core:data:kspDebugKotlin --rerun
+
+      # No pathspec: naming core/data/schemas would quietly exempt the second
+      # module to export one. Porcelain covers modified, deleted and untracked;
+      # the diff runs first only for its message.
+      - name: No committed generated file drifted
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::A committed generated file differs from what this build produced. If it is the Room schema, the entities changed without exporting it, or without bumping the database version and writing a migration."
+            exit 1
+          fi
+          untracked=$(git status --porcelain)
+          if [ -n "$untracked" ]; then
+            echo "::error::This build left files in the tree that version control does not know about. Either commit them or add them to .gitignore:"
+            echo "$untracked"
+            exit 1
+          fi
+
+      - name: Keep the reports from a failed run
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-${{ github.job }}
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+          retention-days: 14
+
+  instrumented:
+    name: Instrumented tests on an emulator
+    runs-on: ubuntu-latest
+    # `draft == false` is what keeps a draft PR usable as a branch's CI now that
+    # branch pushes run nothing: a draft gets unit tests and lint on every push
+    # and fourteen minutes of emulator not at all, until `ready_for_review`.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+
+    # Defined once because the two emulator steps have to agree exactly: pass
+    # them different options and the second discards the snapshot and cold-boots
+    # while still reporting a cache hit.
+    #
+    # google_apis, not google_apis_playstore: a Play Store image cannot be
+    # rooted, boots slower, and is not reliably published for the newest API on
+    # hosted runners. A test that fails here but passes locally -- where the
+    # emulator is android-37.1 -- should be checked against that first.
+    env:
+      API_LEVEL: '36'
+      EMULATOR_TARGET: google_apis
+      EMULATOR_ARCH: x86_64
+      EMULATOR_OPTIONS: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-android
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Cold boot measured 76.5s; from the snapshot, 12s. No restore-keys and
+      # nothing here for EMULATOR_OPTIONS: a near-miss restore is worse than a
+      # miss, because the emulator falls back to a cold boot while the cache
+      # reports a hit. Change the options and bump the v1.
+      #
+      # The system image is not cached as well, though installing it is a
+      # further 70s. Both together are ~4 GiB against a 10 GB repository budget
+      # the Gradle caches also draw on.
+      - name: Cache the AVD and its boot snapshot
+        id: avd-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-v1-${{ env.API_LEVEL }}-${{ env.EMULATOR_TARGET }}-${{ env.EMULATOR_ARCH }}
+
+      # Boots and does nothing, so the shutdown leaves a snapshot.
+      # `disable-animations: false` because the step below applies that per boot
+      # rather than baking it in.
+      - name: Create the AVD and its boot snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: ${{ env.EMULATOR_TARGET }}
+          arch: ${{ env.EMULATOR_ARCH }}
+          force-avd-creation: false
+          disable-animations: false
+          emulator-options: ${{ env.EMULATOR_OPTIONS }}
+          script: echo "Booted once so the shutdown leaves a snapshot behind."
+
+      # `-no-snapshot-save` so a run that dirtied the device does not write that
+      # state back over the clean snapshot.
+      - name: Instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: ${{ env.EMULATOR_TARGET }}
+          arch: ${{ env.EMULATOR_ARCH }}
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
+          script: ./gradlew --stacktrace connectedDebugAndroidTest
+
+      - name: Keep the reports from a failed run
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-${{ github.job }}
+          path: |
+            **/build/reports/**
+            **/build/outputs/androidTest-results/**
+          retention-days: 14

@@ -1,0 +1,9 @@
+package: com.maybank2u.life
+title: Maybank
+expect: matched
+rule: mae-refund-my-v1
+amount_sen: 2550
+merchant: SHOPEE MY
+direction: REFUND
+
+Bayaran balik RM25.50 daripada SHOPEE MY telah dikreditkan ke akaun anda.

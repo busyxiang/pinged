@@ -4,19 +4,23 @@
 release when a `v*` tag is pushed. It runs the unit tests first, so a broken
 parse corpus fails the release rather than shipping.
 
-Until the Android project exists the workflow fails at its first step, by
-design — a green release with no APK attached would be worse.
+The first step checks that `gradlew` exists, so a repository with no Android
+project fails there rather than publishing a green release with no APK
+attached. That guard has been satisfied since the capture milestone; it is kept
+because the failure it prevents is silent.
 
 ## Toolchain
 
-JDK **25** locally and in CI (`java-version` in the workflow). AGP 9.4 states
+JDK **25** locally and in CI (`java-version` in
+`.github/actions/setup-android/action.yml`). AGP 9.4 states
 a JDK *minimum* of 17, not a maximum, and requires Gradle 9.6, which runs on
 JVM 17 through 26 — so 25, the current LTS, is supported.
 
 One coupling to keep in mind if the AGP version ever moves backwards: Java 25
 needs Gradle 9.1.0 or later, so an AGP 8.x project (which cannot use Gradle 9)
-is capped at Java 24. Local and CI JDKs should always match; the workflow's
-`java-version` is the only place CI cares.
+is capped at Java 24. Local and CI JDKs should always match; the composite
+action's `java-version` is the only place CI cares, and both workflows read
+their JDK from it.
 
 AGP's *default* JDK is 17, which is what Google exercises most. If something
 inexplicable happens in D8, R8 or KSP, dropping the Gradle JDK to 17 is the

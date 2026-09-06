@@ -1,0 +1,5 @@
+package: my.com.tngdigital.ewallet
+title: Touch 'n Go eWallet
+expect: rejected
+
+Jom! Get RM10 off your next order with this voucher, today only.

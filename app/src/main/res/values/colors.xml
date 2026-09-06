@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon's palette, which is the Receipt direction's four tokens
+     under the names the design system already gives them. The Compose theme
+     declares the same four in Kotlin (feature/ledger .../theme/Color.kt); a
+     vector drawable cannot reach those, so the resource layer keeps its own
+     copy and this file is that copy's only home.
+
+     The icon is variant A, "Ink", from the launcher-icon study in
+     design/build-screen-set.py: an icon lives among other icons, not among
+     its own screens, so the ground is ink rather than the app's paper. -->
+<resources>
+    <color name="ink">#1a1714</color>
+    <color name="paper">#fbf6ea</color>
+    <color name="stamp">#a03826</color>
+    <color name="rule">#cfc4ae</color>
+
+    <!-- The adaptive icon's background layer. Named separately from `ink`
+         because it is a role, not a colour: the launcher reads this one. -->
+    <color name="ic_launcher_background">@color/ink</color>
+</resources>

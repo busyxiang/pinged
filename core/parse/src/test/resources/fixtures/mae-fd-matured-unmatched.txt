@@ -1,0 +1,5 @@
+package: com.maybank2u.life
+title: Maybank
+expect: unmatched
+
+Your FD of RM5,000.00 has matured. View details in MAE.

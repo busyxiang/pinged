@@ -1,0 +1,37 @@
+name: Set up Android build
+description: The JDK and Gradle, in the one place every workflow reads them from.
+
+# Deliberately does not check out: a local composite action can only be resolved
+# once the repository is on disk, so each job runs actions/checkout itself first.
+
+inputs:
+  cache-encryption-key:
+    description: >-
+      Base64 AES key (openssl rand -base64 16) held as a repository secret.
+      setup-gradle saves no configuration-cache data without one. A composite
+      action cannot read `secrets` itself, hence an input the caller fills.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v6
+      with:
+        # Kept in step with the local JDK. docs/release.md explains why 25 and
+        # what the AGP and Gradle couplings are.
+        distribution: temurin
+        java-version: '25'
+
+    # v5, not the current v6: upgrading to v6 accepts Gradle's Terms of Use for
+    # its caching component (see the gradle/actions v6.0.0 release note). That
+    # is a licensing decision rather than a version bump. v5 is the release
+    # that moved to node24, which is all the deprecation warning asked for.
+    - uses: gradle/actions/setup-gradle@v5
+      with:
+        # The default writes the cache only from the default branch, which for a
+        # repository whose default branch has no CI workflow means every run of
+        # every job logs "Gradle User Home cache not found. Will initialize
+        # empty." and re-resolves every dependency.
+        cache-read-only: false
+        cache-encryption-key: ${{ inputs.cache-encryption-key }}

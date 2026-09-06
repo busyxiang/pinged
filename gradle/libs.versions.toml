@@ -1,0 +1,186 @@
+[versions]
+agp = "9.4.0"
+kotlin = "2.4.10"
+ksp = "2.3.11"
+# 1.11.0. Two things in it are for spec 5.9, the pack import that does not
+# exist yet, and are the reason to be current before writing it rather than
+# during: `exceptionsWithDebugInfo`, which stops the offending input being
+# embedded in exception messages (PackLoader puts `e.message` straight into
+# PackValidationException, so an imported pack's contents would otherwise
+# reach a log), and the now-public JsonDecodingException carrying `path` and
+# `offset`, which is what lets a dry run say where in the file the problem
+# is instead of only that there is one.
+#
+# It also closes a widening gap: the serialization compiler plugin comes from
+# Kotlin (2.4.10 here) while this is the runtime, and 1.8.0 shipped against
+# Kotlin 2.1.
+kotlinx-serialization-json = "1.11.0"
+junit = "4.13.2"
+room = "2.8.4"
+# 4.18.0, the latest on Maven Central. It was held at 4.17.0 for as long as
+# compileSdk was 36: its AAR metadata declares minCompileSdk=37 (and, new in
+# this release, minCompileMinorSdk=0), which made AGP's checkDebugAarMetadata
+# fail every consumer built against android-36. compileSdk is 37 now, so the
+# demand is met and the pin is released.
+#
+# The bundled SQLite moves with it: 4.17.0 carried 3.53.3 and 4.18.0 carries
+# 3.53.4. That matters because QueryPlanTest asserts named indexes, and spec
+# 15.8 warns plan text is not stable across SQLite versions. Compared the two
+# libsqlcipher.so builds' compile-option strings directly: identical, 50
+# options each, ENABLE_STAT4 present in both. Every plan in QueryPlanTest is
+# byte-identical before and after the bump.
+sqlcipher = "4.18.0"
+# Was 2.6.2, to match what androidx.room:room-runtime:2.8.4 declares. The
+# sqlcipher 4.18.0 unpin above moved it, and moved it SILENTLY, which is the
+# only reason this is written down at length.
+#
+# 4.18.0 adds net/zetetic/database/sqlcipher/driver/* -- SQLCipherDriver,
+# SQLCipherConnection, SQLCipherStatement, JournalModeStatement -- implementing
+# androidx.sqlite's SQLiteDriver/SQLiteConnection/SQLiteStatement, and its POM
+# asks for androidx.sqlite:sqlite:2.7.0 at RUNTIME scope. 4.17.0 asked for
+# 2.6.2. Runtime scope is the trap: with the catalog still saying 2.6.2, the
+# measured result was
+#
+#   :core:data debugCompileClasspath   -> 2.6.2
+#   :core:data debugRuntimeClasspath   -> 2.7.0  (by conflict resolution)
+#   :app       releaseRuntimeClasspath -> 2.7.0  (by conflict resolution)
+#
+# i.e. the app compiled against one androidx.sqlite and shipped another, with
+# nothing in the build saying so -- the exact failure the old wording ("keeps
+# the trio a combination that was tested together") existed to prevent, quietly
+# inverted into a compile/runtime skew. Before the sqlcipher bump all three
+# read 2.6.2.
+#
+# So the pin follows the version that actually ships. 2.7.0 is also the
+# combination SQLCipher 4.18.0 was published against, so this restores the
+# trio rather than breaking it; Room 2.8.4 asks for 2.6.2 and resolves up, as
+# it already did at runtime. The three interfaces sqlcipher's new driver
+# classes implement are signature-identical between 2.6.2 and 2.7.0 -- only
+# their SourceFile attribute changed, from SQLiteDriver.kt to
+# SQLiteDriver.nonWeb.kt and so on -- so nothing on that surface moved.
+androidx-sqlite = "2.7.0"
+# Compose's ui-test-junit4 drags in espresso-core 3.5.0, and on the API 37
+# emulator this project tests on, Espresso's graph fails to build at all:
+# InputManagerEventInjectionStrategy resolves android.hardware.input
+# .InputManager#getInstance by reflection, that method is gone on 37, and every
+# Compose test dies in Espresso.onIdle before it renders anything. 3.7.0 is the
+# newest stable and it survives. The artifact publishes no AAR metadata at all,
+# so unlike the Compose artifacts it makes no minCompileSdk demand.
+androidx-test-espresso = "3.7.0"
+androidx-test-runner = "1.7.0"
+androidx-test-ext-junit = "1.3.0"
+# ApplicationProvider for the Robolectric tests. Matched to the runner and
+# ext:junit pins above, which is the combination androidx.test ships together.
+androidx-test-core = "1.7.0"
+# 4.16.1 is still the newest non-prerelease on Maven Central (4.17 is at
+# beta-4). The pin is bounded from above by the SDK it can emulate, not by
+# taste: `javap -c` on DefaultSdkProvider in robolectric-4.16.1.jar lists SDK
+# 16 (API 36, android-all-instrumented 16-robolectric-13921718-i7) as its
+# highest entry, and the numeric API levels in that class stop at 36.
+#
+# Re-checked at the compileSdk/targetSdk 37 bump, because that is exactly the
+# move this comment warned about. 4.16.1 still has no API 37 image, so
+# src/test/resources/robolectric.properties keeps sdk=36 and the Robolectric
+# tests keep running against Android 16. That is the pin doing its job rather
+# than a failure -- it is the whole reason the file pins a number instead of
+# inheriting targetSdk -- but it is now a real gap and should be read as one:
+# targetSdk is 37 and these 51 tests emulate 16, so any Android 17 behaviour
+# change that reaches this module cannot fail here. What closes the gap for now
+# is the instrumented side: the library androidTest APKs take their targetSdk
+# from compileSdk, so all 222 instrumented tests genuinely run at targetSdk 37
+# on an API 37 device. The 51 unit tests were re-run at the bump and are
+# unchanged, which says they still pass at 16 -- not that 17 was exercised.
+#
+# 4.17-beta-4 does carry an Android 17 entry (image build 15733970), so the
+# properties file can follow targetSdk once 4.17 goes stable.
+robolectric = "4.16.1"
+# Spec 10.2: the heartbeat and spec 9.6's per-package seen counts go to
+# DataStore and never to Room. 1.2.1 is the newest stable (1.3.0 is at
+# alpha10); its AAR metadata declares minCompileSdk=34 and
+# minAndroidGradlePluginVersion=8.1.1, so unlike sqlcipher 4.18.0 it does not
+# demand a compileSdk bump.
+androidx-datastore = "1.2.1"
+# DataStore 1.2.1's own module metadata requires kotlinx-coroutines-core
+# 1.9.0; 1.11.0 is the newest stable line and satisfies it. The -android
+# artifact is the one that brings Dispatchers.Main for Android.
+kotlinx-coroutines = "1.11.0"
+# Spec 3: WorkManager runs stage two, the daily health check, the pack-upgrade
+# re-parse and the import dry run. 2.11.2 is the newest stable release --
+# androidx/work/group-index.xml lists 2.12.0 only as alpha01/beta01/rc01, and
+# nothing here needs it.
+#
+# Checked the way sqlcipher 4.18.0 taught us to check, because that is how a
+# transitive compileSdk demand hides: work-runtime-2.11.2.aar's
+# META-INF/com/android/build/gradle/aar-metadata.properties declares
+# minCompileSdk=35 and minAndroidGradlePluginVersion=8.6.0, and work-testing
+# declares the same pair. compileSdk here is 37 and AGP is 9.4.0, so neither
+# artifact demands a bump, and neither was holding compileSdk back either.
+#
+# The library is `work-runtime`, not `work-runtime-ktx`. As of 2.11.2 the ktx
+# artifact is an empty facade -- its classes.jar holds one file, a version
+# marker, and its only dependency is `work-runtime:[2.11.2]`. `CoroutineWorker`
+# and `OneTimeWorkRequestBuilder` both live in work-runtime itself
+# (androidx/work/CoroutineWorker.class, androidx/work/OneTimeWorkRequestKt.class),
+# so depending on the ktx artifact would add a Gradle module and no code.
+#
+# work-runtime's POM asks for androidx.room:room-runtime:2.7.0 at runtime for
+# its own bookkeeping database; Room is pinned at 2.8.4 here and Gradle
+# resolves to the higher version, which is why the Room pin is left alone.
+androidx-work = "2.11.2"
+# Task 12's UI. Every Compose artifact below is taken from this BOM without a
+# version of its own, so the set stays a combination that was released together.
+#
+# 2026.08.00, the newest published BOM. It was held at 2026.06.01 for as long
+# as compileSdk was 36: it resolves Compose 1.12.0, and ui-android /
+# foundation-android / runtime-saveable-android at 1.12.0 declare
+# minCompileSdk=37 in META-INF/com/android/build/gradle/aar-metadata.properties
+# -- the same trap sqlcipher 4.18.0 set, failing checkDebugAarMetadata with the
+# same message. compileSdk is 37 now, so the demand is met.
+androidx-compose-bom = "2026.08.00"
+# 1.13.0 is still the newest stable; androidx/activity/group-index.xml lists
+# nothing above it but 1.14.0-alpha01. So the compileSdk 37 bump does not
+# release this pin -- it was never held by 36 in the first place, it is simply
+# the top of the stable line. Its AAR metadata declares minCompileSdk=36 and
+# minAndroidGradlePluginVersion=8.9.1, which used to be exactly this project's
+# compileSdk with no headroom; at 37 there is now a level of slack.
+androidx-activity = "1.13.0"
+
+[libraries]
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization-json" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+sqlcipher-android = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
+androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "androidx-sqlite" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidx-test-runner" }
+androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "androidx-test-espresso" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidx-test-ext-junit" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidx-test-core" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "androidx-datastore" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
+androidx-work-runtime = { group = "androidx.work", name = "work-runtime", version.ref = "androidx-work" }
+androidx-work-testing = { group = "androidx.work", name = "work-testing", version.ref = "androidx-work" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidx-compose-bom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-runtime = { group = "androidx.compose.runtime", name = "runtime" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "androidx-activity" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+# Pinned to `kotlin`, not to a version of its own. The Compose compiler plugin
+# is part of the Kotlin release train from 2.0 on, so its version is the
+# Kotlin version and a mismatch is a compiler-plugin ABI error rather than a
+# resolution failure.
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
