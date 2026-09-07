@@ -16,28 +16,22 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * The app starts.
  *
- * The only test in this project whose subject is the application rather than a
- * component of it, and the one that was missing when v0.1.0 shipped an APK that
- * died before drawing a frame. `MainActivity` lives in `:app`, so no other
- * module can start it; `:app` had no `androidTest` source set at all, so
- * nothing did.
+ * The only test whose subject is the application rather than a component of
+ * it. `MainActivity` lives in `:app`, so no other module can start it.
  *
- * `ActivityScenario` rather than a Compose rule, because the failure was in the
- * lifecycle and not in the tree: `onResume` launched database work in
- * `lifecycleScope`, which is `Dispatchers.Main.immediate`, and a Compose test
- * that renders `SourcesScreen` against a supplied scope never runs that code.
+ * `ActivityScenario` rather than a Compose rule, because the lifecycle is the
+ * subject: a test that renders `SourcesScreen` against a scope it supplies
+ * never runs `lifecycleScope`, which is where the database work is dispatched
+ * from.
  */
 @RunWith(AndroidJUnit4::class)
 class LaunchTest {
 
     /**
-     * Where the failure this test exists for actually lands.
-     *
-     * `lifecycleScope` carries no `CoroutineExceptionHandler`, so a throw inside
-     * it reaches the thread's default handler, which kills the process. Left
-     * alone that ends the instrumentation run with a dead process and no
-     * attributable failure; captured here it becomes an assertion naming the
-     * lifecycle step it happened in.
+     * `lifecycleScope` carries no `CoroutineExceptionHandler`, so a throw
+     * inside it reaches the thread's default handler and kills the process.
+     * Left alone that ends the run with a dead process and no attributable
+     * failure; captured, it becomes an assertion naming the lifecycle step.
      */
     private val uncaught = AtomicReference<Throwable?>(null)
 
@@ -55,29 +49,22 @@ class LaunchTest {
     }
 
     @Test fun theAppStartsAndSurvivesBackgroundingAndRotation() {
-        // A cold process is the subject. `Databases` memoizes its handle for the
-        // life of the process, so without this the open -- and
-        // `DatabaseFactory`'s eager seed, which is the blocking work -- may
-        // already have been paid for by an earlier caller on another thread, and
-        // the launch this test watches would never touch the file.
+        // A cold process is the subject. `Databases` memoizes its handle, so
+        // without this the launch under test may touch no file at all.
         Databases.reset()
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             assertEquals(Lifecycle.State.RESUMED, scenario.state)
             assertNothingWasThrownDuring("launch")
 
-            // onResume again. This is the path that failed, and it is also
-            // ForegroundRebinder's counter going 1 -> 0 -> 1, so a second
-            // foreground exercises spec 10.1's third rebind path rather than
-            // just repeating the first assertion.
+            // Also ForegroundRebinder's counter going 1 -> 0 -> 1, so this is
+            // spec 10.1's third rebind path and not a repeat of the above.
             scenario.moveToState(Lifecycle.State.CREATED)
             scenario.moveToState(Lifecycle.State.RESUMED)
             assertNothingWasThrownDuring("a second foreground")
 
-            // A configuration change runs onCreate and onResume again against a
-            // database that is now open, which is the other half of the state
-            // space: the first launch tests the open, this tests the memoized
-            // read.
+            // onCreate and onResume again against an open database: the launch
+            // above tests the open, this tests the memoized read.
             scenario.recreate()
             assertEquals(Lifecycle.State.RESUMED, scenario.state)
             assertNothingWasThrownDuring("a configuration change")
@@ -87,25 +74,15 @@ class LaunchTest {
     /**
      * Drain the main thread, then assert.
      *
-     * `waitForIdleSync` is the whole instrument and it is enough for this
-     * failure specifically: `Dispatchers.Main.immediate` runs the coroutine
-     * body synchronously when it is already on the main thread, which `onResume`
-     * is, so the throw happened inside `onResume` rather than after it.
-     *
-     * What this does **not** cover is a throw from the `Dispatchers.IO`
-     * continuation after the read completes. Nothing outside `MainActivity`
-     * can observe that refresh finishing -- the state lives in a private
-     * `SourcesViewModel` -- so making it condition-based would mean widening
-     * the Activity's surface for a test. `MainThreadRefreshTest` holds the
-     * `Job` directly and joins it, and that is where the asynchronous tail is
-     * asserted.
+     * `waitForIdleSync` is enough for this failure because
+     * `Dispatchers.Main.immediate` runs the body inline when already on the
+     * main thread, which `onResume` is. It does **not** cover a throw from the
+     * `Dispatchers.IO` continuation: nothing outside `MainActivity` can
+     * observe that refresh finishing, so `MainThreadRefreshTest` holds the
+     * `Job` and asserts the asynchronous tail there instead.
      */
     private fun assertNothingWasThrownDuring(step: String) {
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-        assertNull(
-            "An uncaught exception reached the default handler during $step. " +
-                "On a device that is the process dying, which is what v0.1.0 did.",
-            uncaught.get(),
-        )
+        assertNull("An uncaught exception killed the process during $step.", uncaught.get())
     }
 }

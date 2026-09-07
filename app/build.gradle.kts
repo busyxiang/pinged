@@ -115,19 +115,15 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.coroutines.android)
 
-    // This module had no androidTest source set at all, and that is how a
-    // crash on launch shipped in v0.1.0: `MainActivity` lives here, so no
-    // other module can start it, and nothing else in the tree exercises
-    // process start. `LaunchTest` is the only test in the project whose
-    // subject is the app rather than a component of it.
+    // `MainActivity` lives here, so `LaunchTest` is the only place the
+    // application itself can be started.
     //
-    // No ui-test-manifest here, unlike :feature:ledger. That artifact exists
-    // to supply a stub Activity for `createComposeRule` in a library module;
-    // this module has the real manifest and the real Activity under test.
+    // No ui-test-manifest, unlike :feature:ledger: that artifact supplies a
+    // stub Activity for `createComposeRule` in a library module, and this
+    // module has the real manifest and the real Activity under test.
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
-    // ActivityScenario, which drives the real lifecycle rather than asserting
-    // about a Compose tree in isolation -- onResume is where v0.1.0 died.
+    // ActivityScenario, for the real lifecycle rather than a Compose tree.
     androidTestImplementation(libs.androidx.test.core)
     // Not optional on API 37. See the note in the version catalog.
     androidTestImplementation(libs.androidx.test.espresso.core)

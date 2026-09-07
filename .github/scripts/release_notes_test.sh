@@ -1,27 +1,17 @@
 #!/usr/bin/env bash
 #
-# Tests for release_notes.sh, which is the only step of the release workflow
-# that cannot be rehearsed: the workflow around it decrypts a signing keystore
-# and publishes to GitHub, so it runs a handful of times a year and every run
-# is real. Everything here builds its own fixture repositories with `git init`
-# and reads nothing from the repository it ships in, so it passes on a shallow
-# CI checkout and in a clone with no tags.
+# Tests for release_notes.sh, the only step of the release workflow that
+# cannot be rehearsed -- the workflow around it decrypts a keystore and
+# publishes, so every run is real. Fixtures are built here with `git init` and
+# nothing is read from the repository this ships in, so it passes on a shallow
+# CI checkout.
 #
-# Half of this file is mutation tests. Each one takes a copy of the script,
-# puts one guard back to what it replaced with a `sed`, and asserts the result
-# is wrong in that guard's own specific way -- the baseline becomes an SDD
-# checkpoint, or a patch tag from an unmerged branch, or a commit message
-# closes its own fence. Each of those needs a fixture shaped to the failure it
-# is about, which is why there are three fixture histories here and not one
-# (plus a shallow clone of one of them): three of the four baseline guards do
-# nothing measurable on a history that does not contain the shape they are
-# for, and a mutation test on the wrong fixture passes against a script with
-# the guard deleted.
-#
-# The `seen_self` case exists because writing this file found it. The search
-# originally took the first candidate that was not the tag being released,
-# which picks a *higher* tag whenever one is reachable, and the fixture below
-# grew a second tag on one commit for an unrelated reason and caught it.
+# Half of this file is mutation tests: take a copy of the script, revert one
+# guard with a `sed`, assert the result is wrong in that guard's own way.
+# Each needs a fixture shaped to its failure, which is why there are three
+# histories here -- three of the four baseline guards do nothing measurable on
+# a history without the shape they are for, and a mutation test on the wrong
+# fixture passes against a script with the guard deleted.
 
 set -euo pipefail
 
@@ -91,11 +81,10 @@ notes_for() {
 }
 
 # A copy of the script with one guard reverted, left in $MUTANT. The sed is
-# asserted to have changed something, because a mutation test whose mutation
-# silently failed to apply is a test that passes for the wrong reason -- and
-# these patterns are lines of a shell script, which is exactly the sort of
-# thing that gets reworded. Sets a global rather than printing the path: a
-# `$(...)` here would put `fail` in a subshell and lose the count.
+# asserted to have matched: a mutation that silently failed to apply is a test
+# passing for the wrong reason, and these patterns are lines of shell that get
+# reworded. Sets a global rather than printing, because a `$(...)` would put
+# `fail` in a subshell and lose the count.
 MUTANT=
 mutant() {
     local name=$1 expression=$2
@@ -108,10 +97,8 @@ mutant() {
     return 0
 }
 
-# ---------------------------------------------------------------------------
 # The main fixture: two releases, an SDD checkpoint tag on either side of the
 # first one, a merge, and a commit message written to break a generator.
-# ---------------------------------------------------------------------------
 
 main=$(new_repo main)
 commit_in "$main" 'Add approved design spec'
@@ -128,11 +115,9 @@ commit_in "$main" 'Give :app a test that starts it, which is what nothing did'
 git -C "$main" checkout --quiet main
 git -C "$main" merge --quiet --no-ff -m 'Merge pull request #1 from busyxiang/feature' feature
 
-# The hostile commit, used as both a commit message and a tag message. Every
-# character class that could end up interpreted: backticks including a full
-# fence, lines that read like heredoc terminators, command substitution in
-# both spellings, printf conversions, markdown structure, raw HTML, and a
-# mention that would notify a real account if it reached the rendered page.
+# The hostile commit, used as both a commit and a tag message: a full fence,
+# heredoc-terminator lines, command substitution in both spellings, printf
+# conversions, raw HTML, and a mention that would notify a real account.
 cat > "$work/hostile.txt" <<'HOSTILE_FIXTURE_ENDS_HERE'
 Subject and body both hostile: `backticks`, "quotes", 'single', $HOME, ${PATH}
 
@@ -163,9 +148,7 @@ git -C "$main" add -A
 git -C "$main" commit --quiet -F "$work/hostile.txt"
 git -C "$main" tag -a v0.1.1 -F "$work/hostile.txt"
 
-# ---------------------------------------------------------------------------
 # The first release, which has no previous tag.
-# ---------------------------------------------------------------------------
 
 first=$work/first.md
 notes_for "$script" "$main" v0.1.0 "$first"
@@ -184,9 +167,7 @@ assert_contains "$first" 'Capture notifications into an encrypted ledger' \
 assert_contains "$first.log" 'No previous v* tag reachable' \
     'first release: says so in the workflow log'
 
-# ---------------------------------------------------------------------------
 # A release with a predecessor.
-# ---------------------------------------------------------------------------
 
 normal=$work/normal.md
 notes_for "$script" "$main" v0.1.1 "$normal"
@@ -203,17 +184,14 @@ assert_absent "$normal" 'sdd-checkpoint' 'normal release: ignores a non-version 
 assert_contains "$normal" 'A merged branch lands here as a single squashed commit' \
     'normal release: warns that the commit count is not the size of the release'
 
-# The static half. These three paragraphs are the release notes' only
-# user-facing content and none of it can be derived from git, so it is
-# asserted rather than trusted to survive an edit to the generated half.
+# The static half: the notes' only user-facing content, asserted rather than
+# trusted to survive an edit to the generated half.
 assert_contains "$normal" 'Sideload the APK below.' 'static: sideloading'
 assert_contains "$normal" 'Allow restricted' 'static: the Android 13 restricted-settings toggle'
 assert_contains "$normal" 'does not hand' 'static: no earlier notification can be recovered'
 assert_contains "$normal" "sha256  $sha" 'static: the APK digest'
 
-# ---------------------------------------------------------------------------
 # The hostile text, rendered.
-# ---------------------------------------------------------------------------
 
 [ -e "$main/pwned-by-substitution" ] &&
     fail 'injection: a commit message ran a command through substitution'
@@ -228,16 +206,12 @@ assert_contains "$normal" '%s %d %5.2f %% and 100%' \
 assert_contains "$normal" 'NOTES_EOF' 'injection: a heredoc-shaped line survives'
 assert_contains "$normal" '<img src=x onerror=alert(1)>' 'injection: raw HTML survives as text'
 assert_contains "$normal" '@busyxiang #1' 'injection: a mention survives as text'
-# Four, because the tag message contains a three-backtick fence. The point is
-# not the number but that the fence is strictly longer than any backtick run
-# in the text it wraps; mutant `fixed-fence` below is what proves that
-# matters.
+# Four, because the tag message contains a three-backtick fence. What matters
+# is that the fence outgrows any run inside it; mutant `fixed-fence` proves it.
 assert_contains "$normal" '````' 'injection: the fence outgrows the backticks in the text'
 
-# ---------------------------------------------------------------------------
 # A second tag on the tip commit: a lightweight one, which has no message to
 # quote, and which must not become the baseline of the release below it.
-# ---------------------------------------------------------------------------
 
 git -C "$main" tag v0.1.2
 
@@ -258,10 +232,8 @@ assert_contains "$newer" 'commits since v0.1.0' \
     'a newer tag exists: the baseline is still the tag below this one'
 assert_absent "$newer" 'v0.1.2' 'a newer tag exists: it is not used as the baseline'
 
-# ---------------------------------------------------------------------------
 # An unknown tag fails loudly, because the alternative is a release whose
 # notes are empty.
-# ---------------------------------------------------------------------------
 
 missing=$work/missing.md
 notes_for "$script" "$main" v9.9.9 "$missing"
@@ -269,10 +241,8 @@ assert_contains "$missing.log" 'exit 1' 'unknown tag: fails'
 assert_contains "$missing.log" '::error::' 'unknown tag: annotates the failure'
 assert_contains "$missing.log" 'fetch-depth' 'unknown tag: names the likely cause'
 
-# ---------------------------------------------------------------------------
 # Mutation: the `v[0-9]*` filter. It matters on the first release, where
 # there is no earlier version tag to outrank a checkpoint tag.
-# ---------------------------------------------------------------------------
 
 if mutant glob "s/'v\[0-9\]\*'/'*'/"; then
     out=$work/mutant-glob.md
@@ -281,9 +251,7 @@ if mutant glob "s/'v\[0-9\]\*'/'*'/"; then
         'mutant glob: without the filter an SDD checkpoint becomes the first release baseline'
 fi
 
-# ---------------------------------------------------------------------------
 # Mutation: the walk that requires the baseline to be below this tag.
-# ---------------------------------------------------------------------------
 
 if mutant newer-tag 's/^    \[ "\$seen_self" -eq 1 \] || continue$/    :/'; then
     out=$work/mutant-newer.md
@@ -292,10 +260,8 @@ if mutant newer-tag 's/^    \[ "\$seen_self" -eq 1 \] || continue$/    :/'; then
         'mutant newer-tag: taking the first candidate picks the tag above this one'
 fi
 
-# ---------------------------------------------------------------------------
 # Mutation: version sort. Needs a history where lexical and version order
 # disagree, which the main fixture does not have.
-# ---------------------------------------------------------------------------
 
 sorted=$(new_repo sorted)
 commit_in "$sorted" 'Nine'
@@ -320,11 +286,9 @@ if mutant sort 's/--sort=-v:refname/--sort=-refname/'; then
         'mutant sort: a lexical sort puts v0.9.0 immediately below v1.0.0'
 fi
 
-# ---------------------------------------------------------------------------
 # Mutation: --merged. Needs the backport shape -- a patch tag released off an
 # older line and never merged back, sitting in version order between the tag
 # being released and its real predecessor.
-# ---------------------------------------------------------------------------
 
 branched=$(new_repo branched)
 commit_in "$branched" 'One'
@@ -352,9 +316,7 @@ if mutant merged 's/--merged "\$commit" //'; then
         'mutant merged: and the diffstat then reports the other line as deletions'
 fi
 
-# ---------------------------------------------------------------------------
 # Mutation: the two rules that keep commit text from escaping its container.
-# ---------------------------------------------------------------------------
 
 if mutant fixed-fence 's/^    length=\$((length + 1))$/    length=3/'; then
     out=$work/mutant-fence.md
@@ -370,12 +332,9 @@ if mutant printf-format 's|^    printf .%s\\n. "\$text"$|    printf "$text\\n"|'
         'mutant printf-format: printf "$text" eats the conversions in the message'
 fi
 
-# ---------------------------------------------------------------------------
-# The checkout depth the workflow asks for. This is the one guard that is not
-# in the script: a depth-1 clone of the tag has no earlier tag to find, so it
-# reports every release as the first, and reports it successfully. That is why
-# release.yml pins fetch-depth: 0 and why that line carries a comment.
-# ---------------------------------------------------------------------------
+# The one guard that is not in the script: a depth-1 clone has no earlier tag
+# to find, so it reports every release as the first, successfully. Hence
+# release.yml's fetch-depth: 0.
 
 shallow=$work/shallow
 git clone --quiet --depth 1 --branch v1.0.0 "file://$sorted" "$shallow" 2>/dev/null

@@ -4,37 +4,22 @@
 #
 #     release_notes.sh <tag> <apk-sha256> <output-file>
 #
-# The notes go to the output file and nothing else does, so stdout stays free
-# for the workflow log. That split is the reason the diagnostics below are
-# `::warning::` lines rather than writes to stderr: GitHub reads workflow
-# commands off a step's stdout only, so a script that wrote its notes there
-# could not raise one.
+# Notes go to the output file, nothing else does. Stdout is therefore free for
+# workflow commands, which GitHub reads off stdout only -- a script that wrote
+# its notes there could not raise a `::warning::`.
 #
-# Runnable outside Actions against any tag in any clone, which is the only way
-# this file gets tested -- the workflow that calls it runs a few times a year
-# and signs an APK when it does. GITHUB_REPOSITORY and GITHUB_SERVER_URL are
-# read if set, and only decide whether the compare link is emitted.
+# Text out of git is prose nobody wrote with a generator in mind: it contains
+# backticks, quotes, `$` and sometimes a fenced block. Two rules, both
+# load-bearing, keep that from producing broken or forged notes:
 #
-# Everything taken out of git -- the tag message, commit subjects -- is
-# untrusted text in the sense that matters here: it is prose nobody wrote with
-# a generator in mind, and it reliably contains backticks, quotes, `$`, `--`
-# and occasionally a fenced block. Two rules keep that from turning into
-# broken or forged notes, and both are load-bearing:
-#
-#   * It is never interpolated into anything a shell or printf parses. Every
-#     write is `printf '%s\n' "$var"` -- never `printf "$var"`, which would
-#     make a `%s` in a commit message a format specifier -- and there is no
-#     heredoc anywhere here, so a commit body containing a line that reads
-#     like a terminator has nothing to terminate.
-#
-#   * It is only ever emitted inside a fenced block whose fence is one
-#     backtick longer than the longest backtick run in the text (see `fence`),
-#     so no part of it can close its own container. Inside a fence there is no
-#     markdown, no HTML, no `#123` autolink and no `@mention`, which is the
-#     difference between rendering a commit message and letting one address
-#     the release page. Escaping instead was the alternative and is worse:
-#     these messages are hand-wrapped at 78 columns, and markdown would reflow
-#     them into a wall while `\`` left visible backslashes behind.
+#   * Never interpolated into anything a shell or printf parses. Every write
+#     is `printf '%s\n' "$var"`, and there is no heredoc here, so a message
+#     line that reads like a terminator has nothing to terminate.
+#   * Only ever emitted inside a fence one backtick longer than its longest
+#     backtick run (see `fence`), so it cannot close its own container. That
+#     also kills `#123`, `@mention` and raw HTML. Escaping was the
+#     alternative and is worse: these messages are hand-wrapped at 78
+#     columns, and markdown would reflow them.
 
 set -euo pipefail
 
@@ -54,9 +39,8 @@ fi
 commit=$(git rev-parse --verify --quiet "refs/tags/$tag^{commit}") ||
     die "No tag $tag in this clone. If this ran in Actions, checkout fetched the tag without its history; release.yml sets fetch-depth: 0 for exactly that."
 
-# The longest run of backticks on any line, so the caller can pick a fence
-# that the text cannot close. Written per character rather than with a regex
-# because the shell's own patterns cannot count a run.
+# Longest run of backticks on any line, so `fence` can outgrow it. Per
+# character because shell patterns cannot count a run.
 longest_backtick_run() {
     awk '
         {
@@ -79,8 +63,7 @@ fence() {
     length=$(printf '%s\n' "$1" | longest_backtick_run)
     length=$((length + 1))
     [ "$length" -lt 3 ] && length=3
-    # tr, because the shell has no repeat operator and a loop that appends a
-    # backtick inside double quotes reads like a quoting bug.
+    # tr, because the shell has no repeat operator.
     printf '%*s' "$length" '' | tr ' ' '`'
 }
 
@@ -95,34 +78,23 @@ fenced() {
     printf '%s\n' "$marker"
 }
 
-# The previous release, which is the base of everything below. Four things
-# this has to get right, and each one has a mutation test in
-# release_notes_test.sh that puts the guard back to what it replaced and
+# The previous release, the base of everything below. Four guards, each with
+# a mutation test in release_notes_test.sh that restores what it replaced and
 # watches the baseline come out wrong:
 #
-#   * `v[0-9]*` and not `*`. There are two `capture-milestone-history` tags
-#     here, kept as pointers to a squashed branch's real commits, and an SDD
-#     checkpoint tag would otherwise be a candidate. It bites hardest on a
-#     first release, where there is no v-tag below to outrank it.
-#   * `--merged`, so only an ancestor of what is being released can be the
-#     previous release. The shape that needs it is a patch released off an
-#     older line: v0.1.1 tagged on a branch from v0.1.0 and never merged
-#     back, which then sits between v0.2.0 and v0.1.0 in version order
-#     without being on v0.2.0's history at all. Diffing against it reports
-#     the older line's work as deletions.
-#   * Version sort, not creation date and not a plain refname sort. A tag can
-#     be created late for an old commit, and `-v:refname` orders v0.10.0
-#     after v0.9.0 where a lexical sort does not.
-#   * The candidate has to be *below* this tag in that order, which is what
-#     the `seen_self` walk is for and not a flourish. Taking the first
-#     candidate that is not this tag picks a higher one whenever a higher one
-#     exists and is reachable -- re-running the workflow for an older tag, or
-#     a release cut after a later tag was already pushed -- and then the notes
+#   * `v[0-9]*`, not `*`: the two `capture-milestone-history` tags and any SDD
+#     checkpoint would otherwise be candidates.
+#   * `--merged`: only an ancestor can be the predecessor. A patch tagged off
+#     an older line sorts between v0.2.0 and v0.1.0 without being on v0.2.0's
+#     history, and diffing against it reports that line's work as deletions.
+#   * `-v:refname`, not creation date and not a lexical sort, which would put
+#     v0.10.0 below v0.9.0.
+#   * The candidate must be *below* this tag in that order -- the `seen_self`
+#     walk. Taking the first candidate that is not this tag picks a higher
+#     reachable one when re-running for an older tag, and the notes then
 #     describe the range backwards.
 #
-# Empty is a legitimate answer -- the first release has no predecessor, and so
-# does a `v*` tag whose name is not a version at all -- and the whole rest of
-# this script has a branch for it rather than a guard.
+# Empty is a legitimate answer, and the rest of this script branches on it.
 previous=
 seen_self=0
 while IFS= read -r candidate; do
@@ -189,12 +161,8 @@ fi
     fi
 
     printf '\n### Commits\n\n'
-    # The honest part. A merged branch lands here as one squashed commit --
-    # the whole capture milestone is `7918da9` -- so the length of this list
-    # says nothing about the size of the release, and a reader who counts it
-    # will get the wrong answer in the direction that flatters us. The
-    # diffstat above is measured across the range and cannot be squashed, so
-    # it is stated first and this list is framed against it.
+    # The diffstat is stated first because it is measured across the range and
+    # a squash cannot flatten it; this list can be one commit for a milestone.
     printf 'A merged branch lands here as a single squashed commit, so the length of this\n'
     printf 'list is not the size of the release -- the diffstat above is. Commit messages\n'
     printf 'in this repository are long and explain why; only their subject lines are\n'
@@ -203,11 +171,9 @@ fi
     if [ -n "$subjects" ]; then
         fenced "$subjects"
     else
-        # Reachable when a tag is moved or a second tag is put on a commit
-        # that already has one. Worded as containment rather than "points at
-        # the same commit", which would also be false for a range holding
-        # nothing but merge commits -- a shape this repository cannot produce
-        # and which therefore has no test here.
+        # A moved tag, or a second tag on a commit that already has one.
+        # Worded as containment because "the same commit" would be wrong for a
+        # merge-only range.
         printf 'None. %s already contains every non-merge commit up to this tag.\n' "$previous"
     fi
 
@@ -215,9 +181,7 @@ fi
         printf '\nEvery commit message in full: %s\n' "$compare"
     fi
 
-    # Static, and it stays static because it is not about this release. All
-    # three paragraphs are about the install and none of them can be derived
-    # from git.
+    # Static, because none of it can be derived from git.
     printf '\n## Installing\n\n'
     printf 'Sideload the APK below.\n\n'
     printf 'Pinged needs notification access. On Android 13 and later that sits\n'

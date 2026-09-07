@@ -19,27 +19,16 @@ import org.junit.runner.RunWith
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * The first refresh of a cold process, on the thread the app actually calls it
- * from.
+ * The first refresh of a cold process, on the thread the app calls it from.
  *
  * `MainActivity` builds `SourcesViewModel` with `lifecycleScope`, which is
  * `Dispatchers.Main.immediate`. Every other test in this module supplies
- * `Dispatchers.Default`, and that one substitution is the difference between a
- * suite that passes and an app that cannot start: the database open inside
- * `CaptureStorage.guarded` is blocking, Room's `assertNotMainThread` throws on
- * the main thread, and `lifecycleScope` carries no `CoroutineExceptionHandler`,
- * so on a device the throw reaches the thread's uncaught handler and takes the
- * process with it.
+ * `Dispatchers.Default`, and that substitution is the difference between a
+ * passing suite and an app that cannot start.
  *
- * [Databases.reset] is what makes this a cold start rather than a volatile
- * read. The open is memoized for the life of the process, so without the reset
- * the first caller -- any earlier test class, on any thread -- has already paid
- * for it and this test proves nothing. That is also why the reset cannot be
- * dropped as tidying: it *is* the subject.
- *
- * The handler stands in for the uncaught handler, because a `SupervisorJob`
- * child's failure does not resurface at `join()`. Asserting on the `Job` alone
- * would pass while the process was dying.
+ * The handler stands in for the uncaught handler `lifecycleScope` does not
+ * have: a `SupervisorJob` child's failure does not resurface at `join()`, so
+ * asserting on the `Job` alone would pass while the process was dying.
  */
 @RunWith(AndroidJUnit4::class)
 class MainThreadRefreshTest {
@@ -57,18 +46,16 @@ class MainThreadRefreshTest {
     @After fun releaseTheScope() = mainScope.cancel()
 
     @Test fun aColdRefreshFromTheMainThreadDoesNotThrow() {
-        // Drop the memoized handle so this refresh is the one that opens the
-        // file and runs DatabaseFactory's eager seed, which is the blocking
-        // work that has to be off the main thread.
+        // The reset is the subject, not tidying: the open is memoized for the
+        // life of the process, so without it this asserts against a volatile
+        // read and passes on broken code.
         Databases.reset()
 
         val sources = SourcesViewModel(context, mainScope)
         runBlocking { withTimeout(TIMEOUT_MILLIS) { sources.refresh().join() } }
 
         assertNull(
-            "A refresh dispatched on Dispatchers.Main.immediate threw. On a device " +
-                "this is MainActivity.onResume, lifecycleScope has no handler, and " +
-                "the app dies before drawing anything.",
+            "A refresh dispatched on Dispatchers.Main.immediate threw.",
             crashed.get(),
         )
         assertTrue(
@@ -79,10 +66,7 @@ class MainThreadRefreshTest {
     }
 
     private companion object {
-        /**
-         * Generous because it covers a cold SQLCipher open on a loaded emulator,
-         * and this test is not measuring how long that takes -- `OpenTest` is.
-         */
+        /** Covers a cold SQLCipher open on a loaded emulator; `OpenTest` is what measures it. */
         const val TIMEOUT_MILLIS = 30_000L
     }
 }
