@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+#
+# Tests for release_notes.sh, which is the only step of the release workflow
+# that cannot be rehearsed: the workflow around it decrypts a signing keystore
+# and publishes to GitHub, so it runs a handful of times a year and every run
+# is real. Everything here builds its own fixture repositories with `git init`
+# and reads nothing from the repository it ships in, so it passes on a shallow
+# CI checkout and in a clone with no tags.
+#
+# Half of this file is mutation tests. Each one takes a copy of the script,
+# puts one guard back to what it replaced with a `sed`, and asserts the result
+# is wrong in that guard's own specific way -- the baseline becomes an SDD
+# checkpoint, or a patch tag from an unmerged branch, or a commit message
+# closes its own fence. Each of those needs a fixture shaped to the failure it
+# is about, which is why there are three fixture histories here and not one
+# (plus a shallow clone of one of them): three of the four baseline guards do
+# nothing measurable on a history that does not contain the shape they are
+# for, and a mutation test on the wrong fixture passes against a script with
+# the guard deleted.
+#
+# The `seen_self` case exists because writing this file found it. The search
+# originally took the first candidate that was not the tag being released,
+# which picks a *higher* tag whenever one is reachable, and the fixture below
+# grew a second tag on one commit for an unrelated reason and caught it.
+
+set -euo pipefail
+
+script=$(cd "$(dirname "$0")" && pwd)/release_notes.sh
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+failures=0
+sha=0f3a1c7d5e2b48a9c6d0f1e2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6
+
+fail() {
+    printf 'FAIL %s\n' "$1"
+    failures=$((failures + 1))
+}
+
+pass() {
+    printf 'ok   %s\n' "$1"
+}
+
+assert_contains() {
+    local file=$1 needle=$2 what=$3
+    if [ -f "$file" ] && grep -qF -- "$needle" "$file"; then
+        pass "$what"
+    else
+        fail "$what: expected to find <$needle> in $file"
+    fi
+}
+
+assert_absent() {
+    local file=$1 needle=$2 what=$3
+    if [ -f "$file" ] && grep -qF -- "$needle" "$file"; then
+        fail "$what: did not expect <$needle> in $file"
+    else
+        pass "$what"
+    fi
+}
+
+# A repository, its identity set locally so this passes on a runner with no
+# global git config, and signing off so a developer with commit.gpgsign on
+# does not get a passphrase prompt out of a test run.
+new_repo() {
+    local dir=$work/$1
+    mkdir -p "$dir"
+    git -C "$dir" init --quiet --initial-branch=main
+    git -C "$dir" config user.name 'Fixture'
+    git -C "$dir" config user.email 'fixture@example.invalid'
+    git -C "$dir" config commit.gpgsign false
+    git -C "$dir" config tag.gpgsign false
+    printf '%s\n' "$dir"
+}
+
+commit_in() {
+    local dir=$1 subject=$2
+    printf '%s\n' "$subject" >> "$dir/log.txt"
+    git -C "$dir" add -A
+    git -C "$dir" commit --quiet -m "$subject"
+}
+
+# Run the script under test, or a mutant of it, capturing the notes and the
+# workflow log separately. A non-zero exit is recorded rather than fatal, so
+# the failure cases can be asserted on.
+notes_for() {
+    local runner=$1 dir=$2 tag=$3 out=$4
+    rm -f "$out"
+    ( cd "$dir" && GITHUB_REPOSITORY=busyxiang/pinged bash "$runner" "$tag" "$sha" "$out" ) \
+        > "$out.log" 2>&1 || printf 'exit %s\n' "$?" >> "$out.log"
+}
+
+# A copy of the script with one guard reverted, left in $MUTANT. The sed is
+# asserted to have changed something, because a mutation test whose mutation
+# silently failed to apply is a test that passes for the wrong reason -- and
+# these patterns are lines of a shell script, which is exactly the sort of
+# thing that gets reworded. Sets a global rather than printing the path: a
+# `$(...)` here would put `fail` in a subshell and lose the count.
+MUTANT=
+mutant() {
+    local name=$1 expression=$2
+    MUTANT=$work/mutant-$name.sh
+    sed "$expression" "$script" > "$MUTANT"
+    if cmp -s "$script" "$MUTANT"; then
+        fail "mutant $name: the sed matched nothing, so this mutation tested the unmodified script"
+        return 1
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# The main fixture: two releases, an SDD checkpoint tag on either side of the
+# first one, a merge, and a commit message written to break a generator.
+# ---------------------------------------------------------------------------
+
+main=$(new_repo main)
+commit_in "$main" 'Add approved design spec'
+git -C "$main" tag sdd-plan-checkpoint
+commit_in "$main" 'Capture notifications into an encrypted ledger, and prove it'
+git -C "$main" tag -a v0.1.0 -m 'Pinged 0.1.0 -- the capture milestone'
+commit_in "$main" 'Dispatch the database open off the main thread'
+git -C "$main" tag sdd-checkpoint
+
+# A merge, so the notes can be checked for listing what a branch carried
+# rather than the word "Merge".
+git -C "$main" checkout --quiet -b feature
+commit_in "$main" 'Give :app a test that starts it, which is what nothing did'
+git -C "$main" checkout --quiet main
+git -C "$main" merge --quiet --no-ff -m 'Merge pull request #1 from busyxiang/feature' feature
+
+# The hostile commit, used as both a commit message and a tag message. Every
+# character class that could end up interpreted: backticks including a full
+# fence, lines that read like heredoc terminators, command substitution in
+# both spellings, printf conversions, markdown structure, raw HTML, and a
+# mention that would notify a real account if it reached the rendered page.
+cat > "$work/hostile.txt" <<'HOSTILE_FIXTURE_ENDS_HERE'
+Subject and body both hostile: `backticks`, "quotes", 'single', $HOME, ${PATH}
+
+A fenced block inside a commit message:
+
+```
+echo this line would close a three-backtick fence
+```
+
+Lines that read like a heredoc terminator:
+FIXTURE
+NOTES_EOF
+EOF
+
+Command substitution that must never run: $(touch pwned-by-substitution)
+and the older spelling: `touch pwned-by-backticks`
+
+printf conversions that must survive verbatim: %s %d %5.2f %% and 100%
+
+Markdown and HTML structure that must not take effect: # Heading
+- list item
+<img src=x onerror=alert(1)>
+[link](https://example.invalid) | table | @busyxiang #1
+HOSTILE_FIXTURE_ENDS_HERE
+
+printf 'hostile\n' >> "$main/log.txt"
+git -C "$main" add -A
+git -C "$main" commit --quiet -F "$work/hostile.txt"
+git -C "$main" tag -a v0.1.1 -F "$work/hostile.txt"
+
+# ---------------------------------------------------------------------------
+# The first release, which has no previous tag.
+# ---------------------------------------------------------------------------
+
+first=$work/first.md
+notes_for "$script" "$main" v0.1.0 "$first"
+assert_absent "$first.log" 'exit ' 'first release: the script succeeds'
+assert_contains "$first" 'The first release, so there is no previous tag' \
+    'first release: says there is no previous tag'
+assert_contains "$first" 'measured against an empty tree' \
+    'first release: diffstat is measured against the empty tree'
+assert_contains "$first" 'commits/v0.1.0' \
+    'first release: links the commit list, since there is nothing to compare'
+assert_absent "$first" 'compare/' 'first release: no compare link with an empty base'
+assert_contains "$first" 'Pinged 0.1.0 -- the capture milestone' \
+    'first release: quotes the tag message'
+assert_contains "$first" 'Capture notifications into an encrypted ledger' \
+    'first release: lists commits reachable from the tag'
+assert_contains "$first.log" 'No previous v* tag reachable' \
+    'first release: says so in the workflow log'
+
+# ---------------------------------------------------------------------------
+# A release with a predecessor.
+# ---------------------------------------------------------------------------
+
+normal=$work/normal.md
+notes_for "$script" "$main" v0.1.1 "$normal"
+assert_absent "$normal.log" 'exit ' 'normal release: the script succeeds'
+assert_contains "$normal" 'commits since v0.1.0' 'normal release: names the previous tag'
+assert_contains "$normal" 'compare/v0.1.0...v0.1.1' 'normal release: links the compare view'
+assert_contains "$normal" 'Give :app a test that starts it' \
+    'normal release: lists what a merged branch carried'
+assert_absent "$normal" 'Merge pull request' 'normal release: omits the merge commit itself'
+assert_absent "$normal" 'Add approved design spec' \
+    'normal release: omits commits from before the previous tag'
+assert_absent "$normal" 'sdd-plan-checkpoint' 'normal release: ignores non-version tags'
+assert_absent "$normal" 'sdd-checkpoint' 'normal release: ignores a non-version tag inside the range'
+assert_contains "$normal" 'A merged branch lands here as a single squashed commit' \
+    'normal release: warns that the commit count is not the size of the release'
+
+# The static half. These three paragraphs are the release notes' only
+# user-facing content and none of it can be derived from git, so it is
+# asserted rather than trusted to survive an edit to the generated half.
+assert_contains "$normal" 'Sideload the APK below.' 'static: sideloading'
+assert_contains "$normal" 'Allow restricted' 'static: the Android 13 restricted-settings toggle'
+assert_contains "$normal" 'does not hand' 'static: no earlier notification can be recovered'
+assert_contains "$normal" "sha256  $sha" 'static: the APK digest'
+
+# ---------------------------------------------------------------------------
+# The hostile text, rendered.
+# ---------------------------------------------------------------------------
+
+[ -e "$main/pwned-by-substitution" ] &&
+    fail 'injection: a commit message ran a command through substitution'
+[ -e "$main/pwned-by-backticks" ] &&
+    fail 'injection: a commit message ran a command through backticks'
+pass 'injection: no command in a commit message ran'
+
+assert_contains "$normal" '$(touch pwned-by-substitution)' \
+    'injection: substitution syntax survives as text'
+assert_contains "$normal" '%s %d %5.2f %% and 100%' \
+    'injection: printf conversions survive as text'
+assert_contains "$normal" 'NOTES_EOF' 'injection: a heredoc-shaped line survives'
+assert_contains "$normal" '<img src=x onerror=alert(1)>' 'injection: raw HTML survives as text'
+assert_contains "$normal" '@busyxiang #1' 'injection: a mention survives as text'
+# Four, because the tag message contains a three-backtick fence. The point is
+# not the number but that the fence is strictly longer than any backtick run
+# in the text it wraps; mutant `fixed-fence` below is what proves that
+# matters.
+assert_contains "$normal" '````' 'injection: the fence outgrows the backticks in the text'
+
+# ---------------------------------------------------------------------------
+# A second tag on the tip commit: a lightweight one, which has no message to
+# quote, and which must not become the baseline of the release below it.
+# ---------------------------------------------------------------------------
+
+git -C "$main" tag v0.1.2
+
+light=$work/light.md
+notes_for "$script" "$main" v0.1.2 "$light"
+assert_absent "$light.log" 'exit ' 'lightweight tag: the script still succeeds'
+assert_contains "$light.log" '::warning::' 'lightweight tag: warns in the workflow log'
+assert_absent "$light" 'What the tag says' 'lightweight tag: no quoted message section'
+assert_absent "$light" 'Subject and body both hostile' \
+    'lightweight tag: does not quote the commit message the tag dereferences to'
+assert_contains "$light" 'v0.1.1 already contains every non-merge commit' \
+    'empty range: says the tag moved nothing'
+assert_contains "$light" 'no file changes' 'empty range: reports no diff rather than a blank'
+
+newer=$work/newer.md
+notes_for "$script" "$main" v0.1.1 "$newer"
+assert_contains "$newer" 'commits since v0.1.0' \
+    'a newer tag exists: the baseline is still the tag below this one'
+assert_absent "$newer" 'v0.1.2' 'a newer tag exists: it is not used as the baseline'
+
+# ---------------------------------------------------------------------------
+# An unknown tag fails loudly, because the alternative is a release whose
+# notes are empty.
+# ---------------------------------------------------------------------------
+
+missing=$work/missing.md
+notes_for "$script" "$main" v9.9.9 "$missing"
+assert_contains "$missing.log" 'exit 1' 'unknown tag: fails'
+assert_contains "$missing.log" '::error::' 'unknown tag: annotates the failure'
+assert_contains "$missing.log" 'fetch-depth' 'unknown tag: names the likely cause'
+
+# ---------------------------------------------------------------------------
+# Mutation: the `v[0-9]*` filter. It matters on the first release, where
+# there is no earlier version tag to outrank a checkpoint tag.
+# ---------------------------------------------------------------------------
+
+if mutant glob "s/'v\[0-9\]\*'/'*'/"; then
+    out=$work/mutant-glob.md
+    notes_for "$MUTANT" "$main" v0.1.0 "$out"
+    assert_contains "$out" 'commits since sdd-plan-checkpoint' \
+        'mutant glob: without the filter an SDD checkpoint becomes the first release baseline'
+fi
+
+# ---------------------------------------------------------------------------
+# Mutation: the walk that requires the baseline to be below this tag.
+# ---------------------------------------------------------------------------
+
+if mutant newer-tag 's/^    \[ "\$seen_self" -eq 1 \] || continue$/    :/'; then
+    out=$work/mutant-newer.md
+    notes_for "$MUTANT" "$main" v0.1.1 "$out"
+    assert_contains "$out" 'commits since v0.1.2' \
+        'mutant newer-tag: taking the first candidate picks the tag above this one'
+fi
+
+# ---------------------------------------------------------------------------
+# Mutation: version sort. Needs a history where lexical and version order
+# disagree, which the main fixture does not have.
+# ---------------------------------------------------------------------------
+
+sorted=$(new_repo sorted)
+commit_in "$sorted" 'Nine'
+git -C "$sorted" tag -a v0.9.0 -m 'Pinged 0.9.0'
+commit_in "$sorted" 'Ten'
+git -C "$sorted" tag -a v0.10.0 -m 'Pinged 0.10.0'
+commit_in "$sorted" 'One point oh'
+git -C "$sorted" tag -a v1.0.0 -m 'Pinged 1.0.0'
+
+sortcase=$work/sorted.md
+notes_for "$script" "$sorted" v1.0.0 "$sortcase"
+assert_contains "$sortcase" 'commits since v0.10.0' 'version sort: v0.10.0 is newer than v0.9.0'
+
+# v1.0.0 rather than v0.11.0 as the tag being released, because the walk that
+# requires a lower baseline masks a lexical sort otherwise: descending by
+# refname, v0.10.0 happens to follow v0.11.0 anyway. It does not follow
+# v1.0.0, which sorts above both.
+if mutant sort 's/--sort=-v:refname/--sort=-refname/'; then
+    out=$work/mutant-sort.md
+    notes_for "$MUTANT" "$sorted" v1.0.0 "$out"
+    assert_contains "$out" 'commits since v0.9.0' \
+        'mutant sort: a lexical sort puts v0.9.0 immediately below v1.0.0'
+fi
+
+# ---------------------------------------------------------------------------
+# Mutation: --merged. Needs the backport shape -- a patch tag released off an
+# older line and never merged back, sitting in version order between the tag
+# being released and its real predecessor.
+# ---------------------------------------------------------------------------
+
+branched=$(new_repo branched)
+commit_in "$branched" 'One'
+git -C "$branched" tag -a v0.1.0 -m 'Pinged 0.1.0'
+commit_in "$branched" 'Two, on the main line'
+git -C "$branched" tag -a v0.2.0 -m 'Pinged 0.2.0'
+git -C "$branched" checkout --quiet -b patch v0.1.0
+commit_in "$branched" 'A patch released off the v0.1.0 line and never merged back'
+git -C "$branched" tag -a v0.1.1 -m 'Pinged 0.1.1'
+git -C "$branched" checkout --quiet main
+
+branchcase=$work/branched.md
+notes_for "$script" "$branched" v0.2.0 "$branchcase"
+assert_contains "$branchcase" 'commits since v0.1.0' \
+    'unmerged patch tag: the baseline is the last ancestor, not the last version'
+assert_absent "$branchcase" 'never merged back' \
+    'unmerged patch tag: the other line does not appear in the commit list'
+
+if mutant merged 's/--merged "\$commit" //'; then
+    out=$work/mutant-merged.md
+    notes_for "$MUTANT" "$branched" v0.2.0 "$out"
+    assert_contains "$out" 'commits since v0.1.1' \
+        'mutant merged: without --merged a tag off another branch becomes the baseline'
+    assert_contains "$out" 'deletion' \
+        'mutant merged: and the diffstat then reports the other line as deletions'
+fi
+
+# ---------------------------------------------------------------------------
+# Mutation: the two rules that keep commit text from escaping its container.
+# ---------------------------------------------------------------------------
+
+if mutant fixed-fence 's/^    length=\$((length + 1))$/    length=3/'; then
+    out=$work/mutant-fence.md
+    notes_for "$MUTANT" "$main" v0.1.1 "$out"
+    assert_absent "$out" '````' \
+        'mutant fixed-fence: a three-backtick fence is closed by the fence in the tag message'
+fi
+
+if mutant printf-format 's|^    printf .%s\\n. "\$text"$|    printf "$text\\n"|'; then
+    out=$work/mutant-printf.md
+    notes_for "$MUTANT" "$main" v0.1.1 "$out"
+    assert_absent "$out" '%5.2f' \
+        'mutant printf-format: printf "$text" eats the conversions in the message'
+fi
+
+# ---------------------------------------------------------------------------
+# The checkout depth the workflow asks for. This is the one guard that is not
+# in the script: a depth-1 clone of the tag has no earlier tag to find, so it
+# reports every release as the first, and reports it successfully. That is why
+# release.yml pins fetch-depth: 0 and why that line carries a comment.
+# ---------------------------------------------------------------------------
+
+shallow=$work/shallow
+git clone --quiet --depth 1 --branch v1.0.0 "file://$sorted" "$shallow" 2>/dev/null
+shallow_notes=$work/shallow.md
+notes_for "$script" "$shallow" v1.0.0 "$shallow_notes"
+assert_contains "$shallow_notes" 'The first release' \
+    'shallow checkout: a depth-1 clone silently produces first-release notes'
+assert_absent "$shallow_notes" 'since v0.10.0' \
+    'shallow checkout: and loses the range the release actually covers'
+
+printf '\n'
+if [ "$failures" -ne 0 ]; then
+    printf '%s assertions failed\n' "$failures"
+    exit 1
+fi
+printf 'All assertions passed\n'

@@ -62,6 +62,14 @@ jobs:
       - name: The shipped permission surface is exactly what is declared
         run: python3 .github/scripts/check_permissions.py
 
+      # Here rather than in release.yml, because release.yml is not a place a
+      # test can fail usefully: by the time it runs, a tag exists and a
+      # keystore has been decrypted, and the note generator is the one part of
+      # it that can be exercised without either. The test builds its own
+      # fixture repositories, so this passes on the shallow checkout above.
+      - name: The release notes are built from the tag they claim
+        run: bash .github/scripts/release_notes_test.sh
+
       # Room only rewrites the schema when the committed file's identity hash
       # differs from the entities, so a drifted `createSql` under an unchanged
       # hash survives every build and the comparison is against itself.

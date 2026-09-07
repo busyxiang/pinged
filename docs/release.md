@@ -111,14 +111,55 @@ android {
 
 ## Cutting one
 
+Annotate the tag, and write the release in its message:
+
 ```
-git tag v0.1.0
+git tag -a v0.1.0
 git push origin v0.1.0
 ```
 
 The workflow then runs the tests, builds `assembleRelease`, attaches
 `pinged-0.1.0.apk` (and the R8 mapping file if minification is on), and
-publishes the release with its SHA-256 and the sideloading instructions.
+publishes the release with its notes, its SHA-256 and the sideloading
+instructions.
+
+`git tag -a` rather than `git tag`, because the tag message is the release
+notes' summary and a lightweight tag has none. The notes are built by
+`.github/scripts/release_notes.sh` and are four things:
+
+- the diffstat between this tag and the previous one, measured with `git
+  diff --shortstat`;
+- the tag's own message, quoted verbatim;
+- the subject lines of the commits in that range, merge commits excluded;
+- the static sideloading instructions and the APK's SHA-256.
+
+The tag message carries the weight on purpose. A merged branch lands here as
+one squashed commit — the whole capture milestone is `7918da9` — so a commit
+list is short in a way that has nothing to do with how large the release is,
+and the notes say so where a reader will see it. The diffstat is stated first
+because it is measured across the range and a squash cannot flatten it. The
+commit list is subject lines only: this repository's commit messages are long
+and are about why, and a release page is not where they read well, so the
+notes link the compare view instead of reproducing them.
+
+Everything taken out of git is emitted inside a fenced code block whose fence
+is one backtick longer than the longest backtick run in the text, so a commit
+message cannot close its own container and reach the rendered page as
+markdown, HTML or an `@mention`. That also means the tag message renders
+preformatted, with the wrapping it was written with.
+
+The script runs outside Actions, which is how it gets tested — the workflow
+around it signs an APK and publishes to GitHub, so it cannot be rehearsed:
+
+```
+.github/scripts/release_notes.sh v0.1.0 $(sha256sum some.apk | cut -d' ' -f1) /tmp/notes.md
+```
+
+It needs the tag and the previous tag's history, so a shallow clone gives the
+wrong answer rather than an error — it reports every release as the first.
+That is why `release.yml` checks out with `fetch-depth: 0`.
+`.github/scripts/release_notes_test.sh`, which CI runs, covers both paths and
+reverts each guard to prove it is load-bearing.
 
 Version numbers come from the tag and nowhere else. `app/build.gradle.kts`
 reads `PINGED_VERSION`, which the workflow sets to the tag without its leading
@@ -141,4 +182,20 @@ one.
   cannot be installed directly.
 - **No third-party actions** beyond `actions/*` and `gradle/actions/*`. The
   release is created with the `gh` CLI that is already on the runner, which
-  keeps the supply chain for a signing job as short as it can be.
+  keeps the supply chain for a signing job as short as it can be. That covers
+  the note generator too: it is `git`, `awk` and `printf` in a shell script in
+  this repository rather than a changelog action, because a job that decrypts
+  a signing keystore is the last place to add a dependency for the sake of a
+  nicer changelog.
+- **No categorised changelog.** Nothing here classifies a commit as a feature
+  or a fix. That needs either conventional-commit subjects or labelled pull
+  requests, and this repository has neither — one squashed commit per branch,
+  with the reasoning in the body. Inventing categories from subject lines
+  would mean the notes asserting something no one wrote down.
+- **No rewriting of what the author wrote.** The notes quote the tag message
+  and the commit subjects and do not summarise, reorder or reword them, which
+  is also why they are rendered preformatted rather than as markdown.
+- **No `--generate-notes`.** GitHub's own generator lists merged pull requests
+  and new contributors; this repository merged one pull request in its life
+  and has one contributor, so on a squash-per-branch history it produces less
+  than the tag message does.
