@@ -2,6 +2,8 @@ package my.pinged.capture
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 
@@ -42,6 +44,17 @@ object CaptureStorage {
      *
      * Opening is memoized by [Databases], so after the first call this is a
      * volatile read.
+     *
+     * **The open is dispatched to [Dispatchers.IO] here, and it has to be here
+     * rather than in each caller.** Hoisting it out of [block] took it out of
+     * whatever dispatcher [block] chose for itself, and `DatabaseFactory.build`
+     * is eager: it runs a blocking `SELECT COUNT(*)` through Room, which throws
+     * `IllegalStateException` on the main thread. `MainActivity` supplies
+     * `lifecycleScope`, so on a device the first foreground reached
+     * `assertNotMainThread`, and `lifecycleScope` carries no
+     * `CoroutineExceptionHandler` -- the app died on launch before drawing
+     * anything. `MainThreadRefreshTest` is the falsifying test; every other
+     * test supplied `Dispatchers.Default` and could not see it.
      */
     suspend fun <T> guarded(
         context: Context,
@@ -49,7 +62,7 @@ object CaptureStorage {
         unavailable: () -> T,
         block: suspend () -> T,
     ): T = try {
-        Databases.shared(context)
+        withContext(Dispatchers.IO) { Databases.shared(context) }
         val result = block()
         CaptureHealth.clearStorageUnavailable(context)
         result
