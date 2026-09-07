@@ -54,6 +54,7 @@ android {
         targetSdk = 37
         versionCode = pingedVersion.code
         versionName = pingedVersion.name
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // The signing config from docs/release.md. The workflow passes the
@@ -113,4 +114,22 @@ dependencies {
     // setContent on a ComponentActivity, and nothing else from it.
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.coroutines.android)
+
+    // This module had no androidTest source set at all, and that is how a
+    // crash on launch shipped in v0.1.0: `MainActivity` lives here, so no
+    // other module can start it, and nothing else in the tree exercises
+    // process start. `LaunchTest` is the only test in the project whose
+    // subject is the app rather than a component of it.
+    //
+    // No ui-test-manifest here, unlike :feature:ledger. That artifact exists
+    // to supply a stub Activity for `createComposeRule` in a library module;
+    // this module has the real manifest and the real Activity under test.
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    // ActivityScenario, which drives the real lifecycle rather than asserting
+    // about a Compose tree in isolation -- onResume is where v0.1.0 died.
+    androidTestImplementation(libs.androidx.test.core)
+    // Not optional on API 37. See the note in the version catalog.
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.junit)
 }
