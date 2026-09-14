@@ -97,25 +97,20 @@ object PendingReasons {
  * write path because nothing below it can be: Room has no CHECK-constraint
  * support and this schema carries no triggers.
  *
- * Both pairs are checked here rather than one of them, because a table where
- * one pair is guarded and the other is not teaches the next writer that the
- * unguarded shape is acceptable. The expensive direction is `is_excluded = 0`
- * with `exclusion_reason` left on the row: spec 7.3's money that moved without
- * being spent then counts as spending in every total and chart.
- *
- * `ExclusionReason.USER` covers "the user simply said so", so the
- * excluded-implies-a-reason direction needs no exceptions.
+ * The expensive direction is `is_excluded = 0` with `exclusion_reason` left on
+ * the row: spec 7.3's money that moved without being spent then counts as
+ * spending in every total and chart.
  *
  * One function called from every insert, so a new write path inherits it by
  * using the DAO. `PendingReasonTest` records how far that reaches: raw SQL goes
  * around it, and no Kotlin-side guard can change that before v1.
  */
 fun Txn.requireStorable() {
-    // Spec 4: "amount_sen | Long | always positive". Held only incidentally
-    // before, by core:parse's Amount.toSen returning null for a non-positive
-    // value -- and the import path takes amount_sen unchecked. A real
-    // CHECK (amount_sen > 0) would move the identity hash, so this is the
-    // pre-v1 answer, as it is for the two reason pairs below.
+    // Spec 4: "amount_sen | Long | always positive". core:parse's Amount.toSen
+    // returns null for a non-positive value, but the import path takes
+    // amount_sen unchecked. A real CHECK (amount_sen > 0) would move the
+    // identity hash, so this is the pre-v1 answer, as it is for the two reason
+    // pairs below.
     require(amountSen > 0) {
         "amount_sen must be positive, was $amountSen. Spec 4 declares it so, " +
             "and direction is what distinguishes money out from money in; a " +
@@ -177,11 +172,10 @@ fun Txn.requireStorable() {
         ),
     ],
     indices = [
-        // The home list, `ORDER BY occurred_at DESC LIMIT ?` with no predicate
-        // (TxnDao.recent). Without it: `SCAN txn` plus `USE TEMP B-TREE FOR
-        // ORDER BY` to draw fifty rows. Every other index mentioning
-        // occurred_at has it behind a leading equality column, so none of them
-        // can order an unfiltered query.
+        // Serves TxnDao.recent and nothing else, and that query is tests-only.
+        // Kept because the schema is frozen and dropping an index moves Room's
+        // identity hash, not because a screen needs it; TxnDao.recent records
+        // the plan without it.
         Index("occurred_at"),
         // The month list and the day/month aggregates (spec 15.3). This
         // replaces the bare `Index("local_date")` spec 15.1 names: local_date
@@ -213,9 +207,8 @@ data class Txn(
     /**
      * yyyymmdd in the device zone, computed once. Spec 15.7.
      *
-     * Defaulted from [occurredAt] so a writer gets the derivation for free. A
-     * wrong value here is invisible -- the home list orders by `occurred_at`, so
-     * the row looks right while every month view files it in the wrong month.
+     * Defaulted from [occurredAt] rather than left to the caller, because a
+     * wrong value here is wrong in three places at once -- see [LocalDate].
      *
      * Still overridable, because the import path must preserve the `local_date`
      * the exporting device computed in *its* zone.

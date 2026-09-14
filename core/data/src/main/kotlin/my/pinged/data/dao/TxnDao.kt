@@ -1,8 +1,10 @@
 package my.pinged.data.dao
 
+import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import my.pinged.data.LocalDate
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.data.entity.requireStorable
@@ -10,15 +12,35 @@ import my.pinged.parse.Direction
 
 /**
  * Before adding a query that filters `local_date` or `state`, read
- * `QueryPlanTest`. It pins plans for the month list, the day aggregate, the
- * category totals and the review inbox -- queries this DAO does not have yet.
+ * `QueryPlanTest`. It pins the plan of every ledger query below, reading the
+ * SQL out of this interface's companion rather than holding a copy, so the
+ * plan it asserts is the plan the app issues. [feed] is the exception, because
+ * Room wraps a `PagingSource` query in `LIMIT`/`OFFSET` and `COUNT(*)`
+ * subqueries before preparing it; both wrapped forms take the same index as
+ * the bare one, measured in `QueryPlanTest.theFeedTakesTheDayOrderedIndex`.
  *
- * The one that matters is the unary `+state` hint: without it SQLite prefers
- * `index_txn_state_occurred_at` and the month list becomes "read every
- * COMMITTED transaction ever captured, then sort them". That hint lives only in
- * the test's own SQL constants; when these queries are written for real they
- * must carry it, and the SQL should move here so the test asserts the plan of
- * the query the app issues.
+ * The one that matters is the unary `+state` hint on the three aggregates.
+ * Without it SQLite prefers `index_txn_state_occurred_at`, because an equality
+ * outranks a range when the planner has no statistics saying otherwise, and
+ * each aggregate then reads every `COMMITTED` transaction ever captured to
+ * answer for one month. Measured against the frozen v1 DDL in sqlite3 3.53.4
+ * with 5000 rows over six months -- 4750 `COMMITTED`, 819 in the month asked
+ * for -- and **no `ANALYZE`**, which is the only condition this app runs in:
+ * nothing in it calls `ANALYZE` or `PRAGMA optimize`, and
+ * `QueryPlanTest.analyzeFixesTheNaivePlanButOnlyOnceTheConnectionReloads`
+ * records why neither is added.
+ *
+ *     as written   SEARCH txn USING INDEX index_txn_state_occurred_at (state=?)
+ *     with +state  SEARCH txn USING INDEX index_txn_local_date_occurred_at
+ *                         (local_date>? AND local_date<?)
+ *
+ * 4750 index entries walked against 819, three times per foreground and again
+ * on every category tap: 0.388ms against 0.124ms per aggregate at 5000 rows,
+ * and the ratio grows with the table. The hint is SQLite's documented unary
+ * plus, which makes that one term unusable as an index seek without changing
+ * its meaning -- narrower than `INDEXED BY`, which would forbid the planner
+ * from ever doing better and hard-code a Room-generated index name into
+ * hand-written SQL.
  */
 @Dao
 interface TxnDao {
@@ -37,11 +59,10 @@ interface TxnDao {
     }
 
     /**
-     * The batch form of [insert], checking every row before any reaches SQLite -- a
-     * batch path that skipped it would be exactly the later write path the doc
-     * above warns about. Room's `@Insert(List)` is the same statement count as a
-     * loop but acquires the prepared statement once: 997ms against 231ms for 20,000
-     * rows in one transaction.
+     * The batch form of [insert], checking every row before any reaches SQLite.
+     * Room's `@Insert(List)` is the same statement count as a loop but acquires
+     * the prepared statement once: 997ms against 231ms for 20,000 rows in one
+     * transaction.
      */
     fun insertAll(txns: List<Txn>) {
         txns.forEach { it.requireStorable() }
@@ -49,9 +70,9 @@ interface TxnDao {
     }
 
     /**
-     * The unchecked primitive behind [insert], deliberately not part of the
-     * intended API surface: calling it directly is how `PendingReasonTest`
-     * proves the guard above is doing the work.
+     * The unchecked primitive behind [insert], not part of the intended API
+     * surface: calling it directly is how `PendingReasonTest` proves the guard
+     * above is doing the work.
      *
      * Default `OnConflictStrategy.ABORT`. `txn.raw_capture_id` carries a unique
      * index, so a second insert for a capture that already produced a
@@ -116,24 +137,25 @@ interface TxnDao {
     ): List<Txn>
 
     /**
-     * The home list (spec 9.1). Served by `txn(occurred_at)`, which exists for
-     * this query and nothing else: measured on emulator-5554 before that index
-     * was added, this planned as `SCAN txn` plus `USE TEMP B-TREE FOR ORDER
-     * BY` -- the whole table read and sorted to draw the first screen. Every
-     * other index carrying `occurred_at` has it behind a leading equality
-     * column, so none of them can order an unfiltered query.
+     * The newest transactions by `occurred_at`, **for tests only**: `DaoTest`,
+     * `CategoryDeleteTest` and `CommitAtomicityTest` read a small fixture back
+     * in one call, and there is no production caller. Not the query to copy
+     * for a new screen -- a list a user scrolls wants [feed]'s day-major order
+     * and its `PagingSource`, and a test after one known row wants [byId].
+     *
+     * Served by `txn(occurred_at)`, which exists for this query and nothing
+     * else: measured on emulator-5554 before that index was added, this
+     * planned as `SCAN txn` plus `USE TEMP B-TREE FOR ORDER BY` -- the whole
+     * table read and sorted. Every other index carrying `occurred_at` has it
+     * behind a leading equality column, so none of them can order an
+     * unfiltered query. The index therefore costs a B-tree per insert for a
+     * query only tests make; dropping it is a schema change and the schema is
+     * frozen (see "Schema v1 is frozen" in the module's CLAUDE.md).
      */
     @Query("SELECT * FROM txn ORDER BY occurred_at DESC LIMIT :limit")
     fun recent(limit: Int): List<Txn>
 
-    /**
-     * One transaction by primary key.
-     *
-     * `RawCaptureDao` always had this; `TxnDao` did not, so a test fixture
-     * that needed one row by id paged the whole table 500 rows at a time and
-     * filtered in Kotlin -- the exact walk [pageFrom]'s keyset cursor exists to
-     * avoid, doing it to find a row SQLite can reach with one probe.
-     */
+    /** One transaction by primary key. */
     @Query("SELECT * FROM txn WHERE id = :id")
     fun byId(id: Long): Txn?
 
@@ -165,4 +187,168 @@ interface TxnDao {
             "AND NOT EXISTS (SELECT 1 FROM raw_capture r WHERE r.id = t.raw_capture_id)"
     )
     fun danglingRawCaptureIdCount(): Int
+
+    /**
+     * Net spending per day, for the list's day headers.
+     *
+     * Filtered by [COUNTED], §8's "excluded and pending rows never enter a
+     * total", shared with [monthTotals] and [monthByCategory].
+     *
+     * Signed, so a `REFUND` reduces its day. Adding it would report a refunded
+     * purchase as twice the spending.
+     *
+     * Grouped by `currency` as well as `local_date` (§4.5 of the milestone
+     * design): the pack emits only MYR today, so a bare `SUM` would be correct
+     * now and silently wrong at the first non-MYR rule.
+     *
+     * Served by `index_txn_local_date_occurred_at`, which is what the `+state`
+     * hint is for. See this interface's own documentation for the measurement,
+     * and [DAY_TOTALS_SQL] for the string `QueryPlanTest` pins.
+     */
+    @Query(DAY_TOTALS_SQL)
+    fun dayTotals(from: LocalDate, to: LocalDate): List<DayTotal>
+
+    /** [dayTotals]'s predicate over a whole period, for the pinned summary's headline. */
+    @Query(MONTH_TOTALS_SQL)
+    fun monthTotals(from: LocalDate, to: LocalDate): List<CurrencyTotal>
+
+    /**
+     * The summary's top categories, largest first.
+     *
+     * `LIMIT` is a parameter rather than the literal 3 §9.1 asks for, so the
+     * caller states how many it is going to draw and the query cannot silently
+     * disagree with the layout.
+     */
+    @Query(MONTH_BY_CATEGORY_SQL)
+    fun monthByCategory(from: LocalDate, to: LocalDate, limit: Int): List<CategoryTotal>
+
+    /**
+     * Assign a category by hand (§9.1's chip, without §6.1's learned rule).
+     *
+     * A targeted `UPDATE` naming its own columns, for the reason
+     * [CaptureSourceDao] has no whole-row upsert: SQLite's `REPLACE` deletes
+     * and re-inserts, so a partial write would revert every other column on the
+     * row.
+     *
+     * `user_edited` is set because §5.5's re-parse must not overwrite a
+     * decision a person made. Nothing re-parses yet.
+     *
+     * Returns the rows written, which is 0 when the row is gone. The caller
+     * decides what that means -- see `LedgerViewModel.assignCategory`.
+     */
+    @Query(
+        """
+        UPDATE txn SET category_id = :categoryId, user_edited = 1, updated_at = :updatedAt
+        WHERE id = :id
+        """,
+    )
+    fun setCategory(id: Long, categoryId: Long, updatedAt: Long): Int
+
+    /**
+     * The home list (§9.1), newest day first and newest within a day.
+     *
+     * A `PagingSource` and not a `Flow<List<Txn>>` (§15.4): the flow re-emits
+     * every row on every insert, and this app inserts from a background worker
+     * while the screen is open. Room invalidates this source instead, so a
+     * captured payment appears without re-reading the list.
+     *
+     * **`local_date` leads, and that is a correctness clause rather than a
+     * preference.** The list is sectioned by day, and `local_date` is not a
+     * function of `occurred_at`: it is the day the money moved in the zone it
+     * moved in (§15.7), so an imported row keeps the exporting device's day
+     * and a device that flies west writes a day it has already passed. Ordered
+     * by `occurred_at` alone the day sequence is not monotone -- X, Y, X -- and
+     * a day-sectioned list then draws two headings for one date, each looking
+     * that date's subtotal up and printing the whole day's number twice.
+     *
+     * **`id DESC` is the paging tiebreaker.** Two captures inside the same
+     * second -- a payment and the bank's own confirmation of it -- are
+     * otherwise ordered arbitrarily, and under paging an arbitrary order is an
+     * unstable one: the same row can land on two pages or on none. The clause
+     * looks redundant, because the index below is non-unique and its B-tree
+     * entries carry `id` (a rowid alias) to break ties, so a reverse scan
+     * already returns descending `id` within a tied key without it -- but that
+     * is a property of the current plan, not a guarantee, and a
+     * table-scan-plus-sort plan ties the wrong way, ascending `id`. Covered by
+     * `LedgerFeedTest.rowsSharingASecondHaveAStableOrder`.
+     *
+     * `REJECTED` is excluded because a rejected capture is not a transaction.
+     * `PENDING` and excluded rows are **included** -- they are kept out of every
+     * total (§8) and still drawn, because until §9.2's review inbox exists a
+     * hidden `PENDING` row is money on disk and nowhere on screen.
+     *
+     * Served by `index_txn_local_date_occurred_at`, which supplies the whole
+     * `ORDER BY` as a reverse scan with no temp b-tree -- measured at 0.443ms
+     * against the previous ordering's 0.446ms for a page 4000 rows deep, so
+     * the day-major order costs nothing. `state != 'REJECTED'` is a negative
+     * condition SQLite cannot range-scan, so it is filtered after the scan
+     * either way. Pinned by `QueryPlanTest.theFeedTakesTheDayOrderedIndex`.
+     */
+    @Query(FEED_SQL)
+    fun feed(): PagingSource<Int, Txn>
+
+    /**
+     * The ledger's SQL, hoisted so `QueryPlanTest` pins the plan of the string
+     * the app issues instead of the plan of a copy of it -- see this
+     * interface's own documentation.
+     *
+     * Concatenated `const val`s and not an interpolation or a function: Room
+     * reads `@Query` at compile time, so only what the Kotlin compiler folds
+     * into the annotation reaches it.
+     */
+    companion object {
+        const val FEED_SQL =
+            """
+            SELECT * FROM txn WHERE state != 'REJECTED'
+            ORDER BY local_date DESC, occurred_at DESC, id DESC
+            """
+
+        /**
+         * The rows §8 counts -- "excluded and pending rows never enter a total"
+         * -- and the `+state` hint that decides how they are reached.
+         *
+         * One string rather than three copies because of the hint, not the
+         * predicate: the two clauses are covered behaviourally, by
+         * `LedgerAggregateTest` exercising each half and the `currency`
+         * grouping against every query they apply to, but no behavioural test
+         * can see a plan, so a fourth aggregate copied from here without the
+         * `+` reads every `COMMITTED` row ever captured while the suite stays
+         * green. A `@DatabaseView` would have shared the predicate too and is
+         * ruled out on its own terms: it would move the schema's identity hash
+         * (see "Schema v1 is frozen" in the module's CLAUDE.md).
+         */
+        const val COUNTED = "+state = 'COMMITTED' AND is_excluded = 0"
+
+        const val DAY_TOTALS_SQL =
+            """
+            SELECT local_date AS localDate, currency,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
+            FROM txn
+            WHERE """ + COUNTED + """
+              AND local_date BETWEEN :from AND :to
+            GROUP BY local_date, currency
+            """
+
+        const val MONTH_TOTALS_SQL =
+            """
+            SELECT currency,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
+            FROM txn
+            WHERE """ + COUNTED + """
+              AND local_date BETWEEN :from AND :to
+            GROUP BY currency
+            """
+
+        const val MONTH_BY_CATEGORY_SQL =
+            """
+            SELECT category_id AS categoryId, currency,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
+            FROM txn
+            WHERE """ + COUNTED + """
+              AND local_date BETWEEN :from AND :to
+            GROUP BY category_id, currency
+            ORDER BY netSen DESC
+            LIMIT :limit
+            """
+    }
 }

@@ -1,15 +1,12 @@
 package my.pinged.ledger
 
+import android.app.Application
 import my.pinged.data.Databases
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -35,18 +32,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The half of the milestone that had never once run: a package goes from
- * discovered-and-discarded to enabled, through the screen, into the database
- * the listener reads.
+ * A package goes from discovered-and-discarded to enabled, through the screen,
+ * into the database the listener reads.
  *
  * Against the real encrypted database, because two of the three things
  * asserted here are absences -- Room has never heard of the package, and it
  * holds no content for it -- and an absence proved against a stand-in store is
  * proved about the stand-in.
- *
- * `CaptureSourceDao.insertIfNew` and `setEnabled` had no caller outside tests
- * before this screen existed, which is the same statement as "the shipped app
- * discarded every notification from every package".
  */
 @RunWith(AndroidJUnit4::class)
 class SourcesAllowListTest {
@@ -54,22 +46,28 @@ class SourcesAllowListTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val dao = Databases.captureSourceDao(context)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * No scope to cancel in `@After`: `SourcesViewModel` supplies its own
+     * `viewModelScope`, and every gate a test here closes is released before
+     * that test returns.
+     */
+    private fun sourcesViewModel() =
+        SourcesViewModel(context.applicationContext as Application)
 
     /**
      * Not a real package, and not in the pack, so it lands in the lower list.
      *
-     * **Unique per test, and not tidiness.** Both tests assert Room has never
-     * heard of this identifier and then enable it, and `capture_source` has no
-     * delete -- the row outlives the test on a device whose app data survives the
-     * next `install -r`. With a fixed identifier the suite passed once and then
-     * failed on every later run against the same emulator.
+     * **Unique per run, and not tidiness.** A test that enables this identifier
+     * leaves the row behind: `capture_source` has no delete, so it outlives the
+     * test on a device whose app data survives the next `install -r`, and one
+     * test asserts Room has never heard of it. With a fixed identifier the suite
+     * passed once and then failed on every later run against the same emulator.
      */
     private val pkg = "my.pinged.probe.notabank.p" + System.nanoTime()
 
     @After fun leaveTheAllowListAsItWasFound() {
         dao.setEnabled(pkg, false)
-        scope.cancel()
     }
 
     @Test fun enablingASourceThroughTheScreenWritesTheAllowList() {
@@ -86,8 +84,8 @@ class SourcesAllowListTest {
         )
         assertTrue(runBlocking { SourceCounters.seenCount(context, pkg) } > 0)
 
-        val viewModel = SourcesViewModel(context, scope)
-        compose.setContent { PingedTheme { SourcesScreen(viewModel) } }
+        val viewModel = sourcesViewModel()
+        compose.setContent { PingedTheme { SourcesScreen(viewModel, onBack = {}) } }
 
         // The identifier is what is drawn: PackageManager cannot resolve a
         // label for this, and on API 30+ that is the expected case for
@@ -121,8 +119,6 @@ class SourcesAllowListTest {
     }
 
     /**
-     * The half that would have shipped a false claim.
-     *
      * A bank outside the parse pack is discovered by posting something and enabled
      * from the lower list -- which is headed "SEEN RECENTLY, NOT CAPTURED" and
      * prints "NOT ONE WORD STORED" on every row. Leaving an enabled source there
@@ -138,7 +134,7 @@ class SourcesAllowListTest {
         runBlocking {
             SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis())
         }
-        val viewModel = SourcesViewModel(context, scope)
+        val viewModel = sourcesViewModel()
 
         viewModel.refresh()
         val whileDisabled = awaitRow(viewModel) { it.seenNotCaptured }
@@ -170,12 +166,11 @@ class SourcesAllowListTest {
     /**
      * Two taps on one toggle: the second one is what the user meant.
      *
-     * On, then off, is a normal way to change your mind, and each tap used to be
-     * its own `scope.launch` with nothing ordering the two. SQLite serialising the
-     * statements does not help -- it serialises them in whichever order the threads
-     * arrive -- so the first tap's write could land last and leave the source
-     * capturing after the user switched it off, with the toggle showing the
-     * database's answer rather than theirs.
+     * On, then off, is a normal way to change your mind, and a `launch` per tap
+     * orders nothing. SQLite serialising the statements does not help -- it
+     * serialises them in whichever order the threads arrive -- so the first tap's
+     * write can land last and leave the source capturing after the user switched
+     * it off, with the toggle showing the database's answer rather than theirs.
      *
      * The gate is how this is made to happen rather than waited for: both
      * operations otherwise take the same few milliseconds, so a test without a seam
@@ -189,7 +184,7 @@ class SourcesAllowListTest {
         runBlocking {
             SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis())
         }
-        val viewModel = SourcesViewModel(context, scope)
+        val viewModel = sourcesViewModel()
 
         val firstReachedTheGate = CompletableDeferred<Unit>()
         val releaseTheGate = CompletableDeferred<Unit>()
@@ -229,17 +224,17 @@ class SourcesAllowListTest {
      * Cancelling something in the middle of the queue must not let the rest of the
      * queue past.
      *
-     * The chain was built on `previous.join()`, and both halves of that are traps:
-     * `Job.join()` is cancellable, and a cancelled `Job` *completes*. Cancelling a
-     * link that was still **waiting** released its successor immediately, while the
-     * cancelled link's own predecessor was still running.
+     * A chain built on `previous.join()` does not hold, and both halves of that
+     * are traps: `Job.join()` is cancellable, and a cancelled `Job` *completes*.
+     * Cancelling a link that is still **waiting** then releases its successor
+     * immediately, while the cancelled link's own predecessor is still running.
      *
      * The shape below is the minimum that shows it: one operation holding the
      * queue, one cancelled while waiting for it, and one behind that, which must
      * not start.
      */
     @Test fun cancellingAQueuedOperationDoesNotReleaseTheOnesBehindIt() {
-        val viewModel = SourcesViewModel(context, scope)
+        val viewModel = sourcesViewModel()
 
         val entered = AtomicInteger(0)
         val firstReachedTheGate = CompletableDeferred<Unit>()
@@ -276,18 +271,15 @@ class SourcesAllowListTest {
      * The job `refresh()` hands back does not complete until its read has
      * published, even when another refresh follows it.
      *
-     * `MainActivity.onResume` rests everything on this: it does
-     * `sources.refresh().join()` and *then* reads the storage flag that read
-     * records. The ordering was defeated by `refresh()` cancelling the read in
-     * flight -- `Job.join()` on a cancelled job returns immediately, so the screen's
-     * own `LaunchedEffect`, which fires after `onResume` returns on every cold
-     * launch, made the join a no-op.
-     *
-     * `MainActivity` has no test source set, so this holds the property one layer
-     * down, where it can be held.
+     * The trap underneath is that `refresh()` cancels the read in flight and
+     * `Job.join()` on a cancelled job returns immediately, so a caller
+     * sequencing a write after a read can be released by the cancellation
+     * rather than by the read. `MainActivity.onResume` rested on this and
+     * probes the database itself now, so the contract stays asserted here
+     * rather than in `MainActivity`, which has no test source set.
      */
     @Test fun aRefreshJobDoesNotCompleteUntilItsReadHasPublished() {
-        val viewModel = SourcesViewModel(context, scope)
+        val viewModel = sourcesViewModel()
 
         val reachedTheGate = CompletableDeferred<Unit>()
         val releaseTheGate = CompletableDeferred<Unit>()
@@ -310,9 +302,8 @@ class SourcesAllowListTest {
         }
         assertFalse(
             "The job returned by refresh() completed while its read was still " +
-                "held -- so MainActivity's join() returns before the storage " +
-                "flag has been written and the banner describes the previous " +
-                "foreground",
+                "held, so anything sequencing a write after a read sees the " +
+                "previous answer",
             completed && !viewModel.state.value.loaded,
         )
 
@@ -367,7 +358,7 @@ class SourcesAllowListTest {
         dao.setLastNotificationAt(pkg, System.currentTimeMillis())
         runBlocking { SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis()) }
 
-        val viewModel = SourcesViewModel(context, scope)
+        val viewModel = sourcesViewModel()
         viewModel.refresh()
         val row = awaitRow(viewModel, pkg)
 
@@ -391,15 +382,12 @@ class SourcesAllowListTest {
     }
 
     /**
-     * The seam `MainActivity.onResume` depends on: when the job `refresh` returns
-     * has completed, the state it produced is published.
-     *
-     * `refresh` opens the database, so it is also what records or clears the
-     * storage flag `ListenerStatus.report` reads. As two independent coroutines the
-     * report won the race and the banner described the previous foreground.
+     * [aRefreshJobDoesNotCompleteUntilItsReadHasPublished]'s contract on the
+     * ungated path: with nothing holding the queue, the job still completes
+     * only after the state its read produced is published.
      */
     @Test fun theRefreshJobCompletesOnlyAfterItsStateIsPublished() {
-        val viewModel = SourcesViewModel(context, scope)
+        val viewModel = sourcesViewModel()
         assertFalse("precondition: nothing read yet", viewModel.state.value.loaded)
 
         runBlocking { viewModel.refresh().join() }
@@ -417,7 +405,10 @@ class SourcesAllowListTest {
  * `onAllNodesWithText(...).fetchSemanticsNodes().size`, without the import
  * churn -- and without `assertIsDisplayed`, which throws rather than returning
  * false and so cannot be used inside a `waitUntil` predicate.
+ *
+ * `internal`, so the other suites in this module use this one rather than
+ * keeping a copy of the same three calls each.
  */
-private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.onAllNodesWithTextSafely(
+internal fun androidx.compose.ui.test.junit4.ComposeContentTestRule.onAllNodesWithTextSafely(
     text: String,
 ): Int = onAllNodes(androidx.compose.ui.test.hasText(text)).fetchSemanticsNodes().size

@@ -159,4 +159,44 @@ interface CaptureDayDao {
 
     @Query("DELETE FROM capture_day")
     fun deleteAll(): Int
+
+    /**
+     * How many days in `[from, to]` the listener was bound on.
+     *
+     * The caller compares this against the number of days the month has
+     * *elapsed*, and greys the total when they differ (§8). Two reasons the
+     * comparison is not in SQL: a day with no row at all is an uncaptured day,
+     * and SQLite has no calendar table to left-join against, so the absent days
+     * cannot be counted here; and "elapsed" depends on today, which a query
+     * would have to be told anyway.
+     *
+     * `listener_bound = 1` and not `saw_any_notification`: a genuinely quiet
+     * phone posts nothing for a day and is still being captured, so keying trust
+     * on notifications seen would grey out a correct total.
+     *
+     * **An inverted range answers 0, which is indistinguishable from a month
+     * with no coverage at all.** `BETWEEN` is `from <= x AND x <= to` and
+     * matches nothing when `from > to`, so a caller that swapped its arguments
+     * would grey out every total and read as a total capture failure. The
+     * obligation is the caller's -- there is no answer this query could give
+     * that would be more honest than the wrong one -- and
+     * `LedgerViewModel.refresh` derives both ends from one `YearMonth`.
+     *
+     * **Today's row is written by a notification or by a rebind, and by
+     * nothing else.** `CaptureDays.markListenerBound` is called only from
+     * `onListenerConnected`, and the other writer is the row
+     * [recordNotificationSeen] creates -- so a process that stays bound across
+     * midnight writes neither, and the first foreground of a day counts today
+     * as a gap until something posts. The month greys and self-corrects at the
+     * next notification, erring toward the warning, but it will fire on
+     * ordinary mornings. Fixing it means changing when `capture_day` rows are
+     * written, which is capture-path work and not this table's.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM capture_day
+        WHERE local_date BETWEEN :from AND :to AND listener_bound = 1
+        """,
+    )
+    fun boundDayCount(from: LocalDate, to: LocalDate): Int
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import my.pinged.ledger.sources.SourcesScreenContent
 import my.pinged.ledger.sources.SourcesState
+import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ledger.theme.PingedTheme
 import my.pinged.ledger.theme.Stamp
 import my.pinged.ledger.sources.SourceRow
@@ -25,11 +26,9 @@ import org.junit.Test
 import my.pinged.ledger.theme.Separator
 
 /**
- * Two deviations from the plan's copy of this test, both forced. The plan names
- * `SourceRow` unqualified with no import while putting the type in
- * `my.pinged.ledger.sources`, so it cannot compile as written. And the
- * interpunct is an escape because source files here are ASCII -- the string
- * itself is [Separator], the character the artboard sets with `&middot;`.
+ * Source files here are ASCII, so the interpunct between a row's count and its
+ * claim is read from [Separator] -- the character the artboard sets with
+ * `&middot;` -- rather than typed into an expectation.
  */
 class SourcesScreenTest {
     @get:Rule val compose = createComposeRule()
@@ -61,6 +60,7 @@ class SourcesScreenTest {
                         loaded = true,
                     ),
                     onToggle = { _, _ -> },
+                    onBack = {},
                 )
             }
         }
@@ -79,7 +79,7 @@ class SourcesScreenTest {
      * The state where the app cannot open its own database does not get the
      * typography of an empty list.
      *
-     * "CANNOT READ YOUR DATA" and "NOTHING ELSE HAS POSTED YET" were the same size,
+     * [CANNOT_READ_YOUR_DATA] and "NOTHING ELSE HAS POSTED YET" were the same size,
      * colour and position. Drawn identically, a user scanning an apparently empty
      * allow-list concludes nothing has ever notified them.
      *
@@ -93,17 +93,18 @@ class SourcesScreenTest {
                 SourcesScreenContent(
                     state = SourcesState(loaded = true, storageUnavailable = true),
                     onToggle = { _, _ -> },
+                    onBack = {},
                 )
             }
         }
 
-        compose.onAllNodesWithText("CANNOT READ YOUR DATA").assertCountEquals(2)
+        compose.onAllNodesWithText(CANNOT_READ_YOUR_DATA).assertCountEquals(2)
         // The two empty-section notes must not appear beside it: this state is
         // not "nothing was found", it is "nothing could be read".
         compose.onAllNodesWithText("NOTHING ELSE HAS POSTED YET").assertCountEquals(0)
         compose.onAllNodesWithText("NO KNOWN SOURCE IS INSTALLED ON THIS DEVICE").assertCountEquals(0)
 
-        val drawn = compose.onAllNodesWithText("CANNOT READ YOUR DATA")[0]
+        val drawn = compose.onAllNodesWithText(CANNOT_READ_YOUR_DATA)[0]
             .captureToImage()
             .toPixelMap()
         var accent = 0
@@ -135,6 +136,7 @@ class SourcesScreenTest {
                         loaded = true,
                     ),
                     onToggle = { pkg, on -> toggled = pkg to on },
+                    onBack = {},
                 )
             }
         }
@@ -153,9 +155,9 @@ class SourcesScreenTest {
      *
      * Disabling a source stops the next capture and deletes nothing, so a
      * source the user enabled, let run, and switched off again lands back here
-     * with its full notification text still in `raw_capture`. The claim used
-     * to be drawn from the row's `enabled` flag alone, which is a statement
-     * about what happens next, not about what is on disk.
+     * with its full notification text still in `raw_capture`. Drawn from the
+     * row's `enabled` flag alone the claim is a statement about what happens
+     * next, not about what is on disk.
      */
     @Test fun theNotStoredClaimIsNotPrintedForADisabledSourceWhoseTextWasKept() {
         compose.setContent {
@@ -169,6 +171,7 @@ class SourcesScreenTest {
                         loaded = true,
                     ),
                     onToggle = { _, _ -> },
+                    onBack = {},
                 )
             }
         }
@@ -200,6 +203,7 @@ class SourcesScreenTest {
                         loaded = true,
                     ),
                     onToggle = { _, _ -> },
+                    onBack = {},
                 )
             }
         }
@@ -231,6 +235,7 @@ class SourcesScreenTest {
                         loaded = true,
                     ),
                     onToggle = { _, _ -> },
+                    onBack = {},
                 )
             }
         }
@@ -242,11 +247,8 @@ class SourcesScreenTest {
     }
 
     /**
-     * Beyond the plan, because spec 9.6 asks for it in as many words: "Each row
-     * shows the app label and icon where they can be resolved, a seen count, an
-     * enable toggle, and the `is_authoritative` flag from section 7.2." The
-     * plan's `SourceRow` carries no such field, so without this the chip on the
-     * artboard would have had nothing behind it.
+     * Spec 9.6 asks each row for the `is_authoritative` flag of §7.2, which is
+     * what the artboard's chip is drawn from.
      */
     @Test fun theAuthoritativeChipIsDrawnOnlyForAnAuthoritativeSource() {
         compose.setContent {
@@ -266,6 +268,7 @@ class SourcesScreenTest {
                         loaded = true,
                     ),
                     onToggle = { _, _ -> },
+                    onBack = {},
                 )
             }
         }

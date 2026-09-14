@@ -7,9 +7,11 @@ import my.pinged.data.Seed
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.TxnState
+import java.time.YearMonth
 import java.time.ZoneId
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -26,9 +28,8 @@ class DaoTest {
     }
 
     // Without this every test in this class leaves an open SQLCipher handle
-    // on a file the next test's deleteDatabase() is about to unlink. Task 7
-    // added useDb {} for exactly this reason; a class-level `db` needs the
-    // @After form instead.
+    // on a file the next test's deleteDatabase() is about to unlink. `useDb {}`
+    // closes for the tests that open their own; a class-level `db` needs this.
     @After fun tearDown() {
         db.close()
     }
@@ -382,11 +383,103 @@ class DaoTest {
         assertEquals(LocalDates.of(1_789_920_000_000L), row.localDate)
     }
 
+    /**
+     * Every bound is a literal `yyyymmdd` decimal, never a round trip through
+     * [LocalDates.calendarDay].
+     *
+     * A packing and an unpacking that are wrong the same way agree with each
+     * other, so a test built from both passes while every stored day is
+     * misfiled -- which is the shape of the bug a caller reaches for when it
+     * writes the arithmetic out again instead of calling this.
+     */
+    @Test fun aMonthRangeIsThatMonthsOwnFirstAndLastDay() {
+        val sept = LocalDates.monthRange(YearMonth.of(2026, 9))
+        assertEquals(
+            "A month does not start on its own first day, so every aggregate " +
+                "bounded by this range asks about days that are not the month",
+            LocalDate(20260901), sept.start,
+        )
+        assertEquals(
+            "A 30-day month does not end on its 30th: a range one day long " +
+                "either way moves a day's money into the neighbouring month",
+            LocalDate(20260930), sept.endInclusive,
+        )
+
+        val jan = LocalDates.monthRange(YearMonth.of(2026, 1))
+        assertEquals(
+            "A single-digit month is not zero-padded, so the packing stops " +
+                "ordering days the way the calendar does and BETWEEN stops meaning anything",
+            LocalDate(20260101), jan.start,
+        )
+        assertEquals("...and the same at the end of January", LocalDate(20260131), jan.endInclusive)
+
+        assertEquals(
+            "February 2024 has 29 days and the range ends before the last of " +
+                "them, so a leap day's spending belongs to no month at all",
+            LocalDate(20240229), LocalDates.monthRange(YearMonth.of(2024, 2)).endInclusive,
+        )
+        assertEquals(
+            "February 2025 has 28 days and the range reaches past them",
+            LocalDate(20250228), LocalDates.monthRange(YearMonth.of(2025, 2)).endInclusive,
+        )
+    }
+
+    /** The range is closed at both ends, which is what `BETWEEN` is. */
+    @Test fun aMonthRangeHoldsItsOwnEndsAndNeitherNeighbour() {
+        val feb = LocalDates.monthRange(YearMonth.of(2024, 2))
+        assertTrue("The first of the month is outside its own range", feb.contains(LocalDate(20240201)))
+        assertTrue("The last of the month is outside its own range", feb.contains(LocalDate(20240229)))
+        assertFalse(
+            "The last day of January is inside February's range",
+            feb.contains(LocalDate(20240131)),
+        )
+        assertFalse(
+            "The first day of March is inside February's range",
+            feb.contains(LocalDate(20240301)),
+        )
+    }
+
+    /**
+     * Pinned against `java.time` rather than against a value this file packed,
+     * for [aMonthRangeIsThatMonthsOwnFirstAndLastDay]'s reason.
+     */
+    @Test fun aStoredDayDecodesToTheCalendarDayItNames() {
+        assertEquals(
+            "A stored day decodes to some other date, so a day heading names a " +
+                "day the rows under it did not happen on",
+            java.time.LocalDate.of(2026, 9, 30), LocalDates.calendarDay(LocalDate(20260930)),
+        )
+        assertEquals(
+            "A single-digit month and day decode wrongly, which is the half of " +
+                "the year a test on 20260930 alone cannot see",
+            java.time.LocalDate.of(2026, 1, 5), LocalDates.calendarDay(LocalDate(20260105)),
+        )
+    }
+
+    /**
+     * The range against the column, rather than against another copy of the
+     * arithmetic: the rows are written with literal `local_date` decimals and
+     * SQLite decides what the bounds select.
+     */
+    @Test fun aMonthRangeBoundsAnAggregateOnTheDaysTheColumnHolds() {
+        listOf(20240131, 20240201, 20240229, 20240301).forEach {
+            db.txnDao().insert(sampleTxn(amountSen = 1_000L, localDate = LocalDate(it)))
+        }
+
+        val feb = LocalDates.monthRange(YearMonth.of(2024, 2))
+        val counted = db.txnDao().dayTotals(feb.start, feb.endInclusive)
+            .map { it.localDate.yyyymmdd }
+            .sorted()
+
+        assertEquals(
+            "The bounds monthRange built did not select exactly the rows whose " +
+                "stored local_date names that month -- so the month total is " +
+                "some other month's money",
+            listOf(20240201, 20240229), counted,
+        )
+    }
+
     private companion object {
-        /** Spec 7.2 layer 1: 60 seconds. */
-
-        /** Spec 7.2 layer 2: 10 minutes. A different window, deliberately. */
-
         val KL: ZoneId = ZoneId.of("Asia/Kuala_Lumpur")
     }
 }

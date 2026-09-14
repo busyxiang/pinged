@@ -48,11 +48,36 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.kotlinx.coroutines.android)
+    // `AndroidViewModel`, `viewModelScope` and `CreationExtras` for
+    // `SourcesViewModel`. The -compose artifact rather than bare
+    // lifecycle-viewmodel because Task 5's screens call `viewModel()` from this
+    // module too, and it carries lifecycle-viewmodel as an `api` dependency.
+    //
+    // `api`, not `implementation`, and unlike the :feature:capture edge above:
+    // `SourcesViewModel` now *extends* `AndroidViewModel`, so the supertype is
+    // part of this module's public surface. As `implementation` the consumers
+    // failed to compile with "Cannot access 'androidx.lifecycle
+    // .AndroidViewModel' which is a supertype of 'SourcesViewModel'" --
+    // :feature:capture's androidTest, which drives the allow-list write, and
+    // any future one.
+    api(libs.androidx.lifecycle.viewmodel.compose)
+    // `LifecycleResumeEffect`, which is how `SourcesScreen` reads the
+    // allow-list once per foreground instead of once per holder. A separate
+    // artifact from the one above and only a *constraint* of it, so it is named
+    // here rather than left to arrive through compose-ui. See the catalog note.
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    // Task 5's ledger feed. `TxnDao.feed()` is already a PagingSource; these
+    // are the `Pager`/`cachedIn` half and `collectAsLazyPagingItems`, and they
+    // are wired here rather than in Task 5 so the version pin lands with the
+    // rest of the dependency work.
+    implementation(libs.androidx.paging.runtime)
+    implementation(libs.androidx.paging.compose)
 
-    // One unit test: `ContrastTest`, which is arithmetic over the palette and
-    // needs no device. Colour is a value class over a ULong, so the ratios can
-    // be computed on the JVM in milliseconds instead of booting an emulator to
-    // multiply six numbers.
+    // The two things in this module that need no device: `ContrastTest`, which
+    // is arithmetic over the palette -- Colour is a value class over a ULong,
+    // so the ratios compute on the JVM in milliseconds instead of booting an
+    // emulator to multiply six numbers -- and `DayHeaderRuleTest`, which is a
+    // comparison of two Ints over a Room entity and a value class.
     testImplementation(libs.junit)
 
     androidTestImplementation(composeBom)

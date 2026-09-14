@@ -21,6 +21,7 @@ import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
+import my.pinged.parse.ExclusionReason
 
 fun sampleCapture(
     hash: String = "hash-0",
@@ -53,12 +54,11 @@ fun sampleCapture(
 
 /**
  * `pendingReason` defaults to whatever [state] requires rather than to null,
- * because spec 7.1's invariant is now enforced at the write path: a `PENDING`
- * row must say which gate fired and a non-`PENDING` row must not. Defaulting
- * it to null would make every existing `state = TxnState.PENDING` call site a
- * failing insert, and defaulting it unconditionally would make every ordinary
- * fixture an illegal row. A caller that wants a specific reason, or wants a
- * deliberately contradictory pair, passes it explicitly.
+ * because spec 7.1's invariant is enforced at the write path: a `PENDING` row
+ * must say which gate fired and a non-`PENDING` row must not. Either constant
+ * default makes one whole class of call site an illegal row. A caller that
+ * wants a specific reason, or a deliberately contradictory pair, passes it
+ * explicitly.
  */
 fun sampleTxn(
     amountSen: Long = 1_000L,
@@ -70,18 +70,30 @@ fun sampleTxn(
     pendingReason: PendingReason? =
         if (state == TxnState.PENDING) PendingReason.RULE_REVIEW else null,
     direction: Direction = Direction.EXPENSE,
+    isExcluded: Boolean = false,
+    exclusionReason: ExclusionReason? = if (isExcluded) ExclusionReason.USER else null,
+    currency: String = "MYR",
+    // Derived from [occurredAt] unless a caller says otherwise. The two are
+    // not the same fact -- spec 15.7 stores the day the money moved in the
+    // zone it moved in -- and a fixture that needs them to disagree (an
+    // imported row, a device that has flown west) is the only reason this is
+    // a parameter.
+    localDate: LocalDate = LocalDates.of(occurredAt),
 ) = Txn(
     rawCaptureId = rawCaptureId,
     amountSen = amountSen,
     direction = direction,
     occurredAt = occurredAt,
-    localDate = LocalDates.of(occurredAt),
+    localDate = localDate,
     merchantRaw = "A",
     merchantDisplay = "A",
     merchantKey = "A",
     categoryId = categoryId,
     sourcePackage = pkg,
     sourceLabel = null,
+    isExcluded = isExcluded,
+    exclusionReason = exclusionReason,
+    currency = currency,
     confidence = Confidence.HIGH,
     state = state,
     pendingReason = pendingReason,
@@ -202,9 +214,8 @@ fun SupportSQLiteDatabase.pragma(name: String): Long =
  * Assert a file is not a plaintext SQLite database.
  *
  * This is the one assertion in the module that, if it silently weakens, makes
- * every other test pass against an unencrypted database, so it exists once. It
- * was written twice and the two copies had already diverged: the second kept
- * only the ASCII prefix and dropped the exact-magic check.
+ * every other test pass against an unencrypted database, so it exists once and
+ * must not be copied: two copies drifted apart once already.
  */
 fun File.assertNotPlaintextSqlite(label: String) {
     assertTrue("No database file at $absolutePath", isFile)
@@ -230,11 +241,10 @@ fun File.assertNotPlaintextSqlite(label: String) {
 /**
  * A database with nothing in it but the seed, opened the way the app opens one.
  *
- * Nine test classes in this source set wrote these three lines out. They are
- * the setup any change to how a test database is opened has to reach, and a
- * class that misses the change leaks an open SQLCipher handle onto the next
- * class's `deleteDatabase`. `:feature:ledger`'s `TransferFixtures` already had
- * exactly this under the same name.
+ * The one place any change to how a test database is opened has to reach: a
+ * class that opens its own and misses the change leaks an open SQLCipher
+ * handle onto the next class's `deleteDatabase`. `:feature:ledger`'s
+ * `TransferFixtures` carries the same helper under the same name.
  */
 fun freshDatabase(
     context: Context = InstrumentationRegistry.getInstrumentation().targetContext,

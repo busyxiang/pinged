@@ -1,16 +1,13 @@
 package my.pinged.capture
 
 import my.pinged.data.Databases
+import android.app.Application
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.ListenableWorker
 import androidx.work.WorkManager
 import androidx.work.testing.TestListenableWorkerBuilder
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.ParseStatus
@@ -65,7 +62,6 @@ class EnableToTransactionTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val sources = Databases.captureSourceDao(context)
     private val captures = Databases.rawCaptureDao(context)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** Unique per run: this database is shared with the rest of the APK and survives it. */
     private val marker = "ZZJOIN" + System.nanoTime()
@@ -94,7 +90,6 @@ class EnableToTransactionTest {
     @After fun leaveTheAllowListUsable() {
         CaptureFixtures.allowList(context, bank, true)
         cancelStageTwo()
-        scope.cancel()
     }
 
     @Test
@@ -126,7 +121,7 @@ class EnableToTransactionTest {
         )
 
         // 2. The user enables the source. Production's only allow-list write.
-        val viewModel = SourcesViewModel(context, scope)
+        val viewModel = sourcesViewModel()
         viewModel.refresh()
         awaitLoaded(viewModel)
         viewModel.setEnabled(bank, true)
@@ -220,7 +215,7 @@ class EnableToTransactionTest {
             )
         }
 
-        val viewModel = SourcesViewModel(context, scope)
+        val viewModel = sourcesViewModel()
         viewModel.refresh()
         val state = awaitLoaded(viewModel)
         assertTrue(
@@ -249,6 +244,14 @@ class EnableToTransactionTest {
         // scheduled must not wake up and write to the shared database.
         CaptureFixtures.cancelStageTwo(context)
     }
+
+    /**
+     * No scope to cancel in `@After`: `SourcesViewModel` supplies its own
+     * `viewModelScope`, and both tests here join or poll every operation they
+     * start.
+     */
+    private fun sourcesViewModel() =
+        SourcesViewModel(context.applicationContext as Application)
 
     private fun awaitLoaded(viewModel: SourcesViewModel): SourcesState {
         CaptureFixtures.waitForValue { viewModel.state.value.takeIf { it.loaded } }

@@ -2,6 +2,7 @@ package my.pinged.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.TxnState
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -23,9 +24,22 @@ import org.junit.runner.RunWith
  * build, which is why these are substring assertions on index names: those are
  * Room's, and stable in a way plan wording is not.
  *
+ * Where the app has the query, its SQL comes from the DAO's own constants
+ * through [bindable] rather than from a copy typed out here. A pinned plan is
+ * only worth having if it is the plan of the string the app issues: four of
+ * these cases once pinned a hand-written copy and stayed green while the real
+ * queries drifted away from them.
+ *
+ * The one place that is still a proxy rather than the literal statement is
+ * the feed, because Room wraps a `PagingSource` query before preparing it.
+ * Both wrapped forms were measured and agree with the bare one; see
+ * [theFeedTakesTheDayOrderedIndex].
+ *
  * The fixture is populated, mixed in `state`, and its `local_date` values fall
  * inside the month the queries ask for. A plan asserted against an empty table,
- * or a range that matches no row, is a plan asserted against nothing.
+ * or a range that matches no row, is a plan asserted against nothing. No
+ * `ANALYZE` runs before the assertions, which is the app's condition too --
+ * see [analyzeFixesTheNaivePlanButOnlyOnceTheConnectionReloads].
  */
 @RunWith(AndroidJUnit4::class)
 class QueryPlanTest {
@@ -81,10 +95,9 @@ class QueryPlanTest {
 
     /**
      * [table] defaults to `txn` because that is what most of this class asks
-     * about -- but it is a parameter now. Hardcoded, the scan half of this
-     * assertion silently passed for any query over another table, so the seven
-     * cases below that could not use the helper open-coded it, and four of
-     * those kept only the index half.
+     * about, and it must be passed for anything else: with `txn` hardcoded the
+     * scan half of this assertion passes for any query over another table
+     * whatever its plan.
      */
     private fun assertUsesIndex(index: String, plan: String, table: String = "txn") {
         assertTrue("Plan does not use $index:\n$plan", plan.contains(index))
@@ -93,6 +106,18 @@ class QueryPlanTest {
         assertTrue("Plan contains a full table scan:\n$plan", !plan.contains("SCAN $table\n"))
     }
 
+    /**
+     * A `@Query` string, ready for [plan].
+     *
+     * Room's `:name` placeholders become `?`, which is what the driver binds
+     * by position and in the order they appear. Nothing about a plan depends
+     * on how a bound parameter is spelled -- SQLite plans both as a value it
+     * will not see until run time -- and the alternative is a second copy of
+     * the SQL, which is the drift these cases exist to stop.
+     */
+    private fun bindable(sql: String): String =
+        sql.replace(Regex(":[A-Za-z][A-Za-z0-9_]*"), "?")
+
     private fun assertNoSort(plan: String) {
         assertTrue(
             "Plan needed a temp b-tree to order or group:\n$plan",
@@ -100,20 +125,54 @@ class QueryPlanTest {
         )
     }
 
-    // ---- the home list, TxnDao.recent ----------------------------------
+    // ---- TxnDao.recent, and TxnDao.feed which replaced it ---------------
 
     /**
-     * `SELECT * FROM txn ORDER BY occurred_at DESC LIMIT ?`, the screen the
-     * user opens most (spec 9.1). Before `txn(occurred_at)` existed this
-     * planned as `SCAN txn` plus `USE TEMP B-TREE FOR ORDER BY`: the whole
-     * table read and sorted to draw the first page, growing for as long as the
-     * app is installed. Every other index carrying `occurred_at` has it behind
-     * a leading equality column, so none of them could order an unfiltered
-     * query.
+     * `SELECT * FROM txn ORDER BY occurred_at DESC LIMIT ?`, which is
+     * `TxnDao.recent`. **The method name overstates its subject:** spec 9.1's
+     * screen is `TxnDao.feed`, pinned in [theFeedTakesTheDayOrderedIndex], and
+     * `recent()` has no production caller left. The plan is still worth pinning
+     * because `txn(occurred_at)` exists for this query alone, so this case is
+     * what would notice the index going away.
+     *
+     * Before that index existed this planned as `SCAN txn` plus `USE TEMP
+     * B-TREE FOR ORDER BY`: the whole table read and sorted to return fifty
+     * rows, growing for as long as the app is installed. Every other index
+     * carrying `occurred_at` has it behind a leading equality column, so none
+     * of them could order an unfiltered query.
      */
     @Test fun homeListDoesNotScanTheTableAndDoesNotSort() {
         val p = plan("SELECT * FROM txn ORDER BY occurred_at DESC LIMIT 50")
         assertUsesIndex("index_txn_occurred_at", p)
+        assertNoSort(p)
+    }
+
+    /**
+     * **`TxnDao.feed`, the query behind the screen the app opens on.**
+     *
+     * `ORDER BY local_date DESC, occurred_at DESC, id DESC` is what keeps a
+     * date contiguous in a day-sectioned list, and it is only affordable
+     * because `(local_date, occurred_at)` supplies the whole order as a
+     * reverse scan: no temp b-tree, and the trailing `id` comes free from the
+     * non-unique index's rowid tiebreak. Sorting this one in a temp b-tree
+     * would mean sorting the whole table to draw the first page and again for
+     * every page after it, which is the failure
+     * [homeListDoesNotScanTheTableAndDoesNotSort] records for `recent()`.
+     *
+     * **This pins [TxnDao.FEED_SQL] itself, which is not literally what
+     * SQLite is handed.** Room's `LimitOffsetPagingSource` wraps it, so the
+     * two statements the app prepares are `SELECT * FROM ( <FEED_SQL> ) LIMIT
+     * n OFFSET n` for a page and `SELECT COUNT(*) FROM ( <FEED_SQL> )` for the
+     * count. Both were measured rather than assumed -- sqlite3 3.53.4 against
+     * the frozen v1 DDL, 5000 rows over 209 distinct days -- and both take
+     * `index_txn_local_date_occurred_at` with no temp b-tree, the count query
+     * as a co-routine over the same scan. So the bare form is a sound proxy
+     * for the wrapped ones; it is a proxy all the same, and a future clause
+     * that the wrapper interacts with would have to be measured again.
+     */
+    @Test fun theFeedTakesTheDayOrderedIndex() {
+        val p = plan(bindable(TxnDao.FEED_SQL))
+        assertUsesIndex("index_txn_local_date_occurred_at", p)
         assertNoSort(p)
     }
 
@@ -135,11 +194,11 @@ class QueryPlanTest {
      * Narrower than `INDEXED BY`, which forbids the planner from ever doing better
      * and hard-codes a Room-generated index name into hand-written SQL.
      *
-     * `ORDER BY local_date DESC, occurred_at DESC` is the second half, and **a
-     * correction to the brief**: no index here can order `occurred_at` across a
-     * `local_date` *range*, since `(local_date, occurred_at)` orders `occurred_at`
-     * only within one `local_date` and a month spans thirty. "No TEMP B-TREE on the
-     * month list" is achievable only by asking for the order the index holds.
+     * `ORDER BY local_date DESC, occurred_at DESC` is the second half. No index here
+     * can order `occurred_at` across a `local_date` *range*, since `(local_date,
+     * occurred_at)` orders `occurred_at` only within one `local_date` and a month
+     * spans thirty. "No TEMP B-TREE on the month list" is achievable only by asking
+     * for the order the index holds.
      *
      * Which is the order the screen wants anyway: `local_date` is derived from
      * `occurred_at` in the zone current at parse time (spec 15.7), so the two agree
@@ -173,46 +232,46 @@ class QueryPlanTest {
     }
 
     /**
-     * The daily subtotals of spec 15.3 ("aggregates in SQL, never in Kotlin"),
-     * grouped by the index's own leading column, so no sort at all.
+     * **The three ledger aggregates, as `TxnDao` issues them.**
+     *
+     * [bindable] of the DAO's own constants, not a copy; see the class KDoc.
+     *
+     * `TEMP B-TREE FOR GROUP BY` is not asserted away here and is the correct
+     * plan. All three group by `currency` (§4.5) and one also by
+     * `category_id`, and no index on `txn` carries either behind `local_date`
+     * -- removing the sort would mean a new index for one screen's aggregate
+     * over one month of rows, which is a schema change on a frozen schema. The
+     * sort is over the month's rows; the index choice is over the table's, and
+     * that is the one that grows.
      */
-    @Test fun theDayAggregateGroupsThroughTheCompositeIndexWithoutSorting() {
-        val p = plan(
-            "SELECT local_date, SUM(CASE WHEN direction = 'REFUND' THEN -amount_sen " +
-                "ELSE amount_sen END) FROM txn WHERE local_date BETWEEN ? AND ? " +
-                "AND +state = ? AND is_excluded = 0 GROUP BY local_date",
-            *MONTH_ARGS,
-        )
-        assertUsesIndex("index_txn_local_date_occurred_at", p)
-        assertNoSort(p)
-    }
+    @Test fun theThreeLedgerAggregatesTakeTheRangeIndex() {
+        val day = plan(bindable(TxnDao.DAY_TOTALS_SQL), *MONTH)
+        assertUsesIndex("index_txn_local_date_occurred_at", day)
 
-    /** The month total, spec 15.3's signed sum. No grouping, so no sort. */
-    @Test fun theMonthTotalUsesTheCompositeIndexAndDoesNotSort() {
-        val p = plan(
-            "SELECT SUM(CASE WHEN direction = 'REFUND' THEN -amount_sen " +
-                "ELSE amount_sen END) FROM txn WHERE local_date BETWEEN ? AND ? " +
-                "AND +state = ? AND is_excluded = 0",
-            *MONTH_ARGS,
-        )
-        assertUsesIndex("index_txn_local_date_occurred_at", p)
-        assertNoSort(p)
+        val month = plan(bindable(TxnDao.MONTH_TOTALS_SQL), *MONTH)
+        assertUsesIndex("index_txn_local_date_occurred_at", month)
+
+        val byCategory = plan(bindable(TxnDao.MONTH_BY_CATEGORY_SQL), *MONTH, 3)
+        assertUsesIndex("index_txn_local_date_occurred_at", byCategory)
     }
 
     /**
-     * Category totals group by a column the range index does not carry, so the
-     * `TEMP B-TREE FOR GROUP BY` here is the correct plan and is deliberately
-     * not asserted away. Removing it would mean adding a
-     * `(local_date, category_id)` index for one screen's aggregate over one
-     * month of rows, which spec 15's volumes do not justify.
+     * The same aggregate with the hint taken out: the plan the app would have
+     * if anyone deleted a single `+`.
+     *
+     * Derived from the production string rather than written out, so it cannot
+     * drift from the case above. Asserted the way
+     * [theNaiveMonthListStillTakesTheStateIndexAndSorts] is: if this ever
+     * stops being true the hint may be droppable, and the failure says so.
      */
-    @Test fun categoryTotalsUseTheCompositeIndexForTheirRange() {
-        val p = plan(
-            "SELECT category_id, SUM(amount_sen) FROM txn WHERE local_date BETWEEN ? AND ? " +
-                "AND +state = ? AND is_excluded = 0 GROUP BY category_id",
-            *MONTH_ARGS,
+    @Test fun withoutTheHintTheAggregateReadsEveryCommittedRow() {
+        val p = plan(bindable(TxnDao.MONTH_TOTALS_SQL.replace("+state", "state")), *MONTH)
+        assertTrue(
+            "The unhinted aggregate no longer prefers the state index. Good " +
+                "news: check whether theThreeLedgerAggregatesTakeTheRangeIndex " +
+                "still needs its +state hint.\n$p",
+            p.contains("index_txn_state_occurred_at"),
         )
-        assertUsesIndex("index_txn_local_date_occurred_at", p)
     }
 
     // ---- the review inbox, spec 7.1 ------------------------------------
@@ -234,7 +293,7 @@ class QueryPlanTest {
 
     // ---- duplicate layer 2, TxnDao.findDuplicateSuspects ---------------
 
-    /** The full predicate set, including the two clauses the old case omitted. */
+    /** The full predicate set: a plan pinned on a subset of it is another plan. */
     @Test fun duplicateLayerTwoUsesTheAmountWindowIndex() {
         val p = plan(
             "SELECT * FROM txn WHERE amount_sen = ? AND occurred_at BETWEEN ? AND ? " +
@@ -259,7 +318,7 @@ class QueryPlanTest {
 
     // ---- raw_capture ---------------------------------------------------
 
-    /** Duplicate layer 1 rule 2, now bounded at both ends. */
+    /** Duplicate layer 1 rule 2, bounded at both ends. */
     @Test fun duplicateLayerOneRuleTwoUsesTheContentHashWindowIndex() {
         val p = plan(
             "SELECT * FROM raw_capture WHERE content_hash = ? AND posted_at >= ? " +
@@ -361,9 +420,8 @@ class QueryPlanTest {
      * SQLCipher runs a connection pool behind one `SQLiteDatabase` (the same
      * mechanism `DatabaseFactory.configureConnection` covers for `PRAGMA
      * foreign_keys`). `ANALYZE` is a write, so a read served by a connection that
-     * has not reloaded keeps planning without statistics already on disk. Nothing
-     * in the app can force that reload, and which connection serves a read is not
-     * the app's decision.
+     * has not reloaded keeps planning without statistics already on disk, and
+     * nothing in the app can force that reload.
      *
      * `PRAGMA optimize`, the maintained form, needs a long-lived connection to hang
      * off before closing, which the listener process does not have. Statistics also
@@ -402,14 +460,8 @@ class QueryPlanTest {
         // Asserted as an equality this passed on an Android 17 emulator and failed
         // on CI's Android 16, where the read came off the primary and saw the
         // statistics at once. That is not a regression to fix; it is the claim
-        // this test exists to make, and asserting it turned an observation about
-        // pool scheduling into a gate that fails by machine.
-        //
-        // The argument survives intact -- it is *strengthened* -- because "the fix
-        // becomes visible at a moment nobody controls" is exactly why neither
-        // ANALYZE nor PRAGMA optimize is used. Steps 1 and 3 pin the naive plan
-        // moving; the hinted form below is identical at all three, which is the
-        // whole case for preferring it.
+        // this test exists to make, and asserting it turns pool scheduling into a
+        // gate that fails by machine.
         val naiveRightAfter = plan(NAIVE_MONTH_LIST, *MONTH_ARGS)
         android.util.Log.i(
             OpenTest.REPORT_TAG,
@@ -478,13 +530,12 @@ class QueryPlanTest {
                 "AND is_excluded = 0 ORDER BY local_date DESC, occurred_at DESC"
     }
 
-    // ---- plans that were not pinned -------------------------------------
+    // ---- the windowed slot lookup and the import integrity checks -------
 
     /**
      * Rule 1's windowed form, which is the one the POSTED path actually calls
-     * -- once per capture. Its unwindowed sibling was pinned and this was not,
-     * so the extra `posted_at >= ?` was unverified against the same
-     * `sbn_key`-led index.
+     * -- once per capture. Pinned separately from its unwindowed sibling
+     * because the extra `posted_at >= ?` could cost the `sbn_key`-led index.
      */
     @Test fun theWindowedSlotLookupStillUsesTheSlotIndex() {
         val p = plan(

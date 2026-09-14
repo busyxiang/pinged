@@ -40,6 +40,10 @@ dependencies {
     // api likewise: PingedDatabase extends RoomDatabase, so a consumer cannot
     // resolve a member on it without Room on the compile classpath.
     api(libs.androidx.room.runtime)
+    // Room's PagingSource return type. Pinned to Room's own version, not
+    // Paging's: the generated code and this artifact's LimitOffsetPagingSource
+    // are the same Room release's API.
+    api(libs.androidx.room.paging)
     implementation(libs.sqlcipher.android)
     implementation(libs.androidx.sqlite)
     ksp(libs.androidx.room.compiler)
