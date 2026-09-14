@@ -9,8 +9,8 @@ numbers in comments and commit messages refer to it.
 
 ## Commands
 
-    ./gradlew test                        # 191 JVM tests
-    ./gradlew connectedDebugAndroidTest   # 315, needs a device
+    ./gradlew test                        # 200 JVM tests
+    ./gradlew connectedDebugAndroidTest   # 371, needs a device
     ./gradlew test lint :app:assembleDebug   # what CI runs
 
 Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
@@ -77,6 +77,10 @@ the first then documents nothing.
 
 ## Commit messages
 
-Long, and about why rather than what. State what was measured, what was left
-undone, and what is still not understood. Do not claim a test count or a
-verification you did not run.
+A concise summary, about why rather than what. A subject line naming the
+change, then a short paragraph: the reason, what was measured, and anything
+left undone or still not understood. Under about fifteen lines -- reasoning
+that needs more than that belongs in the spec or the plan, and the message
+should point at it rather than restate it.
+
+Do not claim a test count or a verification you did not run.

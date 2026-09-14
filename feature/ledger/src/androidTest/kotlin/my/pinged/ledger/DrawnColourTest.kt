@@ -20,9 +20,8 @@ import org.junit.Test
 /**
  * What the screen is actually painted in, read back off the screen.
  *
- * `ContrastTest` guards the palette. It cannot guard the thing that was
- * actually wrong, which was **which token an element is drawn in** -- and that
- * lives in `SourcesScreen.kt`, a file it never opens.
+ * `ContrastTest` guards the palette. It cannot guard **which token an element
+ * is drawn in**, which lives in `SourcesScreen.kt`, a file it never opens.
  *
  * That gap was measured, not supposed: with the fix commit's own two
  * substitutions reverted -- the claim line back to `Faint` at 3.12:1, the
@@ -51,6 +50,7 @@ class DrawnColourTest {
                         loaded = true,
                     ),
                     onToggle = { _, _ -> },
+                    onBack = {},
                 )
             }
         }

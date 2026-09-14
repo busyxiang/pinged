@@ -30,12 +30,17 @@ object CaptureStorage {
      * normal: `CaptureDays`' two writers both return early once the day is
      * recorded, which is every notification but the first each day.
      *
-     * **It is dispatched to [Dispatchers.IO], which also belongs here rather
-     * than in each caller.** The open is blocking -- `DatabaseFactory.build`
-     * is eager and runs a `SELECT COUNT(*)` -- and the callers include
-     * `MainActivity`, whose `lifecycleScope` is the main thread and carries no
-     * `CoroutineExceptionHandler`. `MainThreadRefreshTest` and `LaunchTest`
-     * are the falsifying tests.
+     * **[Dispatchers.IO] covers the whole body, [block] included, and that is
+     * the point rather than a detail of the open.** The open is blocking --
+     * `DatabaseFactory.build` is eager and runs a `SELECT COUNT(*)` -- and the
+     * callers include `MainActivity`, whose `lifecycleScope` is the main
+     * thread and carries no `CoroutineExceptionHandler`. But every block that
+     * goes on to query is blocking too, and Room's `assertNotMainThread`
+     * throws a plain `IllegalStateException`: outside
+     * [DatabaseUnavailableException], so the catch below cannot see it, and on
+     * `viewModelScope`'s bare `SupervisorJob` that kills the process.
+     * `GuardedDispatchTest` is the falsifying test that the hop belongs here;
+     * `MainThreadRefreshTest` and `LaunchTest` pin the callers.
      *
      * Memoized by [Databases], so after the first call this is a volatile read.
      */
@@ -44,14 +49,16 @@ object CaptureStorage {
         what: String,
         unavailable: () -> T,
         block: suspend () -> T,
-    ): T = try {
-        withContext(Dispatchers.IO) { Databases.shared(context) }
-        val result = block()
-        CaptureHealth.clearStorageUnavailable(context)
-        result
-    } catch (unavailable: DatabaseUnavailableException) {
-        Log.e(TAG, "$what: " + unavailable.message, unavailable)
-        CaptureHealth.recordStorageUnavailable(context)
-        unavailable()
+    ): T = withContext(Dispatchers.IO) {
+        try {
+            Databases.shared(context)
+            val result = block()
+            CaptureHealth.clearStorageUnavailable(context)
+            result
+        } catch (thrown: DatabaseUnavailableException) {
+            Log.e(TAG, "$what: " + thrown.message, thrown)
+            CaptureHealth.recordStorageUnavailable(context)
+            unavailable()
+        }
     }
 }

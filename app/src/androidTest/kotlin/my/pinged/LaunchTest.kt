@@ -29,9 +29,9 @@ class LaunchTest {
 
     /**
      * `lifecycleScope` carries no `CoroutineExceptionHandler`, so a throw
-     * inside it reaches the thread's default handler and kills the process.
-     * Left alone that ends the run with a dead process and no attributable
-     * failure; captured, it becomes an assertion naming the lifecycle step.
+     * inside it reaches the thread's default handler and kills the process --
+     * ending the run with no attributable failure. Captured, it becomes an
+     * assertion naming the lifecycle step.
      */
     private val uncaught = AtomicReference<Throwable?>(null)
 
@@ -68,6 +68,36 @@ class LaunchTest {
             scenario.recreate()
             assertEquals(Lifecycle.State.RESUMED, scenario.state)
             assertNothingWasThrownDuring("a configuration change")
+        }
+    }
+
+    /**
+     * The back stack is the reason Nav3 is here rather than a `when` over a
+     * `StateFlow`, so it is the thing worth asserting about it.
+     *
+     * `recreate()` re-runs `onCreate` against the saved state the previous
+     * instance wrote. What that exercises is the whole restore path -- the
+     * reflective `NavKeySerializer` reading `Ledger` back out of a
+     * `SavedState`, and `rememberViewModelStoreNavEntryDecorator` handing the
+     * new entry the retained `ViewModelStore` -- and a break in any of it
+     * throws in composition rather than returning a wrong answer, which is why
+     * this asserts RESUMED and an absence rather than a rendered screen.
+     *
+     * It is the weaker half of what it looks like: it cannot tell a restored
+     * back stack from a fresh one built on the same start destination, because
+     * it never leaves the start destination. [NavigationTest] drives the
+     * ledger's control to `Sources` and back; the stronger assertion -- push
+     * `Sources`, recreate, and come back on the allow-list -- is **still
+     * outstanding**.
+     */
+    @Test fun theActivityComesBackFromRecreationOnARestoredBackStack() {
+        Databases.reset()
+
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            assertNothingWasThrownDuring("launch")
+            scenario.recreate()
+            assertEquals(Lifecycle.State.RESUMED, scenario.state)
+            assertNothingWasThrownDuring("recreation with a restored back stack")
         }
     }
 

@@ -6,6 +6,12 @@ plugins {
     // Same story as :feature:ledger -- the Compose compiler plugin attaches to
     // the Kotlin compilation AGP 9 already registered.
     alias(libs.plugins.compose.compiler)
+    // Nav3 keeps the back stack in saved state and serialises the keys to get
+    // it there, so `Destinations.kt`'s objects are `@Serializable` and this
+    // module needs the plugin that generates their serializers. Already in the
+    // root build as `apply false` and already applied by :core:parse, so this
+    // adds a compiler plugin and no new dependency.
+    alias(libs.plugins.kotlin.serialization)
 }
 
 /**
@@ -115,6 +121,29 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.coroutines.android)
 
+    // Navigation 3 rather than navigation-compose. The back stack is saved
+    // state here, and this process is created and destroyed constantly by
+    // design -- the listener is spawned for a notification and dies -- so a
+    // back stack held in a StateFlow would restore the user onto the wrong
+    // screen with nothing to explain it.
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    // `viewModel()`, which is how a destination gets its holder without the
+    // Activity owning a field per screen.
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // `rememberViewModelStoreNavEntryDecorator`. NavDisplay's default
+    // `entryDecorators` is `listOf(rememberSaveableStateHolderNavEntryDecorator())`
+    // and nothing else -- read off navigation3-ui-android-1.1.7's own sources
+    // -- so without this every `viewModel()` inside an entry resolves against
+    // the Activity's store and no holder is ever cleared when its destination
+    // is popped. `MainActivity` passes both decorators explicitly for that
+    // reason.
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+    // `Destinations.kt`'s two back-stack rules, which are decisions about a
+    // `MutableList<NavKey>` and need no device. See `BackStackRuleTest`.
+    testImplementation(libs.junit)
+
     // `MainActivity` lives here, so `LaunchTest` is the only place the
     // application itself can be started.
     //
@@ -125,6 +154,13 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     // ActivityScenario, for the real lifecycle rather than a Compose tree.
     androidTestImplementation(libs.androidx.test.core)
+    // Driving the real Activity's Compose tree, which `LaunchTest` records as
+    // the missing half of what it can assert: navigation between the two
+    // destinations is a Compose control away, and nothing here could touch
+    // one. Still no ui-test-manifest -- that artifact supplies a stub Activity
+    // for a library module, and this one has the real Activity under test.
+    androidTestImplementation(composeBom)
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     // Not optional on API 37. See the note in the version catalog.
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.junit)

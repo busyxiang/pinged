@@ -2,9 +2,12 @@ package my.pinged.ledger.sources
 
 import androidx.annotation.VisibleForTesting
 import my.pinged.data.Databases
+import android.app.Application
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -65,9 +68,10 @@ data class SourcesState(
     /** False until the first read completes, so an empty screen is not a lie. */
     val loaded: Boolean = false,
     /**
-     * The database could not be opened at all (spec 11.1). The screen renders
-     * nothing rather than an empty allow-list, which would read as "no app has
-     * ever notified you" -- a confident answer this state cannot support.
+     * The database could not be opened at all (spec 11.1). The screen draws
+     * `CANNOT READ YOUR DATA` in place of each empty list rather than an empty
+     * allow-list, which would read as "no app has ever notified you" -- a
+     * confident answer this state cannot support.
      */
     val storageUnavailable: Boolean = false,
 )
@@ -75,16 +79,30 @@ data class SourcesState(
 /**
  * Reads the allow-list, writes the allow-list, and holds nothing else.
  *
- * Not an `androidx.lifecycle.ViewModel`. It owns no state that has to survive
- * a configuration change -- every field is re-read from Room and DataStore in
- * a few milliseconds -- and the lifecycle-viewmodel-compose artifact would be
- * a dependency bought for one class. The caller supplies the scope, which is
- * the activity's, so the reads die with the screen.
+ * An `AndroidViewModel` because `NavDisplay` owns which screens exist -- a
+ * holder per Activity field does not scale past one -- and because
+ * `viewModelScope` outlives a configuration change, which an Activity's
+ * `lifecycleScope` cannot. The context it reads is the `Application`, so
+ * surviving a configuration change leaks nothing.
  */
-class SourcesViewModel(
-    private val context: Context,
-    private val scope: CoroutineScope,
-) {
+class SourcesViewModel(app: Application) : AndroidViewModel(app) {
+
+    /**
+     * A getter, not a field: `private val context: Context = app` is what lint's
+     * `StaticFieldLeak` fails the build on, and it cannot see that this one is
+     * the `Application`. [AndroidViewModel] holds the same reference anyway, so
+     * reading it back costs nothing and stores nothing.
+     */
+    private val context: Context get() = getApplication<Application>()
+
+    /**
+     * `viewModelScope`: `SupervisorJob() + Dispatchers.Main.immediate`, which
+     * is what puts every queued body on the main thread.
+     * `MainThreadRefreshTest.enqueueStillRunsOnTheMainThread` is the assertion
+     * that it still does. It says nothing about the thread [tail] is written
+     * on; see there.
+     */
+    private val scope: CoroutineScope get() = viewModelScope
     private val _state = MutableStateFlow(SourcesState())
     val state: StateFlow<SourcesState> = _state.asStateFlow()
 
@@ -100,10 +118,14 @@ class SourcesViewModel(
      * chain stops a read publishing a snapshot older than a write that landed,
      * which shows up as a toggle flipping back under the finger.
      *
-     * Written and read only from the caller's thread -- `onResume`, a
-     * `LaunchedEffect` and a Compose click are all the main thread -- so the
+     * Written and read on the thread that *calls* [enqueue], not inside the
+     * coroutine it launches -- and every caller in the app is the main thread:
+     * `SourcesScreen`'s `LifecycleResumeEffect` and a Compose click. So the
      * chaining needs no lock. What it must not do is claim its place inside the
-     * new coroutine, which would move the race rather than close it.
+     * new coroutine, which would move the race rather than close it. No test
+     * holds the caller-side half of this; the tests call [enqueue] from the
+     * instrumentation thread, which is safe only because each of them is the
+     * only caller.
      */
     private var tail: CompletableDeferred<Unit>? = null
 
@@ -148,17 +170,15 @@ class SourcesViewModel(
     /**
      * Read everything the screen draws, and publish it.
      *
-     * Returns its `Job` so a caller can order work after it: this read is what
-     * probes the database and therefore what records or clears the storage flag,
-     * and `MainActivity` reads that flag to draw the banner. Launched
-     * independently, the flag read wins and the banner describes the previous
-     * foreground.
+     * Returns its `Job` so a caller can order work after it -- the guarantee
+     * the ordering tests hold, and the one anything sequencing a write after a
+     * read depends on.
      *
-     * **It does not cancel the read in flight.** Cancel-and-restart saved one
-     * read per cold launch and cost the ordering entirely, because `Job.join()`
-     * on a cancelled job returns immediately -- so the `join()` in `onResume`
-     * became a no-op the instant the `LaunchedEffect` cancelled the job it was
-     * waiting on. Two refreshes queue instead, the later publishing last.
+     * **It does not cancel the read in flight.** Cancel-and-restart would save
+     * one read per cold launch and cost the ordering entirely: `Job.join()` on
+     * a cancelled job returns immediately, so a `join()` on a refresh becomes a
+     * no-op the instant a later one cancels the job it is waiting on. Two
+     * refreshes queue instead, the later publishing last.
      */
     fun refresh(): Job = enqueue {
         beforeEachOperation()
@@ -170,14 +190,14 @@ class SourcesViewModel(
      *
      * `read` opens the database through `Databases`, and `DatabaseFactory.build`
      * is eager, so spec 11.1's device-transfer state throws
-     * [DatabaseKeyUnavailableException] out of the first line. `lifecycleScope`
-     * carries no CoroutineExceptionHandler, so that reached the thread's uncaught
-     * handler and killed the process on every launch, twice -- which spec 11.1
-     * names as the outcome that must not happen.
+     * `DatabaseKeyUnavailableException` out of the first line. `viewModelScope`
+     * is a bare `SupervisorJob` with no CoroutineExceptionHandler, so unguarded
+     * that reaches the thread's uncaught handler and kills the process on every
+     * launch -- the outcome spec 11.1 names as the one that must not happen.
      *
-     * Recording it is also what the banner reads. Otherwise the flag is only set
-     * by the listener or the worker, both of which need something to have hit the
-     * dead database first.
+     * Recording it also feeds the banner, though the banner does not wait on
+     * it: `MainActivity.onResume` runs its own `CaptureStorage.guarded` probe,
+     * because this screen may not be composed at all.
      */
     private suspend fun readOrReportStorage(): SourcesState =
         CaptureStorage.guarded(
@@ -205,6 +225,10 @@ class SourcesViewModel(
     fun setEnabled(pkg: String, on: Boolean): Job =
         enqueue {
             beforeEachOperation()
+            // Kept: these three statements are the one database access in this
+            // file outside a `CaptureStorage.guarded` block, so nothing else
+            // takes them off the main thread `enqueue` runs its bodies on
+            // (`MainThreadRefreshTest`), where Room throws `IllegalStateException`.
             withContext(Dispatchers.IO) {
                 val dao = Databases.captureSourceDao(context)
                 val label = label(InstalledApps(context.packageManager), pkg, known = null, usePackLabel = true)
@@ -222,7 +246,13 @@ class SourcesViewModel(
             _state.value = readOrReportStorage()
         }
 
-    private suspend fun read(): SourcesState = withContext(Dispatchers.IO) {
+    /**
+     * No `withContext(Dispatchers.IO)` of its own: every caller reaches this
+     * through [readOrReportStorage], and `CaptureStorage.guarded` dispatches
+     * its whole body -- which `GuardedDispatchTest` pins and
+     * `MainThreadRefreshTest` exercises from the thread that matters.
+     */
+    private suspend fun read(): SourcesState {
         val known: Map<String, CaptureSource> =
             Databases.captureSourceDao(context).all().associateBy { it.pkg }
         // The count means the same thing on both sides of the allow-list gate:
@@ -234,16 +264,15 @@ class SourcesViewModel(
 
         // Every pack package this device can confirm, plus every source the user has
         // actually enabled. The second half is not decoration: a bank outside the
-        // pack is enabled from the lower list, and without it stayed there under a
-        // heading saying NOT CAPTURED while its text was being written.
+        // pack is enabled from the lower list, and without it would stay there under
+        // a heading saying NOT CAPTURED while its text was being written.
         val upper: List<String> =
             (Graph.parsePack().packages.filter { apps.isInstalled(it.pkg) }.map { it.pkg } +
                 known.values.filter { it.enabled }.map { it.pkg }).distinct()
 
-        // One row shape, and one answer to "what do we call this package". These were
-        // two near-identical constructions and the label fallback had three spellings,
-        // so the name written into `capture_source` could disagree with the name
-        // drawn in either list.
+        // One row shape for both sections, and one answer to "what do we call this
+        // package": a second spelling of the label fallback is a name written into
+        // `capture_source` that disagrees with the name drawn.
         fun rowFor(pkg: String, usePackLabel: Boolean) = SourceRow(
             pkg = pkg,
             label = label(apps, pkg, known[pkg]?.label, usePackLabel),
@@ -275,7 +304,11 @@ class SourcesViewModel(
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
             .toList()
 
-        SourcesState(suggested = suggested, seenNotCaptured = seenNotCaptured, loaded = true)
+        return SourcesState(
+            suggested = suggested,
+            seenNotCaptured = seenNotCaptured,
+            loaded = true,
+        )
     }
 
     /**
@@ -310,11 +343,11 @@ class SourcesViewModel(
 /**
  * `PackageManager` asked once per package, for a single read.
  *
- * `isInstalled` and `resolveLabel` each called `getApplicationInfo`, so every
- * pack package cost two binder round trips and every discovered package one
- * that *throws* -- outside `<queries>` that is the expected answer, so each
- * fills in a stack trace. Sixty discovered packages meant over a hundred round
- * trips per read, on every resume.
+ * Without the memo, `isInstalled` and a label lookup each call
+ * `getApplicationInfo`: two binder round trips per pack package, and for a
+ * discovered package one that *throws* -- outside `<queries>` that is the
+ * expected answer, so each fills in a stack trace. Sixty discovered packages
+ * is over a hundred round trips per read, on every resume.
  *
  * A class rather than a closure over a local map: this is handed to [label],
  * and a lambda would keep the whole enclosing read alive with it.

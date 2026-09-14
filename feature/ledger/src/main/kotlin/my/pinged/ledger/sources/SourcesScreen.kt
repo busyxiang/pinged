@@ -3,6 +3,7 @@ package my.pinged.ledger.sources
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,24 +22,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
 import my.pinged.ledger.theme.Separator
 import my.pinged.ledger.theme.Body
+import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ledger.theme.Card
 import my.pinged.ledger.theme.Display
 import my.pinged.ledger.theme.Faint
@@ -47,8 +49,8 @@ import my.pinged.ledger.theme.Mono
 import my.pinged.ledger.theme.MonoLabel
 import my.pinged.ledger.theme.Muted
 import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.Rule
 import my.pinged.ledger.theme.Stamp
+import my.pinged.ledger.theme.dottedRule
 
 /**
  * Spec 9.6's allow-list, drawn from `design/Sources.dc.html`.
@@ -66,20 +68,40 @@ import my.pinged.ledger.theme.Stamp
 @Composable
 fun SourcesScreen(
     viewModel: SourcesViewModel,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
-    // The screen loads itself, so it is not silently blank in a host that does not
-    // call `refresh()` from a lifecycle callback.
+    // The screen loads itself, so it is not silently blank in a host that does
+    // not call `refresh()` from a lifecycle callback.
     //
-    // This fires *after* `MainActivity.onResume` returns, so a cold launch does two
-    // reads. They now queue rather than cancel, and the second publishes last --
-    // one redundant `PackageManager` pass per launch, spent on a banner that tells
-    // the truth about the current foreground. See `SourcesViewModel.refresh`.
-    LaunchedEffect(viewModel) { viewModel.refresh() }
+    // **Once per foreground, not once per holder, which is the whole point of a
+    // lifecycle effect here.** `MainActivity` scopes each holder to its
+    // `NavEntry` (`rememberViewModelStoreNavEntryDecorator`), so the holder
+    // survives backgrounding and a `LaunchedEffect(viewModel)` fires exactly
+    // once for the life of the entry. A warm resume would then read nothing:
+    // spec 9.6 discovery is "a package appears once it has spoken" -- which the
+    // footer below promises in those words -- so a bank that posted while the
+    // app was away would stay off the lower list, with no pull-to-refresh and
+    // nowhere to navigate to force a read. The same freeze would hold
+    // `storageUnavailable`, which is worse than stale: the screen could say
+    // CANNOT READ YOUR DATA under a banner `onResume`'s `CaptureStorage` probe
+    // had just cleared, the inverse of what that probe exists to prevent.
+    //
+    // `repeatOnLifecycle(RESUMED)` gives the same guarantee and costs a
+    // restarting collector for a `refresh()` that is a one-shot, not a flow.
+    //
+    // Keyed on the view model, so a new entry is a new holder and a new read.
+    // Nothing to undo on pause: `refresh()` is queued and ordered in the holder
+    // (see `SourcesViewModel`), and cancelling it would only lose the read.
+    LifecycleResumeEffect(viewModel) {
+        viewModel.refresh()
+        onPauseOrDispose {}
+    }
     SourcesScreenContent(
         state = state,
         onToggle = viewModel::setEnabled,
+        onBack = onBack,
         modifier = modifier,
     )
 }
@@ -93,6 +115,7 @@ fun SourcesScreen(
 fun SourcesScreenContent(
     state: SourcesState,
     onToggle: (String, Boolean) -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val suggested = state.suggested
@@ -104,10 +127,8 @@ fun SourcesScreenContent(
         // `LazyColumn`, not a `Column` with `verticalScroll`. `SourceCounters` never
         // prunes, so the lower list grows for the life of the install -- one row per
         // app that has ever posted -- and an eager column composes every one of them on
-        // every read.
-        //
-        // Each item carries the background and horizontal padding it used to inherit
-        // from the wrapper Columns, because a lazy item has no enclosing Column.
+        // every read. Each item carries its own background and horizontal padding,
+        // because a lazy item has no enclosing Column to inherit them from.
         LazyColumn(
             Modifier
                 .weight(1f)
@@ -115,7 +136,7 @@ fun SourcesScreenContent(
         ) {
             item(key = "header") {
                 Column(Modifier.fillMaxWidth().background(Paper)) {
-                    Header(enabledCount = enabledCount)
+                    Header(enabledCount = enabledCount, onBack = onBack)
                     SectionLabel("ON YOUR PHONE", Modifier.padding(start = 20.dp, top = 26.dp))
                     Spacer(Modifier.height(12.dp))
                 }
@@ -129,7 +150,7 @@ fun SourcesScreenContent(
                         // read at all. It is drawn as an [Alert] for the same
                         // reason -- see there.
                         if (state.storageUnavailable) {
-                            Alert("CANNOT READ YOUR DATA")
+                            Alert(CANNOT_READ_YOUR_DATA)
                         } else {
                             Note(
                                 if (loaded) "NO KNOWN SOURCE IS INSTALLED ON THIS DEVICE"
@@ -144,13 +165,10 @@ fun SourcesScreenContent(
                 Column(UpperRow) {
                     SourceListRow(
                         row = row,
-                        // The same claim as the lower list, and it belongs here more.
-                        //
-                        // The upper list is the pack's installed packages plus everything enabled, and
-                        // the pack holds two, both in `<queries>` -- so those two are always up here
-                        // whether they are on or off. A disabled Maybank drew "12 SEEN" and nothing
-                        // else, under a heading reading TEXT IS STORED ONLY FOR THESE, and "EARLIER
-                        // TEXT STILL SAVED" was unreachable for the only two banks this app knows.
+                        // The same claim as the lower list, and it belongs here
+                        // more: a pack package stays in this section whether it
+                        // is on or off, so this is where a disabled bank with
+                        // text on disk is read. See `claimFor`.
                         detail = seenLine(row.seenCount) + claimFor(row),
                         divider = index != suggested.lastIndex,
                         onToggle = onToggle,
@@ -172,7 +190,7 @@ fun SourcesScreenContent(
                     SectionLabel("SEEN RECENTLY, NOT CAPTURED")
                     if (seenNotCaptured.isEmpty()) {
                         if (state.storageUnavailable) {
-                            Alert("CANNOT READ YOUR DATA")
+                            Alert(CANNOT_READ_YOUR_DATA)
                         } else {
                             Note(if (loaded) "NOTHING ELSE HAS POSTED YET" else "READING")
                         }
@@ -184,14 +202,6 @@ fun SourcesScreenContent(
                 Column(Modifier.padding(start = 20.dp, end = 20.dp)) {
                     SourceListRow(
                         row = row,
-                        // The claim spec 9.6 exists to make, printed next to the only thing kept about
-                        // the package: a count. If this line is on screen it has to be true, which is
-                        // what the stage-one gate in CaptureIngest is for.
-                        //
-                        // Conditional on the row, not the section. This component is public and
-                        // stateless, and its callers are the only thing between the claim and a source
-                        // whose text really is stored: a layout decision must not be able to make the
-                        // app dishonest.
                         detail = seenLine(row.seenCount) + claimFor(row),
                         divider = index != seenNotCaptured.lastIndex,
                         topPadding = if (index == 0) 14.dp else 12.dp,
@@ -206,24 +216,43 @@ fun SourcesScreenContent(
 }
 
 /**
- * **The artboard's back chevron is not here.**
+ * The artboard's back chevron.
  *
- * It was, and it did nothing: a 20dp chevron on a `Canvas` with no click
- * handler, no semantics and nowhere to go -- `MainActivity` is the only
- * Activity and this the only screen. A control that looks like a control and
- * ignores every tap teaches the user that this app's controls cannot be
- * trusted, on the screen that asks them to trust it with their notifications.
- * A bare `Canvas` is also an unlabelled node, so a screen reader could say
- * nothing about it.
+ * **A control that looks like a control and ignores every tap must not be
+ * drawn** -- not on the screen that asks the user to trust this app with their
+ * notifications. This chevron waited for its destination rather than being
+ * drawn as decoration, and the rest of the feature points here for the rule.
  *
- * Bring it back with the destination, not before.
+ * [onBack] pops the same entry the system back gesture pops -- `MainActivity`
+ * hands both the same expression -- so the two cannot drift into meaning
+ * different things.
+ *
+ * A [Role.Button] with a content description and a 44dp target, not a bare
+ * `Canvas`: an unlabelled node is one a screen reader can say nothing about.
  */
 @Composable
-private fun Header(enabledCount: Int) {
+private fun Header(enabledCount: Int, onBack: () -> Unit) {
+    Box(
+        Modifier
+            .padding(start = 8.dp, top = 12.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .clickable(role = Role.Button, onClick = onBack)
+            .size(44.dp)
+            .semantics { contentDescription = BACK_DESCRIPTION },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(20.dp)) {
+            val stroke = 1.5.dp.toPx()
+            val near = size.width * 0.38f
+            val far = size.width * 0.62f
+            drawLine(Ink, Offset(far, size.height * 0.22f), Offset(near, size.height * 0.5f), stroke)
+            drawLine(Ink, Offset(near, size.height * 0.5f), Offset(far, size.height * 0.78f), stroke)
+        }
+    }
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 28.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -269,15 +298,12 @@ private fun Note(text: String) {
 /**
  * The one state on this screen that is not a fact about the user's phone.
  *
- * "CANNOT READ YOUR DATA" was typeset exactly like "NOTHING ELSE HAS POSTED
- * YET" -- same size, colour and position. One says the phone is quiet; the
- * other says the app cannot open its own database. Drawn identically, a user
- * scanning an apparently empty allow-list concludes no app has ever notified
- * them, which is the opposite of the truth.
- *
- * So it is drawn in the accent this screen reserves for things that need
- * answering, inside the same bordered frame as the authoritative stamp and the
- * capture banner.
+ * **It must not be typeset like [Note].** "NOTHING ELSE HAS POSTED YET" says
+ * the phone is quiet; this says the app cannot open its own database. Drawn
+ * identically, a user scanning an apparently empty allow-list concludes no app
+ * has ever notified them, which is the opposite of the truth. So: the accent
+ * this screen reserves for things that need answering, inside the same bordered
+ * frame as the authoritative stamp and the capture banner.
  */
 @Composable
 private fun Alert(text: String) {
@@ -338,8 +364,7 @@ private fun SourceListRow(
                     // Tagged so `DrawnColourTest` can sample the pixels this
                     // line is actually painted in. The palette test cannot:
                     // reverting this one argument to `Faint` puts the 3.12:1
-                    // bug back with every unit test still green, which is
-                    // measured rather than supposed.
+                    // contrast back with every unit test still green.
                     modifier = Modifier.testTag(DETAIL_TAG),
                 )
                 if (row.authoritative) AuthoritativeChip()
@@ -384,9 +409,9 @@ private fun AuthoritativeChip() {
  * this screen has exactly one question, so "not this one" being almost
  * invisible is not a stylistic matter. [Faint] clears 3:1 on both grounds.
  *
- * One colour rather than one per ground: the parameter that carried the
- * difference existed to keep the outline equally faint against two backgrounds,
- * which is the property that was the bug.
+ * One colour rather than one per ground: a per-ground parameter exists to keep
+ * the outline equally faint against two backgrounds, which is the property
+ * that was the bug.
  *
  * The two states are **not** told apart by colour. On is a filled pill with the
  * knob right, off an outline with the knob left; the accent and [Faint] measure
@@ -428,13 +453,10 @@ private fun Pill(on: Boolean) {
 private val SectionLabelStyle = MonoLabel.copy(letterSpacing = 1.4.sp)
 
 /**
- * The seen count and spec 9.6's claim.
+ * The seen count and spec 9.6's claim, at `MonoLabel`'s tracking.
  *
- * **No tracking override, and there should never have been one.** This read
- * `letterSpacing = 0.sp`, which is not a value the artboard contains -- every
- * string there is 0.08em, 0.1em or 0.14em -- so the most important line on the
- * screen was set tighter than anything drawn, on top of being the smallest. It
- * takes `MonoLabel`'s tracking now, the board's 0.1em.
+ * **No override**: the artboard sets every string at 0.08em, 0.1em or 0.14em,
+ * and `MonoLabel` is the board's 0.1em.
  */
 private val DetailStyle = MonoLabel
 
@@ -451,7 +473,15 @@ private val FooterStyle = MonoLabel.copy(letterSpacing = 1.1.sp)
 const val DETAIL_TAG = "source-row-detail"
 const val PILL_TAG = "source-row-pill"
 
-/** What the upper rows used to inherit from the Paper-backed wrapper Column. */
+/**
+ * What a screen reader says about the back chevron, and what the test that
+ * proves it pops looks the node up by. One constant rather than two literals:
+ * a chevron the test cannot find is a test that passes whether or not the
+ * control is there.
+ */
+const val BACK_DESCRIPTION = "Back to the ledger"
+
+/** The upper list's ground and gutters, which a lazy item cannot inherit. */
 private val UpperRow = Modifier.fillMaxWidth().background(Paper).padding(start = 20.dp, end = 20.dp)
 
 /**
@@ -486,14 +516,14 @@ private fun TornEdge(modifier: Modifier = Modifier) {
 }
 
 /**
- * **The dashed frame is gone, because the button inside it is.**
+ * **No dashed frame, because there is no button inside it.**
  *
- * The artboard puts a 46dp dashed box here reading "SHOW ALL APPS". Spec 9.6
- * dropped that button, and the sentence replacing it is an explanation, not an
- * action -- but the frame stayed. A dashed box with a minimum height and
- * centred mono type is button chrome in this design language and nowhere else,
- * so the thing that looked most like something to press was the one thing that
- * could not be, directly under a list of real controls.
+ * The artboard puts a 46dp dashed box here reading "SHOW ALL APPS", which spec
+ * 9.6 dropped; the sentence replacing it is an explanation, not an action. A
+ * dashed box with a minimum height and centred mono type is button chrome in
+ * this design language and nowhere else, so keeping the frame would put the
+ * most press-looking thing on the screen directly under a list of real
+ * controls (see [Header] for the rule).
  */
 @Composable
 private fun Footer() {
@@ -513,36 +543,11 @@ private fun Footer() {
 }
 
 /**
- * The perforation, drawn along one edge.
- *
- * One function, not two. `dottedBottomRule` and `dottedTopRule` were identical
- * but for the y coordinate, so the dash pattern and stroke weight existed
- * twice and only one of the two was under test.
- */
-private fun Modifier.dottedRule(atTop: Boolean): Modifier = drawBehind {
-    val y = if (atTop) 0f else size.height
-    drawLine(
-        color = Rule,
-        start = Offset(0f, y),
-        end = Offset(size.width, y),
-        strokeWidth = 1.dp.toPx(),
-        pathEffect = PathEffect.dashPathEffect(
-            floatArrayOf(1.dp.toPx(), 2.dp.toPx()),
-        ),
-    )
-}
-
-/**
- * What this app is holding for a source, drawn from the database rather than
- * from which list the row landed in.
- *
- * One function used by both sections: the claim is a fact about
- * `capture_source.last_notification_at`, not about layout. Inlined in the lower
- * section only, it was a statement about where a row was drawn -- and the two
- * banks the pack knows are always in the *upper* section, so the row that most
- * needed the claim never carried one.
- *
- * An enabled source says nothing: the heading above it already does.
+ * Spec 9.6's claim about what this app is holding for a source: a fact about
+ * `capture_source.last_notification_at`, not about which list the row landed
+ * in, so no layout decision can make the app dishonest. If this line is on
+ * screen it has to be true, which is what `CaptureIngest`'s stage-one gate is
+ * for. An enabled source says nothing -- the heading above it already does.
  */
 private fun claimFor(row: SourceRow): String = when {
     row.enabled -> ""
