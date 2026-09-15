@@ -1,0 +1,24 @@
+package: com.maybank2u.life
+expect: matched
+rule: mae-card-spend-v1
+amount_sen: 14110
+merchant: HOCK KEE - THE GARDENS KUALA LUMPUR MYS
+merchant_display: Hock Kee - The Gardens Kuala Lumpur
+direction: EXPENSE
+# A real MAE card notification from a phone, kept verbatim -- the space in
+# "RM 141.10" and the double space in "MasterCard  Platinum" are both as sent.
+# The user masked the card's last four digits as **** before supplying it; the
+# real text carries four digits there. The rule stops its merchant capture at
+# " with your", so the digits fall outside every group either way and no
+# fixture in this corpus has to hold them.
+# The trigger the rule requires is "just spent" and not "You've just spent".
+# This sample was retyped by hand, so the one character whose codepoint it
+# cannot vouch for is the apostrophe -- U+2019 is what a phone keyboard and
+# most bank copy produce, TextNormalizer folds case and whitespace but not
+# punctuation, and a condition holding U+0027 would then match nothing at all.
+# The rule therefore starts after it. "spent", not "spend" -- an earlier draft
+# of this fixture had the typo and is the reason that sentence is here.
+# No title was supplied, so this fixture deliberately has none and the rule
+# must not depend on one.
+
+You've just spent RM 141.10 at HOCK KEE - THE GARDENS KUALA LUMPUR MYS with your MasterCard  Platinum ending ****. View your receipt now

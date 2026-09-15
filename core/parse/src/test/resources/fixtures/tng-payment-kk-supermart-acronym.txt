@@ -5,5 +5,8 @@ rule: tng-payment-v1
 amount_sen: 1590
 merchant: KK SUPERMART
 merchant_display: KK Supermart
+# Constructed, not observed. Neither real TnG sample in this corpus uses
+# `tng-payment-v1`'s wording, so this file exercises the rule and is not
+# evidence that TnG sends the sentence in it.
 
 Payment of RM15.90 to KK SUPERMART successful. Balance: RM64.10

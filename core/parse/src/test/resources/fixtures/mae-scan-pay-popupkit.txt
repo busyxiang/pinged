@@ -1,0 +1,22 @@
+package: com.maybank2u.life
+title: Maybank2u: Scan & Pay
+expect: matched
+rule: mae-scan-pay-v1
+amount_sen: 1615
+merchant: POPUPKIT-CHENENTERPRISE
+merchant_display: Popupkit-chenenterprise
+direction: EXPENSE
+# A real MAE notification, read off a phone screenshot rather than retyped, so
+# the title and the body are both verbatim and no character in either is a
+# guess. The title is recorded because it is evidence; no rule reads it.
+# The merchant is bounded by the stop and the reference that follows it. The
+# reference is the one field here that must never reach the merchant -- it is
+# unique per payment, so a merchant carrying it is a new shop in section 8 on
+# every visit, and the ledger would group nothing at all.
+# The merchant's own hyphen is inside the bound and survives.
+# merchant_display is recorded, not endorsed. Title-casing splits on spaces
+# only, so a hyphen-joined name comes out with one capital where the shop
+# writes three. Fixing that needs a corpus of hyphenated merchants; there is
+# one sample, so it is written down rather than guessed at.
+
+Successful payment of RM 16.15 to POPUPKIT-CHENENTERPRISE. REF: QR85598443.

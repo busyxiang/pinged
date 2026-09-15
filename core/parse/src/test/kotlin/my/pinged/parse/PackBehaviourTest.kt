@@ -36,6 +36,17 @@ class PackBehaviourTest {
         "Reload of RM12.50",
         "You have paid RM12.50 to Restoran Yuen Kee",
         "Bayaran balik RM12.50 daripada Restoran Yuen Kee telah diterima",
+        // The card rule bounds its merchant with " with your". The trailing
+        // card description is what the group must stop before: on a device it
+        // carries the last four digits. (The real sample is in the corpus,
+        // where its provenance is written down; this body only tests the bound.)
+        "You've just spent RM12.50 at STARBUCKS KLCC with your MasterCard Platinum ending 1234",
+        // The QR rule bounds its merchant with the stop and the reference after
+        // it, shaped like the real one, which must stay outside the group.
+        "Successful payment of RM12.50 to STARBUCKS KLCC. REF: QR12345678.",
+        // TnG's own "for" wording, whose group runs to the end of `text`: the
+        // field is the bound, so the tail below must never reach it.
+        "You have paid RM12.50 for STARBUCKS KLCC",
     )
 
     @Test fun noRuleCapturesAMerchantThatReachesTheNextLine() {
@@ -59,18 +70,23 @@ class PackBehaviourTest {
     /**
      * **Every rule that can capture a merchant is exercised by a body above.**
      *
-     * Without this the test above is a claim about the four strings someone
-     * remembered to write -- and both its own KDoc and the commit that added it
-     * said it "runs every rule the shipped pack declares", while it iterated
-     * packages crossed with a hand-written list and never touched `pkg.rules`.
+     * Without this, the test above is a claim about the strings someone
+     * remembered to write: it iterates packages crossed with a hand-written
+     * list and never touches `pkg.rules`, so it reads as "every rule the
+     * shipped pack declares" while covering whichever subset that list reaches.
      *
      * Only rules with a merchant group, because a rule that captures no merchant
      * cannot swallow a line into one.
      */
     @Test fun everyMerchantCapturingRuleIsCoveredByABody() {
         val expanded = { rule: TemplateRule -> PackRegex.expand(rule.pattern, pack.fragments) }
+        // Shared rules included, because they run against every package and so
+        // are exactly the rules a per-package walk stops seeing: moving the
+        // DuitNow templates into `shared_rules` drops them from a `pkg.rules`
+        // walk without failing anything, and the rule that once captured
+        // "Restoran X Ref ABC123 Baki RM500.00" goes unchecked for it.
         val shouldCover = pack.packages.flatMap { pkg ->
-            pkg.rules
+            (pkg.rules + pack.sharedRules)
                 .filter { expanded(it).contains("(?<" + PackRegex.MERCHANT_GROUP + ">") }
                 .map { pkg.pkg to it.id }
         }

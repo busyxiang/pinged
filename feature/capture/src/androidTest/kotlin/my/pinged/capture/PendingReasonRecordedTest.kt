@@ -129,7 +129,7 @@ class PendingReasonRecordedTest {
         ParseFixtures.pass(context).run()
 
         val txn = requireNotNull(ParseFixtures.txnForCapture(context, id))
-        assertEquals("mae-duitnow-paid-body-v1", captures.byId(id).matchedRuleId)
+        assertEquals("duitnow-paid-body-v1", captures.byId(id).matchedRuleId)
         assertEquals("the amount is not the uncertain part", sen, txn.amountSen)
         assertNull(txn.merchantRaw)
         assertEquals(TxnState.PENDING, txn.state)
@@ -234,10 +234,7 @@ class PendingReasonRecordedTest {
         assertEquals(PendingReason.OVER_THRESHOLD, txn.pendingReason)
     }
 
-    /**
-     * "Exceeds", so the threshold itself is not over it. Exactly RM500.00
-     * commits.
-     */
+    /** "Exceeds", so the threshold itself is not over it. */
     @Test
     fun theThresholdBoundaryIsExclusive() {
         val id = ParseFixtures.insertCapture(

@@ -84,15 +84,13 @@ class MerchantTest {
     }
 
     /**
-     * The bug this entry point exists for.
+     * The guard above passes for two reasons and only one of them is the rule:
+     * `McDonald's Mid Valley` survives because the pack happens to carry
+     * `McDonald's` in its three-entry exception list. Through
+     * `display(clean(raw))`, where `clean` uppercases, every mixed-case merchant
+     * *not* in that list came out title-cased.
      *
-     * The guard above passed for two reasons before, and only one was the rule.
-     * `McDonald's Mid Valley` came out right because the pack happens to carry
-     * `McDonald's` in the exception list; every mixed-case merchant *not* in that
-     * list came out title-cased, because the production path was
-     * `display(clean(raw))` and `clean` uppercases. The list has three entries.
-     *
-     * Each string below has no exception-list entry and a shape the old path
+     * Each string below has no exception-list entry and a shape that path
      * destroyed. The expected values are what the notification actually said.
      */
     @Test fun `a mixed case merchant with no exception entry survives stripping`() {
@@ -140,6 +138,8 @@ class MerchantTest {
             "DUITNOWQR-myBurgerLab-K2",
             "SHOPEE MY SDN BHD",
             "iPhone Store Sdn Bhd",
+            "THONG KEE.",
+            "TENAGA NASIONAL via DuitNow.",
         )
         for (raw in inputs) {
             assertEquals(
@@ -194,6 +194,57 @@ class MerchantTest {
 
     @Test fun `strips corporate suffix`() =
         assertEquals("MACHINES", Merchant.clean("MACHINES SDN BHD", bundled).value)
+
+    // The country code as a card acquirer sends it. ` MY` does not end
+    // "... LUMPUR MYS", so before the alpha-3 was listed the country was part
+    // of `merchant_key` -- the identity section 8 aggregates by -- and the
+    // display read "... Kuala Lumpur Mys". The city is still there, and is a
+    // separate problem with no corpus behind it; see
+    // `MerchantNormalization.trailingNoiseSuffixes`.
+    @Test fun `strips the alpha-3 country code a card acquirer sends`() {
+        assertEquals(
+            "HOCK KEE - THE GARDENS KUALA LUMPUR",
+            Merchant.clean("HOCK KEE - THE GARDENS KUALA LUMPUR MYS", bundled).value,
+        )
+    }
+
+    /**
+     * The sentence's full stop, off the key and off the display.
+     *
+     * "You have paid RM6.25 for THONG KEE." is a real TnG notification and the
+     * rule's group runs to the end of `text`, so `merchant_raw` is
+     * "THONG KEE." and keeps it -- spec 5.4 preserves the raw capture. The key
+     * must not: it is spec 8's grouping identity, nothing revisits it, and one
+     * stop would leave the same stall showing as two rows in every merchant
+     * total for ever.
+     */
+    @Test fun `a sentence stop does not make a second shop`() {
+        assertEquals("THONG KEE", Merchant.clean("THONG KEE.", bundled).value)
+        assertEquals("Thong Kee", Merchant.displayFor("THONG KEE.", bundled))
+        assertEquals(
+            Merchant.clean("THONG KEE", bundled).value,
+            Merchant.clean("THONG KEE.", bundled).value,
+        )
+    }
+
+    /**
+     * A stop and a noise suffix stack in both orders, and only an interleaved
+     * pass gets both.
+     *
+     * Stops first would leave " via DuitNow" on the second string below --
+     * matched against "... DuitNow." it ends nothing. Suffixes first would
+     * leave the stop on the first. The rails suffix is the one this matters
+     * most for: it is why `merchant_display` read "Tenaga Nasional Via
+     * Duitnow" on a device.
+     */
+    @Test fun `a stop and a suffix come off in either order`() {
+        // The suffix carries stops of its own, so it must be taken whole.
+        assertEquals("MACHINES", Merchant.clean("MACHINES SDN. BHD.", bundled).value)
+        // The stop is outside the suffix, so it must come off before the
+        // suffix can be seen at the end of the string.
+        assertEquals("TENAGA NASIONAL", Merchant.clean("TENAGA NASIONAL via DuitNow.", bundled).value)
+        assertEquals("Tenaga Nasional", Merchant.displayFor("TENAGA NASIONAL via DuitNow.", bundled))
+    }
 
     @Test fun `strips trailing terminal code`() =
         assertEquals("RIDE", Merchant.clean("GRAB* RIDE-3KL", bundled).value)

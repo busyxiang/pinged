@@ -95,9 +95,9 @@ object PackRegex {
 
 /**
  * Spec 5.2's field selector, closed the way `direction`, `confidence` and
- * `kind` are. As an enum, [CaptureFields.forField]'s `when` is exhaustive: a
- * bare `String` left it an `else` branch, so a fifth selector added to the
- * loader's allow-list but not wired in would silently read `concat`.
+ * `kind` are. As an enum, [CaptureFields.forField]'s `when` is exhaustive, so a
+ * fifth selector added to the loader's allow-list but not wired in fails to
+ * compile rather than silently reading `concat`.
  */
 @Serializable
 enum class Field {
@@ -111,6 +111,26 @@ enum class Field {
 data class Conditions(
     @SerialName("text_contains_all") val textContainsAll: List<String> = emptyList(),
     @SerialName("text_contains_any") val textContainsAny: List<String> = emptyList(),
+    /**
+     * The failure guard, and the **only** thing standing between a declined
+     * payment and the ledger: [MatchOutcome.Matched] is returned before a
+     * package's reject list is consulted, so a template that matches a failure
+     * wording commits it and records the reject as a note.
+     *
+     * **Known limitation: it is evaluated against the rule's own [field], so a
+     * failure word outside that field is not seen.** A `field: text` rule
+     * misses "gagal" in the title or in `bigText`; a `concat` rule misses one
+     * in `text` whenever `bigText` is present, because [CaptureFields] builds
+     * `concat` from `bigText ?: text`. Every bundled rule is guarded and one
+     * vocabulary is used throughout (`PackTest` asserts both), which is what
+     * the shipped pack relies on -- but it relies on the bank putting the
+     * failure word in the same field as the payment sentence.
+     *
+     * The fix is a pack-level failure list evaluated over `concat` before any
+     * template may commit, rather than a per-rule one: a guard belongs to the
+     * capture, not to the rule that happened to match it. Not built here --
+     * it is a new pack key, a loader check and its own falsification pass.
+     */
     @SerialName("text_contains_none") val textContainsNone: List<String> = emptyList(),
     @SerialName("title_contains_any") val titleContainsAny: List<String> = emptyList(),
     val field: Field = Field.CONCAT,
@@ -165,6 +185,17 @@ data class MerchantNormalization(
      * Matched against the end of the uppercased merchant and stripped
      * repeatedly, e.g. ` SDN BHD`, ` MY`, ` via DuitNow`. Entries include
      * their leading separator so that "SHOPEEMY" is not mangled.
+     *
+     * The country belongs here in **both** its spellings. A card acquirer fills
+     * the merchant field as name, city, country, and the country is ISO 3166-1:
+     * `HOCK KEE - THE GARDENS KUALA LUMPUR MYS` is one real MAE card
+     * notification, and ` MY` -- the alpha-2 -- does not end that string.
+     *
+     * **It does not make a card capture group with the same shop over
+     * DuitNow.** The acquirer's city survives (`... KUALA LUMPUR`) and DuitNow
+     * sends no city at all, so the two keys still differ. Closing that gap
+     * means stripping a *city*, which needs a corpus of the acquirer's city
+     * field; there is one sample, so it is not attempted.
      */
     @SerialName("trailing_noise_suffixes") val trailingNoiseSuffixes: List<String> = emptyList(),
     /**
@@ -176,11 +207,9 @@ data class MerchantNormalization(
     // Derived once per pack, outside the constructor so serialization and
     // `equals` ignore them.
     //
-    // These keep the case the pack author wrote and `Merchant` matches them
-    // with `ignoreCase`, because `Merchant.displayFor` strips the same entries
-    // off a string whose case must survive. Folding can also change a length --
-    // a sharp s uppercases to two letters -- and the stripper removes by matched
-    // length.
+    // These keep the case the pack author wrote: `Merchant.displayFor` strips
+    // the same entries off a string whose case must survive, so `Merchant`
+    // matches them with `ignoreCase` and removes by matched length.
     internal val prefixes: List<String> by lazy { usable(acquirerPrefixes) }
     internal val suffixes: List<String> by lazy { usable(trailingNoiseSuffixes) }
 
@@ -217,6 +246,25 @@ data class ParsePack(
      * copies the moment a pack is loaded.
      */
     val fragments: Map<String, String> = emptyMap(),
+    /**
+     * Rules that belong to a payment rail rather than to an app, merged into
+     * every package's own rules by [RuleMatcher].
+     *
+     * Pack-level for the reason [MerchantNormalization] is. DuitNow is a
+     * national rail and the notification it produces carries the rail's
+     * wording, not the posting app's: "You have paid RM12.00 to Restoran Yuen
+     * Kee Home Town Cafe" arrives verbatim from MAE, TnG eWallet, Boost,
+     * ShopeePay and every Malaysian bank. Scoping those rules to one package
+     * meant the shipped pack read that sentence from Maybank and nothing at
+     * all from TnG -- five captures, zero transactions, on a real phone.
+     * Copying them per package would mean copying them again for every app
+     * ever added, and the copies would drift.
+     *
+     * A shared rule is not a weaker rule: [PackLoader] validates it through
+     * exactly the checks a package rule goes through, and its id may not
+     * collide with any package rule's.
+     */
+    @SerialName("shared_rules") val sharedRules: List<TemplateRule> = emptyList(),
 )
 
 object PackLoader {
@@ -333,11 +381,10 @@ object PackLoader {
     fun load(text: String): ParsePack {
         val tree = parsing { json.parseToJsonElement(text) }
 
-        // Decoding ignores unknown keys, so a misspelled predicate is dropped
-        // and the rule loads with no constraints at all — turning a guarded
-        // template into an amount-sniffer. Spec 5.9 requires every condition
+        // Decoding ignores unknown keys, and spec 5.9 requires every condition
         // to use only the listed predicates, so the key set is checked against
-        // the raw tree before the decoded model is trusted.
+        // the raw tree before the decoded model is trusted. What a dropped key
+        // costs is on `RULE_KEYS`.
         //
         // Before decoding, not after: these three read nothing but the tree,
         // and going first means `field: "body"` is reported as an unknown
@@ -348,6 +395,12 @@ object PackLoader {
 
         val pack = parsing { json.decodeFromJsonElement<ParsePack>(tree) }
 
+        // Through the same door as a package's rules, so every check one of
+        // them faces applies here too. A separate validator for the shared
+        // block is how one ends up missing a check that has cost money.
+        validate(sharedScope(pack.sharedRules), pack.fragments)
+
+        val sharedIds = pack.sharedRules.map { it.id }.toSet()
         val seenPackages = mutableSetOf<String>()
         pack.packages.forEach { p ->
             if (!seenPackages.add(p.pkg)) {
@@ -355,17 +408,40 @@ object PackLoader {
                     "Duplicate package entry '${p.pkg}': its rules and reject list would be discarded"
                 )
             }
+            // `validate` catches duplicates inside one list and neither list
+            // can see the other, so an id in both is caught only here.
+            p.rules.firstOrNull { it.id in sharedIds }?.let {
+                throw PackValidationException(
+                    "Rule id '${it.id}' is declared both in $SHARED_SCOPE and in package " +
+                        "'${p.pkg}'. A rule id names one rule: it is stored on every " +
+                        "capture as matched_rule_id, and the merged list would resolve " +
+                        "to whichever of the two sorted first."
+                )
+            }
             validate(p, pack.fragments)
         }
         return pack.copy(
-            packages = pack.packages.map { it.copy(rules = it.rules.sortedByDescending(TemplateRule::priority)) }
+            packages = pack.packages.map { it.copy(rules = it.rules.sortedByDescending(TemplateRule::priority)) },
+            sharedRules = pack.sharedRules.sortedByDescending(TemplateRule::priority),
         )
     }
 
+    /** How the shared block names itself in a validation message. */
+    private const val SHARED_SCOPE = "shared_rules"
+
+    /**
+     * The shared block as something [validate] accepts.
+     *
+     * The synthetic entry carries no reject terms on purpose: rejects are
+     * spec 5.3's per-app default-deny and stay with the package that declares
+     * them, so `p.reject` is legitimately empty here.
+     */
+    private fun sharedScope(rules: List<TemplateRule>) =
+        PackagePack(pkg = SHARED_SCOPE, label = SHARED_SCOPE, rules = rules)
+
     /**
      * A blank term matches everything, so one stray "" silently disables the
-     * list it appears in. Three validators each said so in their own words;
-     * it is one rule and now has one message.
+     * list it appears in.
      */
     private fun requireNonBlank(term: String, what: String) {
         if (term.isBlank()) {
@@ -376,11 +452,8 @@ object PackLoader {
     }
 
     /**
-     * Reject the first key outside [allowed], naming what was expected.
-     *
-     * Three validators needed this and each wrote its own loop; the third had
-     * already drifted, telling a pack author their condition key was unknown
-     * without saying what the alternatives were. One spelling, one message.
+     * Reject the first key outside [allowed], naming what was expected: a pack
+     * author told only that a key is unknown has to guess the alternatives.
      */
     private fun requireOnlyKeys(keys: Iterable<String>, allowed: Set<String>, what: String) {
         val unknown = keys.firstOrNull { it !in allowed } ?: return
@@ -397,11 +470,10 @@ object PackLoader {
     }
 
     /**
-     * The same C2 defect one level up. `ignoreUnknownKeys` means a pack that
-     * writes `merchant_normalisation` -- or `merchant_normalization` at the
-     * wrong nesting -- loads clean, declares no lists, and every merchant on
-     * the device keeps its acquirer prefix. A dropped key must be an error,
-     * not a silent no-op.
+     * `ignoreUnknownKeys` means a pack that writes `merchant_normalisation` --
+     * or `merchant_normalization` at the wrong nesting -- loads clean, declares
+     * no lists, and every merchant on the device keeps its acquirer prefix. A
+     * dropped key must be an error, not a silent no-op.
      */
     private fun validateMerchantNormalization(tree: JsonElement) {
         val root = tree as? JsonObject ?: return
@@ -431,12 +503,17 @@ object PackLoader {
      *
      * One walk rather than four, because the levels are nested and a reader
      * checking whether a level is covered should not have to find its
-     * validator. Three of these four levels had no check at all until a
-     * reviewer wrote `require` for `requires` and watched a failed reload
-     * become money.
+     * validator.
+     *
+     * The top-level `shared_rules` array is walked by the same rule level: a
+     * misspelled predicate there costs what `RULE_KEYS` describes, multiplied
+     * by the number of apps the user has enabled.
      */
     private fun validateDeclaredKeys(tree: JsonElement) {
-        val packages = (tree as? JsonObject)?.get("packages") as? JsonArray ?: return
+        val root = tree as? JsonObject ?: return
+        validateRuleKeys(root[SHARED_SCOPE] as? JsonArray, SHARED_SCOPE)
+
+        val packages = root["packages"] as? JsonArray ?: return
         for (packageElement in packages) {
             val packageObject = packageElement as? JsonObject ?: continue
             val pkg = (packageObject["package"] as? JsonPrimitive)?.contentOrNull ?: "<unnamed package>"
@@ -448,18 +525,22 @@ object PackLoader {
                 requireOnlyKeys(rejectObject.keys, REJECT_KEYS, "Reject rule '$id' in $pkg")
             }
 
-            val rules = packageObject["rules"] as? JsonArray ?: continue
-            for (ruleElement in rules) {
-                val ruleObject = ruleElement as? JsonObject ?: continue
-                val id = (ruleObject["id"] as? JsonPrimitive)?.contentOrNull ?: "<unnamed rule>"
-                requireOnlyKeys(ruleObject.keys, RULE_KEYS, "Rule '$id' in $pkg")
+            validateRuleKeys(packageObject["rules"] as? JsonArray, pkg)
+        }
+    }
 
-                val requires = ruleObject["requires"] as? JsonObject ?: continue
-                requireOnlyKeys(requires.keys, CONDITION_KEYS, "Rule '$id' in $pkg requires")
-                val field = (requires["field"] as? JsonPrimitive)?.contentOrNull
-                if (field != null && field !in FIELD_VALUES) {
-                    throw PackValidationException("Rule '$id' in $pkg selects unknown field '$field'")
-                }
+    /** One array of rules, at whatever level it was declared. */
+    private fun validateRuleKeys(rules: JsonArray?, scope: String) {
+        for (ruleElement in rules ?: return) {
+            val ruleObject = ruleElement as? JsonObject ?: continue
+            val id = (ruleObject["id"] as? JsonPrimitive)?.contentOrNull ?: "<unnamed rule>"
+            requireOnlyKeys(ruleObject.keys, RULE_KEYS, "Rule '$id' in $scope")
+
+            val requires = ruleObject["requires"] as? JsonObject ?: continue
+            requireOnlyKeys(requires.keys, CONDITION_KEYS, "Rule '$id' in $scope requires")
+            val field = (requires["field"] as? JsonPrimitive)?.contentOrNull
+            if (field != null && field !in FIELD_VALUES) {
+                throw PackValidationException("Rule '$id' in $scope selects unknown field '$field'")
             }
         }
     }

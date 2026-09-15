@@ -1,7 +1,7 @@
 package: com.maybank2u.life
 title: DuitNow Payment
 expect: matched
-rule: mae-duitnow-paid-v1
+rule: duitnow-paid-v1
 amount_sen: 24560
 merchant: TENAGA NASIONAL via DuitNow
 merchant_display: Tenaga Nasional

@@ -36,7 +36,7 @@ private class PreparedReject(val id: String, val terms: List<String>)
  * requires a malformed amount to leave the capture unmatched rather than throw
  * on the listener path. `MatchResult.groups[name]` throws
  * IllegalArgumentException for a group the pattern never declared, so both
- * reads need this catch and there is no reason for them to spell it twice.
+ * reads go through this.
  */
 private fun MatchResult.groupOrNull(name: String): String? =
     try {
@@ -69,14 +69,10 @@ class RuleMatcher(pack: ParsePack) {
      * Spec 5.4's lists, from the pack this matcher was built over.
      *
      * Re-exposed for the same reason [packVersion] is: a caller holding a matcher
-     * holds the active pack and should not reach past it to a bundled default.
-     * `Merchant`'s default argument was the only route, which meant a second,
-     * independent load of the bundled pack.json at runtime -- and, once spec 5.9's
-     * import exists, the *wrong* lists.
-     *
-     * Threading it through was half the fix; the default argument stayed, so
-     * omitting it silently reintroduced the bundled lists. It is now required and
-     * `BundledPack` is gone.
+     * holds the active pack and should not reach past it to a bundled default,
+     * which would mean a second, independent load of pack.json at runtime -- and,
+     * once spec 5.9's import exists, the *wrong* lists. `Merchant` takes these as
+     * a required argument so that there is no other route.
      */
     val merchantNormalization: MerchantNormalization = pack.merchantNormalization
 
@@ -84,9 +80,15 @@ class RuleMatcher(pack: ParsePack) {
         .groupBy { it.pkg }
         .mapValues { (_, entries) ->
             PreparedPackage(
-                // Sorted here as well as in PackLoader: a runtime-built pack
-                // has no loader between it and this class.
-                rules = entries.flatMap { it.rules }
+                // Merged here as well as sorted here, and for the same reason:
+                // a runtime-built pack (spec 5.8's teach-by-example) has no
+                // loader between it and this class, so neither step may live
+                // only in PackLoader.
+                //
+                // The package's own rules are listed first and the sort is
+                // stable, so at equal priority an app-specific rule beats the
+                // rail's -- the app knows its own wording, the rail does not.
+                rules = (entries.flatMap { it.rules } + pack.sharedRules)
                     .sortedByDescending(TemplateRule::priority)
                     .map {
                         PreparedRule(

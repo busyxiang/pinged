@@ -1,5 +1,5 @@
 {
-  "pack_version": 7,
+  "pack_version": 10,
   "fragments": {
     "amount": "(?:RM|MYR)\\s?(?<amount>[0-9,]+(?:\\.[0-9]{1,2})?)"
   },
@@ -8,28 +8,62 @@
       "TNG*", "GRAB*", "PYMT-", "DUITNOWQR-", "DUITNOW-", "FPX-", "IBG-", "MBB-"
     ],
     "trailing_noise_suffixes": [
-      " SDN BHD", " SDN. BHD.", " SDN BHD.", " S/B", " BERHAD", " MY",
+      " SDN BHD", " SDN. BHD.", " SDN BHD.", " S/B", " BERHAD", " MY", " MYS",
       " via DuitNow QR", " via DuitNow", " via FPX", " via IBG"
     ],
     "title_case_exceptions": [
       "TNG", "KK", "McDonald's"
     ]
   },
+  "shared_rules": [
+    {
+      "id": "duitnow-paid-v1", "priority": 100,
+      "direction": "EXPENSE", "confidence": "HIGH",
+      "requires": {
+        "text_contains_all": ["You have paid"],
+        "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"],
+        "field": "text"
+      },
+      "pattern": "You have paid {{amount}} to (?<merchant>.+)$"
+    },
+    {
+      "id": "duitnow-paid-body-v1", "priority": 90,
+      "direction": "EXPENSE", "confidence": "HIGH",
+      "requires": {
+        "text_contains_all": ["You have paid"],
+        "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
+      },
+      "pattern": "You have paid {{amount}} to "
+    }
+  ],
   "packages": [
     {
       "package": "my.com.tngdigital.ewallet",
       "label": "Touch 'n Go eWallet",
       "reject": [
         { "id": "tng-otp", "any_of": ["OTP", "TAC", "do not share", "jangan kongsi"] },
-        { "id": "tng-failed", "any_of": ["unsuccessful", "gagal", "failed", "declined"] },
+        { "id": "tng-failed", "any_of": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"] },
         { "id": "tng-promo", "any_of": ["voucher", "diskaun", "% off"] }
       ],
       "rules": [
         {
           "id": "tng-payment-v1", "priority": 100,
           "direction": "EXPENSE", "confidence": "HIGH",
-          "requires": { "text_contains_all": ["Payment of", "successful"] },
+          "requires": {
+            "text_contains_all": ["Payment of", "successful"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
+          },
           "pattern": "Payment of {{amount}} to (?<merchant>.+?) successful"
+        },
+        {
+          "id": "tng-paid-for-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": {
+            "text_contains_all": ["You have paid"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"],
+            "field": "text"
+          },
+          "pattern": "You have paid {{amount}} for (?<merchant>.+)$"
         },
         {
           "id": "tng-reload-v1", "priority": 90,
@@ -48,29 +82,35 @@
       "label": "Maybank MAE",
       "reject": [
         { "id": "mae-otp", "any_of": ["TAC", "one-time", "do not share"] },
-        { "id": "mae-failed", "any_of": ["unsuccessful", "gagal", "declined"] }
+        { "id": "mae-failed", "any_of": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"] }
       ],
       "rules": [
-        {
-          "id": "mae-duitnow-paid-v1", "priority": 100,
-          "direction": "EXPENSE", "confidence": "HIGH",
-          "requires": { "text_contains_all": ["You have paid"], "field": "text" },
-          "pattern": "You have paid {{amount}} to (?<merchant>.+)$"
-        },
-        {
-          "id": "mae-duitnow-paid-body-v1", "priority": 90,
-          "direction": "EXPENSE", "confidence": "HIGH",
-          "requires": { "text_contains_all": ["You have paid"] },
-          "pattern": "You have paid {{amount}} to "
-        },
         {
           "id": "mae-refund-my-v1", "priority": 95,
           "direction": "REFUND", "confidence": "HIGH",
           "requires": {
             "text_contains_any": ["bayaran balik", "pemulangan wang"],
-            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "declined"]
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
           },
           "pattern": "(?:Bayaran balik|Pemulangan wang) {{amount}} daripada (?<merchant>.+?) telah"
+        },
+        {
+          "id": "mae-scan-pay-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": {
+            "text_contains_all": ["Successful payment of"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
+          },
+          "pattern": "Successful payment of {{amount}} to (?<merchant>.+?)\\. REF"
+        },
+        {
+          "id": "mae-card-spend-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": {
+            "text_contains_all": ["just spent"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
+          },
+          "pattern": "just spent {{amount}} at (?<merchant>.+?) with your"
         }
       ]
     }

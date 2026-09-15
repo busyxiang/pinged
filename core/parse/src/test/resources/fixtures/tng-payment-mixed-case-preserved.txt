@@ -5,5 +5,8 @@ rule: tng-payment-v1
 amount_sen: 2340
 merchant: McDonald's Mid Valley
 merchant_display: McDonald's Mid Valley
+# Constructed, not observed. Neither real TnG sample in this corpus uses
+# `tng-payment-v1`'s wording, so this file exercises the rule and is not
+# evidence that TnG sends the sentence in it.
 
 Payment of RM23.40 to McDonald's Mid Valley successful

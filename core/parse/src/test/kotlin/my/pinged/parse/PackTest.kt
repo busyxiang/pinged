@@ -1,5 +1,7 @@
 package my.pinged.parse
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -45,9 +47,8 @@ class PackTest {
      * Assert that [json] is rejected as a [PackValidationException] whose
      * message mentions each of [mustMention].
      *
-     * Written out, this is three lines per case and there are fourteen of
-     * them; the `!!.message!!` chain in particular threw a bare
-     * NullPointerException when the type was right and the message was null,
+     * Written inline, the `!!.message!!` chain throws a bare
+     * NullPointerException when the type is right and the message is null,
      * which is the least useful way for a test to fail.
      */
     private fun assertRejected(json: String, vararg mustMention: String) {
@@ -105,9 +106,9 @@ class PackTest {
      * sen. Every assertion in this file would stay green while RM12.50 was stored
      * as RM12.00 on a phone.
      *
-     * Refused at load rather than corrected, because an author who wrote `\d` meant
-     * one of two alphabets and the loader cannot know which. `FullWidthDigitsTest`,
-     * on the device, is the other half.
+     * Refused rather than corrected, because an author who wrote `\d` meant one of
+     * two alphabets and the loader cannot know which. `FullWidthDigitsTest`, on the
+     * device, is the other half.
      */
     @Test fun `a pattern using the unicode digit class is rejected at load`() {
         val bad = json.replace("[0-9,]+", "[\\\\d,]+")
@@ -305,23 +306,94 @@ class PackTest {
         })
     }
 
-    // Same shape as the test above, and the same reason it cannot live in
-    // PackLoader: spec 5.8 builds one-rule packs at runtime and those
-    // legitimately have no reject block, so emptiness is not a load error. It
-    // is a *bundled pack* defect, and until now nothing checked it. A package
-    // added with rules and no rejects would load clean, pass every test here,
-    // and ship with spec 5.3's "single largest false-positive source"
-    // -- promos, OTPs and failed transactions -- filtered by nothing.
+    // Same reason as the test above that this cannot live in PackLoader: spec
+    // 5.8 builds one-rule packs at runtime and those legitimately declare no
+    // rejects, so emptiness is not a load error, only a bundled-pack defect. A
+    // package with rules and no rejects loads clean and ships with spec 5.3's
+    // "single largest false-positive source" -- promos, OTPs, failed
+    // transactions -- filtered by nothing. Unconditional: shared rules reach
+    // every package, so one that declares no rule of its own still has every
+    // rail template running against it.
     @Test fun `every bundled package with rules also declares rejects`() {
-        ParseFixtures.bundledPack.packages.forEach { p ->
-            if (p.rules.isNotEmpty()) {
-                assertTrue(
-                    "package '${p.pkg}' declares ${p.rules.size} rules and no reject patterns, " +
-                        "so its templates run with default-deny switched off",
-                    p.reject.isNotEmpty(),
-                )
-            }
+        val pack = ParseFixtures.bundledPack
+        pack.packages.forEach { p ->
+            val rules = p.rules.size + pack.sharedRules.size
+            assertTrue(
+                "package '${p.pkg}' has $rules rules reaching it (${p.rules.size} its own, " +
+                    "${pack.sharedRules.size} shared) and no reject patterns, so its " +
+                    "templates run with default-deny switched off",
+                p.reject.isNotEmpty(),
+            )
         }
+    }
+
+    /**
+     * No bundled rule gates on a notification's title.
+     *
+     * Four real samples now carry one: "DuitNow Payment", "Maybank2u: Scan &
+     * Pay", a plain "Payment", and the MAE card sample that arrived with none
+     * at all. Each title has been seen exactly once, and a title is the string
+     * a bank draws in a heading -- restyled, localised or dropped without the
+     * body changing a character. A rule gated on one stops matching on a
+     * release note nobody here will read, and fails silently: captures
+     * arriving, ledger empty.
+     *
+     * The titles stay recorded in the fixtures, because they are evidence.
+     * `title_contains_any` stays in the vocabulary, because a title is
+     * sometimes the only place a bank says which product a body belongs to.
+     *
+     * **Delete this test when a sample proves a title is load-bearing** --
+     * that is a finding, not a workaround.
+     */
+    @Test fun `no bundled rule gates on a title`() {
+        val pack = ParseFixtures.bundledPack
+        val gated = (pack.packages.flatMap { it.rules } + pack.sharedRules)
+            .filter { it.requires?.titleContainsAny?.isNotEmpty() == true }
+            .map { it.id }
+        assertEquals(
+            "these rules condition on a display string seen once each",
+            emptyList<String>(),
+            gated,
+        )
+    }
+
+    /**
+     * Every bundled template that commits money names the failure vocabulary,
+     * and every copy of it agrees.
+     *
+     * A rule in `shared_rules` runs against every package, so one unguarded
+     * rail template is a declined payment posted as an expense from every app
+     * the user enabled. `RuleMatcherTest` holds the behaviour; this is what
+     * notices the *next* rule added without a guard, and what keeps the copies
+     * of the list in one spelling.
+     *
+     * `tng-reload-v1` is included: it commits at REVIEW, which is still a row
+     * in the ledger with an amount on it.
+     *
+     * A pack may legitimately declare none -- spec 5.8 builds one-rule packs
+     * at runtime -- so this is a bundled-pack assertion, not a load error, for
+     * the reason the normalization-list test above is.
+     */
+    @Test fun `every bundled rule guards against a failed transaction, in one vocabulary`() {
+        val pack = ParseFixtures.bundledPack
+        val rules = pack.packages.flatMap { it.rules } + pack.sharedRules
+        val unguarded = rules.filter { it.requires?.textContainsNone.isNullOrEmpty() }.map { it.id }
+        assertEquals(
+            "a template with no failure guard reads 'RM12.00 ... declined' as money spent",
+            emptyList<String>(),
+            unguarded,
+        )
+        val vocabularies = (rules.mapNotNull { it.requires?.textContainsNone } +
+            pack.packages.flatMap { p -> p.reject.filter { it.id.endsWith("-failed") }.map { it.anyOf } })
+            .map { it.sorted() }
+            .distinct()
+        assertEquals(
+            "the failure vocabulary is written once per rule and nothing keeps the " +
+                "copies in step, so a term added to one list is a term missing from " +
+                "the others: $vocabularies",
+            1,
+            vocabularies.size,
+        )
     }
 
     @Test fun `merchant normalization is absent-by-default rather than a load error`() {
@@ -392,15 +464,16 @@ class PackTest {
     //
     // "The amount fragment is a shared primitive, not retyped per rule... Every
     // rule author reinventing `RM(?<amount>[\d,]+\.\d{2})` guarantees that
-    // half of them reject 'RM 50' and 'MYR50.00'." The mechanism did not exist
-    // and the predicted outcome had already landed: all four bundled rules had
-    // retyped it, and none accepted MYR.
+    // half of them reject 'RM 50' and 'MYR50.00'." Which had already happened:
+    // all four bundled rules retyped it and none accepted MYR.
 
     @Test fun `the bundled pack declares the amount fragment once`() {
         val pack = PackLoader.load(ParseFixtures.bundledPackText())
         assertEquals(setOf("amount"), pack.fragments.keys)
-        // Every bundled rule references it rather than spelling it out.
-        pack.packages.flatMap { it.rules }.forEach { rule ->
+        // Every bundled rule references it rather than spelling it out --
+        // shared ones too, or moving a rule into `shared_rules` would quietly
+        // exempt it from the one check spec 5.2 asks for.
+        (pack.packages.flatMap { it.rules } + pack.sharedRules).forEach { rule ->
             assertTrue(
                 "rule '${rule.id}' retypes the amount fragment: ${rule.pattern}",
                 rule.pattern.contains("{{amount}}"),
@@ -414,7 +487,6 @@ class PackTest {
 
     @Test fun `the shared fragment accepts every tolerance spec 5-2 names`() {
         val matcher = RuleMatcher(PackLoader.load(ParseFixtures.bundledPackText()))
-        // The four tolerances, against the real bundled TnG payment rule.
         val cases = mapOf(
             "Payment of RM12.00 to Kedai Ali successful" to 1200L,
             "Payment of RM 50 to Kedai Ali successful" to 5000L,
@@ -436,9 +508,117 @@ class PackTest {
         assertRejected(bad, "unknown fragment", "declares none")
     }
 
+    // --- Shared rules ------------------------------------------------------
+    //
+    // A rule in `shared_rules` runs against every package in the pack, so it is
+    // the *last* place a validation hole is affordable: a `\d` there is wrong
+    // money from every app the user has enabled, not one.
+    //
+    // Two rejection tests, not one per check: what the shared block needs
+    // proving about it is that `PackLoader` calls its two validators --
+    // `validate` and `validateRuleKeys` -- on it at all, and the checks those
+    // run are covered over package rules above. One test per call site,
+    // because a test per check would die on the same deleted call as its
+    // neighbours and say no more than they do.
+
+    /**
+     * One shared rule, spelled so that every mutation below can be made with a
+     * `replace` that cannot also hit [json]'s own rules.
+     */
+    private val SHARED_RULE = """
+        { "id": "duitnow-paid-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": { "text_contains_all": ["You have paid"], "field": "text" },
+          "pattern": "You have paid RM(?<amount>[0-9,]+\\.[0-9]{2}) to (?<merchant>.+)$" }
+    """.trimIndent()
+
+    /**
+     * The key the shared block is declared under, read out of the serializer
+     * rather than written down.
+     *
+     * [PackLoader] holds it as a private constant, the one key name in that
+     * file not derived from a serial name. If it and
+     * `@SerialName("shared_rules")` ever disagree, the block stops being
+     * key-validated -- which every assertion below then fails on, instead of
+     * passing against a stale literal.
+     */
+    private val SHARED_KEY: String = run {
+        fun keysOf(pack: ParsePack) =
+            Json.encodeToJsonElement(ParsePack.serializer(), pack).jsonObject.keys
+        val bare = ParsePack(packVersion = 1, packages = emptyList())
+        (keysOf(bare.copy(sharedRules = listOf(RAIL_RULE))) - keysOf(bare)).single()
+    }
+
+    private fun withShared(block: String) =
+        json.replace("\"pack_version\": 7,", "\"pack_version\": 7, \"$SHARED_KEY\": [$block],")
+
+    // Declared 100 then 110, so the assertion fails if the sort is dropped.
+    @Test fun `shared rules load and sort by descending priority`() {
+        val second = SHARED_RULE
+            .replace("duitnow-paid-v1", "duitnow-paid-body-v1")
+            .replace("\"priority\": 100", "\"priority\": 110")
+        val pack = PackLoader.load(withShared("$SHARED_RULE, $second"))
+        assertEquals(
+            listOf("duitnow-paid-body-v1", "duitnow-paid-v1"),
+            pack.sharedRules.map { it.id },
+        )
+    }
+
+    @Test fun `a shared rule using the unicode digit class is rejected at load`() {
+        assertRejected(withShared(SHARED_RULE.replace("[0-9,]+", "[\\\\d,]+")), "[0-9]", SHARED_KEY)
+    }
+
+    @Test fun `a shared rule with a misspelled condition predicate is rejected at load`() {
+        assertRejected(
+            withShared(SHARED_RULE.replace("\"text_contains_all\"", "\"text_contains_alll\"")),
+            "text_contains_alll",
+            SHARED_KEY,
+        )
+    }
+
+    /**
+     * `validate` sees one list at a time, so neither could catch an id in
+     * both. `matched_rule_id` is stored on every capture and would stop naming
+     * one rule.
+     */
+    @Test fun `a shared rule id colliding with a package rule id is rejected at load`() {
+        assertRejected(
+            withShared(SHARED_RULE.replace("duitnow-paid-v1", "tng-payment-v1")),
+            "tng-payment-v1",
+            SHARED_KEY,
+        )
+    }
+
+    /**
+     * The rail is shared because its wording is, so the bundled pack must
+     * actually answer the same sentence from more than one app. Asserted as
+     * behaviour rather than as a rule id: a pack that copied the rule into
+     * every package would also pass.
+     */
+    @Test fun `the bundled duitnow rule answers every bundled package`() {
+        val pack = ParseFixtures.bundledPack
+        assertTrue("the bundled pack declares no shared rules", pack.sharedRules.isNotEmpty())
+        val matcher = RuleMatcher(pack)
+        val deaf = pack.packages.map { it.pkg }.filter { pkg ->
+            matcher.match(
+                pkg,
+                "DuitNow Payment",
+                "You have paid RM12.00 to Restoran Yuen Kee Home Town Cafe",
+                null,
+            ) !is MatchOutcome.Matched
+        }
+        assertEquals(
+            "DuitNow's wording is the rail's, not the posting app's: these packages " +
+                "see the same notification and read nothing from it",
+            emptyList<String>(),
+            deaf,
+        )
+    }
+
     @Test fun `a rule whose amount group arrives from a fragment is accepted`() {
-        // The check used to read the authored pattern, which would call this
-        // rule "declares no amount group" -- the whole point of the fragment.
+        // The amount-group check has to read the expanded pattern: over the
+        // authored one this rule "declares no amount group", which is the
+        // whole point of the fragment.
         val withFragment = """
         {
           "pack_version": 7,
@@ -455,5 +635,15 @@ class PackTest {
         assertEquals("Paid {{amount}}", pack.packages[0].rules[0].pattern)
         val out = RuleMatcher(pack).match("bank.x", "X", "Paid RM7.50", null)
         assertEquals(750L, (out as MatchOutcome.Matched).amountSen)
+    }
+
+    private companion object {
+        /** A minimal shared rule, only ever encoded to find [SHARED_KEY]. */
+        val RAIL_RULE = TemplateRule(
+            id = "rail-v1",
+            priority = 1,
+            direction = Direction.EXPENSE,
+            pattern = "(?<amount>0)",
+        )
     }
 }

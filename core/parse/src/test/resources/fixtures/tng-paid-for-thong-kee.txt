@@ -1,0 +1,23 @@
+package: my.com.tngdigital.ewallet
+title: Payment
+expect: matched
+rule: tng-paid-for-v1
+amount_sen: 625
+merchant: THONG KEE.
+merchant_display: Thong Kee
+direction: EXPENSE
+# A real TnG eWallet notification, read off a phone screenshot rather than
+# retyped, so the title and the body are both verbatim.
+# It disproves the rail rule it looks like. `duitnow-paid-v1` reads "You have
+# paid {{amount}} to (?<merchant>.+)$" and this sample says "for", so
+# `text_contains_all` passes and the preposition alone rejects it. TnG
+# therefore sends at least two payment wordings, and the other one
+# (tng-duitnow-paid-yuen-kee.txt) arrives under the title "DuitNow Payment"
+# while this one arrives under a plain "Payment".
+# merchant_raw keeps the sentence's full stop, which spec 5.4 requires -- raw
+# is what the bank sent. `merchant_key` and `merchant_display` must not, and
+# that is what the display line below pins. "THONG KEE." and "THONG KEE" as
+# two separate shops in section 8 is permanent, because the key is the
+# grouping identity and nothing ever revisits it.
+
+You have paid RM6.25 for THONG KEE.

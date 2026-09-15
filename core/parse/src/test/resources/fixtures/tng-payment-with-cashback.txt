@@ -4,5 +4,8 @@ expect: matched
 rule: tng-payment-v1
 amount_sen: 5230
 merchant: 99 SPEEDMART
+# Constructed, not observed. Neither real TnG sample in this corpus uses
+# `tng-payment-v1`'s wording, so this file exercises the rule and is not
+# evidence that TnG sends the sentence in it.
 
 Payment of RM52.30 to 99 SPEEDMART successful. You earned RM1.05 cashback.

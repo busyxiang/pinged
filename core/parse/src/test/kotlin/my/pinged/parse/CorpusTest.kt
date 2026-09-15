@@ -1,70 +1,12 @@
 package my.pinged.parse
 
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CorpusTest {
 
-    private data class Fixture(
-        val name: String,
-        val pkg: String,
-        val title: String?,
-        val bigText: String?,
-        val expect: String,
-        val rule: String?,
-        val amountSen: Long?,
-        val merchant: String?,
-        val merchantDisplay: String?,
-        val direction: Direction?,
-        val body: String,
-    )
-
-    private fun parse(file: File): Fixture {
-        // Tolerant of CRLF, and explicit about the one structural rule: a
-        // header block, a blank line, then the notification body. Destructuring
-        // a short split threw an opaque IndexOutOfBoundsException instead.
-        val parts = file.readText().replace("\r\n", "\n").split("\n\n", limit = 2)
-        require(parts.size == 2) {
-            "${file.name} is malformed: expected a header block, a blank line, then the " +
-                "notification body, but found no blank line"
-        }
-        val (header, body) = parts
-        val h = header.lineSequence()
-            .filter { it.contains(':') }
-            .associate { it.substringBefore(':').trim() to it.substringAfter(':').trim() }
-        return Fixture(
-            name = file.name,
-            pkg = requireNotNull(h["package"]) { "${file.name} has no package" },
-            title = h["title"],
-            bigText = h["big_text"],
-            expect = requireNotNull(h["expect"]) { "${file.name} has no expect" },
-            rule = h["rule"],
-            amountSen = h["amount_sen"]?.toLong(),
-            merchant = h["merchant"],
-            merchantDisplay = h["merchant_display"],
-            direction = h["direction"]?.let { name ->
-                Direction.entries.firstOrNull { it.name == name }
-                    ?: error("${file.name} names an unknown direction '$name'")
-            },
-            body = body.trim(),
-        )
-    }
-
-    /**
-     * The corpus, listed and parsed once for the whole class.
-     *
-     * Four tests each listed the directory themselves and three then
-     * re-parsed every file, so the corpus was read four times per run and the
-     * extension filter existed in four places.
-     */
-    private val fixtures: List<Fixture> by lazy {
-        val dir = File(javaClass.getResource("/fixtures")!!.toURI())
-        val files = dir.listFiles { f: File -> f.extension == "txt" }.orEmpty().sortedBy { it.name }
-        assertTrue("No fixtures found", files.isNotEmpty())
-        files.map(::parse)
-    }
+    private val fixtures = ParseFixtures.corpus
 
     @Test fun `every fixture produces its expected outcome`() {
         val pack = ParseFixtures.bundledPack

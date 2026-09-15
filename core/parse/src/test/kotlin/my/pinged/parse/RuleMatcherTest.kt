@@ -19,16 +19,24 @@ class RuleMatcherTest {
     /**
      * A matcher over a pack built in memory, bypassing [PackLoader].
      *
-     * Both callers need that bypass -- they exist to prove RuleMatcher
-     * defends itself against a pack the loader never saw (spec 5.8 builds
-     * them at runtime) -- but neither needs to spell out the three levels of
-     * wrapper to say so.
+     * Its callers exist to prove RuleMatcher defends itself against a pack the
+     * loader never saw -- spec 5.8 builds those at runtime.
      */
-    private fun directPack(vararg rules: TemplateRule): RuleMatcher = RuleMatcher(
-        ParsePack(
-            packVersion = 2,
-            packages = listOf(PackagePack(pkg = probe, label = "Probe", rules = rules.toList())),
+    private fun directPack(vararg rules: TemplateRule, shared: List<TemplateRule> = emptyList()): RuleMatcher =
+        RuleMatcher(
+            ParsePack(
+                packVersion = 2,
+                packages = listOf(PackagePack(pkg = probe, label = "Probe", rules = rules.toList())),
+                sharedRules = shared,
+            )
         )
+
+    /** A rule that matches "Paid RM7.50" and nothing else, for ordering tests. */
+    private fun paidRule(id: String, priority: Int) = TemplateRule(
+        id = id,
+        priority = priority,
+        direction = Direction.EXPENSE,
+        pattern = "Paid RM(?<amount>[0-9]+\\.[0-9]{2})",
     )
 
     /** A one-package probe pack, so a behaviour can be isolated from the bundled rules. */
@@ -53,6 +61,190 @@ class RuleMatcherTest {
         assertEquals("99 SPEEDMART", out.merchantRaw)
         assertEquals(Direction.EXPENSE, out.direction)
         assertEquals(Confidence.HIGH, out.confidence)
+    }
+
+    /**
+     * The MAE card rule's trigger begins after the apostrophe, and this is
+     * what says so.
+     *
+     * The one real sample reads "You've just spent ..." and reached this
+     * repository as retyped text, so its apostrophe is the one character in it
+     * that cannot be verified: U+2019 is what phone keyboards and most bank
+     * copy produce, U+0027 is what retyping produces. `TextNormalizer` folds
+     * case and collapses whitespace and deliberately does not touch
+     * punctuation, so a condition or a pattern holding one spelling matches
+     * nothing when the phone sent the other -- a silent whole-category miss,
+     * caused by a character that cannot be seen in a diff.
+     *
+     * So the rule requires "just spent" and neither spelling appears in the
+     * pack. Both inputs must parse identically; if a later edit tightens the
+     * trigger to "You've just spent", exactly one of these fails.
+     *
+     * Both are derived from the fixture rather than retyped: a retyped sample
+     * is the one thing a test about an invisible character cannot trust.
+     */
+    @Test fun `the card rule does not depend on which apostrophe the bank sent`() {
+        val sample = ParseFixtures.fixture(CARD_FIXTURE)
+        val ascii = sample.body.replace('’', '\'')
+        val curly = ascii.replace('\'', '’')
+        assertEquals("the sample carries no apostrophe to vary", false, ascii == curly)
+        listOf(ascii, curly).forEach { text ->
+            val out = matcher.match(sample.pkg, sample.title, text, null)
+            assertTrue("the pack read nothing from '$text' (outcome $out)", out is MatchOutcome.Matched)
+            out as MatchOutcome.Matched
+            assertEquals(text, sample.rule, out.ruleId)
+            assertEquals(text, sample.amountSen, out.amountSen)
+            assertEquals(text, sample.merchant, out.merchantRaw)
+        }
+    }
+
+    /**
+     * The card fragment carries the last four digits of a payment card, and
+     * the merchant group stops before it.
+     *
+     * Bounded with " with your" rather than run to the end of the field: the
+     * amount and the merchant are what a ledger needs, and a card number is
+     * the one thing in this notification that must not be stored because it
+     * was read. An unbounded group would take it, at HIGH, into `merchant_raw`
+     * -- which spec 5.4 preserves untouched and every export then carries.
+     *
+     * The corpus cannot assert this: the fixture holds the digits masked,
+     * because a real card's last four are not something to check in. Digits
+     * are put back here and nowhere else.
+     */
+    @Test fun `the card rule captures no part of the card`() {
+        val sample = ParseFixtures.fixture(CARD_FIXTURE)
+        val text = sample.body.replace("****", "4321")
+        assertEquals("the fixture no longer masks the card digits", false, text == sample.body)
+        val out = matcher.match(sample.pkg, sample.title, text, null)
+        assertTrue("the pack read nothing from the card wording (outcome $out)", out is MatchOutcome.Matched)
+        out as MatchOutcome.Matched
+        assertEquals(
+            "anything but the merchant here is the card description reaching " +
+                "merchant_raw, which spec 5.4 preserves and every export carries",
+            sample.merchant,
+            out.merchantRaw,
+        )
+    }
+
+    /**
+     * "Successful payment of" is a substring of "Unsuccessful payment of", so a
+     * declined payment would post as real money.
+     *
+     * The package's `mae-failed` reject list already names "unsuccessful" and
+     * it would not have helped: a matched template returns before the reject
+     * list is consulted and carries the collision only as a note. The guard has
+     * to be the rule's own `text_contains_none`.
+     *
+     * The input is the real sample with two characters in front of it rather
+     * than an invented failure wording: what is pinned is the substring, not
+     * that Maybank sends this sentence.
+     */
+    @Test fun `an unsuccessful payment is not read as money`() {
+        val text = "Unsuccessful payment of RM 16.15 to POPUPKIT-CHENENTERPRISE. REF: QR85598443."
+        val out = matcher.match(mae, "Maybank2u: Scan & Pay", text, null)
+        assertEquals(
+            "a failed payment matched a template and went to the ledger as an expense",
+            false,
+            out is MatchOutcome.Matched,
+        )
+    }
+
+    /**
+     * A declined wording against each template shape that commits money.
+     *
+     * Two of those templates are in `shared_rules`, so an unguarded one is not
+     * one app's problem: `duitnow-paid-body-v1` requires only "You have paid"
+     * over `concat`, and every enabled package runs it. Any bank sentence of
+     * the form "You have paid RM X ... failed" committed as an expense at HIGH.
+     *
+     * The cases name a wording, not a rule, and the failure names whichever
+     * rule committed. The two rail rules both answer the first case -- one
+     * over `text`, one over `concat` -- so a case pinned to an expected rule
+     * id would report the wrong guard as the broken one.
+     */
+    @Test fun `a declined wording is not read as money by any rule that commits it`() {
+        val declined = listOf(
+            matcher.match(
+                tng,
+                "DuitNow Payment",
+                "You have paid RM12.00 to Restoran Yuen Kee Home Town Cafe - unsuccessful",
+                null,
+            ),
+            // No one-line summary, so only the body rule can answer it.
+            matcher.match(
+                mae,
+                "DuitNow Payment",
+                null,
+                "You have paid RM12.00 to Restoran Yuen Kee Home Town Cafe\nThis payment failed",
+            ),
+            // "for", not "to": the wallet's own wording, which no rail rule reads.
+            matcher.match(tng, "Payment", "You have paid RM6.25 for THONG KEE. Declined.", null),
+        )
+        val committed = declined.filterIsInstance<MatchOutcome.Matched>()
+        assertEquals(
+            "a declined payment matched a template and went to the ledger as an " +
+                "expense: $committed",
+            emptyList<MatchOutcome.Matched>(),
+            committed,
+        )
+    }
+
+    /**
+     * ...and it is scoped to the one app it was observed from.
+     *
+     * One sample, from one wallet, under a title the rail does not use. A rule
+     * in `shared_rules` would answer this sentence from every bank in the pack
+     * on the strength of that, and `matched_rule_id` is stored on every
+     * capture -- the record of why the app believed something, which a rail
+     * rule answering a wallet's wording makes wrong.
+     *
+     * **If a real MAE sample shows "You have paid ... for", this test is the
+     * thing to delete**: move the rule into `shared_rules` and the corpus
+     * fixture proves the rest.
+     */
+    @Test fun `the tng for wording is not claimed for a bank that has not sent it`() {
+        val out = matcher.match(mae, "Payment", "You have paid RM6.25 for THONG KEE.", null)
+        assertEquals(
+            "a wording seen once, from one wallet, was read from a bank with no " +
+                "sample behind it (outcome $out)",
+            MatchOutcome.Unmatched,
+            out,
+        )
+    }
+
+    /**
+     * The merge lives in this class, not only in [PackLoader], because spec
+     * 5.8's teach-by-example builds a pack at runtime with no loader in
+     * between -- the same reason the priority sort is duplicated here.
+     */
+    @Test fun `shared rules reach a pack that never went through the loader`() {
+        val out = directPack(shared = listOf(paidRule("rail-v1", 10)))
+            .match(probe, "Probe", "Paid RM7.50", null)
+        out as MatchOutcome.Matched
+        assertEquals("rail-v1", out.ruleId)
+        assertEquals(750L, out.amountSen)
+    }
+
+    /**
+     * At equal priority the package's own rule wins.
+     *
+     * Both lists are concatenated with the package's first and the sort is
+     * stable, which is the only thing making this deterministic. An app knows
+     * its own wording; the rail's template is the fallback for apps that have
+     * said nothing about it.
+     */
+    @Test fun `at equal priority a package rule beats a shared rule`() {
+        val out = directPack(paidRule("own-v1", 50), shared = listOf(paidRule("rail-v1", 50)))
+            .match(probe, "Probe", "Paid RM7.50", null)
+        assertEquals("own-v1", (out as MatchOutcome.Matched).ruleId)
+    }
+
+    /** Priority still decides when the two differ, in either direction. */
+    @Test fun `a higher-priority shared rule outranks a package rule`() {
+        val out = directPack(paidRule("own-v1", 50), shared = listOf(paidRule("rail-v1", 60)))
+            .match(probe, "Probe", "Paid RM7.50", null)
+        assertEquals("rail-v1", (out as MatchOutcome.Matched).ruleId)
     }
 
     @Test fun `the duitnow example from the design parses`() {
@@ -80,7 +272,7 @@ class RuleMatcherTest {
             "You have paid RM12.00 to Restoran Yuen Kee Home Town Cafe\nRef: ABC123\nBaki: RM500.00",
         )
         out as MatchOutcome.Matched
-        assertEquals("mae-duitnow-paid-v1", out.ruleId)
+        assertEquals("duitnow-paid-v1", out.ruleId)
         assertEquals(1200L, out.amountSen)
         assertEquals("Restoran Yuen Kee Home Town Cafe", out.merchantRaw)
         assertEquals(Confidence.HIGH, out.confidence)
@@ -110,16 +302,13 @@ class RuleMatcherTest {
             "You have paid RM12.00 to Restoran Yuen Kee Home Town Cafe\nRef: ABC123\nBaki: RM500.00",
         )
         out as MatchOutcome.Matched
-        assertEquals("mae-duitnow-paid-body-v1", out.ruleId)
+        assertEquals("duitnow-paid-body-v1", out.ruleId)
         assertEquals(1200L, out.amountSen)
         assertNull(
             "A merchant guessed off the whole body is worse than none: the inbox " +
                 "can ask, and a committed wrong merchant cannot",
             out.merchantRaw,
         )
-        // HIGH, and the KDoc above says why: the rule is not the uncertain
-        // part, the merchant is, and the gate has a reason that says exactly
-        // that.
         assertEquals(Confidence.HIGH, out.confidence)
     }
 
@@ -159,12 +348,10 @@ class RuleMatcherTest {
         assertEquals(1250L, (out as MatchOutcome.Matched).amountSen)
     }
 
-    // Trailing reward copy must not perturb the amount extraction. Note this
-    // does NOT by itself prove templates run before rejects: none of the
-    // bundled tng reject terms (OTP, TAC, do not share, jangan kongsi,
-    // unsuccessful, gagal, failed, declined, voucher, diskaun, % off) appear
-    // in this message, so it passes identically under a reject-first
-    // implementation. The actual ordering guard is the collision test below.
+    // This does NOT prove templates run before rejects: no bundled tng reject
+    // term appears in this message, so it passes identically under a
+    // reject-first implementation. The ordering guard is the collision test
+    // below.
     @Test fun `trailing reward copy does not change the amount`() {
         val out = matcher.match(
             tng, "Touch 'n Go",
@@ -175,13 +362,11 @@ class RuleMatcherTest {
         assertEquals(5230L, out.amountSen)
     }
 
-    // The load-bearing test. Spec 5.3. A test-local pack deliberately puts a
-    // reject keyword ("bonus") inside a message that also matches a
-    // template, so a reject-first implementation fails this immediately.
-    // The bundled production pack.json intentionally omits "cashback" from
-    // its reject lists (see its comment), so it cannot exercise this path;
-    // this pack exists only to construct a real collision without polluting
-    // the production pack.
+    // Spec 5.3, and the only test that pins the ordering. A test-local pack
+    // puts a reject keyword ("bonus") inside a message that also matches a
+    // template, so a reject-first implementation fails immediately. The
+    // bundled pack.json intentionally omits "cashback" from its reject lists,
+    // so it cannot construct this collision.
     @Test fun `a template match wins over a colliding reject and records the collision`() {
         val collidePack = """
             {
@@ -254,9 +439,8 @@ class RuleMatcherTest {
         assertEquals(MatchOutcome.NoExtras, matcher.match(tng, null, null, null))
     }
 
-    // Renamed: the second half of the old name was untrue. TextNormalizer
-    // collapses newlines before any regex runs, so no pattern in this
-    // pipeline ever sees one and this test never exercised DOTALL. The flag
+    // This says nothing about DOTALL: TextNormalizer collapses newlines before
+    // any regex runs, so no pattern in this pipeline ever sees one. The flag
     // stays set — it costs nothing and protects a caller that skips
     // normalization — but nothing here proves it.
     @Test fun `bigText is preferred over text`() {
@@ -315,10 +499,21 @@ class RuleMatcherTest {
         assertEquals(88000L, (b as MatchOutcome.Matched).amountSen)
     }
 
-    // The loaded pack's version has to reach the matcher: every outcome is
-    // traceable to a pack version, and spec 5.5's re-parse is driven by it.
+    // Every outcome has to be traceable to the version of the pack that made it.
     @Test fun `the pack version reaches the matcher`() {
-        assertEquals(7, matcher.packVersion)
+        // 10, not 9: `mae-scan-pay-v1` and `tng-paid-for-v1` each read a
+        // wording that was captured and dropped, and stripping a sentence's
+        // full stop changes the `merchant_key` of anything already stored
+        // whose capture ran to the end of its field.
+        //
+        // **The bump recovers nothing.** Spec 5.5 drives re-parse off this
+        // integer, but nothing re-parses: `RawCaptureDao.pageAfter` has no
+        // production caller and `ParsePass` claims rows at `NEW` only, so the
+        // captures this pack would now read stay dropped and the keys already
+        // stored stay as they were. The version is a marker for a job not yet
+        // written -- which is what makes it worth setting now, because the job
+        // will have nothing else to tell these captures apart by.
+        assertEquals(10, matcher.packVersion)
         assertEquals(7, probePack(PAYMENT_RULE).packVersion)
     }
 
@@ -558,7 +753,7 @@ class RuleMatcherTest {
             1200L,
             (titled.match(probe, "MyBank", "Payment of RM12.00", null) as MatchOutcome.Matched).amountSen,
         )
-        // The term appears in the body, not the title, so the rule must not fire.
+        // The term is in the body, not the title.
         assertEquals(
             MatchOutcome.Unmatched,
             titled.match(probe, "Promo", "Payment of RM12.00 at MyBank", null),
@@ -588,6 +783,9 @@ class RuleMatcherTest {
     }
 
     private companion object {
+        /** The real MAE card sample, which two tests here are about. */
+        const val CARD_FIXTURE = "mae-card-spend-hock-kee.txt"
+
         const val PAYMENT_RULE =
             """{ "id": "probe-payment-v1", "priority": 100, "direction": "EXPENSE",
                  "requires": { "text_contains_all": ["Payment of"] },

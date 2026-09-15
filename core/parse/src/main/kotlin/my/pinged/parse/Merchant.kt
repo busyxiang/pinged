@@ -7,12 +7,13 @@ import java.util.Locale
  *
  * The three lists are **pack data, not constants here**, so a merchant that
  * comes out wrong on a device is a one-line pack edit and a `pack_version`
- * bump, which spec 5.5's re-parse already knows how to act on.
+ * bump rather than a release. It corrects what is captured next, not what is
+ * already stored: spec 5.5's re-parse is what would go back over the latter
+ * and nothing implements it yet.
  *
- * Both entry points therefore take a [MerchantNormalization], defaulted to the
- * bundled pack's so a caller that forgets to thread the active pack through
- * gets the shipped lists rather than none. Once spec 5.9's pack import exists,
- * the active pack's lists must be passed explicitly.
+ * Both entry points therefore take a [MerchantNormalization], with no default:
+ * the lists must come from the pack the capture was parsed under, which once
+ * spec 5.9's pack import exists is not necessarily the bundled one.
  *
  * There are exactly two entry points, and they are **not composable**:
  *
@@ -23,9 +24,7 @@ import java.util.Locale
  * Both take the same raw string; neither takes the other's output. Composing
  * them feeds title-casing a string that is uppercase by construction, so spec
  * 5.4's "only when the raw string is entirely uppercase" guard cannot fail to
- * pass -- `TNG*foodpanda KLCC` becomes `Foodpanda Klcc`. Deleting the old
- * `display(String)` was not enough, because `displayFor(clean(raw))` had the
- * same signature and reproduced the defect exactly.
+ * pass -- `TNG*foodpanda KLCC` becomes `Foodpanda Klcc`.
  *
  * So [clean] returns a [MerchantKey] rather than a `String`, which makes the
  * composition a type error rather than a paragraph asking you not to write it.
@@ -110,8 +109,8 @@ object Merchant {
     }
 
     /**
-     * Prefix, suffixes and terminal code off [s], with whatever case [s] arrived in
-     * left exactly as it was.
+     * Prefix, suffixes, sentence stops and terminal code off [s], with whatever
+     * case [s] arrived in left exactly as it was.
      *
      * Shared by both entry points: two copies would be two copies of the looping
      * rule below, and the day they diverge `merchant_display` and the string spec
@@ -132,14 +131,47 @@ object Merchant {
         // SDN BHD MY" cleaned differently -- and spec 6.1 learns by exact normalized
         // string, so one shop became two learned merchants.
         //
-        // The cap is derived from the list rather than a constant: each pass removes
-        // one entry, so a pack cannot need more passes than it has suffixes.
+        // A pass removes one suffix, or the run of stops standing between the
+        // end of the string and the next suffix. Interleaved rather than run
+        // one after the other, because the two stack in both orders and
+        // either order alone leaves the other untouched: "RESTORAN X via
+        // DuitNow." needs the stop off before " via DuitNow" ends the string,
+        // and "MACHINES SDN. BHD." needs the suffix -- which carries stops of
+        // its own -- matched before any of them is taken.
+        //
+        // The stops are the sentence's own, taken off a merchant group that
+        // ran to the end of one -- "THONG KEE." against "THONG KEE" is two
+        // shops in spec 8 permanently. Here rather than in the rule's pattern
+        // because every rule anchored to the end of a field repeats the
+        // hazard, spec 5.8's runtime rules having no pattern author at all;
+        // here rather than in `trailing_noise_suffixes` because that list is
+        // literal phrases carrying their own separator, and pack-editable,
+        // which TERMINAL_CODE's comment gives the reason against.
+        //
+        // The full stop alone: it is the only trailing punctuation the corpus
+        // has sent, and a wider class would be a guess about commas.
+        // `trimEnd` rather than `\.+$`: 0.076 microseconds per call to 0.006,
+        // warm, over the corpus's merchant shapes, and one fewer pattern to
+        // differ between java.util.regex and ICU. The two part only before a
+        // final line terminator, which `TextNormalizer.forMatch` has already
+        // collapsed to a space.
+        //
+        // The cap is derived from the list rather than a constant: a pass
+        // removes one suffix or one run of stops, and two runs of stops cannot
+        // come off back to back, so a pack cannot need more passes than twice
+        // its suffix list plus the pass that finds nothing left.
         val suffixes = normalization.suffixes
         var passes = 0
-        val maxPasses = suffixes.size + 1
+        val maxPasses = 2 * suffixes.size + 2
         while (passes++ < maxPasses) {
-            val hit = suffixes.firstOrNull { out.endsWith(it, ignoreCase = true) } ?: break
-            out = out.substring(0, out.length - hit.length)
+            val hit = suffixes.firstOrNull { out.endsWith(it, ignoreCase = true) }
+            if (hit != null) {
+                out = out.substring(0, out.length - hit.length)
+                continue
+            }
+            val shortened = out.trimEnd('.')
+            if (shortened == out) break
+            out = shortened
         }
 
         out = TERMINAL_CODE.replace(out, "")
