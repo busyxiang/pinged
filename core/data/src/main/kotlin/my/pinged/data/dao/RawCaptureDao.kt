@@ -176,6 +176,37 @@ interface RawCaptureDao {
     ): Int
 
     /**
+     * Spec 5.5's re-parse: hands captures an older pack could not read back to
+     * stage two, bounded to [limit] rows.
+     *
+     * **[from] must only ever be [ParseStatus.REVISITABLE].** A `MATCHED`
+     * capture has already written a `txn`, so requeueing one is how spending
+     * gets counted twice. That filter is the defence; spec 7.2's
+     * `content_hash` layer is a second net under it, not the first. It is a
+     * bound parameter rather than a literal because Room cannot take a list
+     * from the enum's companion into the SQL, so the single caller states it.
+     *
+     * **No cursor, unlike spec 15.5's keyset sketch.** This moves every row it
+     * selects out of `parse_status IN (:from)`, so the candidate set strictly
+     * shrinks and calling it until it returns zero terminates. `ORDER BY` would
+     * only add a temp b-tree, since `IN` over several statuses cannot take its
+     * ordering from `raw_capture(parse_status, id)`.
+     *
+     * @return rows moved. Equal to [limit] means there may be more.
+     */
+    @Query(
+        "UPDATE raw_capture SET parse_status = :to WHERE id IN (" +
+            "SELECT id FROM raw_capture WHERE parse_status IN (:from) " +
+            "AND pack_version < :packVersion LIMIT :limit)"
+    )
+    fun requeueStale(
+        from: List<ParseStatus>,
+        packVersion: Int,
+        limit: Int,
+        to: ParseStatus,
+    ): Int
+
+    /**
      * `SELECT id FROM txn WHERE raw_capture_id = ?`, from this DAO because
      * [commitCapture] needs it inside its own transaction. Served by the
      * unique index on `txn(raw_capture_id)`.
@@ -272,12 +303,16 @@ interface RawCaptureDao {
     fun byId(id: Long): RawCapture
 
     /**
-     * Spec 15.5's keyset cursor: the re-parse job walks `UNMATCHED` and
-     * `REJECTED` captures in chunks and "records its position so an
-     * interrupted run resumes rather than restarting". The position is the
-     * last `id` seen, which is what makes resumption exact -- an `OFFSET`
-     * cursor's position shifts under any concurrent insert, and the listener
-     * is inserting throughout.
+     * Spec 15.5's keyset cursor, and **no production caller reads it.**
+     * Re-parse went to [requeueStale] instead, which needs no position: it
+     * moves rows out of the statuses it selects on, so the candidate set
+     * shrinks on its own. Kept for the measurement below, which three other
+     * cursors cite, and because spec 5.5's third mode re-runs `MATCHED`
+     * captures without writing to them -- a reader, which does need one.
+     *
+     * The position is the last `id` seen, which is what makes resumption exact
+     * -- an `OFFSET` cursor's position shifts under any concurrent insert, and
+     * the listener is inserting throughout.
      *
      * `OFFSET` counts and discards rows, so it degrades linearly: measured at
      * 50,000 captures, 0.065 ms at offset 0 against 1.923 ms at offset 49,950,

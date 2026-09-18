@@ -15,8 +15,36 @@ import androidx.room.PrimaryKey
  * indistinguishable from "no rule matches this text", which is the signal spec
  * 5.6's authoring loop reads and spec 5.5 re-parses against.
  */
-enum class ParseStatus {
-    NEW, MATCHED, UNMATCHED, REJECTED, DUPLICATE_OF, UPDATE_OF, NO_EXTRAS, GAVE_UP,
+enum class ParseStatus(val revisitable: Boolean) {
+    NEW(revisitable = false),
+    MATCHED(revisitable = false),
+    UNMATCHED(revisitable = true),
+    REJECTED(revisitable = true),
+    DUPLICATE_OF(revisitable = false),
+    UPDATE_OF(revisitable = false),
+    NO_EXTRAS(revisitable = true),
+    GAVE_UP(revisitable = true),
+    ;
+
+    companion object {
+        /**
+         * Spec 5.5's re-parse set: the statuses a newer pack may read again.
+         *
+         * **`MATCHED` is false because a `txn` already exists**, so re-reading
+         * it is how spending gets counted twice; `DUPLICATE_OF` and
+         * `UPDATE_OF` are resolved decisions. `REJECTED` is true because spec
+         * 5.5 calls including it "not optional" -- an over-broad reject
+         * pattern is one of the likeliest reasons to ship a pack, and never
+         * revisiting cannot recover what it ate. Spec 5.7's *user* reject
+         * rules are a different thing and never decide whether a transaction
+         * exists; they are told apart by `user_reject_rule_id`.
+         *
+         * On the constant rather than in a list elsewhere so a ninth status
+         * cannot be added without answering the question -- the silent default
+         * would be "never revisited", which is the failure this repairs.
+         */
+        val REVISITABLE: List<ParseStatus> = entries.filter { it.revisitable }
+    }
 }
 
 /**

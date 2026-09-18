@@ -62,10 +62,17 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                     Result.failure()
                 },
             ) {
+                val captures = Databases.rawCaptureDao(app)
+                val matcher = Graph.ruleMatcher()
+
+                // Before the drain, so what it requeues is parsed by this same
+                // pass rather than waiting for the next notification.
+                val swept = Reparse.sweep(app, captures, matcher.packVersion)
+
                 val summary = ParsePass(
-                    captures = Databases.rawCaptureDao(app),
+                    captures = captures,
                     txns = Databases.txnDao(app),
-                    matcher = Graph.ruleMatcher(),
+                    matcher = matcher,
                     // requireUncategorizedId, not the nullable form: spec 7.1
                     // files an unknown merchant here, and a missing seed row
                     // must fail saying so rather than send a 0 down the money
@@ -78,9 +85,12 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                 Log.i(
                     TAG,
                     "Stage two: ${summary.processed} processed, ${summary.failed} failed, " +
-                        "remaining=${summary.remaining}",
+                        "requeued=${swept.moved}, remaining=${summary.remaining}",
                 )
-                if (summary.remaining) Result.retry() else Result.success()
+                // `swept.more` as well as the drain's own answer: what a full
+                // sweep batch left behind is still at a settled status, so no
+                // later capture schedules a run on its behalf.
+                if (summary.remaining || swept.more) Result.retry() else Result.success()
             }
         } catch (failure: Exception) {
             // A pack that will not load, an absent seed, a transient database

@@ -278,6 +278,14 @@ internal object ParseFixtures {
      * tests deliberately post captures minutes in the past, so a row from an
      * earlier run can sort ahead of the row under test.
      */
+    /**
+     * Stage two through the real worker. Hoisted because two classes drive it
+     * and the incantation breaks together when the test artifact changes.
+     */
+    fun runWorker(context: Context): androidx.work.ListenableWorker.Result =
+        androidx.work.testing.TestListenableWorkerBuilder<ParseWorker>(context)
+            .build().startWork().get()
+
     fun txnForCapture(context: Context, captureId: Long): my.pinged.data.entity.Txn? {
         val id = Databases.rawCaptureDao(context).txnIdForCapture(captureId) ?: return null
         return Databases.txnDao(context).byId(id)
