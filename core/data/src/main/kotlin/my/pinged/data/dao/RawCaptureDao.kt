@@ -176,6 +176,42 @@ interface RawCaptureDao {
     ): Int
 
     /**
+     * Spec 5.5's re-parse: hands captures an older pack could not read back to
+     * stage two, bounded to [limit] rows.
+     *
+     * **[from] must only ever name statuses that mean "could not read".** A
+     * `MATCHED` capture has already written a `txn`, so re-queueing one is how
+     * spending gets counted twice; `DUPLICATE_OF` and `UPDATE_OF` are resolved
+     * decisions, and `REJECTED` is a deliberate one. The status filter is the
+     * defence here -- spec 7.2's `content_hash` layer is a second net under it,
+     * not the first.
+     *
+     * Only rows judged by an *older* pack. [markOutcome] stamps `pack_version`
+     * on every outcome it writes, so a row re-read by this pack stops matching
+     * and the sweep terminates on its own.
+     *
+     * **No cursor, and no `ORDER BY`.** The obvious shape is spec 15.5's keyset
+     * walk, and it is not needed: this statement moves every row it selects out
+     * of `parse_status IN (:from)`, so the candidate set strictly shrinks and
+     * calling it until it returns zero terminates. Ordering would buy nothing
+     * and cost a temp b-tree, because `IN` over several statuses cannot take
+     * the ordering from `raw_capture(parse_status, id)`.
+     *
+     * @return rows moved. Equal to [limit] means there may be more.
+     */
+    @Query(
+        "UPDATE raw_capture SET parse_status = :to WHERE id IN (" +
+            "SELECT id FROM raw_capture WHERE parse_status IN (:from) " +
+            "AND pack_version < :packVersion LIMIT :limit)"
+    )
+    fun requeueStale(
+        from: List<ParseStatus>,
+        packVersion: Int,
+        limit: Int,
+        to: ParseStatus = ParseStatus.NEW,
+    ): Int
+
+    /**
      * `SELECT id FROM txn WHERE raw_capture_id = ?`, from this DAO because
      * [commitCapture] needs it inside its own transaction. Served by the
      * unique index on `txn(raw_capture_id)`.
