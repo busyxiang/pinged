@@ -5,6 +5,13 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.3.0](https://github.com/busyxiang/pinged/compare/v0.2.1...v0.3.0) (2026-09-18)
+
+
+### Features
+
+* re-read the captures an older pack could not understand ([#6](https://github.com/busyxiang/pinged/issues/6)) ([09ebb76](https://github.com/busyxiang/pinged/commit/09ebb764c72f1a28f8ae3caeae5c9881b609c6de))
+
 ## 0.2.1 (2026-09-15)
 
 Pinged reads the notifications your banks actually send.
