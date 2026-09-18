@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.first
  * `preferencesDataStore` is a property delegate that owns the file it names,
  * and a second delegate over the same file name in the same process throws
  * ("There are multiple DataStores active for the same file"). So
- * [SourceCounters] shares this one rather than declaring its own.
+ * [SourceCounters] and [Reparse] share this one rather than declaring their own.
  */
 internal val Context.captureStore by preferencesDataStore("capture_health")
 

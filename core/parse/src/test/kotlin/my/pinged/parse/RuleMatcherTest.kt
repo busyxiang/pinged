@@ -557,13 +557,11 @@ class RuleMatcherTest {
         // 11, not 10: `tng-deducted-v1` and its `bigText` twin read a third
         // wallet wording, observed unmatched on a device at pack 10.
         //
-        // **The bump recovers nothing.** Spec 5.5 drives re-parse off this
-        // integer, but nothing re-parses: `RawCaptureDao.pageAfter` has no
-        // production caller and `ParsePass` claims rows at `NEW` only, so the
-        // captures this pack would now read stay dropped and the keys already
-        // stored stay as they were. The version is a marker for a job not yet
-        // written -- which is what makes it worth setting now, because the job
-        // will have nothing else to tell these captures apart by.
+        // Spec 5.5's re-parse drives off this integer and is now implemented:
+        // `Reparse.sweep` requeues captures stamped below it, so a bump is what
+        // makes the wordings above reach captures already on the table. Keys
+        // already stored on a committed `txn` still stay as they were -- that
+        // is 5.5's third mode, which is not built.
         assertEquals(11, matcher.packVersion)
         assertEquals(7, probePack(PAYMENT_RULE).packVersion)
     }

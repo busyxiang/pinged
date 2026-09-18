@@ -179,23 +179,18 @@ interface RawCaptureDao {
      * Spec 5.5's re-parse: hands captures an older pack could not read back to
      * stage two, bounded to [limit] rows.
      *
-     * **[from] must only ever name statuses that mean "could not read".** A
-     * `MATCHED` capture has already written a `txn`, so re-queueing one is how
-     * spending gets counted twice; `DUPLICATE_OF` and `UPDATE_OF` are resolved
-     * decisions, and `REJECTED` is a deliberate one. The status filter is the
-     * defence here -- spec 7.2's `content_hash` layer is a second net under it,
-     * not the first.
+     * **[from] must only ever be [ParseStatus.REVISITABLE].** A `MATCHED`
+     * capture has already written a `txn`, so requeueing one is how spending
+     * gets counted twice. That filter is the defence; spec 7.2's
+     * `content_hash` layer is a second net under it, not the first. It is a
+     * bound parameter rather than a literal because Room cannot take a list
+     * from the enum's companion into the SQL, so the single caller states it.
      *
-     * Only rows judged by an *older* pack. [markOutcome] stamps `pack_version`
-     * on every outcome it writes, so a row re-read by this pack stops matching
-     * and the sweep terminates on its own.
-     *
-     * **No cursor, and no `ORDER BY`.** The obvious shape is spec 15.5's keyset
-     * walk, and it is not needed: this statement moves every row it selects out
-     * of `parse_status IN (:from)`, so the candidate set strictly shrinks and
-     * calling it until it returns zero terminates. Ordering would buy nothing
-     * and cost a temp b-tree, because `IN` over several statuses cannot take
-     * the ordering from `raw_capture(parse_status, id)`.
+     * **No cursor, unlike spec 15.5's keyset sketch.** This moves every row it
+     * selects out of `parse_status IN (:from)`, so the candidate set strictly
+     * shrinks and calling it until it returns zero terminates. `ORDER BY` would
+     * only add a temp b-tree, since `IN` over several statuses cannot take its
+     * ordering from `raw_capture(parse_status, id)`.
      *
      * @return rows moved. Equal to [limit] means there may be more.
      */
@@ -208,7 +203,7 @@ interface RawCaptureDao {
         from: List<ParseStatus>,
         packVersion: Int,
         limit: Int,
-        to: ParseStatus = ParseStatus.NEW,
+        to: ParseStatus,
     ): Int
 
     /**
@@ -308,12 +303,16 @@ interface RawCaptureDao {
     fun byId(id: Long): RawCapture
 
     /**
-     * Spec 15.5's keyset cursor: the re-parse job walks `UNMATCHED` and
-     * `REJECTED` captures in chunks and "records its position so an
-     * interrupted run resumes rather than restarting". The position is the
-     * last `id` seen, which is what makes resumption exact -- an `OFFSET`
-     * cursor's position shifts under any concurrent insert, and the listener
-     * is inserting throughout.
+     * Spec 15.5's keyset cursor, and **no production caller reads it.**
+     * Re-parse went to [requeueStale] instead, which needs no position: it
+     * moves rows out of the statuses it selects on, so the candidate set
+     * shrinks on its own. Kept for the measurement below, which three other
+     * cursors cite, and because spec 5.5's third mode re-runs `MATCHED`
+     * captures without writing to them -- a reader, which does need one.
+     *
+     * The position is the last `id` seen, which is what makes resumption exact
+     * -- an `OFFSET` cursor's position shifts under any concurrent insert, and
+     * the listener is inserting throughout.
      *
      * `OFFSET` counts and discards rows, so it degrades linearly: measured at
      * 50,000 captures, 0.065 ms at offset 0 against 1.923 ms at offset 49,950,

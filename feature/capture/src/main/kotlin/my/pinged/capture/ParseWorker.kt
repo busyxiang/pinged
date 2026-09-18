@@ -65,10 +65,9 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                 val captures = Databases.rawCaptureDao(app)
                 val matcher = Graph.ruleMatcher()
 
-                // Spec 5.5, and it runs *before* the drain so that anything it
-                // requeues is parsed by this same pass rather than waiting for
-                // the next notification to schedule one.
-                val requeued = Reparse.sweep(app, captures, matcher.packVersion)
+                // Before the drain, so what it requeues is parsed by this same
+                // pass rather than waiting for the next notification.
+                val swept = Reparse.sweep(app, captures, matcher.packVersion)
 
                 val summary = ParsePass(
                     captures = captures,
@@ -86,15 +85,12 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                 Log.i(
                     TAG,
                     "Stage two: ${summary.processed} processed, ${summary.failed} failed, " +
-                        "requeued=$requeued, remaining=${summary.remaining}",
+                        "requeued=${swept.moved}, remaining=${summary.remaining}",
                 )
-                // A full sweep batch says the backlog outlasted this run, and
-                // nothing else would come back for it: the rows it did move are
-                // parsed above, and the ones it did not are still at a settled
-                // status, so no capture arriving later schedules a run on their
-                // behalf.
-                val sweepRemaining = requeued >= Reparse.MAX_ROWS_PER_RUN
-                if (summary.remaining || sweepRemaining) Result.retry() else Result.success()
+                // `swept.more` as well as the drain's own answer: what a full
+                // sweep batch left behind is still at a settled status, so no
+                // later capture schedules a run on its behalf.
+                if (summary.remaining || swept.more) Result.retry() else Result.success()
             }
         } catch (failure: Exception) {
             // A pack that will not load, an absent seed, a transient database

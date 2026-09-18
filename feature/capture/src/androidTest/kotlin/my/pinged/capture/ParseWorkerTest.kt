@@ -43,8 +43,7 @@ class ParseWorkerTest {
         ParseFixtures.prepare(context)
     }
 
-    private fun runWorker(): ListenableWorker.Result =
-        TestListenableWorkerBuilder<ParseWorker>(context).build().startWork().get()
+    private fun runWorker(): ListenableWorker.Result = ParseFixtures.runWorker(context)
 
     /**
      * The whole job, once, on a payload stage one would actually have written.

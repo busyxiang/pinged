@@ -3,7 +3,6 @@ package my.pinged.capture
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.ListenableWorker
-import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
@@ -18,11 +17,8 @@ import org.junit.runner.RunWith
  * Spec 5.5's re-parse, against the real encrypted database and the pack that
  * ships.
  *
- * The behaviour under test is the one that cost two releases: a capture the
- * rules of the day could not read is settled at a terminal status, and a later
- * pack that *can* read it never looks. Every assertion here is either "the
- * money arrives" or "the money is not counted twice", because those are the
- * only two ways this can be wrong.
+ * Every assertion here is either "the money arrives" or "the money is not
+ * counted twice", because those are the only two ways this can be wrong.
  */
 @RunWith(AndroidJUnit4::class)
 class ReparseTest {
@@ -35,24 +31,21 @@ class ReparseTest {
     private val base = System.currentTimeMillis()
 
     /**
-     * The sweep is table-wide, and this suite shares one database, so a count
-     * returned here is about every capture on the table and not only this
-     * test's. Earlier tests leave rows settled at an older pack version, which
-     * made `aCaptureThatAlreadyPaidIsNeverRequeued` report a paid capture as
-     * requeued when what moved was a leftover from the test before it.
+     * The sweep is table-wide and this suite shares one database, so a count
+     * here is about every row on the table. Leftovers from an earlier test made
+     * `aCaptureThatAlreadyPaidIsNeverRequeued` report a paid capture as
+     * requeued when what moved was someone else's row.
      *
-     * Draining first is what makes a count mean something: after this, every
-     * row is stamped with the current pack version, so nothing but this test's
-     * own fixtures can qualify. The mark is forgotten around each sweep
-     * because it would otherwise stop the loop before the table was clear.
+     * Draining first stamps every row with the current pack version, so only
+     * this test's own fixtures can qualify. The mark is cleared before the loop
+     * so the first sweep runs, and again after it so the test's own does.
      */
     @Before
     fun prepare() {
         ParseFixtures.prepare(context)
         runBlocking {
-            while (true) {
-                Reparse.forgetSweptVersion(context)
-                if (Reparse.sweep(context, captures, packVersion) == 0) break
+            Reparse.forgetSweptVersion(context)
+            while (Reparse.sweep(context, captures, packVersion).moved > 0) {
                 ParseFixtures.pass(context).run()
             }
             Reparse.forgetSweptVersion(context)
@@ -78,12 +71,12 @@ class ReparseTest {
         return id
     }
 
-    private fun sweep(limit: Int = Reparse.MAX_ROWS_PER_RUN): Int =
+    private fun sweep(limit: Int = Reparse.MAX_REQUEUE_PER_RUN): Reparse.Swept =
         runBlocking { Reparse.sweep(context, captures, packVersion, limit) }
 
     /**
-     * The whole point: a payment captured before the rule that reads it
-     * existed becomes a transaction, from the text that was stored at the time.
+     * The whole point: a payment captured before the rule that reads it existed
+     * becomes a transaction, from the text stored at the time.
      */
     @Test
     fun aPaymentAnOlderPackCouldNotReadBecomesATransaction() {
@@ -94,7 +87,7 @@ class ReparseTest {
             at = base - 9_000L,
         )
 
-        assertEquals("The sweep did not requeue the stale capture", 1, sweep())
+        assertEquals("The sweep did not requeue the stale capture", 1, sweep().moved)
         assertEquals(ParseStatus.NEW, captures.byId(id).parseStatus)
 
         ParseFixtures.pass(context).run()
@@ -138,7 +131,7 @@ class ReparseTest {
             packVersion = packVersion - 1,
             expected = ParseStatus.MATCHED,
         )
-        assertEquals("A settled, paid capture was requeued", 0, sweep())
+        assertEquals("A settled, paid capture was requeued", 0, sweep().moved)
         assertEquals(
             "The paid capture left MATCHED, so it would be read again",
             ParseStatus.MATCHED,
@@ -153,12 +146,10 @@ class ReparseTest {
     }
 
     /**
-     * ...through the real worker, which is the only thing that runs the sweep
-     * in production.
-     *
-     * Every other test here calls [Reparse.sweep] directly, so all of them
-     * would still pass with the call missing from [ParseWorker] entirely --
-     * the feature would be correct and unreachable.
+     * ...through the real worker, which is the only thing that runs the sweep in
+     * production. Every other test calls [Reparse.sweep] directly and would
+     * still pass with the call missing from [ParseWorker] entirely -- correct,
+     * and unreachable.
      */
     @Test
     fun theWorkerSweepsBeforeItDrains() {
@@ -168,10 +159,7 @@ class ReparseTest {
             at = base - 9_500L,
         )
 
-        assertEquals(
-            ListenableWorker.Result.success(),
-            TestListenableWorkerBuilder<ParseWorker>(context).build().startWork().get(),
-        )
+        assertEquals(ListenableWorker.Result.success(), ParseFixtures.runWorker(context))
 
         assertEquals(
             "The worker drained the queue without sweeping, so the capture is still unread",
@@ -181,20 +169,31 @@ class ReparseTest {
         assertEquals(420L, ParseFixtures.txnForCapture(context, id)?.amountSen)
     }
 
-    /** A reject was a decision, not a failure to read, so it stays one. */
+    /**
+     * A pack reject is revisited, which spec 5.5 calls non-optional: fixing an
+     * over-broad reject pattern is one of the likeliest reasons to ship a pack,
+     * and never revisiting cannot recover the transactions it ate.
+     *
+     * This asserted the opposite until the spec was re-read. `markOutcome`'s
+     * `COALESCE(:rejectId, rejected_by_rule_id)` exists for this path and was
+     * unreachable without it.
+     */
     @Test
-    fun aRejectedCaptureIsLeftAlone() {
+    fun aRejectedCaptureIsRevisitedSoAnOverBroadPatternCanBeUndone() {
         val id = staleCapture(
             text = "Your OTP is 123456 $marker. Do not share it with anyone.",
             status = ParseStatus.REJECTED,
             at = base - 7_000L,
         )
-        assertEquals("A deliberate reject was requeued", 0, sweep())
-        assertEquals(
-            "The rejected capture left REJECTED",
-            ParseStatus.REJECTED,
-            captures.byId(id).parseStatus,
-        )
+        assertEquals("A pack reject was not revisited", 1, sweep().moved)
+        assertEquals(ParseStatus.NEW, captures.byId(id).parseStatus)
+
+        // Still rejected by the current pack, and the evidence of which pattern
+        // ate it survives the round trip.
+        ParseFixtures.pass(context).run()
+        val after = captures.byId(id)
+        assertEquals(ParseStatus.REJECTED, after.parseStatus)
+        assertEquals("tng-otp", after.rejectedByRuleId)
     }
 
     /** `GAVE_UP` is not evidence that no rule matches, so it is revisited. */
@@ -205,14 +204,12 @@ class ReparseTest {
             status = ParseStatus.GAVE_UP,
             at = base - 6_000L,
         )
-        assertEquals(1, sweep())
+        assertEquals(1, sweep().moved)
         assertEquals(ParseStatus.NEW, captures.byId(id).parseStatus)
     }
 
-    /**
-     * Once per pack version. Without the mark this walks the table on every
-     * notification, for an answer that is no except just after an upgrade.
-     */
+    /** Once per pack version; without the mark this walks the table on every
+     * notification. */
     @Test
     fun theSweepRunsOncePerPackVersion() {
         staleCapture(
@@ -220,7 +217,7 @@ class ReparseTest {
             status = ParseStatus.UNMATCHED,
             at = base - 5_000L,
         )
-        assertEquals(1, sweep())
+        assertEquals(1, sweep().moved)
         ParseFixtures.pass(context).run()
 
         staleCapture(
@@ -231,14 +228,12 @@ class ReparseTest {
         assertEquals(
             "The sweep ran again for a version it had already swept",
             0,
-            sweep(),
+            sweep().moved,
         )
     }
 
-    /**
-     * A full batch means there is more, and must not record the version --
-     * doing so would strand whatever did not fit, permanently.
-     */
+    /** A full batch means there is more, and recording the version there would
+     * strand whatever did not fit, permanently. */
     @Test
     fun aFullBatchLeavesTheVersionUnsweptSoTheRestIsNotStranded() {
         repeat(3) { n ->
@@ -249,11 +244,13 @@ class ReparseTest {
             )
         }
 
-        assertEquals("The batch was not bounded by the limit", 2, sweep(limit = 2))
+        val first = sweep(limit = 2)
+        assertEquals("The batch was not bounded by the limit", 2, first.moved)
+        assertEquals("A full batch did not report more", true, first.more)
         assertEquals(
             "The version was recorded on a full batch, stranding the remainder",
             1,
-            sweep(limit = 2),
+            sweep(limit = 2).moved,
         )
     }
 }
