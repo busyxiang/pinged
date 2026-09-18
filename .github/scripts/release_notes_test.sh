@@ -153,17 +153,11 @@ git -C "$main" tag -a v0.1.1 -F "$work/hostile.txt"
 first=$work/first.md
 notes_for "$script" "$main" v0.1.0 "$first"
 assert_absent "$first.log" 'exit ' 'first release: the script succeeds'
-assert_contains "$first" 'The first release, so there is no previous tag' \
-    'first release: says there is no previous tag'
-assert_contains "$first" 'measured against an empty tree' \
-    'first release: diffstat is measured against the empty tree'
 assert_contains "$first" 'commits/v0.1.0' \
     'first release: links the commit list, since there is nothing to compare'
 assert_absent "$first" 'compare/' 'first release: no compare link with an empty base'
 assert_contains "$first" 'Pinged 0.1.0 -- the capture milestone' \
     'first release: quotes the tag message'
-assert_contains "$first" 'Capture notifications into an encrypted ledger' \
-    'first release: lists commits reachable from the tag'
 assert_contains "$first.log" 'No previous v* tag reachable' \
     'first release: says so in the workflow log'
 
@@ -172,17 +166,18 @@ assert_contains "$first.log" 'No previous v* tag reachable' \
 normal=$work/normal.md
 notes_for "$script" "$main" v0.1.1 "$normal"
 assert_absent "$normal.log" 'exit ' 'normal release: the script succeeds'
-assert_contains "$normal" 'commits since v0.1.0' 'normal release: names the previous tag'
-assert_contains "$normal" 'compare/v0.1.0...v0.1.1' 'normal release: links the compare view'
-assert_contains "$normal" 'Give :app a test that starts it' \
-    'normal release: lists what a merged branch carried'
-assert_absent "$normal" 'Merge pull request' 'normal release: omits the merge commit itself'
-assert_absent "$normal" 'Add approved design spec' \
-    'normal release: omits commits from before the previous tag'
+assert_contains "$normal" 'compare/v0.1.0...v0.1.1' \
+    'normal release: the compare link names the previous tag'
+assert_absent "$normal" 'Merge pull request' 'normal release: no commit list to carry a merge subject'
 assert_absent "$normal" 'sdd-plan-checkpoint' 'normal release: ignores non-version tags'
 assert_absent "$normal" 'sdd-checkpoint' 'normal release: ignores a non-version tag inside the range'
-assert_contains "$normal" 'A merged branch lands here as a single squashed commit' \
-    'normal release: warns that the commit count is not the size of the release'
+
+# What release-please already writes is not restated here: no commit count, no
+# diffstat, no subject list. The compare link is the one derived thing kept.
+assert_absent "$normal" 'commits since' 'slim: no commit count'
+assert_absent "$normal" 'files changed' 'slim: no diffstat'
+assert_absent "$normal" '### Commits' 'slim: no commit list section'
+assert_absent "$normal" 'Give :app a test that starts it' 'slim: no commit subjects'
 
 # The static half: the notes' only user-facing content, asserted rather than
 # trusted to survive an edit to the generated half.
@@ -222,13 +217,12 @@ assert_contains "$light.log" '::warning::' 'lightweight tag: warns in the workfl
 assert_absent "$light" 'What the tag says' 'lightweight tag: no quoted message section'
 assert_absent "$light" 'Subject and body both hostile' \
     'lightweight tag: does not quote the commit message the tag dereferences to'
-assert_contains "$light" 'v0.1.1 already contains every non-merge commit' \
-    'empty range: says the tag moved nothing'
-assert_contains "$light" 'no file changes' 'empty range: reports no diff rather than a blank'
+assert_contains "$light.log" 'no CHANGELOG.md entry and no tag message' \
+    'lightweight tag: the warning names both sources, not just the tag'
 
 newer=$work/newer.md
 notes_for "$script" "$main" v0.1.1 "$newer"
-assert_contains "$newer" 'commits since v0.1.0' \
+assert_contains "$newer" 'compare/v0.1.0...v0.1.1' \
     'a newer tag exists: the baseline is still the tag below this one'
 assert_absent "$newer" 'v0.1.2' 'a newer tag exists: it is not used as the baseline'
 
@@ -247,7 +241,7 @@ assert_contains "$missing.log" 'fetch-depth' 'unknown tag: names the likely caus
 if mutant glob "s/'v\[0-9\]\*'/'*'/"; then
     out=$work/mutant-glob.md
     notes_for "$MUTANT" "$main" v0.1.0 "$out"
-    assert_contains "$out" 'commits since sdd-plan-checkpoint' \
+    assert_contains "$out" 'compare/sdd-plan-checkpoint' \
         'mutant glob: without the filter an SDD checkpoint becomes the first release baseline'
 fi
 
@@ -256,7 +250,7 @@ fi
 if mutant newer-tag 's/^    \[ "\$seen_self" -eq 1 \] || continue$/    :/'; then
     out=$work/mutant-newer.md
     notes_for "$MUTANT" "$main" v0.1.1 "$out"
-    assert_contains "$out" 'commits since v0.1.2' \
+    assert_contains "$out" 'compare/v0.1.2...v0.1.1' \
         'mutant newer-tag: taking the first candidate picks the tag above this one'
 fi
 
@@ -273,7 +267,7 @@ git -C "$sorted" tag -a v1.0.0 -m 'Pinged 1.0.0'
 
 sortcase=$work/sorted.md
 notes_for "$script" "$sorted" v1.0.0 "$sortcase"
-assert_contains "$sortcase" 'commits since v0.10.0' 'version sort: v0.10.0 is newer than v0.9.0'
+assert_contains "$sortcase" 'compare/v0.10.0...v1.0.0' 'version sort: v0.10.0 is newer than v0.9.0'
 
 # v1.0.0 rather than v0.11.0 as the tag being released, because the walk that
 # requires a lower baseline masks a lexical sort otherwise: descending by
@@ -282,7 +276,7 @@ assert_contains "$sortcase" 'commits since v0.10.0' 'version sort: v0.10.0 is ne
 if mutant sort 's/--sort=-v:refname/--sort=-refname/'; then
     out=$work/mutant-sort.md
     notes_for "$MUTANT" "$sorted" v1.0.0 "$out"
-    assert_contains "$out" 'commits since v0.9.0' \
+    assert_contains "$out" 'compare/v0.9.0...v1.0.0' \
         'mutant sort: a lexical sort puts v0.9.0 immediately below v1.0.0'
 fi
 
@@ -302,18 +296,14 @@ git -C "$branched" checkout --quiet main
 
 branchcase=$work/branched.md
 notes_for "$script" "$branched" v0.2.0 "$branchcase"
-assert_contains "$branchcase" 'commits since v0.1.0' \
+assert_contains "$branchcase" 'compare/v0.1.0...v0.2.0' \
     'unmerged patch tag: the baseline is the last ancestor, not the last version'
-assert_absent "$branchcase" 'never merged back' \
-    'unmerged patch tag: the other line does not appear in the commit list'
 
 if mutant merged 's/--merged "\$commit" //'; then
     out=$work/mutant-merged.md
     notes_for "$MUTANT" "$branched" v0.2.0 "$out"
-    assert_contains "$out" 'commits since v0.1.1' \
+    assert_contains "$out" 'compare/v0.1.1...v0.2.0' \
         'mutant merged: without --merged a tag off another branch becomes the baseline'
-    assert_contains "$out" 'deletion' \
-        'mutant merged: and the diffstat then reports the other line as deletions'
 fi
 
 # Mutation: the two rules that keep commit text from escaping its container.
@@ -364,7 +354,9 @@ git -C "$changelog" add -A
 git -C "$changelog" commit --quiet -m 'Write the changelog'
 git -C "$changelog" tag -a v0.2.0 -m 'A tag annotation that must be ignored'
 commit_in "$changelog" 'After'
-git -C "$changelog" tag -a v0.3.0 -m 'Another annotation to ignore'
+# Lightweight, which is what release-please cuts: the summary comes from the
+# changelog, so there is no tag message and none is needed.
+git -C "$changelog" tag v0.3.0
 commit_in "$changelog" 'A version the changelog never got an entry for'
 git -C "$changelog" tag -a v0.4.0 -m 'The annotation is all this release has'
 
@@ -381,6 +373,11 @@ assert_absent "$curated" 'An older entry' 'changelog: stops at the next heading'
 assert_absent "$curated" 'the release-please heading form' \
     'changelog: does not reach the entry above this one'
 
+fallback=$work/fallback.md
+notes_for "$script" "$changelog" v0.4.0 "$fallback"
+assert_contains "$fallback" 'The annotation is all this release has' \
+    'changelog: a version with no entry falls back to the tag annotation'
+
 rp=$work/rp.md
 notes_for "$script" "$changelog" v0.3.0 "$rp"
 assert_contains "$rp" 'the release-please heading form is matched too' \
@@ -388,10 +385,15 @@ assert_contains "$rp" 'the release-please heading form is matched too' \
 assert_absent "$rp" 'The curated paragraph' \
     'changelog: and stops before the entry below it'
 
-fallback=$work/fallback.md
-notes_for "$script" "$changelog" v0.4.0 "$fallback"
-assert_contains "$fallback" 'The annotation is all this release has' \
-    'changelog: a version with no entry falls back to the tag annotation'
+# The whole point of the warning change. release-please cuts lightweight tags
+# by design, so warning on the tag object alone fired on every good release and
+# advised `git tag -a`, which would not have helped.
+assert_absent "$rp.log" '::warning::' \
+    'warning: silent for a lightweight tag that has a changelog entry'
+assert_absent "$curated.log" '::warning::' \
+    'warning: silent for an annotated tag that has a changelog entry'
+assert_absent "$fallback.log" '::warning::' \
+    'warning: silent for a tag whose message is the summary'
 
 # Mutation: the bracket strip, which is the only thing that reads
 # release-please's own heading form rather than the hand-written one.
@@ -399,8 +401,10 @@ assert_contains "$fallback" 'The annotation is all this release has' \
 if mutant changelog-bracket 's|sub(/^\\\[/, "", heading)|heading = heading|'; then
     out=$work/mutant-changelog-bracket.md
     notes_for "$MUTANT" "$changelog" v0.3.0 "$out"
-    assert_contains "$out" 'Another annotation to ignore' \
-        'mutant changelog-bracket: release-please headings stop matching, and every release it wrote silently falls back to the tag'
+    assert_absent "$out" 'the release-please heading form is matched too' \
+        'mutant changelog-bracket: release-please headings stop matching, so every release it wrote loses its summary'
+    assert_contains "$out.log" 'no CHANGELOG.md entry and no tag message' \
+        'mutant changelog-bracket: ...and the warning is what says so'
 fi
 
 # Mutation: the heading comparison, which is what bounds an entry.
@@ -412,6 +416,16 @@ if mutant changelog-bounds 's/inside = (heading == want)/inside = 1/'; then
         'mutant changelog-bounds: without the comparison the notes carry the whole changelog'
 fi
 
+# Mutation: the warning condition. Reverted to the tag object alone, it fires
+# on every release-please release.
+
+if mutant warn-on-tag-object 's/^if \[ -z "\$entry" \] && \[ -z "\$annotation" \]; then$/if [ "$tag_object" != "tag" ]; then/'; then
+    out=$work/mutant-warn.md
+    notes_for "$MUTANT" "$changelog" v0.3.0 "$out"
+    assert_contains "$out.log" '::warning::' \
+        'mutant warn-on-tag-object: a lightweight tag with a changelog entry warns again'
+fi
+
 # The one guard that is not in the script: a depth-1 clone has no earlier tag
 # to find, so it reports every release as the first, successfully. Hence
 # release.yml's fetch-depth: 0.
@@ -420,9 +434,9 @@ shallow=$work/shallow
 git clone --quiet --depth 1 --branch v1.0.0 "file://$sorted" "$shallow" 2>/dev/null
 shallow_notes=$work/shallow.md
 notes_for "$script" "$shallow" v1.0.0 "$shallow_notes"
-assert_contains "$shallow_notes" 'The first release' \
+assert_contains "$shallow_notes" 'commits/v1.0.0' \
     'shallow checkout: a depth-1 clone silently produces first-release notes'
-assert_absent "$shallow_notes" 'since v0.10.0' \
+assert_absent "$shallow_notes" 'v0.10.0' \
     'shallow checkout: and loses the range the release actually covers'
 
 printf '\n'
