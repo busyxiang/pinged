@@ -55,6 +55,13 @@ jobs:
       - name: The repository agrees with the tag about the version
         run: |
           version="${GITHUB_REF_NAME#v}"
+          # Before the comparison below, which would otherwise report a
+          # prefixed tag as a version mismatch and say nothing about tag
+          # names. Same three-part shape app/build.gradle.kts requires.
+          if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag $GITHUB_REF_NAME is not v<major>.<minor>.<patch>. The build reads the tag as the version, so a prefixed or suffixed tag cannot be released. If release-please produced it, check include-component-in-tag in release-please-config.json."
+            exit 1
+          fi
           if [ ! -f version.txt ]; then
             echo "::error::No version.txt. release-please tracks the version there; see docs/release.md."
             exit 1
