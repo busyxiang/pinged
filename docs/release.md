@@ -184,34 +184,33 @@ The two can only disagree when a tag was pushed without merging the release PR
 for it, and the symptom otherwise would be a release carrying the previous
 version's notes.
 
-The notes are built by `.github/scripts/release_notes.sh` and are four things:
+The notes are built by `.github/scripts/release_notes.sh` and are three things:
 
 - the `CHANGELOG.md` entry for this version, rendered as markdown -- or, when
   there is none, the tag's own message quoted verbatim;
-- the diffstat between this tag and the previous one, measured with `git
-  diff --shortstat`;
-- the subject lines of the commits in that range, merge commits excluded;
+- a link to the compare view for the range;
 - the static sideloading instructions and the APK's SHA-256.
 
-The changelog entry is the only part of the notes rendered as markdown rather
-than fenced. The distinction is trust, not formatting: a commit message
-arrives from whoever wrote it, while `CHANGELOG.md` is reviewed in the release
-pull request by whoever could edit the generating script anyway.
+The changelog entry is the whole of "what changed". The script used to derive
+a commit count, a diffstat and the subject lines in the range and print them
+above it, and once `release-please` was writing the entry that restated the
+same release worse and in more words. The compare link stays because it is the
+one thing the entry cannot carry: a way through to the full messages, which in
+this repository are long and are about why.
 
-The curated entry carries the weight on purpose. A merged branch lands here as
-one squashed commit — the whole capture milestone is `7918da9` — so a commit
-list is short in a way that has nothing to do with how large the release is,
-and the notes say so where a reader will see it. The diffstat is stated first
-because it is measured across the range and a squash cannot flatten it. The
-commit list is subject lines only: this repository's commit messages are long
-and are about why, and a release page is not where they read well, so the
-notes link the compare view instead of reproducing them.
+The entry is the only part rendered as markdown rather than fenced. The
+distinction is trust, not formatting: a tag message arrives from whoever wrote
+it, while `CHANGELOG.md` is reviewed in the release pull request by whoever
+could edit the generating script anyway. The fallback annotation is emitted
+inside a fenced code block whose fence is one backtick longer than the longest
+backtick run in the text, so it cannot close its own container and reach the
+rendered page as markdown, HTML or an `@mention`.
 
-Everything taken out of git is emitted inside a fenced code block whose fence
-is one backtick longer than the longest backtick run in the text, so a commit
-message cannot close its own container and reach the rendered page as
-markdown, HTML or an `@mention`. That also means the tag message renders
-preformatted, with the wrapping it was written with.
+The script warns only when the notes end up with **no** summary -- no changelog
+entry and no tag message. It used to warn on any lightweight tag, which fired
+on every `release-please` release, because that is exactly what `release-please`
+cuts and the summary comes from the changelog instead. A warning that fires on
+every good run is one nobody reads.
 
 The script runs outside Actions, which is how it gets tested — the workflow
 around it signs an APK and publishes to GitHub, so it cannot be rehearsed:

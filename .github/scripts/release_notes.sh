@@ -144,23 +144,6 @@ while IFS= read -r candidate; do
     break
 done < <(git tag --list 'v[0-9]*' --merged "$commit" --sort=-v:refname)
 
-if [ -n "$previous" ]; then
-    log_range="$previous..$commit"
-    diff_base=$previous
-else
-    log_range=$commit
-    # The empty tree, so the first release's diffstat is the size of the
-    # tree rather than blank. No -w: this hashes without writing an object.
-    diff_base=$(git hash-object -t tree /dev/null)
-fi
-
-subjects=$(git log --no-merges --format='%h  %s' "$log_range" | tr -d '\r')
-count=$(git log --no-merges --format='%h' "$log_range" | wc -l | tr -d '[:space:]')
-# ` 12 files changed, 30 insertions(+), 4 deletions(-)` with a leading space,
-# and empty when nothing changed at all.
-shortstat=$(git diff --shortstat "$diff_base" "$commit" | sed -e 's/^ *//' -e 's/ *$//')
-[ -n "$shortstat" ] || shortstat="no file changes"
-
 # %(contents) would paste a GPG signature block into the notes; subject and
 # body separately leave it out. Untested here, because no tag in this
 # repository is signed.
@@ -187,41 +170,20 @@ fi
 {
     printf '## What changed\n\n'
 
-    # The curated entry leads, because it is the only part of these notes
-    # written for the person installing the APK; the range and the diffstat
-    # below it are context for someone reading the repository. The tag
-    # annotation is the fallback for a tag cut without a changelog entry,
-    # which is what every release before release-please was.
+    # The changelog entry is the whole of "what changed" now. It is written
+    # for the person installing the APK and reviewed in the release pull
+    # request, and everything this script used to derive from git -- a commit
+    # count, a diffstat, the subject lines -- restated that worse and in more
+    # words. The compare link is kept because it is the one thing the entry
+    # cannot carry: a way through to the full messages.
+    #
+    # The tag annotation is the fallback for a tag cut without an entry, which
+    # is what every release before release-please was.
     if [ -n "$entry" ]; then
-        printf '%s\n\n' "$entry"
+        printf '%s\n' "$entry"
     elif [ -n "$annotation" ]; then
         printf '### What the tag says\n\n'
         fenced "$annotation"
-        printf '\n'
-    fi
-
-    if [ -n "$previous" ]; then
-        printf '%s commits since %s: %s.\n' "$count" "$previous" "$shortstat"
-    else
-        printf 'The first release, so there is no previous tag to compare against.\n'
-        printf '%s commits, %s measured against an empty tree.\n' "$count" "$shortstat"
-    fi
-
-    printf '\n### Commits\n\n'
-    # The diffstat is stated first because it is measured across the range and
-    # a squash cannot flatten it; this list can be one commit for a milestone.
-    printf 'A merged branch lands here as a single squashed commit, so the length of this\n'
-    printf 'list is not the size of the release -- the diffstat above is. Commit messages\n'
-    printf 'in this repository are long and explain why; only their subject lines are\n'
-    printf 'reproduced here.\n\n'
-
-    if [ -n "$subjects" ]; then
-        fenced "$subjects"
-    else
-        # A moved tag, or a second tag on a commit that already has one.
-        # Worded as containment because "the same commit" would be wrong for a
-        # merge-only range.
-        printf 'None. %s already contains every non-merge commit up to this tag.\n' "$previous"
     fi
 
     if [ -n "$compare" ]; then
@@ -244,8 +206,13 @@ fi
 if [ -z "$previous" ]; then
     printf 'No previous v* tag reachable from %s. Writing first-release notes.\n' "$tag"
 fi
-if [ "$tag_object" != "tag" ]; then
-    printf '::warning::%s is a lightweight tag, so it carries no message and the release notes have no summary in them. Cut releases with git tag -a; see docs/release.md.\n' "$tag"
+# Only when the notes have no summary at all. release-please cuts lightweight
+# tags by design and the summary comes from CHANGELOG.md, so warning on the tag
+# object alone fired on every good release and told the reader to do something
+# that would not help -- which is how an annotation gets ignored.
+if [ -z "$entry" ] && [ -z "$annotation" ]; then
+    printf '::warning::%s has no CHANGELOG.md entry and no tag message, so these notes say nothing about what changed. Add the entry in the release pull request, or cut the tag with git tag -a; see docs/release.md.\n' "$tag"
 fi
-printf 'Wrote %s bytes of notes for %s (%s commits since %s).\n' \
-    "$(wc -c < "$out" | tr -d '[:space:]')" "$tag" "$count" "${previous:-no previous tag}"
+printf 'Wrote %s bytes of notes for %s (previous %s, summary from %s).\n' \
+    "$(wc -c < "$out" | tr -d '[:space:]')" "$tag" "${previous:-none}" \
+    "$([ -n "$entry" ] && echo CHANGELOG.md || { [ -n "$annotation" ] && echo "the tag" || echo nothing; })"
