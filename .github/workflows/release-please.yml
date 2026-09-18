@@ -1,0 +1,52 @@
+name: Release PR
+
+# Maintains a pull request that bumps `version.txt` and writes the
+# `CHANGELOG.md` entry for the next version. Merging that PR is what says
+# "release this"; this workflow then tags the merge and opens the GitHub
+# release for `release.yml` to build into.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# `contents` to tag and to commit the version bump, `pull-requests` to open
+# the PR. This job builds and signs nothing and never names the `release`
+# environment, so the keystore is out of its reach.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Serialised: two runs racing produce two release PRs for one version, and the
+# second closes the first.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    name: Open the release PR, and tag it once merged
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # **A PAT, and not the default `GITHUB_TOKEN`, is what makes this
+          # work at all.**
+          #
+          # GitHub does not start a workflow run for an event raised by
+          # `GITHUB_TOKEN`. The tag pushed here is the trigger `release.yml`
+          # waits on, so with the default token this action would tag the
+          # release and nothing would ever build it -- a release that silently
+          # never ships, which is worse than one that fails.
+          #
+          # It is also what keeps the signing keystore where it is. The
+          # `release` environment admits `v*` tags and no branches, so the
+          # build has to run from the tag ref; the alternative was admitting
+          # `main`, which would put the keystore in reach of any workflow file
+          # edited on `main`. See docs/release.md for creating the token.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # No `skip-github-release`. This action creates the release, and
+          # `release.yml` uploads into it rather than creating a second one --
+          # see the publish step there, which is idempotent for that reason.

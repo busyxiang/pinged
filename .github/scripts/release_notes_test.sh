@@ -332,6 +332,86 @@ if mutant printf-format 's|^    printf .%s\\n. "\$text"$|    printf "$text\\n"|'
         'mutant printf-format: printf "$text" eats the conversions in the message'
 fi
 
+# CHANGELOG.md, which is where the curated notes live once release-please is
+# writing them. The tag annotation becomes the fallback for a tag cut without
+# an entry, which is what every release before release-please was.
+
+changelog=$(new_repo changelog)
+commit_in "$changelog" 'First'
+git -C "$changelog" tag -a v0.1.0 -m 'Pinged 0.1.0'
+
+cat > "$changelog/CHANGELOG.md" <<'CHANGELOG_FIXTURE_ENDS_HERE'
+# Changelog
+
+## [0.3.0](https://github.com/busyxiang/pinged/compare/v0.2.0...v0.3.0) (2026-09-18)
+
+### Features
+
+* the release-please heading form is matched too
+
+## 0.2.0 (2026-09-14)
+
+The curated paragraph for this version, which is what the release publishes.
+
+* a bullet that must survive as markdown
+
+## 0.1.0 (2026-09-06)
+
+An older entry that must not appear in a newer version's notes.
+CHANGELOG_FIXTURE_ENDS_HERE
+
+git -C "$changelog" add -A
+git -C "$changelog" commit --quiet -m 'Write the changelog'
+git -C "$changelog" tag -a v0.2.0 -m 'A tag annotation that must be ignored'
+commit_in "$changelog" 'After'
+git -C "$changelog" tag -a v0.3.0 -m 'Another annotation to ignore'
+commit_in "$changelog" 'A version the changelog never got an entry for'
+git -C "$changelog" tag -a v0.4.0 -m 'The annotation is all this release has'
+
+curated=$work/curated.md
+notes_for "$script" "$changelog" v0.2.0 "$curated"
+assert_absent "$curated.log" 'exit ' 'changelog: the script succeeds'
+assert_contains "$curated" 'The curated paragraph for this version' \
+    'changelog: publishes the entry for this version'
+assert_contains "$curated" '* a bullet that must survive as markdown' \
+    'changelog: emitted as markdown rather than fenced'
+assert_absent "$curated" 'A tag annotation that must be ignored' \
+    'changelog: the entry wins over the tag annotation'
+assert_absent "$curated" 'An older entry' 'changelog: stops at the next heading'
+assert_absent "$curated" 'the release-please heading form' \
+    'changelog: does not reach the entry above this one'
+
+rp=$work/rp.md
+notes_for "$script" "$changelog" v0.3.0 "$rp"
+assert_contains "$rp" 'the release-please heading form is matched too' \
+    'changelog: matches the linked heading release-please writes'
+assert_absent "$rp" 'The curated paragraph' \
+    'changelog: and stops before the entry below it'
+
+fallback=$work/fallback.md
+notes_for "$script" "$changelog" v0.4.0 "$fallback"
+assert_contains "$fallback" 'The annotation is all this release has' \
+    'changelog: a version with no entry falls back to the tag annotation'
+
+# Mutation: the bracket strip, which is the only thing that reads
+# release-please's own heading form rather than the hand-written one.
+
+if mutant changelog-bracket 's|sub(/^\\\[/, "", heading)|heading = heading|'; then
+    out=$work/mutant-changelog-bracket.md
+    notes_for "$MUTANT" "$changelog" v0.3.0 "$out"
+    assert_contains "$out" 'Another annotation to ignore' \
+        'mutant changelog-bracket: release-please headings stop matching, and every release it wrote silently falls back to the tag'
+fi
+
+# Mutation: the heading comparison, which is what bounds an entry.
+
+if mutant changelog-bounds 's/inside = (heading == want)/inside = 1/'; then
+    out=$work/mutant-changelog-bounds.md
+    notes_for "$MUTANT" "$changelog" v0.2.0 "$out"
+    assert_contains "$out" 'An older entry' \
+        'mutant changelog-bounds: without the comparison the notes carry the whole changelog'
+fi
+
 # The one guard that is not in the script: a depth-1 clone has no earlier tag
 # to find, so it reports every release as the first, successfully. Hence
 # release.yml's fetch-depth: 0.

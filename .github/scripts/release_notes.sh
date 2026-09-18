@@ -78,6 +78,43 @@ fenced() {
     printf '%s\n' "$marker"
 }
 
+# The curated entry for this version out of CHANGELOG.md, or empty.
+#
+# Matches `## 0.3.0 (date)` and release-please's own `## [0.3.0](url) (date)`,
+# and stops at the next `## `. The version is the tag without its `v`, so a
+# heading that does not exist yet -- a tag pushed before the release PR was
+# merged -- yields empty and the tag annotation below is used instead.
+#
+# Emitted as markdown rather than fenced, unlike everything taken out of git.
+# The distinction is trust, not formatting: a commit message arrives from
+# whoever wrote it, while this file is reviewed in the release PR by whoever
+# could edit this script anyway. Fencing it would throw away the headings and
+# bullets that make notes readable for the one audience they have.
+changelog_entry() {
+    local version=$1 root file
+    root=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
+    file=$root/CHANGELOG.md
+    [ -f "$file" ] || return 0
+    awk -v want="$version" '
+        /^## / {
+            heading = $0
+            sub(/^## +/, "", heading)
+            sub(/^\[/, "", heading)
+            sub(/[]( ].*$/, "", heading)
+            inside = (heading == want)
+            next
+        }
+        inside { print }
+    ' "$file" | sed -e '/./,$!d' | awk '
+        { lines[NR] = $0 }
+        END {
+            last = NR
+            while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--
+            for (i = 1; i <= last; i++) print lines[i]
+        }
+    '
+}
+
 # The previous release, the base of everything below. Four guards, each with
 # a mutation test in release_notes_test.sh that restores what it replaced and
 # watches the baseline come out wrong:
@@ -134,6 +171,8 @@ if [ "$tag_object" = "tag" ]; then
         --format='%(contents:subject)%0a%0a%(contents:body)' "refs/tags/$tag")
 fi
 
+entry=$(changelog_entry "${tag#v}")
+
 compare=
 repo=${GITHUB_REPOSITORY:-}
 server=${GITHUB_SERVER_URL:-https://github.com}
@@ -148,16 +187,24 @@ fi
 {
     printf '## What changed\n\n'
 
+    # The curated entry leads, because it is the only part of these notes
+    # written for the person installing the APK; the range and the diffstat
+    # below it are context for someone reading the repository. The tag
+    # annotation is the fallback for a tag cut without a changelog entry,
+    # which is what every release before release-please was.
+    if [ -n "$entry" ]; then
+        printf '%s\n\n' "$entry"
+    elif [ -n "$annotation" ]; then
+        printf '### What the tag says\n\n'
+        fenced "$annotation"
+        printf '\n'
+    fi
+
     if [ -n "$previous" ]; then
         printf '%s commits since %s: %s.\n' "$count" "$previous" "$shortstat"
     else
         printf 'The first release, so there is no previous tag to compare against.\n'
         printf '%s commits, %s measured against an empty tree.\n' "$count" "$shortstat"
-    fi
-
-    if [ -n "$annotation" ]; then
-        printf '\n### What the tag says\n\n'
-        fenced "$annotation"
     fi
 
     printf '\n### Commits\n\n'

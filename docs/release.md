@@ -4,6 +4,11 @@
 release when a `v*` tag is pushed. It runs the unit tests first, so a broken
 parse corpus fails the release rather than shipping.
 
+That tag is normally pushed by `release-please`, not by hand:
+`.github/workflows/release-please.yml` maintains a pull request carrying the
+version bump and the changelog, and tags the merge. **Cutting one** below is
+the whole procedure.
+
 The first step checks that `gradlew` exists, so a repository with no Android
 project fails there rather than publishing a green release with no APK
 attached. That guard has been satisfied since the capture milestone; it is kept
@@ -109,31 +114,91 @@ android {
 }
 ```
 
+### 4. Create a token for release-please
+
+`release-please` opens the version-bump pull request and, once you merge it,
+tags the merge and opens the GitHub release. That tag is the trigger
+`release.yml` waits on -- and **GitHub does not start a workflow run for an
+event raised by `GITHUB_TOKEN`**. With the default token the release would be
+tagged and never built: a release that silently never ships, which is worse
+than one that fails.
+
+So it needs a token of its own. Create a fine-grained personal access token:
+
+- **Repository access:** only this repository.
+- **Permissions:** Contents *read and write*, Pull requests *read and write*.
+  Nothing else.
+
+Store it as a **repository** secret named `RELEASE_PLEASE_TOKEN` -- not an
+environment secret, because `release-please.yml` names no environment.
+
+This is deliberately not the way to give the build its keystore. The keystore
+stays in the `release` environment, which admits `v*` tags and no branches, so
+it is reachable only from a run triggered by the tag. The token exists to make
+that tag trigger a run at all; it never grants access to the environment. The
+alternative -- building from the `push: main` run that `release-please` itself
+fires -- would mean admitting `main` to that environment, which would put the
+signing keystore in reach of any workflow file edited on `main`.
+
+A fine-grained token expires. When it does, merging a release PR will stop
+producing a tag and nothing will say so loudly, so it is worth setting a
+calendar reminder for the expiry date rather than discovering it at a release.
+
 ## Cutting one
 
-Annotate the tag, and write the release in its message:
+Nothing is tagged by hand. Committing with Conventional Commit subjects (see
+`CLAUDE.md`) is what starts a release:
+
+1. Land `feat:` or `fix:` commits on `main`. `release-please` opens a pull
+   request titled *chore(main): release X.Y.Z*, which bumps `version.txt`,
+   updates `.release-please-manifest.json`, and drafts the `CHANGELOG.md`
+   entry from those subjects.
+2. **Edit that entry in the pull request.** The draft says what changed; the
+   release has to say what it does for the person installing it, and what it
+   still cannot do. This is the step that makes the notes worth reading, and
+   it is the only chance to do it before anything ships.
+3. Merge. `release-please` tags the merge commit and opens the GitHub release.
+4. The tag fires `release.yml`, which runs the tests, builds
+   `assembleRelease`, attaches `pinged-X.Y.Z.apk` (and the R8 mapping file if
+   minification is on), and rewrites the release body with the changelog
+   entry, the SHA-256 and the sideloading instructions.
+
+Between steps 3 and 4 the release exists with no APK attached, for as long as
+the build takes. That is the cost of the tag being what triggers the build.
+
+A tag pushed by hand still works, and is the fallback if `release-please` is
+unavailable:
 
 ```
 git tag -a v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow then runs the tests, builds `assembleRelease`, attaches
-`pinged-0.1.0.apk` (and the R8 mapping file if minification is on), and
-publishes the release with its notes, its SHA-256 and the sideloading
-instructions.
+The publish step is idempotent for exactly that reason: it uploads into an
+existing release and creates one only when there is none. `git tag -a` rather
+than `git tag` on that path, because with no changelog entry for the version
+the tag message is all the notes have.
 
-`git tag -a` rather than `git tag`, because the tag message is the release
-notes' summary and a lightweight tag has none. The notes are built by
-`.github/scripts/release_notes.sh` and are four things:
+`release.yml` also refuses a tag whose version does not match `version.txt`.
+The two can only disagree when a tag was pushed without merging the release PR
+for it, and the symptom otherwise would be a release carrying the previous
+version's notes.
 
+The notes are built by `.github/scripts/release_notes.sh` and are four things:
+
+- the `CHANGELOG.md` entry for this version, rendered as markdown -- or, when
+  there is none, the tag's own message quoted verbatim;
 - the diffstat between this tag and the previous one, measured with `git
   diff --shortstat`;
-- the tag's own message, quoted verbatim;
 - the subject lines of the commits in that range, merge commits excluded;
 - the static sideloading instructions and the APK's SHA-256.
 
-The tag message carries the weight on purpose. A merged branch lands here as
+The changelog entry is the only part of the notes rendered as markdown rather
+than fenced. The distinction is trust, not formatting: a commit message
+arrives from whoever wrote it, while `CHANGELOG.md` is reviewed in the release
+pull request by whoever could edit the generating script anyway.
+
+The curated entry carries the weight on purpose. A merged branch lands here as
 one squashed commit — the whole capture milestone is `7918da9` — so a commit
 list is short in a way that has nothing to do with how large the release is,
 and the notes say so where a reader will see it. The diffstat is stated first
@@ -180,21 +245,24 @@ one.
   in section 9.6 of the design spec resolved first.
 - **No AAB.** Sideloading is the distribution route for now, and an AAB
   cannot be installed directly.
-- **No third-party actions** beyond `actions/*` and `gradle/actions/*`. The
-  release is created with the `gh` CLI that is already on the runner, which
-  keeps the supply chain for a signing job as short as it can be. That covers
-  the note generator too: it is `git`, `awk` and `printf` in a shell script in
-  this repository rather than a changelog action, because a job that decrypts
-  a signing keystore is the last place to add a dependency for the sake of a
-  nicer changelog.
-- **No categorised changelog.** Nothing here classifies a commit as a feature
-  or a fix. That needs either conventional-commit subjects or labelled pull
-  requests, and this repository has neither — one squashed commit per branch,
-  with the reasoning in the body. Inventing categories from subject lines
-  would mean the notes asserting something no one wrote down.
-- **No rewriting of what the author wrote.** The notes quote the tag message
-  and the commit subjects and do not summarise, reorder or reword them, which
-  is also why they are rendered preformatted rather than as markdown.
+- **No third-party action in the signing job.** `release.yml` uses `actions/*`
+  and `gradle/actions/*` only, and creates the release with the `gh` CLI
+  already on the runner. The note generator is `git`, `awk` and `printf` in a
+  shell script here rather than a changelog action, because a job that
+  decrypts a signing keystore is the last place to add a dependency for the
+  sake of a nicer changelog. `release-please` is third-party and does run
+  against this repository, but in `release-please.yml`, which names no
+  environment and so never sees the keystore.
+- **No changelog invented from subject lines.** `release-please` groups
+  commits by their Conventional Commit type, which is a classification the
+  author wrote down rather than one inferred from prose. What reaches the
+  release is the `CHANGELOG.md` entry after it has been edited in the release
+  pull request, so the notes assert only what a person put there.
+- **No rewriting of what the author wrote.** Nothing summarises, reorders or
+  rewords the changelog entry, the tag message or the commit subjects.
+  Everything taken out of git is still rendered preformatted; the changelog
+  entry is the one exception, and it is an exception because it is reviewed
+  before it ships.
 - **No `--generate-notes`.** GitHub's own generator lists merged pull requests
   and new contributors; this repository merged one pull request in its life
   and has one contributor, so on a squash-per-branch history it produces less

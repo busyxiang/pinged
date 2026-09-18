@@ -47,6 +47,24 @@ jobs:
             exit 1
           fi
 
+      # `version.txt` is what release-please bumps and what the release PR
+      # carries; the tag is what the build reads. They can only disagree if a
+      # tag was pushed without merging that PR, and the symptom downstream is
+      # a release whose notes are the previous version's -- CHANGELOG.md has
+      # no entry for a version the PR never landed.
+      - name: The repository agrees with the tag about the version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ ! -f version.txt ]; then
+            echo "::error::No version.txt. release-please tracks the version there; see docs/release.md."
+            exit 1
+          fi
+          declared=$(tr -d '[:space:]' < version.txt)
+          if [ "$declared" != "$version" ]; then
+            echo "::error::Tag v$version, but version.txt says $declared. The release PR for this version has not been merged, so there is no changelog entry for it either."
+            exit 1
+          fi
+
       # No cache-encryption-key here, unlike ci.yml, and the omission is the
       # point: with one, setup-gradle uploads this job's configuration-cache
       # data to the Actions cache, and this is the one job that reads the
@@ -164,16 +182,33 @@ jobs:
           APK_SHA256: ${{ steps.stage.outputs.sha256 }}
         run: bash .github/scripts/release_notes.sh "$GITHUB_REF_NAME" "$APK_SHA256" notes.md
 
+      # release-please created this release when it tagged the merge, with the
+      # changelog entry as its body. Uploading into it is what keeps there
+      # being exactly one release per tag: `gh release create` fails on a
+      # release that already exists, and it would fail *here*, after the
+      # keystore had been decrypted and the APK signed.
+      #
+      # The create branch is not dead code. A tag pushed by hand still cuts a
+      # release, which is the fallback if release-please is unavailable, and
+      # it is how every release before this workflow existed was made.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.stage.outputs.version }}
+          TAG: ${{ github.ref_name }}
         run: |
           cat notes.md
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Pinged $VERSION" \
-            --notes-file notes.md \
-            out/*
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists; uploading into it."
+            gh release upload "$TAG" out/* --clobber
+            gh release edit "$TAG" --title "Pinged $VERSION" --notes-file notes.md
+          else
+            echo "No release $TAG yet; creating it."
+            gh release create "$TAG" \
+              --title "Pinged $VERSION" \
+              --notes-file notes.md \
+              out/*
+          fi
 
       - name: Shred the keystore
         if: always()
