@@ -77,10 +77,27 @@ the first then documents nothing.
 
 ## Commit messages
 
-A concise summary, about why rather than what. A subject line naming the
-change, then a short paragraph: the reason, what was measured, and anything
-left undone or still not understood. Under about fifteen lines -- reasoning
-that needs more than that belongs in the spec or the plan, and the message
-should point at it rather than restate it.
+**Conventional Commits.** `type: subject`, then a short paragraph: the reason,
+what was measured, and anything left undone or still not understood. Under
+about fifteen lines -- reasoning that needs more than that belongs in the spec
+or the plan, and the message should point at it rather than restate it.
+
+The type is read by `release-please`, so it decides the next version rather
+than only labelling the change:
+
+    fix:   a patch bump.  0.2.1 -> 0.2.2
+    feat:  a minor bump.  0.2.1 -> 0.3.0
+    feat!: breaking, and a minor bump too until 1.0.0
+    chore, docs, test, refactor, ci, build, perf: no bump
+
+A user-visible change must be `feat` or `fix`. Nothing else opens a release
+PR, so a rule that reads a new bank wording committed as `chore` ships to
+nobody. `!`, or a `BREAKING CHANGE:` footer, marks a release that costs the
+user something: data they have to re-enter, a permission they have to grant
+again.
+
+The subject still names the change in words rather than describing the patch,
+and the body is still where the value is. Conventional Commits governs the
+first line only.
 
 Do not claim a test count or a verification you did not run.
