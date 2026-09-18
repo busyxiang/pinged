@@ -47,13 +47,31 @@ class PackBehaviourTest {
         // TnG's own "for" wording, whose group runs to the end of `text`: the
         // field is the bound, so the tail below must never reach it.
         "You have paid RM12.50 for STARBUCKS KLCC",
+        // TnG's deduction wording, the one shape here whose merchant group
+        // *leads* the pattern, so what threatens it is the title rather than
+        // the tail.
+        "Versatile Wisdom Sdn Bhd: RM12.50 has been deducted from your TNG eWallet",
+    )
+
+    /**
+     * The two field layouts a body can arrive in.
+     *
+     * Feeding every body as `text` *and* `bigText` at once left a
+     * `field: bigText` rule unreachable -- a rule scoped to `text` answers
+     * first and the twin below it never runs -- so it escaped both assertions
+     * here while looking covered. The second placement is the expanded-only
+     * notification, the only layout that reaches such a rule.
+     */
+    private fun placements(body: String): List<Pair<String?, String>> = listOf(
+        body to "$body\n$tail",
+        null to "$body\n$tail",
     )
 
     @Test fun noRuleCapturesAMerchantThatReachesTheNextLine() {
         val offenders = mutableListOf<String>()
         for (pkg in pack.packages) {
-            for (body in bodies) {
-                val out = matcher.match(pkg.pkg, "Notification", body, "$body\n$tail")
+            for ((text, bigText) in bodies.flatMap(::placements)) {
+                val out = matcher.match(pkg.pkg, "Notification", text, bigText)
                 val merchant = (out as? MatchOutcome.Matched)?.merchantRaw ?: continue
                 if (merchant.contains("Ref") || merchant.contains("Baki")) {
                     offenders += "${out.ruleId} captured '$merchant'"
@@ -91,8 +109,8 @@ class PackBehaviourTest {
                 .map { pkg.pkg to it.id }
         }
         val covered = pack.packages.flatMap { pkg ->
-            bodies.mapNotNull { body ->
-                (matcher.match(pkg.pkg, "Notification", body, "$body\n$tail") as? MatchOutcome.Matched)
+            bodies.flatMap(::placements).mapNotNull { (text, bigText) ->
+                (matcher.match(pkg.pkg, "Notification", text, bigText) as? MatchOutcome.Matched)
                     ?.let { pkg.pkg to it.ruleId }
             }
         }.toSet()

@@ -180,6 +180,14 @@ class RuleMatcherTest {
             ),
             // "for", not "to": the wallet's own wording, which no rail rule reads.
             matcher.match(tng, "Payment", "You have paid RM6.25 for THONG KEE. Declined.", null),
+            // The deduction wording, whose merchant group leads the pattern.
+            matcher.match(
+                tng,
+                "Payment To: Versatile Wisdom Sdn Bhd",
+                "Versatile Wisdom Sdn Bhd: RM16.80 has been deducted from your TNG " +
+                    "eWallet. Declined.",
+                null,
+            ),
         )
         val committed = declined.filterIsInstance<MatchOutcome.Matched>()
         assertEquals(
@@ -211,6 +219,51 @@ class RuleMatcherTest {
             MatchOutcome.Unmatched,
             out,
         )
+    }
+
+    /**
+     * The merchant group leads this pattern, and the title repeats the name.
+     *
+     * `CaptureFields` builds `concat` as title then body, so over `concat` the
+     * leading lazy group starts before the title and captures the name twice --
+     * measured, with `field` removed: "Payment To: Versatile Wisdom Sdn Bhd
+     * Versatile Wisdom Sdn Bhd". The `field` key is what bounds the group from
+     * the left, and this assertion is what fails if it is dropped.
+     */
+    @Test fun `the deduction merchant is not swallowed by the title that repeats it`() {
+        val out = matcher.match(
+            tng,
+            "Payment To: Versatile Wisdom Sdn Bhd",
+            "Versatile Wisdom Sdn Bhd: RM16.80 has been deducted from your TNG eWallet. " +
+                "Merchant Reference No. T178745100726",
+            null,
+        )
+        out as MatchOutcome.Matched
+        assertEquals("tng-deducted-v1", out.ruleId)
+        assertEquals(1680L, out.amountSen)
+        assertEquals("Versatile Wisdom Sdn Bhd", out.merchantRaw)
+    }
+
+    /**
+     * ...and the same wording when the wallet sends it as an expanded body.
+     *
+     * A `BigTextStyle` notification carries a shortened `text` beside the full
+     * `bigText`, so a rule pinned to `text` alone reads this wording only when
+     * it happens to arrive unexpanded. The twin is pinned to `bigText` rather
+     * than left over `concat` for the reason above.
+     */
+    @Test fun `the deduction wording is read when the body arrives expanded`() {
+        val out = matcher.match(
+            tng,
+            "Payment To: Versatile Wisdom Sdn Bhd",
+            "Versatile Wisdom Sdn Bhd\u2026",
+            "Versatile Wisdom Sdn Bhd: RM16.80 has been deducted from your TNG eWallet. " +
+                "Merchant Reference No. T178745100726",
+        )
+        out as MatchOutcome.Matched
+        assertEquals("tng-deducted-body-v1", out.ruleId)
+        assertEquals(1680L, out.amountSen)
+        assertEquals("Versatile Wisdom Sdn Bhd", out.merchantRaw)
     }
 
     /**
@@ -501,10 +554,8 @@ class RuleMatcherTest {
 
     // Every outcome has to be traceable to the version of the pack that made it.
     @Test fun `the pack version reaches the matcher`() {
-        // 10, not 9: `mae-scan-pay-v1` and `tng-paid-for-v1` each read a
-        // wording that was captured and dropped, and stripping a sentence's
-        // full stop changes the `merchant_key` of anything already stored
-        // whose capture ran to the end of its field.
+        // 11, not 10: `tng-deducted-v1` and its `bigText` twin read a third
+        // wallet wording, observed unmatched on a device at pack 10.
         //
         // **The bump recovers nothing.** Spec 5.5 drives re-parse off this
         // integer, but nothing re-parses: `RawCaptureDao.pageAfter` has no
@@ -513,7 +564,7 @@ class RuleMatcherTest {
         // stored stay as they were. The version is a marker for a job not yet
         // written -- which is what makes it worth setting now, because the job
         // will have nothing else to tell these captures apart by.
-        assertEquals(10, matcher.packVersion)
+        assertEquals(11, matcher.packVersion)
         assertEquals(7, probePack(PAYMENT_RULE).packVersion)
     }
 

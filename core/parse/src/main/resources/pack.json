@@ -1,5 +1,5 @@
 {
-  "pack_version": 10,
+  "pack_version": 11,
   "fragments": {
     "amount": "(?:RM|MYR)\\s?(?<amount>[0-9,]+(?:\\.[0-9]{1,2})?)"
   },
@@ -64,6 +64,26 @@
             "field": "text"
           },
           "pattern": "You have paid {{amount}} for (?<merchant>.+)$"
+        },
+        {
+          "id": "tng-deducted-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": {
+            "text_contains_all": ["has been deducted from your"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"],
+            "field": "text"
+          },
+          "pattern": "(?<merchant>.+?): {{amount}} has been deducted"
+        },
+        {
+          "id": "tng-deducted-body-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "HIGH",
+          "requires": {
+            "text_contains_all": ["has been deducted from your"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"],
+            "field": "bigText"
+          },
+          "pattern": "(?<merchant>.+?): {{amount}} has been deducted"
         },
         {
           "id": "tng-reload-v1", "priority": 90,

@@ -1,0 +1,24 @@
+package: my.com.tngdigital.ewallet
+title: Payment To: Versatile Wisdom Sdn Bhd
+expect: matched
+rule: tng-deducted-v1
+amount_sen: 1680
+merchant: Versatile Wisdom Sdn Bhd
+merchant_display: Versatile Wisdom
+direction: EXPENSE
+# A real TnG eWallet notification, read off a phone screenshot rather than
+# retyped, so the title and the body are both verbatim.
+#
+# The wallet's third payment wording, and the first to name the merchant before
+# the amount. It says neither "You have paid" nor "Payment of", so every wallet
+# and rail rule failed its own requires and this went unmatched on a device.
+#
+# The leading merchant group is why the rule is pinned to a single field. Over
+# concat it starts before the title, which repeats the name, and captures it
+# twice.
+#
+# merchant_raw keeps the registered suffix, which spec 5.4 requires. The key
+# and the display drop it, and what survives is not entirely uppercase, so the
+# display rule leaves the wallet's own capitalisation alone.
+
+Versatile Wisdom Sdn Bhd: RM16.80 has been deducted from your TNG eWallet. Merchant Reference No. T178745100726
