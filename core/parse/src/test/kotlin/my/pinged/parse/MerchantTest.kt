@@ -166,6 +166,24 @@ class MerchantTest {
         assertEquals("myBurgerLab", Merchant.displayFor("tng*myBurgerLab sdn bhd", lowerCased))
     }
 
+    /**
+     * A suffix that ends in a stop, followed by the sentence's own stop.
+     *
+     * Both strings are one shop as a device recorded it: MAE's Scan & Pay
+     * bounds the merchant at ". REF:", so it keeps the suffix's stop only;
+     * TnG's DuitNow wording runs the merchant to the end of the sentence, so
+     * it carries both. Taking the whole run of stops at once takes the
+     * suffix's own with it, the suffix no longer matches, and spec 8 shows
+     * the shop twice -- eight payments split four and four.
+     */
+    @Test fun `a sentence stop after a suffix ending in a stop still strips the suffix`() {
+        val scanPay = Merchant.clean("SPADES BAKERY 3 SDN. BHD.", bundled)
+        val duitNow = Merchant.clean("SPADES BAKERY 3 SDN. BHD..", bundled)
+        assertEquals("SPADES BAKERY 3", scanPay.value)
+        assertEquals(scanPay, duitNow)
+        assertEquals("Spades Bakery 3", Merchant.displayFor("SPADES BAKERY 3 SDN. BHD..", bundled))
+    }
+
     // The pass cap used to be the constant 8, "enough for every suffix in the
     // list plus slack" -- true of the list of the day, and silently false the
     // moment a pack grows. Twelve stacked suffixes need twelve passes, and

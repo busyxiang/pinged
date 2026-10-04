@@ -141,7 +141,7 @@ class RuleMatcherTest {
      * that Maybank sends this sentence.
      */
     @Test fun `an unsuccessful payment is not read as money`() {
-        val text = "Unsuccessful payment of RM 16.15 to POPUPKIT-CHENENTERPRISE. REF: QR85598443."
+        val text = "Unsuccessful payment of RM 16.15 to POPUPKITCHENENTERPRISE. REF: QR85598443."
         val out = matcher.match(mae, "Maybank2u: Scan & Pay", text, null)
         assertEquals(
             "a failed payment matched a template and went to the ledger as an expense",
