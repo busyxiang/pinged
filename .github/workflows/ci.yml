@@ -260,7 +260,11 @@ jobs:
           # :smoke drives the R8 build the release ships. Root
           # connectedDebugAndroidTest does not reach it: it has no debug
           # variant, so the full list names it.
-          script: ./gradlew --stacktrace ${{ steps.suites.outputs.tasks }}
+          #
+          # `--continue` so one suite's failure does not cancel the others:
+          # the list starts with :app, and a flake there stopped :feature:capture,
+          # :feature:ledger and :smoke from running at all (#17's run 37209862807).
+          script: ./gradlew --stacktrace --continue ${{ steps.suites.outputs.tasks }}
 
       # A runner that dies before its first test is a green task with an empty
       # report: measured, when :app's suite was pointed at R8's output.
