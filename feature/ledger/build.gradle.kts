@@ -92,6 +92,10 @@ dependencies {
     // `PRAGMA table_info` off the real encrypted database and compare the
     // export's column names against the columns SQLite actually holds.
     androidTestImplementation(libs.androidx.sqlite)
+    // SupportOpenHelperFactory, the type `DatabaseFactory.openHelperFactory`
+    // returns, so `FeedInvalidationTest` can build the app's encrypted
+    // database with a query dispatcher of its own.
+    androidTestImplementation(libs.sqlcipher.android)
     // TestListenableWorkerBuilder, so `SalvageTest` runs the real stage two
     // over a restored ledger without a scheduler.
     androidTestImplementation(libs.androidx.work.testing)
