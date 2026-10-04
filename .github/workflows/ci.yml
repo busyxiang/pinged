@@ -43,8 +43,12 @@ jobs:
       # Robolectric resolves its ~190 MiB android-all-instrumented image into
       # ~/.m2 at test runtime, which setup-gradle does not cache: it caches
       # Gradle User Home only.
-      - name: Cache the Robolectric SDK image
-        uses: actions/cache@v6
+      #
+      # Restored everywhere and saved from `main` only, like setup-gradle's
+      # entries: a PR's copy is readable by that PR alone (issue #13).
+      - name: Restore the Robolectric SDK image
+        id: robolectric-cache
+        uses: actions/cache/restore@v6
         with:
           path: ~/.m2/repository/org/robolectric
           key: robolectric-${{ hashFiles('gradle/libs.versions.toml', '**/robolectric.properties') }}
@@ -58,6 +62,14 @@ jobs:
         run: >-
           ./gradlew --stacktrace
           test lint :app:assembleDebug :app:processReleaseMainManifest
+
+      # After the tests, which are what download the image.
+      - name: Save the Robolectric SDK image
+        if: github.ref == 'refs/heads/main' && steps.robolectric-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: ${{ steps.robolectric-cache.outputs.cache-primary-key }}
 
       - name: The shipped permission surface is exactly what is declared
         run: python3 .github/scripts/check_permissions.py
@@ -154,9 +166,13 @@ jobs:
       # The system image is not cached as well, though installing it is a
       # further 70s. Both together are ~4 GiB against a 10 GB repository budget
       # the Gradle caches also draw on.
-      - name: Cache the AVD and its boot snapshot
+      #
+      # Saved from `main` only. A PR's 2.5 GB copy would be readable by that PR
+      # alone, and two of them overflow the budget and evict `main`'s
+      # (issue #13).
+      - name: Restore the AVD and its boot snapshot
         id: avd-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.android/avd/*
@@ -177,6 +193,17 @@ jobs:
           disable-animations: false
           emulator-options: ${{ env.EMULATOR_OPTIONS }}
           script: echo "Booted once so the shutdown leaves a snapshot behind."
+
+      # Straight after the boot that made it, before the tests can touch the
+      # device and whether or not they pass.
+      - name: Save the AVD and its boot snapshot
+        if: github.ref == 'refs/heads/main' && steps.avd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: ${{ steps.avd-cache.outputs.cache-primary-key }}
 
       # `-no-snapshot-save` so a run that dirtied the device does not write that
       # state back over the clean snapshot.
