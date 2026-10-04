@@ -5,6 +5,18 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.4.0](https://github.com/busyxiang/pinged/compare/v0.3.0...v0.4.0) (2026-10-04)
+
+
+### Features
+
+* export, restore, delete, check and rescue the ledger from settings ([#10](https://github.com/busyxiang/pinged/issues/10)) ([f79322b](https://github.com/busyxiang/pinged/commit/f79322b80f34ea9bd8d8d35574e4172797f30dc1))
+
+
+### Bug Fixes
+
+* shrink the release APK from 18.61 MB to 5.30 MB ([#12](https://github.com/busyxiang/pinged/issues/12)) ([7e45a81](https://github.com/busyxiang/pinged/commit/7e45a8132905f107f052f8f0caee3aa0207541b2))
+
 ## [0.3.0](https://github.com/busyxiang/pinged/compare/v0.2.1...v0.3.0) (2026-09-18)
 
 
