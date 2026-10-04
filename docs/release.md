@@ -159,9 +159,10 @@ Nothing is tagged by hand. Committing with Conventional Commit subjects (see
    it is the only chance to do it before anything ships.
 3. Merge. `release-please` tags the merge commit and opens the GitHub release.
 4. The tag fires `release.yml`, which runs the tests, builds
-   `assembleRelease`, attaches `pinged-X.Y.Z.apk` (and the R8 mapping file if
-   minification is on), and rewrites the release body with the changelog
-   entry, the SHA-256 and the sideloading instructions.
+   `assembleRelease`, attaches `pinged-X.Y.Z.apk` and its R8 mapping file,
+   and rewrites the release body with the changelog entry, the SHA-256 and
+   the sideloading instructions. Keep the mapping: a stack trace from a phone
+   is unreadable without it, and it cannot be regenerated later.
 
 Between steps 3 and 4 the release exists with no APK attached, for as long as
 the build takes. That is the cost of the tag being what triggers the build.

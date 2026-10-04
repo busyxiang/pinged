@@ -88,6 +88,29 @@ android {
             } else {
                 null
             }
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            // A phone maps one ABI and SQLCipher ships 2.1 MB per ABI. No x86:
+            // nothing that sideloads this is an x86 phone, and ChromeOS, which
+            // lint asks about, translates ARM.
+            //noinspection ChromeOsAbiSupport
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        }
+        // Release's R8 output under the debug key: what `:smoke` installs and
+        // drives. The ABI filter is the one difference -- the emulator is
+        // x86_64 -- and it does not touch the dex.
+        //
+        // Not `testBuildType`. app/src/androidTest runs in this process and
+        // takes androidx.test's dependencies from this APK, which R8 has
+        // shrunk: measured, the runner dies in onCreate on androidx.tracing.Trace
+        // and Gradle reports BUILD SUCCESSFUL with zero tests. Keep rules to
+        // fix that would keep in this build what release strips.
+        create("minified") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            ndk { abiFilters.clear() }
+            matchingFallbacks += "release"
         }
     }
 

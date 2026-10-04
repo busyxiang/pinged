@@ -16,11 +16,14 @@ Design: [docs/superpowers/specs/2026-09-02-pinged-design.md](docs/superpowers/sp
                      (the parse worker). Depends on :core:data.
     :feature:ledger  The allow-list screen, the theme, JSON export/import.
     :app             Wiring and the single Activity.
+    :smoke           The release build's first capture, driven from outside
+                     it. Installs as Touch 'n Go's package.
 
 ## Building
 
     ./gradlew test                        # 191 JVM tests
     ./gradlew connectedDebugAndroidTest   # 315, needs a device or emulator
+    ./gradlew :smoke:connectedMinifiedAndroidTest   # the R8 build, same
     ./gradlew :app:assembleDebug
 
 CI runs `test lint :app:assembleDebug` on every pull request, and the
