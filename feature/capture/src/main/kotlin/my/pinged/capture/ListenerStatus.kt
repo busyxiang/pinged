@@ -5,6 +5,7 @@ import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.util.Log
 import java.io.IOException
+import kotlinx.coroutines.flow.Flow
 
 /**
  * What the app can honestly say about capture right now.
@@ -224,4 +225,18 @@ object ListenerStatus {
             staleForMillis = if (last == 0L) Long.MAX_VALUE else now - last,
         )
     }
+
+    /**
+     * The stored flag each time it changes, without its value on subscription.
+     *
+     * For a banner that samples [report]: a sample can land
+     * between a refusal raising the flag and the next open clearing it -- a
+     * read refused mid-restore does exactly that -- and the clear then has
+     * nothing to announce it. Measured: 3 failures in 40 of
+     * `StorageBannerFollowsTheLedgerTest` with the emulator's cores loaded;
+     * the two traced were each a banner sampled 2-3ms before the clear
+     * (issue #16).
+     */
+    fun storageUnavailableChanges(context: Context): Flow<Boolean> =
+        CaptureHealth.storageUnavailableChanges(context)
 }
