@@ -27,11 +27,11 @@ runs:
     # its caching component (see the gradle/actions v6.0.0 release note). That
     # is a licensing decision rather than a version bump. v5 is the release
     # that moved to node24, which is all the deprecation warning asked for.
+    #
+    # `cache-read-only` stays at its default: written from `main` only, restored
+    # everywhere. A PR's entries are readable by that PR alone, and the
+    # repository's 10 GB budget also holds the 2.5 GB AVD; PRs writing their
+    # own copies overflow it and evict `main`'s (issue #13).
     - uses: gradle/actions/setup-gradle@v5
       with:
-        # The default writes the cache only from the default branch, which for a
-        # repository whose default branch has no CI workflow means every run of
-        # every job logs "Gradle User Home cache not found. Will initialize
-        # empty." and re-resolves every dependency.
-        cache-read-only: false
         cache-encryption-key: ${{ inputs.cache-encryption-key }}
