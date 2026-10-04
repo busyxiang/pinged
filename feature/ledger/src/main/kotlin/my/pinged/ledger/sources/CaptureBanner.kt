@@ -26,12 +26,18 @@ import my.pinged.ledger.theme.Stamp
 /**
  * Spec 10.2's capture-stopped banner, drawn from `design/Stopped.dc.html`.
  *
- * Four states reach it today and spec 10.5 is clear none recovers on its own:
- * storage cannot be opened, the grant was never given or was revoked, the grant
- * is present and nothing has ever arrived, and the grant is present and nothing
- * has arrived for a day. The second is a *suspicion* -- a phone that genuinely
- * posted nothing looks identical from in here -- which is why the wording comes
- * from the caller.
+ * Five capture states reach it, and spec 10.5 is clear none recovers on its
+ * own: storage cannot be opened, the grant was never given or was revoked, the
+ * heartbeat store cannot be read so nothing about capture can be said at all,
+ * the grant is present and nothing has ever arrived, and the grant is present
+ * and nothing has arrived for a day. The last is a *suspicion* -- a phone that
+ * genuinely posted nothing looks identical from in here -- which is why the
+ * wording comes from the caller.
+ *
+ * A sixth state is not a capture state at all: `MainActivity`'s backup nudge,
+ * which reports that nothing has been exported for a month. It is drawn here
+ * because a user reads one strip above the screen, and it is drawn last for the
+ * reason `bannerFor` gives -- every other state says capture is broken now.
  */
 @Composable
 fun CaptureBanner(
@@ -39,8 +45,8 @@ fun CaptureBanner(
     body: String,
     modifier: Modifier = Modifier,
     /**
-     * Optional, because one banner state deliberately has no one-tap action: when
-     * the database key is gone, both spec 11.1 remedies destroy or replace data.
+     * Optional, because not every state has a remedy a tap can reach;
+     * `MainActivity.GrantBanner` says which does not, and why.
      *
      * After `modifier`, which Compose requires to be the first optional parameter.
      */

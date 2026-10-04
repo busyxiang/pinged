@@ -20,15 +20,23 @@ subprojects {
         extensions.configure<com.android.build.api.dsl.CommonExtension>("android") {
             lint.warningsAsErrors = true
             lint.abortOnError = true
-            // The two dependency-currency checks are the only lint checks
+            // The three dependency-currency checks are the only lint checks
             // whose result can change with no commit to this repository:
             // an upstream release would turn CI red on a branch nobody
             // touched. They also disagree, because one reads lint's bundled
-            // version data and the other queries the network, so which
+            // version data and the others query the network, so which
             // version they name depends on when you ask. Dependency currency
             // is a decision to take deliberately, not a build failure to be
             // ambushed by.
-            lint.disable += setOf("NewerVersionAvailable", "GradleDependency")
+            //
+            // `AndroidGradlePluginVersion` is listed on its own because
+            // `NewerVersionAvailable` does not cover it: without it, an AGP
+            // release turns every branch red against a pin nobody touched.
+            lint.disable += setOf(
+                "NewerVersionAvailable",
+                "GradleDependency",
+                "AndroidGradlePluginVersion",
+            )
         }
     }
 }

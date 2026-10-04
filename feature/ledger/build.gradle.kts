@@ -72,6 +72,7 @@ dependencies {
     // rest of the dependency work.
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.paging.compose)
+    implementation(libs.androidx.datastore.preferences)
 
     // The two things in this module that need no device: `ContrastTest`, which
     // is arithmetic over the palette -- Colour is a value class over a ULong,
@@ -91,6 +92,9 @@ dependencies {
     // `PRAGMA table_info` off the real encrypted database and compare the
     // export's column names against the columns SQLite actually holds.
     androidTestImplementation(libs.androidx.sqlite)
+    // TestListenableWorkerBuilder, so `SalvageTest` runs the real stage two
+    // over a restored ledger without a scheduler.
+    androidTestImplementation(libs.androidx.work.testing)
     // createComposeRule() launches a ComponentActivity, which has to exist in
     // the manifest of the APK under test. In a library module the androidTest
     // APK is built against the debug variant, so this is the sourceSet that

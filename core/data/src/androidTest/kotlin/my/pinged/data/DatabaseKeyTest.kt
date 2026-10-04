@@ -4,8 +4,11 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.io.IOException
+import java.security.ProviderException
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -49,6 +52,8 @@ class DatabaseKeyTest {
      * it.
      */
     @After fun leaveAWorkingKeyBehind() {
+        DatabaseKey.afterKeyFileOpened = {}
+        DatabaseKey.beforeKeyMinted = {}
         context.deleteDatabase(DatabaseFactory.NAME)
         keyFile.delete()
         DatabaseFactory.build(context).useDb { it.rawCaptureDao().countAll() }
@@ -147,6 +152,107 @@ class DatabaseKeyTest {
             thrown.message!!.contains("could not be unwrapped"),
         )
     }
+
+    /**
+     * **A key file cut short is the key gone, not a crash.** `unwrap` split
+     * the blob before its `try`, so a file shorter than the 12-byte IV threw
+     * `IndexOutOfBoundsException` -- outside the
+     * `DatabaseUnavailableException` family, so past `CaptureStorage.guarded`
+     * and `SettingsViewModel.opened` both. Zero bytes is what a key write
+     * cut off after its open leaves; 11 is short of the IV, 27 short of the
+     * IV and the GCM tag. Both readers, the minting one and `aside`'s.
+     */
+    @Test fun aKeyFileCutShortIsTheKeyGoneRatherThanAnUnhandledException() {
+        DatabaseFactory.build(context).useDb { it.rawCaptureDao().insert(sampleCapture()) }
+        val whole = keyFile.readBytes()
+        for (length in listOf(0, 11, 27)) {
+            keyFile.writeBytes(whole.copyOf(length))
+            for ((reader, read) in listOf<Pair<String, () -> Unit>>(
+                "build" to { DatabaseFactory.build(context).useDb { it.rawCaptureDao().countAll() } },
+                "existingRawKeyPassphrase" to { DatabaseKey.existingRawKeyPassphrase(context) },
+            )) {
+                val thrown = runCatching(read).exceptionOrNull()
+                assertTrue(
+                    "$reader on a $length-byte key file threw $thrown, not DatabaseKeyUnavailableException",
+                    thrown is DatabaseKeyUnavailableException,
+                )
+            }
+        }
+        keyFile.writeBytes(whole)
+        DatabaseFactory.build(context).useDb {
+            assertEquals("the database was intact behind the short key", 1, it.rawCaptureDao().countAll())
+        }
+    }
+
+    /**
+     * **A process killed while the key is being written leaves no key
+     * file.** Written in place, a death between the open, which truncates,
+     * and the write left a zero-byte `db.key`, and every launch after that
+     * read it as a key gone -- over a database that, after power lost before
+     * writeback, could be intact. Simulated by an `Error` thrown once the
+     * file is open, which nothing on the write path catches, so no cleanup
+     * runs: the open file is all a death leaves. Written to a temporary and
+     * renamed, `db.key` is never there short, and the next launch mints.
+     */
+    @Test fun aProcessKilledMidKeyWriteLeavesNoKeyFileBehind() {
+        DatabaseKey.afterKeyFileOpened = { throw SimulatedDeath() }
+        assertThrows(SimulatedDeath::class.java) { DatabaseFactory.build(context).useDb { it.rawCaptureDao().countAll() } }
+        assertFalse(
+            "a key write cut off after its open left a ${keyFile.length()}-byte db.key, which every later open reads as the key gone",
+            keyFile.exists(),
+        )
+
+        DatabaseKey.afterKeyFileOpened = {}
+        DatabaseFactory.build(context).useDb { assertEquals(0, it.rawCaptureDao().countAll()) }
+        assertTrue("the next launch did not mint a key", keyFile.isFile)
+        assertFalse("the temporary outlived the write that replaced it", File(context.noBackupFilesDir, "db.key.new").exists())
+    }
+
+    /**
+     * **A key write that fails -- a full disk -- is the
+     * `DatabaseUnavailableException` family's, and leaves nothing.** An
+     * `IOException` escaping `DatabaseFactory.build` would pass
+     * `CaptureStorage.guarded`, as a short key would. Also where the cost of
+     * minting, fsynced twice, is measured.
+     */
+    @Test fun aKeyWriteThatFailsIsTheUnreadableStateAndLeavesNothing() {
+        DatabaseKey.afterKeyFileOpened = { throw IOException("No space left on device (simulated)") }
+        val thrown = runCatching { DatabaseFactory.build(context).useDb { it.rawCaptureDao().countAll() } }.exceptionOrNull()
+        assertTrue("a failed key write threw $thrown", thrown is DatabaseUnreadableException)
+        assertFalse("a failed key write left a ${keyFile.length()}-byte db.key", keyFile.exists())
+        assertFalse("a failed key write left its temporary behind", File(context.noBackupFilesDir, "db.key.new").exists())
+
+        DatabaseKey.afterKeyFileOpened = {}
+        val minted = (1..5).map {
+            keyFile.delete()
+            val start = System.nanoTime()
+            DatabaseKey.rawKeyPassphrase(context)
+            (System.nanoTime() - start) / 1_000L
+        }
+        Log.i(OpenTest.REPORT_TAG, "key minted, fsynced and renamed in $minted us")
+    }
+
+    /**
+     * **A Keystore that will not mint the wrapping key is the unreadable
+     * state too, and the next open mints.** `generateKey` raises
+     * `ProviderException`, which let through would pass every guard, and the
+     * first open after a delete everything -- `MainActivity`'s probe, the
+     * settings screen's read -- would kill the app. Thrown here as AndroidKeyStore throws
+     * it, where `DatabaseKey.create` asks for the key.
+     */
+    @Test fun aKeystoreThatWillNotMintAKeyIsTheUnreadableStateAndLeavesNothing() {
+        DatabaseKey.beforeKeyMinted = { throw ProviderException("Failed to generate key (simulated)") }
+        val thrown = runCatching { DatabaseFactory.build(context).useDb { it.rawCaptureDao().countAll() } }.exceptionOrNull()
+        assertTrue("a Keystore that would not mint threw $thrown", thrown is DatabaseUnreadableException)
+        assertFalse("a key that was never made left a ${keyFile.length()}-byte db.key", keyFile.exists())
+
+        DatabaseKey.beforeKeyMinted = {}
+        DatabaseFactory.build(context).useDb { assertEquals(0, it.rawCaptureDao().countAll()) }
+        assertTrue("the next open did not mint a key", keyFile.isFile)
+    }
+
+    /** What [aProcessKilledMidKeyWriteLeavesNoKeyFileBehind] throws: an `Error`, so no `catch` on the write path sees it. */
+    private class SimulatedDeath : Error("the process died here (simulated)")
 
     // ---- destroy ------------------------------------------------------
 

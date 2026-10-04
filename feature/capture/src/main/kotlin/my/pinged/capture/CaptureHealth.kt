@@ -1,6 +1,5 @@
 package my.pinged.capture
 
-import androidx.annotation.VisibleForTesting
 import my.pinged.data.CaptureDays
 import my.pinged.data.Databases
 import android.content.Context
@@ -78,13 +77,16 @@ internal object CaptureHealth {
         context.captureStore.data.first()[LAST_SEEN] ?: 0L
 
     /**
-     * Tests only: forget every in-process memo, as a fresh process would.
+     * Forget every in-process memo, as a fresh process would.
      *
-     * The throttles above are process-scoped by design, so the behaviour that
+     * Two callers. [CaptureCaches.clear] needs it because clearing the durable
+     * store while this process still holds `storageUnavailable = false` leaves
+     * the two disagreeing until the process dies. Tests need it because the
+     * throttles above are process-scoped by design, so the behaviour that
      * matters most -- what a *new* process does when it meets a flag an older
-     * one wrote -- is unreachable from a test suite that runs in one process.
+     * one wrote -- is otherwise unreachable from a suite that runs in one
+     * process.
      */
-    @VisibleForTesting
     internal fun forgetProcessMemo() {
         lastWrittenAt = 0L
         storageUnavailable = null

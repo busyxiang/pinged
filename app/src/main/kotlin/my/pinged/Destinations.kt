@@ -25,13 +25,21 @@ import kotlinx.serialization.Serializable
 @Serializable data object Ledger : NavKey
 
 /**
- * Spec 9.6's capture-source allow-list, pushed from the ledger's top-bar
- * control (`LedgerScreen`'s `onOpenSources`) and left by either route through
+ * Spec 9.6's capture-source allow-list, pushed from its row in settings
+ * (`SettingsScreen`'s `onOpenSources`) and left by either route through
  * [pop].
  *
- * See [Ledger] for why both are `@Serializable` objects registered nowhere.
+ * See [Ledger] for why all three are `@Serializable` objects registered nowhere.
  */
 @Serializable data object Sources : NavKey
+
+/**
+ * Spec 9.5's settings, reached from the ledger's top-bar control. [Sources] is
+ * a row inside it, as `design/Settings.dc.html` draws.
+ *
+ * See [Ledger] for why all three are `@Serializable` objects registered nowhere.
+ */
+@Serializable data object Settings : NavKey
 
 /**
  * Push [key] unless it is already on top.
@@ -47,6 +55,24 @@ import kotlinx.serialization.Serializable
  */
 internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
     if (lastOrNull() != key) add(key)
+}
+
+/**
+ * Show [key]: back to its entry if it is on the stack, pushed if it is not.
+ *
+ * For a control drawn over every destination, whose screen can already be
+ * *under* the one showing: the banner strip leads to [Settings], and
+ * [Sources] is pushed from there. [pushOnce] would add a second settings,
+ * with a holder of its own, above the allow-list, and back would then go
+ * through the allow-list to the first. The entries above [key]'s go as back
+ * would take them.
+ *
+ * With [key] on top this does nothing, so a control that calls it has
+ * nothing to offer there (ruling R35).
+ */
+internal fun MutableList<NavKey>.showOnce(key: NavKey) {
+    val at = lastIndexOf(key)
+    if (at < 0) add(key) else while (lastIndex > at) removeAt(lastIndex)
 }
 
 /**

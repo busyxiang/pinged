@@ -9,8 +9,8 @@ numbers in comments and commit messages refer to it.
 
 ## Commands
 
-    ./gradlew test                        # 200 JVM tests
-    ./gradlew connectedDebugAndroidTest   # 371, needs a device
+    ./gradlew test                        # 261 JVM tests
+    ./gradlew connectedDebugAndroidTest   # 622, needs a device
     ./gradlew test lint :app:assembleDebug   # what CI runs
 
 Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
@@ -46,6 +46,21 @@ enum constant, so the stored strings are frozen separately by
 deletes and re-inserts, so a partial write reverts `enabled` to false and
 destroys allow-list consent unrecoverably. Every mutation is a targeted UPDATE
 naming its own column.
+
+**Never close an instance `Databases.shared` served while anything may use
+it.** Room refuses a transaction's own `END` on a closed instance, and the
+connection keeps its write lock for the life of the process. An instance leaves
+service by `retire` (damage), and is closed when the last `Databases.leasing`
+lease ends; or by `reset` (a delete or a restore), which waits up to 5s for
+every lease and then closes before it returns. A lease still in a transaction
+at 5s keeps its lock: harmless only because both production callers unlink the
+file next, so the lock is on a dead inode. So no lease may outlast a gate --
+stage two stops at one before its next capture; the longest lease a gate was
+measured to leave up is 66ms. Every statement on an instance `shared` served
+runs under a lease or inside `whileLive`, except two: the seed in
+`DatabaseFactory.build`, inside `shared`'s monitor before the instance is
+published, and Room's invalidation tracker, which takes `CloseBarrier` and
+which `close` waits for.
 
 **Do not rename or move `PingedNotificationListener`.** The notification-access
 grant is keyed to its flattened `ComponentName`; renaming voids it silently.

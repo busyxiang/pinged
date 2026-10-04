@@ -57,7 +57,7 @@ class LedgerResumeTest {
 
         val viewModel = LedgerViewModel(context.applicationContext as Application)
         compose.setContent {
-            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSources = {}) }
+            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }
         compose.waitUntil(TIMEOUT) {
             compose.onAllNodesWithTextSafely("NOTHING CAPTURED YET") > 0
@@ -105,7 +105,7 @@ class LedgerResumeTest {
 
         val viewModel = LedgerViewModel(context.applicationContext as Application)
         compose.setContent {
-            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSources = {}) }
+            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }
         // Wrapped for the same reason the recovery wait below is, and it is
         // the precondition rather than the subject: a bare `waitUntil` fails

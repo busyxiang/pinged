@@ -5,7 +5,14 @@ import android.util.JsonWriter
 import java.io.OutputStream
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
+import my.pinged.data.Databases
 import my.pinged.data.PingedDatabase
+import my.pinged.data.entity.CaptureDay
+import my.pinged.data.entity.CaptureSource
+import my.pinged.data.entity.Category
+import my.pinged.data.entity.MerchantRule
+import my.pinged.data.entity.RawCapture
+import my.pinged.data.entity.Txn
 
 /**
  * Spec 12's JSON export: every row of every table, written straight onto the
@@ -57,18 +64,39 @@ object ExportJson {
      *
      * ImportJson deliberately has no BufferedReader: android.util.JsonReader
      * carries its own 1024-char buffer and pulls in 1 KB chunks.
+     *
+     * **Inside [Databases.whileLive].** `runInTransaction` and the
+     * `openHelper` read of the schema version both reopen a closed instance's
+     * file (ruling R42), so a handle `Databases` has replaced is refused
+     * before either runs, and none can be replaced while the export holds it.
      */
     fun write(
         db: PingedDatabase,
         out: OutputStream,
         onProgress: (Int) -> Unit = {},
         isCancelled: () -> Boolean = { false },
-    ): Int = db.runInTransaction(
-        Callable { writeDocument(db, out, onProgress, isCancelled) },
+    ): Int = Databases.whileLive(db) {
+        db.runInTransaction(
+            Callable {
+                writeDocument(out, db.openHelper.readableDatabase.version, everyRowOf(db), onProgress, isCancelled)
+            },
+        )
+    }
+
+    /** The healthy path's rows: every one, read through [db]'s transaction. */
+    private fun everyRowOf(db: PingedDatabase) = DocumentSource(
+        categories = { db.categoryDao().all() },
+        captureSources = { db.captureSourceDao().all() },
+        captureDays = { db.captureDayDao().all() },
+        merchantRules = PagedRows(nextPage = { after -> db.merchantRuleDao().pageFrom(after, PAGE) }, idOf = { it.id }),
+        rawCaptures = PagedRows(nextPage = { after -> db.rawCaptureDao().pageFrom(after, PAGE) }, idOf = { it.id }),
+        txns = PagedRows(nextPage = { after -> db.txnDao().pageFrom(after, PAGE) }, idOf = { it.id }),
     )
 
     /**
-     * The whole document is read inside **one** transaction.
+     * The whole document is read inside **one** transaction, when [write] calls
+     * it. `SalvageJson` calls it outside any (design 5), and keeps its file
+     * consistent with a reference filter instead.
      *
      * As six independent snapshots, a capture committed after the `raw_captures`
      * section closed and before `txns` was read put a transaction in the file whose
@@ -88,9 +116,10 @@ object ExportJson {
      * simply slow to return, but it is worth knowing before the export screen
      * exists, because it reads as a frozen app.
      */
-    private fun writeDocument(
-        db: PingedDatabase,
+    internal fun writeDocument(
         out: OutputStream,
+        schemaVersion: Int,
+        source: DocumentSource,
         onProgress: (Int) -> Unit,
         isCancelled: () -> Boolean,
     ): Int {
@@ -106,35 +135,18 @@ object ExportJson {
             // future version has to be refused before a single row of it is
             // believed.
             w.name(Backup.FIELD_FORMAT).value(Backup.FORMAT_VERSION.toLong())
-            w.name(Backup.FIELD_SCHEMA_VERSION)
-                .value(db.openHelper.readableDatabase.version.toLong())
+            w.name(Backup.FIELD_SCHEMA_VERSION).value(schemaVersion.toLong())
             w.name(Backup.FIELD_EXPORTED_AT).value(System.currentTimeMillis())
 
             // The order is Backup.SECTION_ORDER and it is not cosmetic: the
             // reader inserts as it goes, so parents have to be on the wire
             // before their children.
-            written = writeWhole(w, CATEGORY_SECTION, db.categoryDao().all(), written, onProgress)
-            written = writeWhole(
-                w, CAPTURE_SOURCE_SECTION, db.captureSourceDao().all(), written, onProgress,
-            )
-            written = writeWhole(
-                w, CAPTURE_DAY_SECTION, db.captureDayDao().all(), written, onProgress,
-            )
-            written = writePaged(
-                w, MERCHANT_RULE_SECTION, written, onProgress, isCancelled,
-                nextPage = { after -> db.merchantRuleDao().pageFrom(after, PAGE) },
-                idOf = { it.id },
-            )
-            written = writePaged(
-                w, RAW_CAPTURE_SECTION, written, onProgress, isCancelled,
-                nextPage = { after -> db.rawCaptureDao().pageFrom(after, PAGE) },
-                idOf = { it.id },
-            )
-            written = writePaged(
-                w, TXN_SECTION, written, onProgress, isCancelled,
-                nextPage = { after -> db.txnDao().pageFrom(after, PAGE) },
-                idOf = { it.id },
-            )
+            written = writeWhole(w, CATEGORY_SECTION, source.categories(), written, onProgress)
+            written = writeWhole(w, CAPTURE_SOURCE_SECTION, source.captureSources(), written, onProgress)
+            written = writeWhole(w, CAPTURE_DAY_SECTION, source.captureDays(), written, onProgress)
+            written = writePaged(w, MERCHANT_RULE_SECTION, source.merchantRules, written, onProgress, isCancelled)
+            written = writePaged(w, RAW_CAPTURE_SECTION, source.rawCaptures, written, onProgress, isCancelled)
+            written = writePaged(w, TXN_SECTION, source.txns, written, onProgress, isCancelled)
 
             w.endObject()
         }
@@ -168,9 +180,11 @@ object ExportJson {
     /**
      * A section read with a keyset cursor, a page at a time.
      *
-     * [nextPage] is handed the last id written; [idOf] reads the id back out,
-     * because `RawCapture`, `Txn` and `MerchantRule` share no supertype that has
-     * one.
+     * [PagedRows.nextPage] is handed the last id read; [PagedRows.idOf] reads
+     * the id back out, because `RawCapture`, `Txn` and `MerchantRule` share no
+     * supertype that has one. **The cursor and the stop are the page as read,
+     * not as kept**: a row [PagedRows.keep] leaves out is still the last id
+     * read, and a page it thins is not a short page.
      *
      * **The cursor starts at 0 and the queries say `id > :after`, so this writes no
      * row whose id is 0 or less.** Safe only because ids here are 1 or more, which
@@ -183,11 +197,10 @@ object ExportJson {
     private fun <T> writePaged(
         w: JsonWriter,
         section: BackupSection<T>,
+        rows: PagedRows<T>,
         writtenSoFar: Int,
         onProgress: (Int) -> Unit,
         isCancelled: () -> Boolean,
-        nextPage: (Long) -> List<T>,
-        idOf: (T) -> Long,
     ): Int {
         var written = writtenSoFar
         var after = 0L
@@ -199,11 +212,14 @@ object ExportJson {
                         "${section.name}. The file is incomplete and must be deleted.",
                 )
             }
-            val page = nextPage(after)
+            val page = rows.nextPage(after)
             if (page.isEmpty()) break
-            page.forEach { section.writeRow(w, it) }
-            written += page.size
-            after = idOf(page.last())
+            for (row in page) {
+                val kept = rows.keep(row) ?: continue
+                section.writeRow(w, kept)
+                written++
+            }
+            after = rows.idOf(page.last())
             // Before the progress callback, so that a caller which reads the
             // stream's byte count on progress sees the bytes this page
             // produced. That is what `StreamingTest` measures, and it is also
@@ -212,8 +228,41 @@ object ExportJson {
             onProgress(written)
             if (page.size < PAGE) break
         }
+        for (row in rows.afterLastPage()) {
+            section.writeRow(w, row)
+            written++
+        }
         w.endArray()
         w.flush()
         return written
     }
 }
+
+/**
+ * The rows [ExportJson.writeDocument] writes, section by section, and called
+ * in [Backup.SECTION_ORDER]: salvage decides a row by what the sections
+ * before it held.
+ */
+internal class DocumentSource(
+    val categories: () -> List<Category>,
+    val captureSources: () -> List<CaptureSource>,
+    val captureDays: () -> List<CaptureDay>,
+    val merchantRules: PagedRows<MerchantRule>,
+    val rawCaptures: PagedRows<RawCapture>,
+    val txns: PagedRows<Txn>,
+)
+
+/**
+ * One paged section.
+ *
+ * @property keep the row to write for one read: itself, a copy with a
+ *   reference cleared, or null for none. Called in id order.
+ * @property afterLastPage rows [keep] held back, written once the last page
+ *   has been read; see `SalvageJson` for the one that does.
+ */
+internal class PagedRows<T>(
+    val nextPage: (after: Long) -> List<T>,
+    val idOf: (T) -> Long,
+    val keep: (T) -> T? = { it },
+    val afterLastPage: () -> List<T> = { emptyList() },
+)

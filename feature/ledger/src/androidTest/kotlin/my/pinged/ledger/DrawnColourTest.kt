@@ -1,10 +1,19 @@
 package my.pinged.ledger
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.dp
+import my.pinged.ledger.settings.CONFIRMATION_FIELD_TAG
+import my.pinged.ledger.settings.EXPORT_FIRST_TAG
+import my.pinged.ledger.settings.WipeSheetBody
 import my.pinged.ledger.sources.DETAIL_TAG
 import my.pinged.ledger.sources.PILL_TAG
 import my.pinged.ledger.sources.SourceRow
@@ -12,6 +21,7 @@ import my.pinged.ledger.sources.SourcesScreenContent
 import my.pinged.ledger.sources.SourcesState
 import my.pinged.ledger.theme.Card
 import my.pinged.ledger.theme.Contrast
+import my.pinged.ledger.theme.Paper
 import my.pinged.ledger.theme.PingedTheme
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -90,6 +100,80 @@ class DrawnColourTest {
     }
 
     /**
+     * **The boundary of the app's only text input**, sampled at the node's
+     * bottom rows, where only the underline can be.
+     *
+     * Reading the whole node would not do it: the ghosted `DELETE` inside the
+     * field is painted in the same `Faint`, so with the underline reverted to
+     * the artboard's 1.60:1 `Rule` the placeholder still supplies a 3.55:1
+     * pixel and the assertion passes over a field with no visible edge. The
+     * same trap `theOffStateOfTheToggleIsPaintedVisibly` records for the knob.
+     *
+     * WCAG 1.4.11 rather than 1.4.3: this is a component boundary, and it is
+     * the only thing on the sheet that says a field is there at all.
+     */
+    @Test fun theConfirmationFieldHasAVisibleBoundary() {
+        wipeSheet()
+        val worst = bottomInkContrastAgainst(Paper, CONFIRMATION_FIELD_TAG)
+        assertTrue(
+            ("The underline under the word the user has to type is painted at " +
+                "%.2f:1 against the sheet behind it. WCAG 1.4.11 asks %.1f:1, " +
+                "and it is the only thing saying there is a field here.")
+                .format(worst, Contrast.COMPONENT_MINIMUM),
+            worst >= Contrast.COMPONENT_MINIMUM,
+        )
+    }
+
+    /**
+     * **The boundary of the sheet's one offer**, sampled at the node's outer
+     * columns, where only `dashedOutline`'s stroke can be: the row centres its
+     * mark and its label, so nothing else reaches an edge.
+     *
+     * The offer is a 48dp tap target with no background and no border -- those
+     * dashes are the whole of it, and WCAG 1.4.11 asks 3:1 of a component
+     * boundary. What fails here is the modifier dropped from the row, or its
+     * colour moved to a lighter token at either end: `dashedOutline` takes the
+     * colour from its call site, and `ContrastTest` cannot see which token a
+     * call site passes.
+     *
+     * The dash *length* stays unpinned deliberately: it is a house style
+     * (`Perforation.kt` records the choice), not a legibility floor, and an
+     * assertion on it would fail for a change that harms nobody.
+     */
+    @Test fun theExportFirstOfferHasAVisibleBoundary() {
+        wipeSheet()
+        val worst = outlineInkContrastAgainst(Paper, EXPORT_FIRST_TAG)
+        assertTrue(
+            ("The dashed box offering an export before the delete is painted at " +
+                "%.2f:1 against the sheet behind it. WCAG 1.4.11 asks %.1f:1, " +
+                "and it is the only thing saying the offer is a control.")
+                .format(worst, Contrast.COMPONENT_MINIMUM),
+            worst >= Contrast.COMPONENT_MINIMUM,
+        )
+    }
+
+    /**
+     * The delete sheet's body on [Paper], with the 20dp its chrome supplies.
+     *
+     * `counts = null`: the sheet then itemises nothing, which shortens it
+     * without touching either boundary read above.
+     */
+    private fun wipeSheet() = compose.setContent {
+        PingedTheme {
+            Box(Modifier.background(Paper).padding(20.dp)) {
+                Column {
+                    WipeSheetBody(
+                        counts = null,
+                        onConfirm = {},
+                        onExportFirst = {},
+                        onDismiss = {},
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * The contrast of the ink the tagged node painted.
      *
      * **The maximum ratio, not the minimum.** The first version took the minimum
@@ -109,7 +193,24 @@ class DrawnColourTest {
     private fun outlineInkContrastAgainst(ground: Color, tag: String): Double =
         inkContrast(ground, tag) { x, width -> x < 2 || x >= width - 2 }
 
-    private fun inkContrast(ground: Color, tag: String, keep: (Int, Int) -> Boolean): Double {
+    /**
+     * As [inkContrastAgainst], over the bottom rows only.
+     *
+     * Three rows, not two: the underline is 1.5dp, which is four pixels at
+     * this emulator's density, so the last three rows are all inside it --
+     * measured, and the node is 103px tall. Sampling by row needs the `keep`
+     * predicate to see `y`, which [inkContrast] passes as its first argument
+     * when [byRow] is set.
+     */
+    private fun bottomInkContrastAgainst(ground: Color, tag: String): Double =
+        inkContrast(ground, tag, byRow = true) { y, height -> y >= height - 3 }
+
+    private fun inkContrast(
+        ground: Color,
+        tag: String,
+        byRow: Boolean = false,
+        keep: (Int, Int) -> Boolean,
+    ): Double {
         val pixels = compose.onNodeWithTag(tag, useUnmergedTree = true)
             .captureToImage()
             .toPixelMap()
@@ -117,7 +218,7 @@ class DrawnColourTest {
         var found = false
         for (y in 0 until pixels.height) {
             for (x in 0 until pixels.width) {
-                if (!keep(x, pixels.width)) continue
+                if (!keep(if (byRow) y else x, if (byRow) pixels.height else pixels.width)) continue
                 val pixel = pixels[x, y]
                 if (pixel == ground) continue
                 found = true

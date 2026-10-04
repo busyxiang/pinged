@@ -125,12 +125,12 @@ class DaoTest {
     @Test fun layerOneWindowIncludesSixtySecondsAndExcludesSixtyOne() {
         val dao = db.rawCaptureDao()
         val now = 1_000_000L
-        dao.insert(sampleCapture(hash = "dup", postedAt = now, sbnKey = "slot-now"))
-        dao.insert(sampleCapture(hash = "dup", postedAt = now - DuplicateWindows.CONTENT_HASH_MILLIS, sbnKey = "slot-edge"))
+        val atNow = dao.insert(sampleCapture(hash = "dup", postedAt = now, sbnKey = "slot-now"))
+        val atEdge = dao.insert(sampleCapture(hash = "dup", postedAt = now - DuplicateWindows.CONTENT_HASH_MILLIS, sbnKey = "slot-edge"))
         dao.insert(sampleCapture(hash = "dup", postedAt = now - DuplicateWindows.CONTENT_HASH_MILLIS - 1, sbnKey = "slot-stale"))
 
-        val hits = dao.contentHashWindow("dup", now).map { it.sbnKey }.sorted()
-        assertEquals(listOf("slot-edge", "slot-now"), hits)
+        val hits = dao.contentHashWindow("dup", now).map { it.id }.sorted()
+        assertEquals(listOf(atNow, atEdge).sorted(), hits)
     }
 
     /**
@@ -149,9 +149,7 @@ class DaoTest {
 
         // The second notification arrives two seconds later in a different slot.
         val secondPostedAt = 1_002_000L
-        val candidates = dao
-            .contentHashWindow("dup", secondPostedAt)
-            .filter { it.sbnKey != "slot-2" }
+        val candidates = dao.contentHashWindow("dup", secondPostedAt, excludingKey = "slot-2")
         assertEquals(
             "A duplicate whose original is still NEW was not detected",
             listOf(first), candidates.map { it.id },
@@ -321,6 +319,49 @@ class DaoTest {
         db.txnDao().insert(sampleTxn(rawCaptureId = null, pkg = null))
         db.txnDao().insert(sampleTxn(rawCaptureId = null, pkg = null))
         assertEquals(2, db.txnDao().countAll())
+    }
+
+    // ---- months of history ---------------------------------------------
+
+    /**
+     * `local_date` is the integer `yyyymmdd`, so the month is `/ 100` and not
+     * the first seven characters of anything.
+     *
+     * The dates are chosen to separate the two readings rather than to be
+     * realistic: `substr(local_date, 1, 7)` keeps seven of the eight digits,
+     * which groups by *ten-day block*, so it sees three groups in these three
+     * rows where there are two months. Written explicitly rather than derived
+     * from an instant, for the zone reason the local-date cases below give.
+     */
+    @Test fun monthsOfHistoryCountsMonthsAndNotTenDayBlocks() {
+        db.txnDao().insert(sampleTxn(localDate = LocalDate(20260901)))
+        db.txnDao().insert(sampleTxn(localDate = LocalDate(20260930)))
+        db.txnDao().insert(sampleTxn(localDate = LocalDate(20261001)))
+        assertEquals(2, db.txnDao().distinctMonthCount())
+    }
+
+    /** A month holding nothing but rejected captures is not a month of history. */
+    @Test fun monthsOfHistorySkipsAMonthThatIsOnlyRejections() {
+        db.txnDao().insert(sampleTxn(localDate = LocalDate(20260901)))
+        db.txnDao().insert(sampleTxn(localDate = LocalDate(20261001), state = TxnState.REJECTED))
+        assertEquals(1, db.txnDao().distinctMonthCount())
+    }
+
+    /**
+     * **The delete sheet's two counts agree with each other and with the
+     * feed.** `countAll` and `countUnrejected` differ by exactly the rows
+     * `TxnDao.FEED_SQL` hides, so a sheet built on `countAll` would show a
+     * transaction total the user cannot reconcile against any screen they
+     * have ever seen -- and would disagree with `Months of history` sitting
+     * two lines below it, which excludes the same rows.
+     */
+    @Test fun theDeleteSheetCountsExcludeTheRowsTheFeedHides() {
+        db.txnDao().insert(sampleTxn(localDate = LocalDate(20260901)))
+        db.txnDao().insert(sampleTxn(localDate = LocalDate(20260902)))
+        db.txnDao().insert(sampleTxn(localDate = LocalDate(20261003), state = TxnState.REJECTED))
+        assertEquals("countAll is the one that keeps rejections", 3, db.txnDao().countAll())
+        assertEquals("the sheet's Transactions row", 2, db.txnDao().countUnrejected())
+        assertEquals("the sheet's Months of history row", 1, db.txnDao().distinctMonthCount())
     }
 
     // ---- allow-list ----------------------------------------------------

@@ -20,10 +20,20 @@ import my.pinged.data.entity.Txn
         RawCapture::class, Txn::class, Category::class, CaptureSource::class,
         MerchantRule::class, CaptureDay::class,
     ],
-    version = 1,
+    version = PingedDatabase.VERSION,
     exportSchema = true,
 )
 abstract class PingedDatabase : RoomDatabase() {
+    companion object {
+        /**
+         * Every file Room opens is at this version, since it migrates or refuses
+         * any other. Salvage writes it into its document's header from here,
+         * because reading it back through `openHelper` is a path ruling R42
+         * keeps to an allowlist.
+         */
+        const val VERSION = 1
+    }
+
     abstract fun rawCaptureDao(): RawCaptureDao
     abstract fun txnDao(): TxnDao
     abstract fun categoryDao(): CategoryDao
@@ -36,4 +46,34 @@ abstract class PingedDatabase : RoomDatabase() {
      * `schemas/1.json` and its identity hash are untouched.
      */
     abstract fun merchantRuleDao(): MerchantRuleDao
+
+    /**
+     * Whether [close] has been called on this instance, which Room's own
+     * `isOpen` cannot say. Measured on emulator-5554: `runInTransaction` or
+     * `openHelper.writableDatabase` on a closed instance reopens its helper
+     * without a word, `isOpen` then answers true, and a second [close] leaves
+     * it open. [Databases.whileLive] refuses on this, and on [retired].
+     */
+    @Volatile var closed: Boolean = false
+        private set
+
+    /**
+     * Whether [Databases] has stopped serving this instance: [Databases.retire]
+     * sets it when a connection of it met damage, and [Databases.reset] for a
+     * delete or a restore. Open, unlike a [closed] one, until the last
+     * [Databases.leasing] lease is out (or [Databases.reset]'s bound has
+     * passed); [Databases.whileLive] refuses it all the same, because it is
+     * no longer the database [Databases.shared] serves.
+     */
+    @Volatile var retired: Boolean = false
+        private set
+
+    internal fun retire() {
+        retired = true
+    }
+
+    override fun close() {
+        closed = true
+        super.close()
+    }
 }

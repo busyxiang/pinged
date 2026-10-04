@@ -10,7 +10,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -204,6 +203,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             context,
             what = "The allow-list cannot be read",
             unavailable = { SourcesState(loaded = true, storageUnavailable = true) },
+            damageStopsCapture = false,
         ) { read() }
 
     /**
@@ -221,15 +221,25 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
      * `setEnabled` last, and a targeted single-column UPDATE: `CaptureSourceDao`
      * has no whole-row upsert, because a partial write through `@Insert(REPLACE)`
      * reverted `enabled` to false and destroyed consent unrecoverably.
+     *
+     * **Guarded**, as every other database access on this screen is. On a
+     * connection another read has poisoned, the first statement answers code
+     * 26; unguarded that reached `viewModelScope` with no handler -- the app
+     * killed by a tap -- and a toggle OFF that died there left the source
+     * enabled and its text still being stored. The guard runs the three again
+     * on a new connection, which is safe because each is: an insert that
+     * ignores an existing row, and two updates to a value. A write it refuses
+     * leaves the row as it was, and the read after it draws that.
      */
     fun setEnabled(pkg: String, on: Boolean): Job =
         enqueue {
             beforeEachOperation()
-            // Kept: these three statements are the one database access in this
-            // file outside a `CaptureStorage.guarded` block, so nothing else
-            // takes them off the main thread `enqueue` runs its bodies on
-            // (`MainThreadRefreshTest`), where Room throws `IllegalStateException`.
-            withContext(Dispatchers.IO) {
+            CaptureStorage.guarded(
+                context,
+                what = "The allow-list cannot be changed",
+                unavailable = {},
+                damageStopsCapture = false,
+            ) {
                 val dao = Databases.captureSourceDao(context)
                 val label = label(InstalledApps(context.packageManager), pkg, known = null, usePackLabel = true)
                 dao.insertIfNew(

@@ -2,6 +2,7 @@ package my.pinged.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.TxnState
 import org.junit.After
@@ -274,6 +275,54 @@ class QueryPlanTest {
         )
     }
 
+    // ---- the delete sheet's counts, spec 11.3 ---------------------------
+
+    /**
+     * **The two counts the delete sheet itemises, and the one plan in this
+     * class that is a full scan on purpose.**
+     *
+     * Both filter `state != 'REJECTED'`, which is a negative condition SQLite
+     * cannot range-scan, and `TxnDao.distinctMonthCount` then groups by
+     * `local_date / 100`, an expression no index holds. The v1 schema is
+     * frozen, so an index that would serve either is not available to add.
+     *
+     * Pinned anyway, because the KDoc on both methods asserts a cost and
+     * `SettingsViewModel.wipeCounts` spends it on every resume of the settings
+     * screen. This case is what notices the day either one stops being an
+     * accepted scan and becomes an accidental one -- a `GROUP BY` added, a
+     * second table joined -- on queries whose behavioural tests would not
+     * blink.
+     *
+     * **The two are not the same scan, and the difference is their whole cost
+     * difference.** `COUNT(*)` reads nothing but `state`, so it walks
+     * `index_txn_state_occurred_at` as a covering index and never touches the
+     * table: 0.195ms over 5,000 rows. `count(DISTINCT local_date / 100)` also
+     * needs `local_date`, which that index does not carry, so it reads the
+     * table itself and sorts the groups in a temp b-tree: 0.354ms. The bare
+     * `SCAN txn\n` is asserted through [assertUsesIndex]'s own guard for the
+     * covering case, because "SCAN txn USING COVERING INDEX ..." contains the
+     * string "SCAN txn" and an assertion on that substring alone would pass
+     * for either plan.
+     */
+    @Test fun theTwoDeleteSheetCountsScanAndAreAcceptedAtThat() {
+        val months = plan(TxnDao.MONTH_COUNT_SQL)
+        assertTrue(
+            "The month count no longer reads the table itself. Good news: " +
+                "re-measure it and correct distinctMonthCount's KDoc.\n$months",
+            months.contains("SCAN txn\n"),
+        )
+        assertTrue(
+            "The month count no longer needs a temp b-tree for count(DISTINCT). " +
+                "Good news: re-measure it.\n$months",
+            months.contains("TEMP B-TREE"),
+        )
+
+        val txns = plan(TxnDao.UNREJECTED_COUNT_SQL)
+        assertUsesIndex("index_txn_state_occurred_at", txns)
+        assertTrue("The transaction count left the covering index:\n$txns", txns.contains("COVERING"))
+        assertNoSort(txns)
+    }
+
     // ---- the review inbox, spec 7.1 ------------------------------------
 
     /**
@@ -318,24 +367,32 @@ class QueryPlanTest {
 
     // ---- raw_capture ---------------------------------------------------
 
-    /** Duplicate layer 1 rule 2, bounded at both ends. */
-    @Test fun duplicateLayerOneRuleTwoUsesTheContentHashWindowIndex() {
-        val p = plan(
-            "SELECT * FROM raw_capture WHERE content_hash = ? AND posted_at >= ? " +
-                "AND posted_at <= ?",
-            "h1", 0, 999_999,
+    /**
+     * **Duplicate layer one reads no row**, only `raw_capture(content_hash,
+     * posted_at)` and `raw_capture(sbn_key)`, so a repeat of a notification
+     * whose row is on a damaged page never reads that page. All three
+     * lookups: rule 2, and rule 1 with and without its window.
+     */
+    @Test fun duplicateLayerOneReadsOnlyItsIndexes() {
+        val lookups = mapOf(
+            "rule 2" to plan(bindable(RawCaptureDao.CONTENT_REPEATS_SQL), "h1", 0, 999_999, "k1"),
+            "rule 1" to plan(bindable(RawCaptureDao.EARLIER_IN_SLOT_SQL), "h1", 999_999, "k1", 7),
+            "rule 1, windowed" to
+                plan(bindable(RawCaptureDao.EARLIER_IN_SLOT_SINCE_SQL), "h1", 0, 999_999, 999_999, "k1", 7),
         )
-        assertUsesIndex("index_raw_capture_content_hash_posted_at", p, "raw_capture")
-    }
-
-    /** Duplicate layer 1 rule 1, with the self-exclusion and the ordering. */
-    @Test fun duplicateLayerOneRuleOneUsesTheSlotIndex() {
-        val p = plan(
-            "SELECT * FROM raw_capture WHERE sbn_key = ? AND content_hash = ? " +
-                "AND id < ? ORDER BY id ASC LIMIT 1",
-            "k1", "h1", 999_999,
-        )
-        assertUsesIndex("index_raw_capture_sbn_key", p, "raw_capture")
+        for ((rule, p) in lookups) {
+            assertTrue(
+                "$rule does not read the hash index alone:\n$p",
+                p.contains("USING COVERING INDEX index_raw_capture_content_hash_posted_at"),
+            )
+            assertTrue(
+                "$rule does not read the slot index alone:\n$p",
+                p.contains("USING COVERING INDEX index_raw_capture_sbn_key"),
+            )
+            // A non-covering index, the primary key or a bare scan is the table.
+            assertTrue("$rule reads raw_capture's rows:\n$p", !p.contains("USING INDEX") && !p.contains("PRIMARY KEY"))
+            assertTrue("$rule scans:\n$p", !Regex("SCAN [hk]\\b(?! USING COVERING)").containsMatchIn(p))
+        }
     }
 
     @Test fun stageTwoQueueDoesNotScanAndDoesNotSort() {
@@ -346,6 +403,21 @@ class QueryPlanTest {
         assertTrue(
             "Plan does not use index_raw_capture_parse_status_posted_at:\n$p",
             p.contains("index_raw_capture_parse_status_posted_at"),
+        )
+        assertNoSort(p)
+    }
+
+    /**
+     * **Stage two's claim reads no row**, only the queue's index, whose
+     * entries carry the rowid: that is what lets a capture on a damaged page
+     * fail its own read and nothing else. **And seeks to its cursor**, with
+     * no sort for the `id` after `posted_at`, which is the index's rowid.
+     */
+    @Test fun stageTwoClaimsFromTheIndexAlone() {
+        val p = plan(bindable(RawCaptureDao.CLAIM_IDS_SQL), "NEW", 0, 0, 0, 50)
+        assertTrue(
+            "Stage two's claim is not answered from its covering index:\n$p",
+            p.contains("USING COVERING INDEX index_raw_capture_parse_status_posted_at (parse_status=? AND posted_at>?)"),
         )
         assertNoSort(p)
     }
@@ -530,21 +602,7 @@ class QueryPlanTest {
                 "AND is_excluded = 0 ORDER BY local_date DESC, occurred_at DESC"
     }
 
-    // ---- the windowed slot lookup and the import integrity checks -------
-
-    /**
-     * Rule 1's windowed form, which is the one the POSTED path actually calls
-     * -- once per capture. Pinned separately from its unwindowed sibling
-     * because the extra `posted_at >= ?` could cost the `sbn_key`-led index.
-     */
-    @Test fun theWindowedSlotLookupStillUsesTheSlotIndex() {
-        val p = plan(
-            "SELECT * FROM raw_capture WHERE sbn_key = ? AND content_hash = ? " +
-                "AND id < ? AND posted_at >= ? ORDER BY id ASC LIMIT 1",
-            "k1", "h1", 999_999, 0,
-        )
-        assertUsesIndex("index_raw_capture_sbn_key", p, "raw_capture")
-    }
+    // ---- the import integrity checks ----------------------------------
 
     /**
      * The two import-time integrity checks. These are the only queries in the

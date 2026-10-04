@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * The two rules `MainActivity` gives its back stack, asserted off the real
+ * The rules `MainActivity` gives its back stack, asserted off the real
  * stack rather than through a composition.
  *
  * `rememberNavBackStack` returns a `MutableList<NavKey>`, and both rules are
@@ -42,6 +42,32 @@ class BackStackRuleTest {
             listOf(Sources, Ledger),
             stack.toList(),
         )
+    }
+
+    /**
+     * The banner strip is drawn over the allow-list too, and its buttons lead
+     * to the settings under it. A push there puts a second settings on the
+     * stack, and back then goes through the allow-list to the first.
+     */
+    @Test fun showOnceReturnsToTheEntryUnderTheTop() {
+        val stack = mutableListOf<NavKey>(Ledger, Settings, Sources)
+
+        stack.showOnce(Settings)
+
+        assertEquals(
+            "The banner's button over the allow-list did not return to the settings " +
+                "under it",
+            listOf(Ledger, Settings),
+            stack.toList(),
+        )
+    }
+
+    @Test fun showOncePushesADestinationNotOnTheStack() {
+        val stack = mutableListOf<NavKey>(Ledger)
+
+        stack.showOnce(Settings)
+
+        assertEquals("The banner's button over the ledger did not open settings", listOf(Ledger, Settings), stack.toList())
     }
 
     @Test fun popTakesTheTopEntryOff() {

@@ -108,13 +108,16 @@ fun sampleTxn(
  * A test helper rather than a DAO default, because the upper bound is the
  * whole point of the fix and a defaulted `untilMillis` would let a caller
  * forget it again. Every call site here passes the capture's own `posted_at`,
- * which is what production passes.
+ * which is what production passes. [excludingKey] is the capture's own slot,
+ * which production passes too; by default no row's.
  */
 fun my.pinged.data.dao.RawCaptureDao.contentHashWindow(
     hash: String,
     postedAt: Long,
+    excludingKey: String = "no slot of these tests",
 ) = findByContentHash(
     hash = hash,
+    key = excludingKey,
     sinceMillis = postedAt - DuplicateWindows.CONTENT_HASH_MILLIS,
     untilMillis = postedAt,
 )
@@ -262,4 +265,27 @@ fun SupportSQLiteDatabase.column(sql: String): List<String?> {
     val out = mutableListOf<String?>()
     query(sql).use { c -> while (c.moveToNext()) out += if (c.isNull(0)) null else c.getString(0) }
     return out
+}
+
+/**
+ * Flip one byte halfway into a database file.
+ *
+ * The offset matters, which is why this is not re-derived per test: page 1
+ * holds the salt SQLCipher needs to open at all, so damaging it gives
+ * `DatabaseUnreadableException` instead of a database that opens and fails.
+ *
+ * `feature/ledger/src/androidTest/kotlin/my/pinged/ledger/transfer/TransferFixtures.kt`
+ * and
+ * `feature/capture/src/androidTest/kotlin/my/pinged/capture/PeriodicIntegrityTest.kt`
+ * carry copies of the same name: `androidTest` source sets are not shared
+ * between modules and there is no test-fixtures module here.
+ */
+fun damageMidFile(file: File) {
+    java.io.RandomAccessFile(file, "rw").use { raf ->
+        val at = file.length() / 2
+        raf.seek(at)
+        val original = raf.readByte()
+        raf.seek(at)
+        raf.writeByte(original.toInt() xor 0xFF)
+    }
 }

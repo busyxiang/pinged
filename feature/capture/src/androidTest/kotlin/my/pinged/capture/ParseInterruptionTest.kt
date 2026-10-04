@@ -200,4 +200,79 @@ class ParseInterruptionTest {
         ids.forEach { assertEquals(ParseStatus.MATCHED, captures.byId(it).parseStatus) }
         assertEquals(200L + 201L, ids.sumOf { amountOf(it) })
     }
+
+    /**
+     * **The cap is the run's, not a pass's.** Stage two runs a new pass on a
+     * new instance after each capture that meets damage, and every pass
+     * shares the run's progress; counted per pass, a run meeting damage
+     * fifty times could parse fifty times the cap.
+     */
+    @Test
+    fun theRowCapHoldsAcrossThePassesOfOneRun() {
+        ParseFixtures.pass(context).run()
+        val ids = (0..2).map { i ->
+            ParseFixtures.insertCapture(
+                context,
+                text = "Payment of RM3.0$i to ONE RUN SHOP $i successful",
+                title = marker,
+                sbnKey = "$marker-run-$i",
+                postedAt = base - 4_300_000L + i * 1_000L,
+            )
+        }
+        val progress = ParsePass.Progress()
+
+        val first = ParseFixtures.pass(context, maxRows = 2, progress = progress).run()
+        val second = ParseFixtures.pass(context, maxRows = 2, progress = progress).run()
+
+        assertEquals("captures the run parsed, after a second pass begun at its cap", 2, second.processed)
+        assertTrue("a run at its cap has work left", first.remaining && second.remaining)
+        assertEquals("the capture past the cap", ParseStatus.NEW, captures.byId(ids.last()).parseStatus)
+        ParseFixtures.pass(context).run()
+    }
+
+    /**
+     * **A head of failures longer than a batch holds back nothing behind
+     * it.** A capture that fails stays `NEW` and sorts where it did, so a
+     * claim from the head of the queue returns it again: a batch of nothing
+     * but failures ended the run, every retry claimed the same batch, and
+     * the capture behind them waited for good. The claim is a cursor, so
+     * the run passes them and reaches it.
+     */
+    @Test
+    fun failuresAtTheHeadOfTheQueuePastABatchHoldNothingBehindThem() {
+        ParseFixtures.pass(context).run()
+        val failing = (0 until HEAD_OF_FAILURES).map { i ->
+            ParseFixtures.insertCapture(
+                context,
+                text = "Payment of RM2.00 to FAILING SHOP $i successful",
+                title = marker,
+                sbnKey = "$marker-fail-$i",
+                postedAt = base - 4_400_000L + i,
+            )
+        }
+        val behind = ParseFixtures.insertCapture(
+            context,
+            text = "Payment of RM9.00 to BEHIND THE FAILURES successful",
+            title = marker,
+            sbnKey = "$marker-behind",
+            postedAt = base - 4_350_000L,
+        )
+        // The label lookup is in every commit, in queue order: the first
+        // HEAD_OF_FAILURES commits fail and the rest do not.
+        var labels = 0
+        val label: (String) -> String? = { if (++labels <= HEAD_OF_FAILURES) error("label store unavailable") else null }
+
+        val summary = ParseFixtures.pass(context, sourceLabel = label).run()
+
+        assertEquals("the capture behind $HEAD_OF_FAILURES failures", ParseStatus.MATCHED, captures.byId(behind).parseStatus)
+        assertEquals("captures that failed", HEAD_OF_FAILURES, summary.failed)
+        assertTrue("a run with failures reported nothing left", summary.remaining)
+        assertTrue("a failed capture left NEW", failing.all { captures.byId(it).parseStatus == ParseStatus.NEW })
+        ParseFixtures.pass(context).run()
+    }
+
+    private companion object {
+        /** Past [ParsePass.BATCH_SIZE], which a head of nothing else ended a run at. */
+        const val HEAD_OF_FAILURES = ParsePass.BATCH_SIZE + 10
+    }
 }

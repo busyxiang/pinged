@@ -2,6 +2,7 @@ package my.pinged.capture
 
 import my.pinged.data.DuplicateWindows
 import my.pinged.data.SlotRefreshOutcome
+import my.pinged.data.dao.CaptureRef
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Arrival
@@ -41,6 +42,19 @@ internal sealed interface Layer1Verdict {
      * exclude.
      */
     data class SlotSuspect(val priorId: Long) : Layer1Verdict
+
+    /**
+     * Either rule matched only a capture stage two cannot decide on this
+     * file: its row is on a damaged page, or its commit's write is. Nothing
+     * of it reached the ledger and nothing will, so dropping
+     * this one as its refresh or its repeat loses the money; and with the
+     * earlier row unreadable nothing can rule out a transaction written for
+     * it by a build before `commitCapture`, so parsing this one as new could
+     * count it twice with nobody told. A transaction flagged
+     * `DUPLICATE_SUSPECT` naming [priorId], as [SlotSuspect] is: the review
+     * inbox, with Merge or Keep.
+     */
+    data class UndecidablePrior(val priorId: Long) : Layer1Verdict
 }
 
 /**
@@ -72,7 +86,11 @@ internal object Dedup {
      * Rule 2 is only reached when rule 1 found nothing, matching "two rules, in
      * order".
      */
-    fun layerOne(dao: RawCaptureDao, capture: RawCapture): Layer1Verdict {
+    fun layerOne(
+        dao: RawCaptureDao,
+        capture: RawCapture,
+        undecidable: Set<Long> = emptySet(),
+    ): Layer1Verdict {
         // One path for both arrivals; see `slotRefreshOutcome` for what exempting
         // `CATCHUP` from the window dropped.
         //
@@ -81,16 +99,23 @@ internal object Dedup {
         // between silently dropping the money and putting it in the review inbox.
         // Inside the window it returns the *oldest* match, not the nearest; see the DAO
         // for why.
+        //
+        // An undecidable capture is passed over as a match, so that a second copy of
+        // one refreshes the first copy -- which carried the money to the inbox --
+        // rather than making a second review item. Only earlier ids can match.
+        val passOver = undecidable.filter { it < capture.id }
         val prior = dao.findEarlierInSlotSince(
             key = capture.sbnKey,
             hash = capture.contentHash,
             selfId = capture.id,
             sinceMillis = capture.postedAt - DuplicateWindows.SLOT_REFRESH_MILLIS,
             untilMillis = capture.postedAt,
+            unreadable = passOver,
         ) ?: dao.findEarlierInSlot(
             key = capture.sbnKey,
             hash = capture.contentHash,
             selfId = capture.id,
+            unreadable = passOver,
         )
 
         if (prior != null) {
@@ -102,19 +127,23 @@ internal object Dedup {
                 SlotRefreshOutcome.DUPLICATE_SUSPECT -> Layer1Verdict.SlotSuspect(prior.id)
             }
         }
+        if (passOver.isNotEmpty()) {
+            dao.findEarlierInSlot(key = capture.sbnKey, hash = capture.contentHash, selfId = capture.id)
+                ?.let { return Layer1Verdict.UndecidablePrior(it.id) }
+        }
 
-        val repeat = dao.findByContentHash(
+        val earlier = dao.findByContentHash(
             hash = capture.contentHash,
+            key = capture.sbnKey,
             sinceMillis = capture.postedAt - DuplicateWindows.CONTENT_HASH_MILLIS,
             untilMillis = capture.postedAt,
-        )
-            .filter { it.sbnKey != capture.sbnKey && isEarlier(it, capture) }
-            .minWithOrNull(EARLIEST_FIRST)
+        ).filter { EARLIEST_FIRST.compare(it, CaptureRef(capture.id, capture.postedAt)) < 0 }
+        val repeat = earlier.filterNot { it.id in undecidable }.minWithOrNull(EARLIEST_FIRST)
 
-        return if (repeat == null) {
-            Layer1Verdict.NotADuplicate
-        } else {
-            Layer1Verdict.ContentRepeat(repeat.id)
+        return when {
+            repeat != null -> Layer1Verdict.ContentRepeat(repeat.id)
+            earlier.isNotEmpty() -> Layer1Verdict.UndecidablePrior(earlier.minWith(EARLIEST_FIRST).id)
+            else -> Layer1Verdict.NotADuplicate
         }
     }
 
@@ -194,9 +223,6 @@ internal object Dedup {
      * inserted out of `posted_at` order -- spec 10.1's catch-up sweep replays
      * whatever is still live -- and there `posted_at` is the truth.
      */
-    private val EARLIEST_FIRST: Comparator<RawCapture> =
+    private val EARLIEST_FIRST: Comparator<CaptureRef> =
         compareBy({ it.postedAt }, { it.id })
-
-    private fun isEarlier(other: RawCapture, capture: RawCapture): Boolean =
-        EARLIEST_FIRST.compare(other, capture) < 0
 }

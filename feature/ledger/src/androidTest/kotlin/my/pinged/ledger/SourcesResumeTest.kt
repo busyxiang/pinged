@@ -11,7 +11,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import my.pinged.capture.SourceCounters
+import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
+import my.pinged.data.entity.CaptureSource
+import my.pinged.ledger.settings.SettingsViewModel
+import my.pinged.ledger.settings.TransferJob
 import my.pinged.data.entity.Arrival
 import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesViewModel
@@ -123,6 +127,54 @@ class SourcesResumeTest {
         assertTrue(
             "The row is in the allow-list state but the screen does not draw it",
             drawn && compose.onAllNodesWithTextSafely(pkg) > 0,
+        )
+    }
+
+    /**
+     * A delete that lands while the screen is showing, with no resume after
+     * it: the user opened the allow-list from settings while the delete ran.
+     *
+     * The subject is consent. The delete takes every `capture_source` row with
+     * it, so a screen still drawing the replaced ledger's state shows a source
+     * switched ON that nothing is capturing from.
+     */
+    @Test fun aDeleteWhileTheScreenIsShowingIsReadWithoutAResume() {
+        Databases.reset()
+        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.captureSourceDao(context).insertForImport(
+            CaptureSource(pkg = pkg, label = "Probe", enabled = true, firstSeenAt = 1L),
+        )
+
+        val app = context.applicationContext as Application
+        val viewModel = SourcesViewModel(app)
+        compose.setContent { PingedTheme { SourcesScreen(viewModel, onBack = {}) } }
+        assertTrue(
+            "precondition: the enabled source never reached the allow-list state",
+            runCatching {
+                compose.waitUntil(TIMEOUT) {
+                    viewModel.state.value.suggested.any { it.pkg == pkg && it.enabled }
+                }
+            }.isSuccess,
+        )
+
+        val settings = SettingsViewModel(app)
+        runBlocking { settings.deleteEverything().join() }
+        assertTrue(
+            "The delete itself failed, so nothing below is about this screen: " +
+                "${settings.state.value.job}",
+            settings.state.value.job !is TransferJob.Failed,
+        )
+
+        val reRead = runCatching {
+            compose.waitUntil(TIMEOUT) {
+                viewModel.state.value.suggested.none { it.pkg == pkg && it.enabled }
+            }
+        }.isSuccess
+        assertTrue(
+            "Delete everything removed every capture source and the allow-list " +
+                "on screen still shows $pkg switched on: the holder is drawing " +
+                "the database the delete replaced",
+            reRead,
         )
     }
 

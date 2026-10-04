@@ -1,5 +1,6 @@
 package my.pinged.data.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
@@ -57,11 +58,38 @@ interface RawCaptureDao {
     fun claimNext(limit: Int, status: ParseStatus = ParseStatus.NEW): List<RawCapture>
 
     /**
+     * [claimNext]'s ids alone, from the first capture after
+     * ([afterPostedAt], [afterId]) in the queue's order: stage two's claim.
+     *
+     * **Ids, off `raw_capture(parse_status, posted_at)`**, whose entries
+     * carry the rowid, so no row is read: a row on a damaged page then fails
+     * its own [byId] and nothing else, where [claimNext] fails for every
+     * capture in the batch.
+     *
+     * **A cursor, not the head of the queue.** A capture stage two skips --
+     * one that failed, or one damage leaves undecidable -- stays `NEW` and
+     * sorts where it did, so a claim from the head returns it again, and a
+     * head of nothing else ended the run with every capture behind it
+     * unclaimed. `(posted_at, id)` is the order the index already holds, the
+     * rowid being its last column, so the cursor costs no sort; the
+     * `posted_at >= ?` half is what lets the index seek to it. `QueryPlanTest`
+     * pins both, from [CLAIM_IDS_SQL].
+     */
+    @Query(CLAIM_IDS_SQL)
+    fun claimNextIds(
+        limit: Int,
+        afterPostedAt: Long = Long.MIN_VALUE,
+        afterId: Long = Long.MIN_VALUE,
+        status: ParseStatus = ParseStatus.NEW,
+    ): List<CaptureRef>
+
+    /**
      * Duplicate detection, **layer 1 rule 2** of spec 7.2: same `content_hash`
      * within 60 seconds with a different `sbn_key` is a `DUPLICATE_OF`, and
      * produces no transaction. The caller passes
      * `postedAt - DuplicateWindows.CONTENT_HASH_MILLIS` and `postedAt`, and
-     * filters out its own row and its own `sbn_key`.
+     * its own `sbn_key` as [key], and filters out rows that are not
+     * earlier than its own.
      *
      * **Bounded at both ends.** Spec 5.5's re-parse walks history, so an
      * open-ended `posted_at >= :sinceMillis` returns captures posted *later*
@@ -75,18 +103,22 @@ interface RawCaptureDao {
      * is sha256 over (package, user, normalized text) per spec 4, so an equal
      * hash already implies both.
      *
-     * Served by `raw_capture(content_hash, posted_at)`, which applies both
-     * halves in the index.
+     * **Read off two indexes and never the table**, as [findEarlierInSlot]
+     * is and for its reason: the slot test is `raw_capture(sbn_key)`'s
+     * rowids, and `raw_capture(content_hash, posted_at)` applies the rest.
      */
-    @Query(
-        "SELECT * FROM raw_capture WHERE content_hash = :hash " +
-            "AND posted_at >= :sinceMillis AND posted_at <= :untilMillis"
-    )
-    fun findByContentHash(hash: String, sinceMillis: Long, untilMillis: Long): List<RawCapture>
+    @Query(CONTENT_REPEATS_SQL)
+    fun findByContentHash(
+        hash: String,
+        key: String,
+        sinceMillis: Long,
+        untilMillis: Long,
+    ): List<CaptureRef>
 
     /**
      * Duplicate detection, layer 1 **rule 1**: the earlier row with the same
-     * `sbn_key` and the same `content_hash`, if there is one.
+     * `sbn_key` and the same `content_hash`, if there is one, and not one of
+     * [unreadable].
      *
      * `id < :selfId` is the self-exclusion and the "earlier" both: `id` is
      * `autoGenerate`, so it is monotonic in insertion order and, unlike
@@ -103,13 +135,26 @@ interface RawCaptureDao {
      * [my.pinged.data.slotRefreshOutcome] calls a suspect rather than a
      * refresh.
      *
-     * Served by `raw_capture(sbn_key)`, with `id < ?` applied off the rowid.
+     * **Read off two indexes and never the table.** The earlier row is the
+     * notification this one repeats, and a listener rebind stores a
+     * still-posted notification again each time, so with that row on a
+     * damaged page a lookup reading it met code 11 once per copy -- measured
+     * on emulator-5554, 60 copies ended every run at the head of the queue.
+     * `raw_capture(content_hash, posted_at)` carries the hash, the post time
+     * and the rowid; `raw_capture(sbn_key)` answers the slot test from its
+     * rowids. `QueryPlanTest` pins both as covering.
+     *
+     * [unreadable] is stage two's: captures it has skipped as undecidable on
+     * this file, whose row cannot be the refreshed one because nothing of it
+     * reached the ledger. See `Dedup.layerOne`.
      */
-    @Query(
-        "SELECT * FROM raw_capture WHERE sbn_key = :key AND content_hash = :hash " +
-            "AND id < :selfId ORDER BY id ASC LIMIT 1"
-    )
-    fun findEarlierInSlot(key: String, hash: String, selfId: Long): RawCapture?
+    @Query(EARLIER_IN_SLOT_SQL)
+    fun findEarlierInSlot(
+        key: String,
+        hash: String,
+        selfId: Long,
+        unreadable: List<Long> = emptyList(),
+    ): CaptureRef?
 
     /**
      * [findEarlierInSlot] with spec 7.2's ten-minute window, for a capture that
@@ -130,18 +175,15 @@ interface RawCaptureDao {
      * the nearest. Inside the window the verdict is `UPDATE_OF` either way;
      * what moves is which row `duplicate_of_id` points at.
      */
-    @Query(
-        "SELECT * FROM raw_capture WHERE sbn_key = :key AND content_hash = :hash " +
-            "AND id < :selfId AND posted_at >= :sinceMillis AND posted_at <= :untilMillis " +
-            "ORDER BY id ASC LIMIT 1"
-    )
+    @Query(EARLIER_IN_SLOT_SINCE_SQL)
     fun findEarlierInSlotSince(
         key: String,
         hash: String,
         selfId: Long,
         sinceMillis: Long,
         untilMillis: Long,
-    ): RawCapture?
+        unreadable: List<Long> = emptyList(),
+    ): CaptureRef?
 
     /**
      * Records stage two's outcome on one capture.
@@ -295,7 +337,7 @@ interface RawCaptureDao {
 
     /**
      * Non-null on purpose. Raw captures are never deleted by the app (spec 4),
-     * so an id that stage two read out of [claimNext] cannot have gone away;
+     * so an id that stage two read out of [claimNextIds] cannot have gone away;
      * Room's generated code raises rather than returning a silent null if it
      * ever does.
      */
@@ -337,6 +379,37 @@ interface RawCaptureDao {
     fun pageFrom(afterId: Long, limit: Int): List<RawCapture>
 
     /**
+     * [pageFrom] starting **at** [fromId] rather than after it: salvage's read,
+     * `my.pinged.ledger.transfer.RowReader`.
+     *
+     * `id > b`, where b is the last id on a damaged leaf, still descends into
+     * that leaf and throws; `id >= b + 1` does not. Measured on emulator-5554,
+     * and why salvage cannot step over damage with [pageFrom] without losing
+     * the first row after it.
+     */
+    @Query("SELECT * FROM raw_capture WHERE id >= :fromId ORDER BY id ASC LIMIT :limit")
+    fun pageStartingAt(fromId: Long, limit: Int): List<RawCapture>
+
+    /**
+     * Every id, read off `raw_capture(parse_status, id)` without touching the
+     * table's own pages, so it answers on a file whose table will not read.
+     * Salvage's bound: see `RowReader`.
+     */
+    @Query("SELECT id FROM raw_capture INDEXED BY index_raw_capture_parse_status_id")
+    fun idsFromStatusIndex(): List<Long>
+
+    /** [idsFromStatusIndex] off a second index, for when the first is damaged too. */
+    @Query("SELECT id FROM raw_capture INDEXED BY index_raw_capture_sbn_key")
+    fun idsFromSbnKeyIndex(): List<Long>
+
+    /**
+     * The highest id this table has ever assigned, from `sqlite_sequence`,
+     * which `AUTOINCREMENT` keeps on a page of its own. Null if none has been.
+     */
+    @Query("SELECT seq FROM sqlite_sequence WHERE name = 'raw_capture'")
+    fun highestIdEver(): Long?
+
+    /**
      * How many captures point their `duplicate_of_id` at an id this table does
      * not hold.
      *
@@ -354,4 +427,71 @@ interface RawCaptureDao {
             "AND NOT EXISTS (SELECT 1 FROM raw_capture p WHERE p.id = c.duplicate_of_id)"
     )
     fun danglingDuplicateOfCount(): Int
+
+    /**
+     * Hands every `MATCHED` capture with no transaction naming it back to
+     * stage two, at `NEW`, and says how many it moved.
+     *
+     * **Not a breach of [requeueStale]'s rule**, which keeps `MATCHED` out
+     * because its transaction exists: here the `NOT EXISTS` is that rule,
+     * row by row. [commitCapture] then writes the one transaction the capture
+     * lacks, and finding one already there it writes nothing.
+     *
+     * In the app every `MATCHED` capture has its transaction -- [commitCapture]
+     * writes both as one, and nothing deletes a `txn` row -- so on a ledger
+     * the app wrote this moves nothing. `ImportJson` runs it for the one file
+     * that breaks that: a salvage whose `txn` page would not read (see there).
+     * **Anything that comes to delete a transaction must move its capture off
+     * `MATCHED` too**, or the next restore writes the transaction again.
+     * Served by `raw_capture(parse_status, posted_at)` and the unique index on
+     * `txn(raw_capture_id)`.
+     */
+    @Query(
+        "UPDATE raw_capture SET parse_status = :to WHERE parse_status = :from " +
+            "AND NOT EXISTS (SELECT 1 FROM txn WHERE txn.raw_capture_id = raw_capture.id)"
+    )
+    fun requeueMatchedWithoutTxn(from: ParseStatus = ParseStatus.MATCHED, to: ParseStatus = ParseStatus.NEW): Int
+
+    companion object {
+        /** [claimNextIds]'s query, hoisted so `QueryPlanTest` plans this string and not a copy. */
+        const val CLAIM_IDS_SQL =
+            "SELECT id, posted_at FROM raw_capture WHERE parse_status = :status " +
+                "AND posted_at >= :afterPostedAt AND (posted_at > :afterPostedAt OR id > :afterId) " +
+                "ORDER BY posted_at ASC, id ASC LIMIT :limit"
+
+        /** Layer one's slot test, off `raw_capture(sbn_key)` alone. */
+        private const val SLOT_IDS_SQL =
+            "SELECT k.id FROM raw_capture AS k INDEXED BY index_raw_capture_sbn_key WHERE k.sbn_key = :key"
+
+        private const val BY_HASH =
+            "SELECT h.id AS id, h.posted_at AS posted_at " +
+                "FROM raw_capture AS h INDEXED BY index_raw_capture_content_hash_posted_at " +
+                "WHERE h.content_hash = :hash "
+
+        /** [findByContentHash]'s query, hoisted for `QueryPlanTest`. */
+        const val CONTENT_REPEATS_SQL =
+            BY_HASH + "AND h.posted_at >= :sinceMillis AND h.posted_at <= :untilMillis " +
+                "AND h.id NOT IN (" + SLOT_IDS_SQL + ")"
+
+        /** [findEarlierInSlot]'s query, hoisted for `QueryPlanTest`. */
+        const val EARLIER_IN_SLOT_SQL =
+            BY_HASH + "AND h.id < :selfId AND h.id IN (" + SLOT_IDS_SQL + ") " +
+                "AND h.id NOT IN (:unreadable) ORDER BY h.id ASC LIMIT 1"
+
+        /** [findEarlierInSlotSince]'s query, hoisted for `QueryPlanTest`. */
+        const val EARLIER_IN_SLOT_SINCE_SQL =
+            BY_HASH + "AND h.posted_at >= :sinceMillis AND h.posted_at <= :untilMillis " +
+                "AND h.id < :selfId AND h.id IN (" + SLOT_IDS_SQL + ") " +
+                "AND h.id NOT IN (:unreadable) ORDER BY h.id ASC LIMIT 1"
+    }
 }
+
+/**
+ * A capture's id and post time, which is all layer one and the queue need
+ * of a row, and all two of its indexes hold: read through this, a row on a
+ * damaged page is never touched.
+ */
+data class CaptureRef(
+    val id: Long,
+    @ColumnInfo(name = "posted_at") val postedAt: Long,
+)
