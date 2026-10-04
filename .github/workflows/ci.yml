@@ -189,7 +189,18 @@ jobs:
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
-          script: ./gradlew --stacktrace connectedDebugAndroidTest
+          # :smoke drives the R8 build the release ships. Root
+          # connectedDebugAndroidTest does not reach it: it has no debug variant.
+          script: ./gradlew --stacktrace connectedDebugAndroidTest :smoke:connectedMinifiedAndroidTest
+
+      # A runner that dies before its first test is a green task with an empty
+      # report: measured, when :app's suite was pointed at R8's output.
+      - name: The smoke test ran
+        run: |
+          if ! grep -q 'tests="[1-9]' smoke/build/outputs/androidTest-results/connected/minified/*.xml; then
+            echo "::error:::smoke reported no tests. Its runner died before the first one, so nothing has checked the R8 build."
+            exit 1
+          fi
 
       - name: Keep the reports from a failed run
         if: failure()

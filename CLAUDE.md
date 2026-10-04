@@ -11,11 +11,17 @@ numbers in comments and commit messages refer to it.
 
     ./gradlew test                        # 261 JVM tests
     ./gradlew connectedDebugAndroidTest   # 622, needs a device
+    ./gradlew :smoke:connectedMinifiedAndroidTest   # 1, the R8 build
     ./gradlew test lint :app:assembleDebug   # what CI runs
 
 Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
 JVM module and has no instrumented source set, so anything device-specific is
 tested from `:feature:capture`.
+
+Release is minified. `:app`'s own instrumented suite runs against debug,
+because it shares the app's process and R8 strips the classes it needs;
+`:smoke` is the only test of what ships. It installs as Touch 'n Go's package,
+so it will not install on a phone that has the real eWallet.
 
 ## Architecture
 

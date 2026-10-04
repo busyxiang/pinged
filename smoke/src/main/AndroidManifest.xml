@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Granted by the test from the shell, so it can post as the bank. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Without it the app under test is invisible to this one on API 30+,
+         and its launch intent resolves to nothing. -->
+    <queries>
+        <package android:name="my.pinged.tracker" />
+    </queries>
+
+    <!-- The label the allow-list screen shows for this package, and so the
+         text the test finds the row by. -->
+    <application android:label="Smoke eWallet" />
+</manifest>
