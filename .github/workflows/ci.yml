@@ -158,6 +158,16 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # Every APK the connected tasks below install, built before an emulator
+      # shares the runner's 4 vCPUs with Gradle. Compared by `--dry-run`, this
+      # graph holds all 464 non-connected tasks of the emulator step's, so that
+      # step should execute only its connected tasks. Issue #13, cause 2.
+      - name: Build the APKs the emulator installs
+        run: >-
+          ./gradlew --stacktrace
+          assembleDebugAndroidTest :app:assembleDebug
+          :app:assembleMinified :smoke:assembleMinified
+
       # Cold boot measured 76.5s; from the snapshot, 12s. No restore-keys and
       # nothing here for EMULATOR_OPTIONS: a near-miss restore is worse than a
       # miss, because the emulator falls back to a cold boot while the cache
