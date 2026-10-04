@@ -51,4 +51,36 @@ class ExportNudgeTest {
             exportIsOverdue(txns = 12, lastExportAt = now - EXPORT_STALE_AFTER_MILLIS, now = now),
         )
     }
+
+    @Test fun aDismissalSilencesItForAWeek() {
+        assertFalse(
+            "The nudge came back a minute after the user dismissed it",
+            exportIsOverdue(txns = 12, lastExportAt = 0L, now = now, nudgeDismissedAt = now - 60_000),
+        )
+        assertFalse(
+            "The nudge came back a millisecond before the week was up",
+            exportIsOverdue(txns = 12, lastExportAt = 0L, now = now, nudgeDismissedAt = now - NUDGE_DISMISSED_FOR_MILLIS + 1),
+        )
+    }
+
+    @Test fun aDismissalAWeekOldNoLongerDoes() {
+        assertTrue(
+            "A dismissal a week old still silenced the nudge, so one tap " +
+                "turns the only backup reminder off for good",
+            exportIsOverdue(txns = 12, lastExportAt = 0L, now = now, nudgeDismissedAt = now - NUDGE_DISMISSED_FOR_MILLIS),
+        )
+    }
+
+    /**
+     * A clock set back after a dismissal puts the dismissal in the future. Read
+     * as silencing, that lasts until the clock catches up -- years, for a phone
+     * that booted at the epoch -- so it is read as no dismissal at all.
+     */
+    @Test fun aDismissalInTheFutureDoesNotSilenceIt() {
+        assertTrue(
+            "A dismissal stamped after now silenced the nudge, so a clock " +
+                "moved backwards hides it for as long as the clock is behind",
+            exportIsOverdue(txns = 12, lastExportAt = 0L, now = now, nudgeDismissedAt = now + 60_000),
+        )
+    }
 }

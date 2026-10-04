@@ -52,6 +52,13 @@ fun CaptureBanner(
      */
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    /**
+     * Hides the banner for a while. Only the backup nudge passes one: every
+     * capture state says something is broken now, and hiding that would leave
+     * it broken with nothing saying so.
+     */
+    dismissLabel: String? = null,
+    onDismiss: (() -> Unit)? = null,
 ) {
     Column(
         modifier
@@ -90,6 +97,27 @@ fun CaptureBanner(
                     fontWeight = FontWeight.Medium,
                     fontSize = 14.5.sp,
                     color = Paper,
+                )
+            }
+        }
+        // Outlined rather than filled, so it reads as the lesser of the two.
+        if (dismissLabel != null && onDismiss != null) {
+            Box(
+                Modifier
+                    .padding(top = 8.dp)
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .border(1.5.dp, Stamp, RoundedCornerShape(2.dp))
+                    .clickable(onClick = onDismiss),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    dismissLabel,
+                    fontFamily = Body,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.5.sp,
+                    color = Stamp,
                 )
             }
         }

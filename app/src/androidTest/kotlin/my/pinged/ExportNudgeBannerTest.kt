@@ -121,6 +121,40 @@ class ExportNudgeBannerTest {
     }
 
     /**
+     * Dismissing hides the nudge now and on the next launch, which is the
+     * difference between a stored dismissal and a flag in this Activity.
+     * `ExportNudgeTest` holds when it comes back.
+     */
+    @Test fun theNudgeStaysDismissedAcrossALaunch() {
+        captureLooksHealthy()
+        aLedgerWithNothingBackedUp()
+
+        ActivityScenario.launch(MainActivity::class.java).use {
+            assertTrue(
+                "The backup nudge never appeared, so nothing below this line " +
+                    "is about dismissing it: " + report(),
+                compose.waitFor { compose.countOf(NUDGE, substring = true) == 1 },
+            )
+
+            compose.onNodeWithText(NUDGE_DISMISS).performClick()
+
+            assertTrue(
+                "\"$NUDGE_DISMISS\" was tapped and the nudge stayed up",
+                compose.waitFor { compose.countOf(NUDGE, substring = true) == 0 },
+            )
+        }
+        ActivityScenario.launch(MainActivity::class.java).use {
+            // A miss here is the nudge coming back once `onResume` has read
+            // the store, so wait out a resume before calling it absent.
+            assertTrue(
+                "The dismissed nudge came back on the next launch, so the " +
+                    "dismissal was never stored",
+                !compose.waitFor { compose.countOf(NUDGE, substring = true) == 1 },
+            )
+        }
+    }
+
+    /**
      * The ledger goes out from under the nudge with nothing written to the
      * transfer store, which is what a delete leaves when its Keystore step
      * throws after the files are unlinked, or a restore whose import does not
@@ -252,6 +286,8 @@ class ExportNudgeBannerTest {
             ),
         )
         runBlocking {
+            // Clears a dismissal an earlier test left, which would hide the nudge.
+            TransferStore.forget(context)
             TransferStore.recordExport(context, now - EXPORT_STALE_AFTER_MILLIS - 1)
         }
     }
