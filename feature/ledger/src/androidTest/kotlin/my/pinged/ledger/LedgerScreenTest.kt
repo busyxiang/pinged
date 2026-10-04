@@ -99,21 +99,26 @@ class LedgerScreenTest {
         )
     }
 
-    @Test fun theTopBarAndTheEmptyStateBothRouteToTheAllowList() {
+    /**
+     * Both entries push Settings, which is where the allow-list is reached
+     * from -- the empty state's button said `CHOOSE CAPTURE SOURCES` while
+     * doing this, which named a screen the tap does not open.
+     */
+    @Test fun theTopBarAndTheEmptyStateBothRouteToSettings() {
         val opened = AtomicInteger(0)
         content(
             items = emptyList(),
             refresh = LoadState.NotLoading(true),
-            onOpenSources = { opened.incrementAndGet() },
+            onOpenSettings = { opened.incrementAndGet() },
         )
         compose.waitForText(NOTHING_CAPTURED, "The empty ledger does not say so")
 
-        compose.onNodeWithText("SOURCES").performClick()
-        compose.onNodeWithText("CHOOSE CAPTURE SOURCES").performClick()
+        compose.onNodeWithText("SETTINGS").performClick()
+        compose.onNodeWithText("OPEN SETTINGS").performClick()
 
         assertEquals(
-            "A route to the allow-list did not fire. Until this screen existed " +
-                "nothing in the app pushed Sources, so its entry never composed",
+            "A route to Settings did not fire. Until this screen existed " +
+                "nothing in the app pushed it, so its entry never composed",
             2,
             opened.get(),
         )
@@ -152,6 +157,36 @@ class LedgerScreenTest {
                 "in both, so the ordering of the two branches is the whole " +
                 "difference between 'you spent nothing' and 'this cannot be read'",
             compose.onAllNodesWithTextSafely(NOTHING_CAPTURED) == 0,
+        )
+    }
+
+    /**
+     * **The unreadable copy is true in every state it can be drawn in.** It
+     * is drawn for any refresh error, and one of those is the ledger a
+     * restore or a delete has just removed and cannot rebuild -- where
+     * "nothing already recorded has been deleted" is false. And the banner
+     * it points at names no cause and defers to Settings, so "the
+     * banner above says more" is false wherever it is drawn at all.
+     */
+    @Test fun anUnreadableLedgerClaimsNothingItCannotKnow() {
+        content(
+            items = emptyList(),
+            refresh = LoadState.NotLoading(true),
+            storageUnavailable = true,
+        )
+        compose.waitForText(CANNOT_READ_YOUR_DATA, "An unreadable ledger did not say it could not be read")
+
+        val claims = compose.allText().filter {
+            it.contains("has been deleted", ignoreCase = true) || it.contains("banner above", ignoreCase = true)
+        }
+        assertTrue(
+            "The unreadable copy claims something the ledger cannot know, false after a " +
+                "restore or a delete that removed the ledger: $claims",
+            claims.isEmpty(),
+        )
+        assertTrue(
+            "The unreadable copy no longer says where to find out more",
+            compose.allText().any { it.contains("Settings says more", ignoreCase = true) },
         )
     }
 
@@ -196,7 +231,7 @@ class LedgerScreenTest {
 
         val viewModel = ledgerViewModel()
         compose.setContent {
-            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSources = {}) }
+            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }
 
         compose.waitForText(
@@ -1344,7 +1379,7 @@ class LedgerScreenTest {
     private fun screen() {
         val viewModel = ledgerViewModel()
         compose.setContent {
-            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSources = {}) }
+            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }
     }
 
@@ -1384,7 +1419,7 @@ class LedgerScreenTest {
                     onAssign = { txnId, categoryId ->
                         viewModel.assignCategory(txnId, categoryId, month)
                     },
-                    onOpenSources = {},
+                    onOpenSettings = {},
                 )
             }
         }
@@ -1410,7 +1445,7 @@ class LedgerScreenTest {
         categories: List<Category> = emptyList(),
         uncategorizedId: Long? = null,
         onAssign: (Long, Long) -> Unit = { _, _ -> },
-        onOpenSources: () -> Unit = {},
+        onOpenSettings: () -> Unit = {},
     ) {
         // The four read fields stay separate parameters here and are packed at
         // the last moment: each state below is named by the one field it is
@@ -1438,7 +1473,7 @@ class LedgerScreenTest {
                     read = read,
                     storageUnavailable = storageUnavailable,
                     onAssign = onAssign,
-                    onOpenSources = onOpenSources,
+                    onOpenSettings = onOpenSettings,
                 )
             }
         }

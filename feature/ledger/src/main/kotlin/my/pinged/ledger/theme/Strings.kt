@@ -16,3 +16,14 @@ package my.pinged.ledger.theme
  * says is what is drawn -- and is what the tests match on exactly.
  */
 const val CANNOT_READ_YOUR_DATA: String = "CANNOT READ YOUR DATA"
+
+/**
+ * The damaged ledger's one way to a file: the recovery notice's action, and
+ * the home screen's backup nudge in its place on a damaged ledger. Here for
+ * [CANNOT_READ_YOUR_DATA]'s reason -- `MainActivity` and the settings screen
+ * both say it, and neither package may depend on the other's.
+ */
+const val RESCUE: String = "Rescue what can still be read"
+
+/** The settings row that writes a backup, and the backup nudge's action; see [RESCUE]. */
+const val EXPORT_EVERYTHING: String = "Export everything"

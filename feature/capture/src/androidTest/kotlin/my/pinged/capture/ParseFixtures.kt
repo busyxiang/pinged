@@ -143,6 +143,8 @@ internal object ParseFixtures {
         matcher: RuleMatcher = Graph.ruleMatcher(),
         maxRows: Int = ParsePass.MAX_ROWS_PER_RUN,
         onCaptureFinished: (Long) -> Unit = {},
+        progress: ParsePass.Progress = ParsePass.Progress(),
+        sourceLabel: ((String) -> String?)? = null,
     ): ParsePass {
         val sources = Databases.captureSourceDao(context)
         return ParsePass(
@@ -150,9 +152,10 @@ internal object ParseFixtures {
             txns = Databases.txnDao(context),
             matcher = matcher,
             uncategorizedId = Databases.categoryDao(context).requireUncategorizedId(),
-            sourceLabel = { pkg -> sources.byPackage(pkg)?.label },
+            sourceLabel = sourceLabel ?: { pkg -> sources.byPackage(pkg)?.label },
             maxRows = maxRows,
             onCaptureFinished = onCaptureFinished,
+            progress = progress,
         )
     }
 
@@ -272,13 +275,6 @@ internal object ParseFixtures {
     }
 
     /**
-     * The transaction a capture produced, or null.
-     *
-     * `recent()` would be shorter and wrong: it orders by `occurred_at`, and these
-     * tests deliberately post captures minutes in the past, so a row from an
-     * earlier run can sort ahead of the row under test.
-     */
-    /**
      * Stage two through the real worker. Hoisted because two classes drive it
      * and the incantation breaks together when the test artifact changes.
      */
@@ -286,6 +282,13 @@ internal object ParseFixtures {
         androidx.work.testing.TestListenableWorkerBuilder<ParseWorker>(context)
             .build().startWork().get()
 
+    /**
+     * The transaction a capture produced, or null.
+     *
+     * `recent()` would be shorter and wrong: it orders by `occurred_at`, and these
+     * tests deliberately post captures minutes in the past, so a row from an
+     * earlier run can sort ahead of the row under test.
+     */
     fun txnForCapture(context: Context, captureId: Long): my.pinged.data.entity.Txn? {
         val id = Databases.rawCaptureDao(context).txnIdForCapture(captureId) ?: return null
         return Databases.txnDao(context).byId(id)

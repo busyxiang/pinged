@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.util.Log
+import java.io.IOException
 
 /**
  * What the app can honestly say about capture right now.
@@ -38,6 +39,21 @@ data class CaptureReport(
      * stays false while nothing is being stored.
      */
     val storageUnavailable: Boolean = false,
+    /**
+     * `capture_health` could not be read at all, so the three fields above are
+     * not measurements of anything.
+     *
+     * They carry the never-seen encoding -- `lastNotificationAt` zero,
+     * `staleForMillis` `MAX_VALUE`, `storageUnavailable` false -- chosen so
+     * that [looksDead] and [needsUserAction] stay true rather than false: a
+     * report that could not be read must not read as a healthy one. Nothing
+     * may treat those three as facts without checking this first, which is why
+     * `MainActivity.bannerFor` answers this before it answers either of them.
+     *
+     * [granted] is still a measurement: it comes from `NotificationManager`
+     * and not from the store that failed.
+     */
+    val healthUnreadable: Boolean = false,
 ) {
     /**
      * Grant present, nothing arriving. This is the shape of an OEM process
@@ -156,13 +172,52 @@ object ListenerStatus {
      * `suspend` because the heartbeat lives in `DataStore`, which is where spec
      * 10.2 puts it and not in Room: the value changes 100-300 times a day and
      * Room's invalidation tracker is table-granular.
+     *
+     * **Both DataStore reads are guarded, and the answer is a report that says
+     * it could not read rather than one that says everything is fine.** The
+     * only caller is `MainActivity.onResume`, on a bare `lifecycleScope.launch`
+     * with no `CoroutineExceptionHandler`: a `CorruptionException` from a
+     * truncated `capture_health` file -- or a plain `IOException` from a disk
+     * that will not read -- does not fail the banner there, it reaches the
+     * thread's default handler and kills the process, on the home screen, on
+     * every foreground for as long as the file stays unreadable. Returning
+     * nothing is not on offer either: no banner is how a dead listener reads,
+     * and spec 10.2 exists because that is the failure users cannot see. See
+     * [CaptureReport.healthUnreadable] for what the report then carries.
+     *
+     * **[lastSeenAt] and [storageUnavailable] are parameters because the guard
+     * is the only behaviour here that can be wrong, and nothing else can
+     * provoke it.** `capture_health` is one DataStore for the process and
+     * caches its first successful read, so a test that corrupts the file
+     * afterwards is never read from disk again and would pass from the cache.
+     * `ListenerReportGuardTest` hands the failure in instead.
      */
-    suspend fun report(context: Context, now: Long = System.currentTimeMillis()): CaptureReport {
-        val last = CaptureHealth.lastSeenAt(context)
+    suspend fun report(
+        context: Context,
+        now: Long = System.currentTimeMillis(),
+        lastSeenAt: suspend () -> Long = { CaptureHealth.lastSeenAt(context) },
+        storageUnavailable: suspend () -> Boolean = { CaptureHealth.storageUnavailable(context) },
+    ): CaptureReport {
+        // Outside the try: it is a `NotificationManager` call with a catch of
+        // its own, so it is still an answer when the store is not.
+        val granted = isGranted(context)
+        val health = try {
+            lastSeenAt() to storageUnavailable()
+        } catch (thrown: IOException) {
+            Log.w(TAG, "Could not read capture_health, so capture cannot be reported on", thrown)
+            return CaptureReport(
+                granted = granted,
+                lastNotificationAt = 0L,
+                staleForMillis = Long.MAX_VALUE,
+                storageUnavailable = false,
+                healthUnreadable = true,
+            )
+        }
+        val last = health.first
         return CaptureReport(
-            granted = isGranted(context),
+            granted = granted,
             lastNotificationAt = last,
-            storageUnavailable = CaptureHealth.storageUnavailable(context),
+            storageUnavailable = health.second,
             // Never seen is not "seen at the epoch". Reporting `now` minus zero
             // would be a stale-by-56-years answer that happens to be right by
             // accident; MAX_VALUE says the thing that is actually known.

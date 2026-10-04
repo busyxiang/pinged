@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     // AGP 9 has built-in Kotlin support; the separate
     // org.jetbrains.kotlin.android plugin is no longer required (and applying
@@ -164,4 +166,51 @@ dependencies {
     // Not optional on API 37. See the note in the version catalog.
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.junit)
+}
+
+/**
+ * `RawDatabaseAccessTest`'s subject, as the test task's input, and a digest
+ * of it for the test to compare with the files it reads itself.
+ *
+ * The test reads every module's production sources from disk rather than
+ * from its classpath, so they have to be an input: otherwise a call site
+ * added in another module, or one whose bytecode comes out the same, leaves
+ * that test up to date or served from cache. **Any depth**, because a module
+ * at `feature/x/impl` is as real as one at `feature/x`. The digest is how the
+ * test knows this rule and its own agree -- see
+ * `theSourcesReadHereAreTheOnesGradleWatches`.
+ */
+class ProductionSources(
+    @get:InputFiles @get:PathSensitive(PathSensitivity.RELATIVE) val files: FileTree,
+    @get:Internal val root: File,
+) : CommandLineArgumentProvider {
+    override fun asArguments(): List<String> {
+        val paths = files.files.map { it.relativeTo(root).invariantSeparatorsPath }.sorted()
+        val sha = MessageDigest.getInstance("SHA-256")
+            .digest(paths.joinToString("\n").toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return listOf("-Dpinged.productionSources=${paths.size}:$sha")
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    jvmArgumentProviders += ProductionSources(
+        rootProject.fileTree(rootDir) {
+            include("**/src/**/*.kt", "**/src/**/*.java")
+            // The test's `skipped`, and its test-set rule: build output and
+            // tool state are skipped outside a `src` tree and never inside
+            // one, where `build` can be a package.
+            exclude { element ->
+                val path = element.relativePath.segments
+                val src = path.indexOf("src")
+                if (src < 0 || src == path.lastIndex) {
+                    element.isDirectory && src < 0 &&
+                        element.name in setOf("build", ".gradle", ".git", ".idea", ".kotlin")
+                } else {
+                    path[src + 1].startsWith("test") || path[src + 1].startsWith("androidTest")
+                }
+            }
+        },
+        rootDir,
+    )
 }

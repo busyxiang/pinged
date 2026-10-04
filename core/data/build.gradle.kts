@@ -46,9 +46,19 @@ dependencies {
     api(libs.androidx.room.paging)
     implementation(libs.sqlcipher.android)
     implementation(libs.androidx.sqlite)
+    // A preferences store in a Room module, for `IntegrityStore` alone: the
+    // integrity verdict is a fact about this database that outlives any one
+    // process and has to be legible to both features. It cannot live in Room --
+    // a verdict kept inside the file it judges is unreadable in exactly the
+    // state it exists to report -- and it cannot live in either feature,
+    // because :feature:capture writes it and :feature:ledger reads it.
+    implementation(libs.androidx.datastore.preferences)
     ksp(libs.androidx.room.compiler)
 
     androidTestImplementation(libs.androidx.room.testing)
+    // `runBlocking`, for the suspend surface DataStore gives IntegrityStore
+    // and, through it, Wipe.everything.
+    androidTestImplementation(libs.kotlinx.coroutines.android)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.junit)

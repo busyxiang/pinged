@@ -7,11 +7,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import kotlinx.coroutines.runBlocking
+import my.pinged.data.IntegrityStore
 import my.pinged.data.LocalDates
+import my.pinged.data.Seed
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.TxnState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -311,6 +314,121 @@ class ParseWorkerTest {
         assertEquals(postedAt - 2 * 60 * 60 * 1000L, occurredAt(trusted))
         assertEquals("A `when` in the future must not date the transaction", postedAt, occurredAt(future))
         assertEquals("A `when` days earlier must not date the transaction", postedAt, occurredAt(ancient))
+    }
+
+    /**
+     * Task 13's headline behaviour, and the only production caller of it: this
+     * worker. Commenting that one line out leaves every other test in this
+     * module green, so without this the weekly check could stop shipping and
+     * nothing would say so.
+     *
+     * The timestamp rather than the verdict, because the database these tests
+     * share is healthy and `damaged` is false either way. That the seam's
+     * default is the real pragma and not a stub is
+     * [PeriodicIntegrityTest.theDefaultCheckIsTheRealPragma].
+     */
+    @Test
+    fun aRunChecksTheDatabaseForDamage() = runBlocking {
+        IntegrityStore.forget(context)
+        assertEquals("nothing should have been checked yet", 0L, IntegrityStore.lastCheckAt(context))
+
+        runWorker()
+
+        assertNotEquals(
+            "stage two ran without checking the database, and no other caller ever does",
+            0L,
+            IntegrityStore.lastCheckAt(context),
+        )
+    }
+
+    /**
+     * **The placement, not just the call.** The check sits before the drain
+     * because a database damaged enough to make the drain throw is exactly the
+     * one whose verdict has to reach the settings screen, and moved after
+     * `ParsePass(...).run()` it never runs on one. Measured on this tree: with
+     * the call moved there, this case is the only one of the module's 100 that
+     * fails.
+     *
+     * The drain is made to throw by the failure `doWork`'s own catch already
+     * names -- an absent seed. `ParsePass`'s `uncategorizedId` argument is
+     * `requireUncategorizedId()`, the first statement after the check, and
+     * spec 7.1 leaves it nowhere to file an unknown merchant without it. The
+     * name goes back in a `finally`: this database is shared with every other
+     * class in this APK.
+     *
+     * **An undrained capture is what says the drain threw, and `retry()` alone
+     * does not.** `retry()` is also `doWork`'s ordinary answer for
+     * `summary.remaining || swept.more`, so on its own it rules out
+     * `success()` and nothing else -- a drain that finished normally with work
+     * left over satisfies it just as well. The capture below is posted a
+     * minute into the past, so `claimNext`'s `ORDER BY posted_at ASC` puts it
+     * in the first batch of the 2,000 a run takes: any drain that ran at all
+     * reached it. Still `NEW` afterwards means [ParsePass] was never
+     * constructed, which is the case this test is named for.
+     *
+     * **It is a capture the bundled pack cannot match, and that is not
+     * incidental.** A capture whose *parse* fails also stays `NEW` -- ParsePass
+     * says so where it catches, because an unfinished row is the honest record
+     * -- so a probe that needed the seed would still look undrained on the day
+     * `requireUncategorizedId` gains a fallback: the drain would run, fail this
+     * row on the bad id, count it in `summary.failed`, and answer `retry()` for
+     * the ordinary reason. An unmatched capture is marked `UNMATCHED` by a
+     * `mark` that never touches the category, so it leaves `NEW` on any drain
+     * that runs at all. Measured on this tree: with `requireUncategorizedId`
+     * replaced by `uncategorizedIdOrNull() ?: 1L` and a second capture behind
+     * this one to keep `remaining` true, the two assertions this test had
+     * before still pass and the status assertion is the only one that fails.
+     */
+    @Test
+    fun aRunWhoseDrainThrowsStillRecordsACheck() = runBlocking {
+        IntegrityStore.forget(context)
+        val renamed = "Uncategorized $marker"
+        val captureId = ParseFixtures.insertCapture(
+            context,
+            text = "Nothing in the bundled pack matches this, $marker",
+            pkg = ParseFixtures.SYNTHETIC,
+            sbnKey = "drain-throws-$marker",
+            postedAt = base - 60_000L,
+        )
+        val (result, statusAfter) = try {
+            renameCategory(from = Seed.UNCATEGORIZED, to = renamed)
+            runWorker() to captures.byId(captureId).parseStatus
+        } finally {
+            renameCategory(from = renamed, to = Seed.UNCATEGORIZED)
+            // This database is shared with every other class in this APK, and
+            // a row left at `NEW` with an old `posted_at` sorts ahead of
+            // theirs -- `ParseInterruptionTest` stops its pass after a fixed
+            // number of captures and would be stopping on this one.
+            deleteCapture(captureId)
+        }
+
+        assertEquals(
+            "the drain finished, so nothing here is about a run that threw",
+            ListenableWorker.Result.retry(),
+            result,
+        )
+        assertEquals(
+            "the drain reached the queue and parsed it, so the retry above is the " +
+                "ordinary `remaining || swept.more` answer and this case proves nothing",
+            ParseStatus.NEW,
+            statusAfter,
+        )
+        assertNotEquals(
+            "a run whose drain threw recorded no check, so the damage that made it " +
+                "throw is the damage the settings screen never hears about",
+            0L,
+            IntegrityStore.lastCheckAt(context),
+        )
+    }
+
+    private fun renameCategory(from: String, to: String) {
+        Databases.shared(context).openHelper.writableDatabase
+            .execSQL("UPDATE category SET name = ? WHERE name = ?", arrayOf(to, from))
+    }
+
+    private fun deleteCapture(id: Long) {
+        Databases.shared(context).openHelper.writableDatabase
+            .execSQL("DELETE FROM raw_capture WHERE id = ?", arrayOf<Any>(id))
     }
 
     private fun occurredAt(captureId: Long): Long {

@@ -11,6 +11,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.util.concurrent.Callable
+import my.pinged.data.Databases
 import my.pinged.data.PingedDatabase
 import my.pinged.data.Seed
 import my.pinged.data.entity.Arrival
@@ -95,6 +96,18 @@ object ImportJson {
      */
     const val CHECK_EVERY = 500
 
+    /**
+     * **A closed [db] is refused before the transaction opens.**
+     * `runInTransaction` reopens a closed instance's file (ruling R42), so
+     * without the check an import handed a stale handle writes a ledger
+     * outside `Databases` and outside its gate.
+     *
+     * [Databases.requireLive] rather than [Databases.whileLive]: [db] is always
+     * its caller's own -- `Restore`'s probe or its rebuild -- which
+     * `Databases` never serves and so never closes, and holding that object's
+     * monitor across a whole import would stall every open of the shared
+     * database behind a restore's validation, for seconds at 50,000 rows.
+     */
     fun read(
         db: PingedDatabase,
         input: InputStream,
@@ -103,6 +116,7 @@ object ImportJson {
     ): ImportReport {
         val budget = RowBudgetReader(InputStreamReader(input, Charsets.UTF_8))
         val reader = JsonReader(budget)
+        Databases.requireLive(db)
         val report = db.runInTransaction(
             Callable { readDocument(db, reader, budget, onProgress, isCancelled) },
         )
@@ -245,6 +259,7 @@ object ImportJson {
         }
 
         verifyReferences(db)
+        requeueCapturesWithoutTheirTxn(db)
 
         val report = ImportReport(
             formatVersion = Backup.FORMAT_VERSION,
@@ -312,6 +327,41 @@ object ImportJson {
                 "without it would restore cleanly and then fail on the first capture. " +
                 "Nothing was imported.",
         )
+    }
+
+    /**
+     * Gives stage two back every `MATCHED` capture the file holds without its
+     * transaction, so that the money comes back once stage two has run.
+     *
+     * **The file that holds one is a salvage whose `txn` page would not
+     * read.** Its captures section is written first, at the status each
+     * capture had; a capture whose transaction then did not read stays
+     * `MATCHED` with nothing behind it, and `ParsePass` claims only `NEW`
+     * and `Reparse` only revisitable statuses, so restored as it is the money
+     * is gone for good, its notification sitting in the ledger.
+     *
+     * **Here rather than in the salvage**, which would have to know, at each
+     * capture, whether a transaction it has not reached yet will read: the
+     * sections arrive in [Backup.SECTION_ORDER], and asking `txn`'s index
+     * ahead of the walk could disagree with the walk at exactly the damaged
+     * rows -- the reason `SalvageJson` holds forward links back rather than
+     * reading their targets. Here the restored `txn` table is the answer.
+     *
+     * **A backup the app exported moves nothing**: there, every `MATCHED`
+     * capture has its transaction (`RawCaptureDao.requeueMatchedWithoutTxn`),
+     * and nothing in the app deletes a transaction and keeps its capture.
+     * Measured on emulator-5554 at 50,000 `MATCHED` captures, inside a
+     * transaction, three runs each: 19.4-20.0 ms with every transaction
+     * present, moving none, and 124-128 ms with one in fifty missing, moving
+     * 1,000 -- against 2.39-2.40 s for the whole restore of 50,000
+     * (`DatabaseBeingDeletedException`'s KDoc).
+     *
+     * Stage two's next run writes them -- the next notification, or Pinged's
+     * next foreground (`ListenerStatus.onAppForeground`) -- as it does any
+     * `NEW` capture a backup carries.
+     */
+    private fun requeueCapturesWithoutTheirTxn(db: PingedDatabase) {
+        db.rawCaptureDao().requeueMatchedWithoutTxn()
     }
 
     // ---- sections --------------------------------------------------------

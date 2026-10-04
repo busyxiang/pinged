@@ -61,6 +61,14 @@ interface CaptureSourceDao {
     fun countAll(): Int
 
     /**
+     * The artboard's `4 ON`. A count and not the rows, because the settings row
+     * shows a number and loading every allow-list row to call `.size` on it is
+     * work the screen throws away.
+     */
+    @Query("SELECT COUNT(*) FROM capture_source WHERE enabled = 1")
+    fun enabledCount(): Int
+
+    /**
      * Every enabled source.
      *
      * **Not** what the listener gate reads: `CaptureIngest` asks

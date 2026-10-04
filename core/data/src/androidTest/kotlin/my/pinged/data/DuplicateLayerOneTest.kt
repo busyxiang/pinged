@@ -337,11 +337,16 @@ class DuplicateLayerOneTest {
 
     @Test fun ruleTwoStillMatchesInsideItsSixtySeconds() {
         val at = 1_740_000_000_000L
-        dao.insert(sampleCapture(hash = "pair", postedAt = at, sbnKey = "slot-1"))
-        dao.insert(sampleCapture(hash = "pair", postedAt = at + 2_000, sbnKey = "slot-2"))
+        val first = dao.insert(sampleCapture(hash = "pair", postedAt = at, sbnKey = "slot-1"))
+        val second = dao.insert(sampleCapture(hash = "pair", postedAt = at + 2_000, sbnKey = "slot-2"))
 
-        val hits = dao.contentHashWindow("pair", at + 2_000).map { it.sbnKey }.sorted()
-        assertEquals(listOf("slot-1", "slot-2"), hits)
+        val hits = dao.contentHashWindow("pair", at + 2_000).map { it.id }.sorted()
+        assertEquals(listOf(first, second), hits)
+        assertEquals(
+            "the capture's own slot was not left out",
+            listOf(first),
+            dao.contentHashWindow("pair", at + 2_000, excludingKey = "slot-2").map { it.id },
+        )
     }
 
     /**
@@ -351,9 +356,9 @@ class DuplicateLayerOneTest {
      */
     @Test fun ruleTwoIncludesARowPostedInTheSameMillisecond() {
         val at = 1_740_000_000_000L
-        dao.insert(sampleCapture(hash = "same", postedAt = at, sbnKey = "slot-x"))
+        val x = dao.insert(sampleCapture(hash = "same", postedAt = at, sbnKey = "slot-x"))
         dao.insert(sampleCapture(hash = "same", postedAt = at, sbnKey = "slot-y"))
-        assertNotNull(dao.contentHashWindow("same", at).singleOrNull { it.sbnKey == "slot-x" })
+        assertNotNull(dao.contentHashWindow("same", at).singleOrNull { it.id == x })
         assertEquals(2, dao.contentHashWindow("same", at).size)
     }
 }

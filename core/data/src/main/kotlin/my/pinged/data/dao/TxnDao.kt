@@ -91,6 +91,58 @@ interface TxnDao {
     fun countAll(): Int
 
     /**
+     * How many calendar months the ledger touches, for the delete sheet's
+     * `Months of history` row (spec 11.3) and nothing else.
+     *
+     * **`local_date / 100`, and not `substr(local_date, 1, 7)`.** `local_date`
+     * is a [my.pinged.data.LocalDate], packed as the integer `yyyymmdd`
+     * (spec 15.7) and stored with INTEGER affinity -- not the `YYYY-MM-DD`
+     * text a `substr` reading of it assumes. `substr` would coerce the number
+     * to eight digits and keep seven of them, which groups by *ten-day block*
+     * rather than by month: measured on emulator-5554 against 5,000 rows over
+     * 180 consecutive days, the `substr` form answered 24 where this one
+     * answers 7. Integer division truncates `20260930` to `202609` exactly,
+     * with no text conversion in the loop.
+     *
+     * `REJECTED` is excluded for the same reason [feed] excludes it -- a
+     * rejected capture is not a transaction, and a month holding nothing else
+     * is not a month of history.
+     *
+     * **Nothing indexes this and nothing can.** `state != 'REJECTED'` is a
+     * negative condition SQLite cannot range-scan, and no v1 index carries
+     * `local_date` and `state` together; the schema is frozen, so adding one
+     * is not available. It reads the table itself and sorts the groups --
+     * `SCAN txn` plus `USE TEMP B-TREE FOR count(DISTINCT)` -- at 0.354ms over
+     * 5,000 transactions on emulator-5554. Pinned in
+     * `QueryPlanTest.theTwoDeleteSheetCountsScanAndAreAcceptedAtThat`, because
+     * no behavioural test can see a plan; see `SettingsViewModel.wipeCounts`
+     * for the budget that number is spent from.
+     */
+    @Query(MONTH_COUNT_SQL)
+    fun distinctMonthCount(): Int
+
+    /**
+     * How many transactions the delete sheet says it is about to destroy
+     * (spec 11.3).
+     *
+     * **`REJECTED` is excluded, so this disagrees with [countAll] on
+     * purpose.** Those rows are physically destroyed too, so counting them
+     * would be defensible in isolation -- but [feed] hides them from every
+     * screen the user has ever looked at, so a sheet that counted them would
+     * be the one number in the app that reconciles against nothing. The
+     * surrounding copy already says everything goes; under-itemising a row
+     * the user was never shown costs nothing that sentence does not cover.
+     *
+     * Nothing here needs a column outside `index_txn_state_occurred_at`, so
+     * unlike [distinctMonthCount] this walks that index as a covering one and
+     * never touches the table: 0.195ms over 5,000 transactions on
+     * emulator-5554. Pinned beside the month count's plan, which shares its
+     * predicate and not its cost.
+     */
+    @Query(UNREJECTED_COUNT_SQL)
+    fun countUnrejected(): Int
+
+    /**
      * Duplicate detection, **layer 2** of spec 7.2: one card swipe firing both the
      * banking app and a separate card-alert app. Identical `amount_sen`, within 10
      * minutes, **different** `source_package`. The caller passes
@@ -167,6 +219,29 @@ interface TxnDao {
      */
     @Query("SELECT * FROM txn WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
     fun pageFrom(afterId: Long, limit: Int): List<Txn>
+
+    /**
+     * [pageFrom] starting **at** [fromId]. Salvage's read: why it is inclusive
+     * is on `RawCaptureDao.pageStartingAt`.
+     */
+    @Query("SELECT * FROM txn WHERE id >= :fromId ORDER BY id ASC LIMIT :limit")
+    fun pageStartingAt(fromId: Long, limit: Int): List<Txn>
+
+    /**
+     * Every id, off `txn(raw_capture_id)` and not the table's pages. SQLite
+     * indexes a NULL like any other value, so a transaction with no capture is
+     * listed too.
+     */
+    @Query("SELECT id FROM txn INDEXED BY index_txn_raw_capture_id")
+    fun idsFromRawCaptureIndex(): List<Long>
+
+    /** [idsFromRawCaptureIndex] off a second index. */
+    @Query("SELECT id FROM txn INDEXED BY index_txn_occurred_at")
+    fun idsFromOccurredAtIndex(): List<Long>
+
+    /** The highest id ever assigned, from `sqlite_sequence`; null if none. */
+    @Query("SELECT seq FROM sqlite_sequence WHERE name = 'txn'")
+    fun highestIdEver(): Long?
 
     /**
      * How many transactions point their `raw_capture_id` at a capture that is not
@@ -318,6 +393,24 @@ interface TxnDao {
          * (see "Schema v1 is frozen" in the module's CLAUDE.md).
          */
         const val COUNTED = "+state = 'COMMITTED' AND is_excluded = 0"
+
+        /**
+         * [distinctMonthCount]'s query, hoisted for the same reason the
+         * aggregates above are: no behavioural test can see a plan, and this
+         * one reads the `txn` table itself at a cost its KDoc asserts.
+         * `QueryPlanTest` reads it from here rather than from a copy.
+         */
+        const val MONTH_COUNT_SQL =
+            "SELECT COUNT(DISTINCT local_date / 100) FROM txn WHERE state != 'REJECTED'"
+
+        /**
+         * [countUnrejected]'s query, hoisted for the same reason. It shares
+         * the predicate above and not its plan: needing no column outside
+         * `index_txn_state_occurred_at`, it is answered from that index as a
+         * covering one and never touches the table, which is what
+         * `QueryPlanTest` pins by reading both strings from here.
+         */
+        const val UNREJECTED_COUNT_SQL = "SELECT COUNT(*) FROM txn WHERE state != 'REJECTED'"
 
         const val DAY_TOTALS_SQL =
             """

@@ -61,4 +61,23 @@ interface MerchantRuleDao {
      */
     @Query("SELECT * FROM merchant_rule WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
     fun pageFrom(afterId: Long, limit: Int): List<MerchantRule>
+
+    /**
+     * [pageFrom] starting **at** [fromId]. Salvage's read: why it is inclusive
+     * is on `RawCaptureDao.pageStartingAt`.
+     */
+    @Query("SELECT * FROM merchant_rule WHERE id >= :fromId ORDER BY id ASC LIMIT :limit")
+    fun pageStartingAt(fromId: Long, limit: Int): List<MerchantRule>
+
+    /** Every id, off `merchant_rule(category_id)` and not the table's pages. */
+    @Query("SELECT id FROM merchant_rule INDEXED BY index_merchant_rule_category_id")
+    fun idsFromCategoryIndex(): List<Long>
+
+    /** [idsFromCategoryIndex] off a second index. */
+    @Query("SELECT id FROM merchant_rule INDEXED BY index_merchant_rule_pattern_priority")
+    fun idsFromPatternIndex(): List<Long>
+
+    /** The highest id ever assigned, from `sqlite_sequence`; null if none. */
+    @Query("SELECT seq FROM sqlite_sequence WHERE name = 'merchant_rule'")
+    fun highestIdEver(): Long?
 }

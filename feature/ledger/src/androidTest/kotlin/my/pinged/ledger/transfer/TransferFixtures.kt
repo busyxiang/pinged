@@ -26,6 +26,24 @@ import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 
 /**
+ * Room's `RoomDatabase` declares `close()` but does not implement
+ * `Closeable`, so `kotlin.io.use` does not apply to it. This is the
+ * equivalent, and it exists so a test cannot leak an open SQLCipher handle
+ * onto the next test's `deleteDatabase()`.
+ *
+ * `core/data/src/androidTest/kotlin/my/pinged/data/Fixtures.kt` declares the
+ * same helper, but that source set builds into its own test APK and is not on
+ * this module's classpath -- a Gradle project dependency reaches another
+ * module's `main`, never its `androidTest`. Duplicated rather than shared.
+ */
+inline fun <R> PingedDatabase.useDb(block: (PingedDatabase) -> R): R =
+    try {
+        block(this)
+    } finally {
+        close()
+    }
+
+/**
  * A whole export, as bytes.
  *
  * Six call sites wrote `ByteArrayOutputStream().also { ExportJson.write(...) }`
@@ -446,3 +464,22 @@ fun PingedDatabase.columnsOf(table: String): Set<String> {
 
 /** The name SQLite gives Uncategorized, so a test can say it out loud once. */
 val UNCATEGORIZED_NAME: String get() = Seed.UNCATEGORIZED
+
+/**
+ * Flip one byte halfway into a database file.
+ *
+ * A second copy of `:core:data`'s helper of the same name, because `androidTest`
+ * source sets are not shared between modules and there is no test-fixtures
+ * module here. Keep the two identical: the offset is the part that matters, and
+ * a copy that drifts to page 1 silently tests a different state -- an open that
+ * fails outright rather than a database that opens and fails its check.
+ */
+fun damageMidFile(file: java.io.File) {
+    java.io.RandomAccessFile(file, "rw").use { raf ->
+        val at = file.length() / 2
+        raf.seek(at)
+        val original = raf.readByte()
+        raf.seek(at)
+        raf.writeByte(original.toInt() xor 0xFF)
+    }
+}

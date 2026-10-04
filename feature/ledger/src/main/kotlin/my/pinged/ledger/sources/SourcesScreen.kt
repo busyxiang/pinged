@@ -38,10 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
+import my.pinged.data.Databases
 import my.pinged.ledger.theme.Separator
 import my.pinged.ledger.theme.Body
 import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ledger.theme.Card
+import my.pinged.ledger.theme.Chevron
 import my.pinged.ledger.theme.Display
 import my.pinged.ledger.theme.Faint
 import my.pinged.ledger.theme.Ink
@@ -94,7 +96,18 @@ fun SourcesScreen(
     // Keyed on the view model, so a new entry is a new holder and a new read.
     // Nothing to undo on pause: `refresh()` is queued and ordered in the holder
     // (see `SourcesViewModel`), and cancelling it would only lose the read.
-    LifecycleResumeEffect(viewModel) {
+    //
+    // **And on `Databases.rewrites`, so a replaced database is a new read
+    // without a resume.** A delete or restore runs from settings on that
+    // holder's own scope, and the user can open this screen while one is
+    // still going; when it lands nothing resumes, and the screen would go on
+    // drawing the replaced ledger's allow-list -- a source switched ON that
+    // the delete has taken away, which is spec 9.6's consent shown inverted.
+    // Here rather than in the holder because a holder re-reading on its own
+    // opens the database for a screen nobody is looking at, and every holder
+    // left on the back stack would do it at once.
+    val rewrites by Databases.rewrites.collectAsState()
+    LifecycleResumeEffect(viewModel, rewrites) {
         viewModel.refresh()
         onPauseOrDispose {}
     }
@@ -241,13 +254,7 @@ private fun Header(enabledCount: Int, onBack: () -> Unit) {
             .semantics { contentDescription = BACK_DESCRIPTION },
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(20.dp)) {
-            val stroke = 1.5.dp.toPx()
-            val near = size.width * 0.38f
-            val far = size.width * 0.62f
-            drawLine(Ink, Offset(far, size.height * 0.22f), Offset(near, size.height * 0.5f), stroke)
-            drawLine(Ink, Offset(near, size.height * 0.5f), Offset(far, size.height * 0.78f), stroke)
-        }
+        Chevron(pointsRight = false, size = 20.dp, strokeWidth = 1.5.dp, tint = Ink)
     }
     Row(
         Modifier

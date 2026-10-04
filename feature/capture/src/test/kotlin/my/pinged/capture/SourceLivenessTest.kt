@@ -92,6 +92,7 @@ class SourceLivenessTest {
         }
 
         override fun countAll(): Int = if (row == null) 0 else 1
+        override fun enabledCount(): Int = listOfNotNull(row).count { it.enabled }
         override fun enabled(): List<CaptureSource> = listOfNotNull(row).filter { it.enabled }
         override fun byPackage(pkg: String): CaptureSource? = row?.takeIf { it.pkg == pkg }
         override fun all(): List<CaptureSource> = listOfNotNull(row)

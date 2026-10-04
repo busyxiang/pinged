@@ -29,13 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
@@ -49,6 +43,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
@@ -69,6 +64,7 @@ import my.pinged.ledger.theme.Paper
 import my.pinged.ledger.theme.Rule
 import my.pinged.ledger.theme.Separator
 import my.pinged.ledger.theme.Stamp
+import my.pinged.ledger.theme.dashedOutline
 import my.pinged.ledger.theme.dottedRule
 import my.pinged.parse.Direction
 import java.time.YearMonth
@@ -98,7 +94,7 @@ import kotlin.math.abs
 @Composable
 fun LedgerScreen(
     viewModel: LedgerViewModel,
-    onOpenSources: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
@@ -110,7 +106,14 @@ fun LedgerScreen(
     // never re-read: a payment captured while the app was away appears as a row
     // -- the insert invalidates the `PagingSource` -- above a day header and a
     // month total that do not count it.
-    LifecycleResumeEffect(viewModel) {
+    //
+    // Keyed on `Databases.rewrites` too, so a delete or restore that lands
+    // while this screen is showing re-reads the aggregates without a resume;
+    // the holder rebinds the feed itself (`LedgerViewModel.rebind`), on
+    // `generation`. Here rather than there for the reason `SourcesScreen`
+    // gives; `rewrites` rather than `generation` for the one `Databases` gives.
+    val rewrites by Databases.rewrites.collectAsState()
+    LifecycleResumeEffect(viewModel, rewrites) {
         viewModel.refresh()
         // Paging does not re-attempt a load that failed, so the feed's half of
         // the catch-up has to be asked for. Without it a transient failure is
@@ -126,7 +129,7 @@ fun LedgerScreen(
         read = read,
         storageUnavailable = unavailable,
         onAssign = { txnId, categoryId -> viewModel.assignCategory(txnId, categoryId) },
-        onOpenSources = onOpenSources,
+        onOpenSettings = onOpenSettings,
         modifier = modifier,
     )
 }
@@ -147,7 +150,7 @@ internal fun LedgerScreenContent(
     read: LedgerRead,
     storageUnavailable: Boolean,
     onAssign: (txnId: Long, categoryId: Long) -> Unit,
-    onOpenSources: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Which row is being categorized, hoisted to here rather than held in the
@@ -172,10 +175,10 @@ internal fun LedgerScreenContent(
     }
 
     Column(modifier.fillMaxSize().background(Paper)) {
-        // Above the branch: the month being summarised and the way out to the
-        // allow-list are true in every state, including the two with nothing to
+        // Above the branch: the month being summarised and the way out to
+        // settings are true in every state, including the two with nothing to
         // show -- which are the states a user most needs that route from.
-        TopBar(month = read.summary?.month ?: YearMonth.now(), onOpenSources = onOpenSources)
+        TopBar(month = read.summary?.month ?: YearMonth.now(), onOpenSettings = onOpenSettings)
 
         when {
             // First, because it is the only state where the ledger is certainly
@@ -193,7 +196,7 @@ internal fun LedgerScreenContent(
             // distinguishes them; a bare `itemCount == 0` does not.
             items.loadState.refresh is LoadState.Loading -> Reading(Modifier.weight(1f))
 
-            items.itemCount == 0 -> Empty(onOpenSources, Modifier.weight(1f))
+            items.itemCount == 0 -> Empty(onOpenSettings, Modifier.weight(1f))
 
             else -> Feed(
                 items = items,
@@ -229,14 +232,17 @@ internal fun LedgerScreenContent(
 }
 
 /**
- * The month being summarised, and the way to the allow-list.
+ * The month being summarised, and the way to settings.
  *
  * The month comes from the summary rather than the clock so the label cannot
  * name a period the numbers below it did not cover; before the first aggregate
  * lands there is no number to label and it names the current month.
+ *
+ * [onOpenSettings] opens spec 9.5's settings, which holds the allow-list as
+ * one row among several.
  */
 @Composable
-private fun TopBar(month: YearMonth, onOpenSources: () -> Unit) {
+private fun TopBar(month: YearMonth, onOpenSettings: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -249,7 +255,7 @@ private fun TopBar(month: YearMonth, onOpenSources: () -> Unit) {
                 .clip(RoundedCornerShape(2.dp))
                 // A labelled control, so it reports as a button and takes a
                 // 44dp target -- see `SourcesScreen`'s `Header`.
-                .clickable(role = Role.Button, onClick = onOpenSources)
+                .clickable(role = Role.Button, onClick = onOpenSettings)
                 .heightIn(min = 44.dp)
                 // `Faint`, not the artboard's `Border`: that is 1.35:1 on
                 // Paper, and WCAG 1.4.11 asks 3:1 of a component. Same
@@ -258,7 +264,11 @@ private fun TopBar(month: YearMonth, onOpenSources: () -> Unit) {
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text("SOURCES", style = MonoLabel, color = Ink)
+            // No explicit `contentDescription` -- this label is the
+            // accessible name, the same choice every other text-labelled
+            // control on this screen makes; see `SourcesScreen.Header` for
+            // the one that needs one.
+            Text("SETTINGS", style = MonoLabel, color = Ink)
         }
     }
 }
@@ -274,7 +284,15 @@ private fun TopBar(month: YearMonth, onOpenSources: () -> Unit) {
  * **The copy names no cause.** The branch above fires for any refresh error --
  * Room's own `PagingSource` can fail at page-load time on a full disk or an IO
  * error -- so naming §11.1 would explain the wrong one. The banner above the
- * whole `NavDisplay` carries §11.1's full account when §11.1 is what happened.
+ * whole `NavDisplay` names no cause either, for the same reason; its button
+ * leads to settings, which tells the causes apart.
+ *
+ * **Nor does it say what is or is not still there.** A restore that lost the
+ * ledger, or a delete, can leave a database the next read cannot open, so
+ * "nothing already recorded has been deleted" is false in exactly the state a
+ * user is likeliest to be reading this. Settings is the one screen that knows
+ * whether that happened, so this points there, and not at the banner, which
+ * defers to settings itself and may not be drawn at all.
  */
 @Composable
 private fun Unreadable(modifier: Modifier = Modifier) {
@@ -288,10 +306,9 @@ private fun Unreadable(modifier: Modifier = Modifier) {
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         )
         Text(
-            "Pinged could not read your transactions. Nothing already " +
-                "recorded has been deleted -- so this list is empty because it " +
-                "could not be read, not because there is nothing in it. The " +
-                "banner above says more when Pinged knows more.",
+            "Pinged could not read your transactions, so an empty list here " +
+                "is not a sign that there are none. Settings says more when " +
+                "Pinged knows more.",
             fontFamily = Body,
             fontSize = 14.sp,
             lineHeight = 20.sp,
@@ -316,11 +333,15 @@ private fun Reading(modifier: Modifier = Modifier) {
  * Nothing has been captured, drawn from `design/Empty.dc.html`.
  *
  * **It never says "nothing spent".** With no source enabled those are
- * different facts and only one of them is knowable here, which is why the
- * route to the allow-list is part of this state rather than decoration.
+ * different facts and only one of them is knowable here, which is why a route
+ * towards the allow-list is part of this state rather than decoration.
+ *
+ * That route is Settings, not the allow-list itself: the sources screen is
+ * reached through `SettingsScreen`'s own `Capture sources` row, so the button
+ * names where the tap lands rather than where it eventually leads.
  */
 @Composable
-private fun Empty(onOpenSources: () -> Unit, modifier: Modifier = Modifier) {
+private fun Empty(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
         Text("NOTHING CAPTURED YET", style = MonoLabel, color = Muted)
         Text(
@@ -346,13 +367,13 @@ private fun Empty(onOpenSources: () -> Unit, modifier: Modifier = Modifier) {
             Modifier
                 .padding(top = 18.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .clickable(role = Role.Button, onClick = onOpenSources)
+                .clickable(role = Role.Button, onClick = onOpenSettings)
                 .heightIn(min = 44.dp)
                 .border(1.dp, Stamp, RoundedCornerShape(2.dp))
                 .padding(horizontal = 14.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text("CHOOSE CAPTURE SOURCES", style = MonoLabel, color = Stamp)
+            Text("OPEN SETTINGS", style = MonoLabel, color = Stamp)
         }
     }
 }
@@ -674,7 +695,7 @@ internal const val CATEGORY_CHIP = "+ CATEGORY"
  * this screen that writes.
  *
  * Drawn in [Stamp], the accent this app reserves for the state that wants
- * acting on, with the artboard's dashed rule hand-drawn by [dashedOutline].
+ * acting on, inside the theme's [dashedOutline].
  *
  * [Role.Button] so it reports as one: `SourcesScreen`'s `Header` records what a
  * tappable-looking thing with no semantics cost.
@@ -696,38 +717,12 @@ private fun CategoryChip(onClick: () -> Unit) {
             // target; 2.5.8's AA minimum is 24dp, which the 6dp either side
             // clears.
             .padding(vertical = 6.dp)
-            .dashedOutline()
+            .dashedOutline(Stamp)
             .padding(horizontal = 7.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(CATEGORY_CHIP, style = MonoLabel, color = Stamp)
     }
-}
-
-/**
- * The artboard's `1px dashed` chip border, in the accent, with the chip's 2dp
- * corner.
- *
- * `Modifier.border` draws a solid stroke and takes no dash pattern, so the
- * outline is drawn here -- the same `PathEffect` route `theme`'s [dottedRule]
- * takes for its hairlines. Inset by half the stroke, or a stroke centred on the
- * bounds would have its outer half clipped away and read thinner than the
- * hairline beside it.
- */
-private fun Modifier.dashedOutline(): Modifier = drawBehind {
-    val stroke = 1.dp.toPx()
-    drawRoundRect(
-        color = Stamp,
-        topLeft = Offset(stroke / 2f, stroke / 2f),
-        size = Size(size.width - stroke, size.height - stroke),
-        cornerRadius = CornerRadius(2.dp.toPx()),
-        style = Stroke(
-            width = stroke,
-            pathEffect = PathEffect.dashPathEffect(
-                floatArrayOf(3.dp.toPx(), 2.dp.toPx()),
-            ),
-        ),
-    )
 }
 
 /** What the row's leading slot draws, and whether it draws it in the accent. */

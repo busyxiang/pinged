@@ -115,6 +115,27 @@ internal object CaptureIngest {
         // still-posted notification on every rebind.
         SourceCounters.countOne(context, sbn.packageName, arrival, sbn.postTime)
 
+        // Guarded as well, and not only for the open the block above already
+        // made: a connection that has met damage answers the lookup or the
+        // insert with code 26, and outside a guard that went to the listener's
+        // handler -- one log line, the capture gone, the flag clear. See
+        // `CaptureStorage.guarded` for what it does instead. In order, on the
+        // listener's thread, where the insert runs.
+        return CaptureStorage.guardedInOrder(
+            context,
+            what = "Capture cannot store a notification",
+            unavailable = { null },
+        ) { storeIfEnabled(context, sbn, arrival, now) }
+    }
+
+    /**
+     * The allow-list gate and the insert: everything [ingest] does past the
+     * seen count. Safe to run twice for one notification, which
+     * `CaptureStorage.guardedInOrder` does when the first attempt meets a damaged
+     * connection: a lookup, an update of [SourceLiveness]'s timestamp to the
+     * same value, and an insert that did not commit.
+     */
+    private fun storeIfEnabled(context: Context, sbn: StatusBarNotification, arrival: Arrival, now: Long): Long? {
         val sources = Databases.captureSourceDao(context)
         val source = sources.byPackage(sbn.packageName)
         if (source?.enabled != true) {

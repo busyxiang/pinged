@@ -1,7 +1,9 @@
 package my.pinged.capture
 
+import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.util.Log
 import java.util.concurrent.CancellationException
+import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.StaleCaptureException
@@ -56,6 +58,7 @@ internal class ParsePass(
     private val matcher: RuleMatcher,
     private val uncategorizedId: Long,
     private val sourceLabel: (String) -> String?,
+    /** Across every pass sharing [progress], not per pass. */
     private val maxRows: Int = MAX_ROWS_PER_RUN,
     private val isStopped: () -> Boolean = { false },
     /**
@@ -68,14 +71,75 @@ internal class ParsePass(
      * hook.
      */
     private val onCaptureFinished: (Long) -> Unit = {},
+    /**
+     * Where this run has got to and what it has met, shared by every pass
+     * of one run -- [ParseWorker] runs another on a new instance after each
+     * [DamagedCaptureException] -- so that [maxRows], the failures and the
+     * queue position hold across them.
+     */
+    private val progress: Progress = Progress(),
 ) {
 
     /**
      * What one run did. [remaining] is true when this run knowingly left work
-     * behind -- it was stopped, it hit [maxRows], or a capture failed -- which
-     * is what [ParseWorker] turns into a retry.
+     * behind that another run could do -- it was stopped, it hit [maxRows],
+     * or a capture failed -- which is what [ParseWorker] turns into a retry.
+     * A capture skipped for damage is not that: a retry meets the same page.
      */
     data class Summary(val processed: Int, val failed: Int, val remaining: Boolean)
+
+    /**
+     * One run's position in the queue and its tally, across its passes; and
+     * what damage has shown about captures on this file, which can outlive
+     * the run -- [ParseWorker] keeps those two for as long as the file.
+     *
+     * @param undecidable captures stage two cannot decide on this file: the
+     *   read of their own row, or their commit, met a damaged page, which
+     *   every connection meets again. Skipped unread, and left at `NEW`,
+     *   where they have a verdict nobody has reached.
+     * @param unpaired captures whose own row reads but whose duplicate
+     *   lookup -- layer one's indexes or layer two's transactions -- met
+     *   damage. Parsed on the next pass without either lookup, and a match
+     *   is a duplicate suspect naming no pair: the review inbox, where an
+     *   earlier copy of the same money can be merged. Not [undecidable],
+     *   which would leave the money out of the ledger for as long as the
+     *   page is damaged, and not parsed as new, which would count it twice
+     *   with nobody told whenever the lookup would have found a refresh.
+     *   The cost is one review item for each copy a listener rebind stores
+     *   while the page is damaged, each copy's lookup meeting it in turn.
+     */
+    class Progress(
+        val undecidable: MutableSet<Long> = mutableSetOf(),
+        val unpaired: MutableSet<Long> = mutableSetOf(),
+    ) {
+        val failed = mutableSetOf<Long>()
+        var processed = 0
+            internal set
+
+        /** Instances replaced for damage this run; [ParseWorker] bounds it. */
+        var replacements = 0
+
+        /** The last capture passed, in the queue's `(posted_at, id)` order. */
+        internal var afterPostedAt = Long.MIN_VALUE
+        internal var afterId = Long.MIN_VALUE
+
+        fun summary(remaining: Boolean = failed.isNotEmpty()) = Summary(processed, failed.size, remaining)
+    }
+
+    /**
+     * A capture's reads or its commit met a damaged page: code 11, from
+     * reading its row, from a duplicate lookup, or from its commit.
+     *
+     * **Thrown out of [run], not recorded and carried on from** as another
+     * failure is, because the read has left the connection answering code
+     * 26 to everything after it -- measured on emulator-5554, inside a
+     * transaction as well as out -- so nothing more can be done on this
+     * instance. [captureId] is in [Progress.undecidable] or
+     * [Progress.unpaired] by then; the caller replaces the instance and
+     * runs again from where this one stopped.
+     */
+    class DamagedCaptureException(val captureId: Long, cause: Throwable) :
+        RuntimeException("Capture $captureId reads a damaged page", cause)
 
     /**
      * Drains the `NEW` queue in chunks.
@@ -85,63 +149,106 @@ internal class ParsePass(
      * of them. Spec 15.5's three properties are all here -- chunked, cancellable
      * ([isStopped] before every row) and bounded ([maxRows]).
      *
-     * **Termination is not left to the queue emptying.** `while (true) {
-     * claimNext() }` spins forever the moment one capture cannot be marked: the row
-     * stays `NEW`, sorts first under `posted_at ASC`, and comes straight back. A
-     * capture that throws is remembered in [failed] and not re-attempted within the
-     * run, and a batch of nothing but already-failed rows ends it -- so one
-     * poisoned row delays only the rows more than [batchSize] behind it, until the
-     * retry.
+     * **Termination is not left to the queue emptying.** A capture that cannot
+     * be marked stays `NEW` and sorts where it did, so a claim from the head
+     * of the queue returns it again: `while (true) { claimNext() }` spins, and
+     * a run that ended on a batch of nothing but such captures left every
+     * capture behind them unclaimed for good -- measured on emulator-5554:
+     * with 50 skipped copies of one notification ahead of a capture, it was
+     * still `NEW` after three runs, each `success()`; with 49 it was parsed.
+     * So the claim is a cursor
+     * ([Progress]), and a capture that failed or is undecidable is passed
+     * over and stays behind it until the next run.
+     *
+     * **A delete or a restore stops the run** before its next capture, as
+     * [isStopped] does: the run holds a `Databases.leasing` lease throughout,
+     * and `Databases.reset` waits for every lease before it closes the
+     * instance under it.
      */
     fun run(): Summary {
-        val failed = mutableSetOf<Long>()
-        var processed = 0
-
-        // `remaining = true` is the answer to every early exit here, and saying
-        // so once keeps the three from drifting apart.
-        fun stopHere() = Summary(processed, failed.size, remaining = true)
+        fun stopped() = isStopped() || Databases.gated || progress.processed >= maxRows
 
         while (true) {
-            if (isStopped() || processed >= maxRows) return stopHere()
+            if (stopped()) return progress.summary(remaining = true)
 
-            val batch = captures.claimNext(BATCH_SIZE)
-            if (batch.isEmpty()) {
-                return Summary(processed, failed.size, remaining = failed.isNotEmpty())
-            }
-            val fresh = batch.filterNot { it.id in failed }
-            if (fresh.isEmpty()) return stopHere()
+            // Ids first, off the index, and each row read on its own: a row on
+            // a damaged page is then one capture skipped rather than a batch
+            // that cannot be claimed, which left the capture behind it at NEW
+            // and the run refused (measured on emulator-5554).
+            val batch = captures.claimNextIds(BATCH_SIZE, progress.afterPostedAt, progress.afterId)
+            if (batch.isEmpty()) return progress.summary()
 
-            for (capture in fresh) {
-                if (isStopped() || processed >= maxRows) return stopHere()
-
-                try {
-                    processOne(capture)
-                    processed++
-                } catch (cancelled: CancellationException) {
-                    // Cancellation is not a failure and must not be recorded as
-                    // one. It also must not be swallowed: the coroutine this
-                    // runs in is being torn down.
-                    throw cancelled
-                } catch (stale: StaleCaptureException) {
-                    // Another writer decided this capture's outcome between
-                    // claimNext and the commit. Nothing was written and there is
-                    // nothing to retry -- the work is done, by somebody else.
-                    Log.i(TAG, "Capture ${capture.id} was decided by another writer: ${stale.message}")
-                } catch (failure: RuntimeException) {
-                    // The row stays NEW, which is the honest record of
-                    // unfinished work (spec 3). Marking it anything else would
-                    // claim a verdict this run does not have.
-                    failed += capture.id
-                    Log.e(TAG, "Stage two failed for capture ${capture.id}", failure)
-                }
-
-                onCaptureFinished(capture.id)
+            for (entry in batch) {
+                if (stopped()) return progress.summary(remaining = true)
+                if (entry.id !in progress.undecidable) decide(entry.id)
+                progress.afterPostedAt = entry.postedAt
+                progress.afterId = entry.id
             }
         }
     }
 
+    /**
+     * One capture: parsed and its outcome committed, recorded as failed, or
+     * [DamagedCaptureException] -- after which the next pass takes it up
+     * again, as [Progress] says.
+     */
+    private fun decide(id: Long) {
+        val capture = try {
+            captures.byId(id)
+        } catch (damage: SQLiteDatabaseCorruptException) {
+            progress.undecidable += id
+            throw DamagedCaptureException(id, damage)
+        }
+        // Decided by another writer since the ids were read.
+        if (capture.parseStatus != ParseStatus.NEW) return
+
+        try {
+            processOne(capture)
+            progress.processed++
+        } catch (cancelled: CancellationException) {
+            // Cancellation is not a failure and must not be recorded as
+            // one. It also must not be swallowed: the coroutine this
+            // runs in is being torn down.
+            throw cancelled
+        } catch (damaged: DamagedCaptureException) {
+            throw damaged
+        } catch (stale: StaleCaptureException) {
+            // Another writer decided this capture's outcome between
+            // its row being read and the commit. Nothing was written
+            // and there is nothing to retry -- the work is done, by
+            // somebody else.
+            Log.i(TAG, "Capture ${capture.id} was decided by another writer: ${stale.message}")
+        } catch (damage: SQLiteDatabaseCorruptException) {
+            // The lookups are caught in [processOne] and [commit], so this is
+            // the commit's own write: a new connection meets it again.
+            progress.undecidable += capture.id
+            throw DamagedCaptureException(capture.id, damage)
+        } catch (failure: RuntimeException) {
+            // Code 26 is a connection something else poisoned, and
+            // says nothing about this capture: `CaptureStorage.guarded`
+            // retries it on a new one.
+            if (Databases.poisons(failure)) throw failure
+            // The row stays NEW, which is the honest record of
+            // unfinished work (spec 3). Marking it anything else would
+            // claim a verdict this run does not have.
+            progress.failed += capture.id
+            Log.e(TAG, "Stage two failed for capture ${capture.id}", failure)
+        }
+
+        onCaptureFinished(capture.id)
+    }
+
     private fun processOne(capture: RawCapture) {
-        when (val verdict = Dedup.layerOne(captures, capture)) {
+        // Its own row read, so it is decidable; only the lookup is not. See
+        // [Progress.unpaired] for why a suspect and not undecidable.
+        if (capture.id in progress.unpaired) return parse(capture, slotSuspectOf = null)
+        val verdict = try {
+            Dedup.layerOne(captures, capture, progress.undecidable)
+        } catch (damage: SQLiteDatabaseCorruptException) {
+            progress.unpaired += capture.id
+            throw DamagedCaptureException(capture.id, damage)
+        }
+        when (verdict) {
             // Layer 1's two dropping rules. No transaction, by design: the same
             // notification twice is not money twice.
             is Layer1Verdict.SlotRefresh -> mark(
@@ -164,6 +271,8 @@ internal class ParsePass(
             // flagged as a duplicate suspect. Folding it in with the two above
             // is the wrong-money bug spec 7.2 was rewritten to remove.
             is Layer1Verdict.SlotSuspect -> parse(capture, slotSuspectOf = verdict.priorId)
+
+            is Layer1Verdict.UndecidablePrior -> parse(capture, slotSuspectOf = verdict.priorId)
 
             Layer1Verdict.NotADuplicate -> parse(capture, slotSuspectOf = null)
         }
@@ -238,22 +347,37 @@ internal class ParsePass(
             ?.takeIf { it.isNotBlank() }
             ?.takeIf { Merchant.clean(it, matcher.merchantNormalization).value.isNotEmpty() }
 
-        val layerTwoSuspect = Dedup.layerTwo(
-            dao = txns,
-            sourcePackage = capture.sourcePackage,
-            amountSen = outcome.amountSen,
-            occurredAt = occurredAt,
-            direction = outcome.direction,
-            merchantRaw = merchantRaw,
-            normalization = matcher.merchantNormalization,
-        )
+        // A layer-two lookup that meets damage leaves the capture a suspect
+        // with no pair named, on the next pass: a transaction on the damaged
+        // page may be this purchase through another app, and parsed as new it
+        // would count twice with nobody told. Skipped instead, it is money
+        // left out of the ledger for as long as the page is damaged.
+        val unpaired = capture.id in progress.unpaired
+        val layerTwoSuspect = if (unpaired) {
+            null
+        } else {
+            try {
+                Dedup.layerTwo(
+                    dao = txns,
+                    sourcePackage = capture.sourcePackage,
+                    amountSen = outcome.amountSen,
+                    occurredAt = occurredAt,
+                    direction = outcome.direction,
+                    merchantRaw = merchantRaw,
+                    normalization = matcher.merchantNormalization,
+                )
+            } catch (damage: SQLiteDatabaseCorruptException) {
+                progress.unpaired += capture.id
+                throw DamagedCaptureException(capture.id, damage)
+            }
+        }
 
         val decision = ConfidenceGate.decide(
             confidence = outcome.confidence,
             kind = outcome.kind,
             merchantRaw = merchantRaw,
             amountSen = outcome.amountSen,
-            duplicateSuspect = slotSuspectOf != null || layerTwoSuspect != null,
+            duplicateSuspect = slotSuspectOf != null || layerTwoSuspect != null || unpaired,
         )
 
         val at = System.currentTimeMillis()
@@ -354,9 +478,10 @@ internal class ParsePass(
             packVersion = packVersion,
         )
         // markOutcome is guarded on parse_status = NEW and returns the row
-        // count, so zero means somebody else recorded an outcome between
-        // claimNext and here. That is a signal, not success and not a failure:
-        // there is nothing left to do for this capture and nothing to retry.
+        // count, so zero means somebody else recorded an outcome between its
+        // row being read and here. That is a signal, not success and not a
+        // failure: there is nothing left to do for this capture and nothing
+        // to retry.
         if (rows == 0) {
             Log.i(TAG, "Capture ${capture.id} left NEW before $status could be recorded")
         }
@@ -366,7 +491,7 @@ internal class ParsePass(
         private const val TAG = "PingedParse"
 
         /**
-         * Rows per `claimNext`.
+         * Rows per `claimNextIds`.
          *
          * A query bound and not a transaction bound: each capture's decision
          * commits on its own inside `commitCapture`, so the chunk width decides
