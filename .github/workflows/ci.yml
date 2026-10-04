@@ -86,6 +86,11 @@ jobs:
       - name: The release notes are built from the tag they claim
         run: bash .github/scripts/release_notes_test.sh
 
+      # A suite this selects wrongly is skipped with a green run, so the rules
+      # are tested here, against this repository's own module graph.
+      - name: The emulator job chooses the suites a change can reach
+        run: python3 .github/scripts/affected_suites_test.py
+
       # Room only rewrites the schema when the committed file's identity hash
       # differs from the entities, so a drifted `createSql` under an unchanged
       # hash survives every build and the comparison is against itself.
@@ -152,12 +157,40 @@ jobs:
       EMULATOR_OPTIONS: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none
 
     steps:
+      # Depth 2 for the merge commit's first parent, the base it is tested
+      # against; see the step below.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      # A PR runs only the suites its change can reach through the module
+      # graph -- the rules are affected_suites.py's. Main runs every suite,
+      # which is what catches anything a rule there let a PR skip.
+      #
+      # `HEAD^1..HEAD` on the merge commit GitHub checks out is exactly what
+      # the PR adds to the base as it is now, with no stale base SHA. A diff
+      # that fails stops the job: pipefail, and the script runs every suite on
+      # an empty list.
+      - name: Choose the instrumented suites
+        id: suites
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            git rev-parse --verify HEAD^2 >/dev/null
+            git diff --name-only HEAD^1 HEAD | python3 .github/scripts/affected_suites.py
+          else
+            echo "Every suite: ${{ github.event_name }} on ${{ github.ref }}"
+            echo "tasks=connectedDebugAndroidTest :smoke:connectedMinifiedAndroidTest" >> "$GITHUB_OUTPUT"
+            echo "smoke=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: ./.github/actions/setup-android
+        if: steps.suites.outputs.tasks != ''
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Enable KVM
+        if: steps.suites.outputs.tasks != ''
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -177,6 +210,7 @@ jobs:
       # alone, and two of them overflow the budget and evict `main`'s
       # (issue #13).
       - name: Restore the AVD and its boot snapshot
+        if: steps.suites.outputs.tasks != ''
         id: avd-cache
         uses: actions/cache/restore@v6
         with:
@@ -189,7 +223,7 @@ jobs:
       # `disable-animations: false` because the step below applies that per boot
       # rather than baking it in.
       - name: Create the AVD and its boot snapshot
-        if: steps.avd-cache.outputs.cache-hit != 'true'
+        if: steps.suites.outputs.tasks != '' && steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -203,7 +237,7 @@ jobs:
       # Straight after the boot that made it, before the tests can touch the
       # device and whether or not they pass.
       - name: Save the AVD and its boot snapshot
-        if: github.ref == 'refs/heads/main' && steps.avd-cache.outputs.cache-hit != 'true'
+        if: steps.suites.outputs.tasks != '' && github.ref == 'refs/heads/main' && steps.avd-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -214,6 +248,7 @@ jobs:
       # `-no-snapshot-save` so a run that dirtied the device does not write that
       # state back over the clean snapshot.
       - name: Instrumented tests
+        if: steps.suites.outputs.tasks != ''
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -223,12 +258,14 @@ jobs:
           disable-animations: true
           emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
           # :smoke drives the R8 build the release ships. Root
-          # connectedDebugAndroidTest does not reach it: it has no debug variant.
-          script: ./gradlew --stacktrace connectedDebugAndroidTest :smoke:connectedMinifiedAndroidTest
+          # connectedDebugAndroidTest does not reach it: it has no debug
+          # variant, so the full list names it.
+          script: ./gradlew --stacktrace ${{ steps.suites.outputs.tasks }}
 
       # A runner that dies before its first test is a green task with an empty
       # report: measured, when :app's suite was pointed at R8's output.
       - name: The smoke test ran
+        if: steps.suites.outputs.smoke == 'true'
         run: |
           if ! grep -q 'tests="[1-9]' smoke/build/outputs/androidTest-results/connected/minified/*.xml; then
             echo "::error:::smoke reported no tests. Its runner died before the first one, so nothing has checked the R8 build."
