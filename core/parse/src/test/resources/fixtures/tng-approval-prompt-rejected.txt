@@ -1,0 +1,9 @@
+package: my.com.tngdigital.ewallet
+title: Payment to THONG KEE
+expect: rejected
+# A real TnG eWallet notification, from a device export. It asks for
+# approval and names no amount; the payment, once approved, arrives as its
+# own "You have paid" notification. Left unmatched, six of these buried the
+# unread list.
+
+Tap here to view and approve your transaction.

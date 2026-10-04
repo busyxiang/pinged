@@ -1,0 +1,13 @@
+package: my.com.tngdigital.ewallet
+title: Payment successful
+expect: matched
+rule: tng-travel-pass-v1
+amount_sen: 5000
+merchant: My50 Pass
+merchant_display: My50 Pass
+direction: EXPENSE
+# A real TnG eWallet notification, from a device export. tng-paid-for-v1
+# reads "You have paid {{amount}} for" to the end of the text, so it stored
+# the merchant as "your My50 Pass. View your updated pass details now."
+
+Travel Pass: You have paid RM 50.00 for your My50 Pass. View your updated pass details now.

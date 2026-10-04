@@ -1,0 +1,18 @@
+package: com.maybank2u.life
+title: Maybank2u: Payments
+expect: matched
+rule: mae-card-bill-v1
+amount_sen: 226276
+merchant: Maybank Master Card
+direction: EXPENSE
+confidence: REVIEW
+kind: TRANSFER_SUSPECT
+exclusion_reason: CARD_PAYMENT
+# A real MAE notification, from a device export. It has the Scan & Pay
+# shape, so mae-scan-pay-v1 committed it as RM2,262.76 of spending -- on top
+# of the card spends it settles, which were each counted when they were made.
+# Spec 7.3 names credit-card bill payments as TRANSFER_SUSPECT. The payee
+# is the only thing marking it; only "Master Card" has been seen, so other
+# card brands are not guessed at.
+
+Successful payment of RM 2,262.76 to Maybank Master Card. REF:401654699M

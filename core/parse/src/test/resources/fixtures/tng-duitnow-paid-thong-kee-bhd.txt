@@ -1,0 +1,14 @@
+package: my.com.tngdigital.ewallet
+title: DuitNow Payment
+expect: matched
+rule: duitnow-paid-v1
+amount_sen: 1930
+merchant: THONG KEE BHD.
+merchant_display: Thong Kee
+direction: EXPENSE
+# A real TnG eWallet notification, from a device export. TnG's own wording
+# for this shop (tng-paid-for-thong-kee.txt) sends "THONG KEE."; DuitNow
+# sends the registered name. " BHD" is the abbreviation of " BERHAD", which
+# the pack already strips, and without it the shop is two in spec 8.
+
+You have paid RM19.30 to THONG KEE BHD.

@@ -1,0 +1,18 @@
+package: com.maybank2u.life
+title: Maybank2u: FPX Payments
+expect: matched
+rule: mae-fpx-v1
+amount_sen: 7500
+merchant: IBILIK 02
+merchant_display: Ibilik 02
+direction: EXPENSE
+confidence: REVIEW
+# A real MAE notification, from a device export. Six seconds earlier the
+# same app posted "You've just spent RM 75.00 at FPX-CREDIT CARD-RPS KUALA
+# LUMPUR MYS with your MasterCard", which mae-card-spend-v1 commits. This is
+# the same RM75, naming the payee the card spend does not.
+# Nothing in this text tells it apart from mae-fpx-from-account-digi.txt,
+# which is the only record of its money. So both wait for review: counted
+# here at HIGH, this one is RM75 spent twice with nobody asked.
+
+Successful payment of RM75.00 to IBILIK 02 on 19 Sep 2026 16:09:46. Did not perform this transaction? Please call 03-58914744. FPX ID: 2609191609160642

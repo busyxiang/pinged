@@ -1,0 +1,7 @@
+package: com.maybank2u.life
+title: Maybank
+expect: rejected
+# A real MAE notification, from a device export. It precedes every FPX
+# payment and names no amount; the payment arrives as its own notification.
+
+You have a Maybank2u transaction to be approved

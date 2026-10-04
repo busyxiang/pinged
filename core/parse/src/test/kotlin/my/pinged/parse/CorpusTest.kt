@@ -48,6 +48,18 @@ class CorpusTest {
                         if (fx.direction != null && outcome.direction != fx.direction) {
                             failures += "${fx.name}: direction ${outcome.direction}, expected ${fx.direction}"
                         }
+                        // What decides whether the money is counted before anyone
+                        // looks at it, so a fixture that names it is held to it.
+                        if (fx.confidence != null && outcome.confidence != fx.confidence) {
+                            failures += "${fx.name}: confidence ${outcome.confidence}, expected ${fx.confidence}"
+                        }
+                        if (fx.kind != null && outcome.kind != fx.kind) {
+                            failures += "${fx.name}: kind ${outcome.kind}, expected ${fx.kind}"
+                        }
+                        if (fx.exclusionReason != null && outcome.exclusionReason != fx.exclusionReason) {
+                            failures += "${fx.name}: exclusion_reason ${outcome.exclusionReason}, " +
+                                "expected ${fx.exclusionReason}"
+                        }
                     }
                 }
                 "rejected" -> if (outcome !is MatchOutcome.Rejected) {

@@ -554,15 +554,15 @@ class RuleMatcherTest {
 
     // Every outcome has to be traceable to the version of the pack that made it.
     @Test fun `the pack version reaches the matcher`() {
-        // 11, not 10: `tng-deducted-v1` and its `bigText` twin read a third
-        // wallet wording, observed unmatched on a device at pack 10.
+        // 12, not 11: FPX, Alipay+ and travel-pass wordings and two approval
+        // prompts, observed unmatched in a device export at pack 11.
         //
         // Spec 5.5's re-parse drives off this integer and is now implemented:
         // `Reparse.sweep` requeues captures stamped below it, so a bump is what
         // makes the wordings above reach captures already on the table. Keys
         // already stored on a committed `txn` still stay as they were -- that
         // is 5.5's third mode, which is not built.
-        assertEquals(11, matcher.packVersion)
+        assertEquals(12, matcher.packVersion)
         assertEquals(7, probePack(PAYMENT_RULE).packVersion)
     }
 

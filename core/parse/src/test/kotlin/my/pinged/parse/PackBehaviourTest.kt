@@ -51,6 +51,15 @@ class PackBehaviourTest {
         // *leads* the pattern, so what threatens it is the title rather than
         // the tail.
         "Versatile Wisdom Sdn Bhd: RM12.50 has been deducted from your TNG eWallet",
+        // TnG's travel pass wording, bounded by the stop before "View".
+        "Travel Pass: You have paid RM12.50 for your My50 Pass. View your updated pass details now.",
+        // TnG's Alipay+ wording, "at" where DuitNow says "to"; the field is the bound.
+        "You have paid RM12.50 at STARBUCKS KLCC",
+        // MAE's card bill, the QR shape with a card for a payee.
+        "Successful payment of RM12.50 to Maybank Master Card. REF:401654699M",
+        // MAE's FPX wording, bounded by the date after the payee.
+        "Successful payment of RM12.50 to STARBUCKS KLCC on 16 Sep 2026 08:28:04. " +
+            "Did not perform this transaction? Please call 03-58914744. FPX ID: 2609160827250911",
     )
 
     /**
