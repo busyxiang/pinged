@@ -52,8 +52,8 @@ class FirstCaptureTest {
 
     @Test fun theFirstPaymentAfterEnablingTheBankReachesTheLedger() {
         launch()
-        await(By.text("SETTINGS"), "the ledger").click()
-        await(By.text("Capture sources"), "settings").click()
+        tapUntil(By.text("SETTINGS"), By.text("Capture sources"), "settings")
+        tapUntil(By.text("Capture sources"), By.text(LABEL), "the allow-list")
 
         await(By.text(LABEL), "the allow-list row for $LABEL").click()
         assertTrue(
@@ -84,11 +84,17 @@ class FirstCaptureTest {
 
     /** Fails with the screen as UiAutomator saw it, which is the only evidence a CI run keeps. */
     private fun await(selector: BySelector, what: String): UiObject2 =
-        device.wait(Until.findObject(selector), TIMEOUT_MS) ?: run {
-            val screen = ByteArrayOutputStream().also { device.dumpWindowHierarchy(it) }
-            fail("Waited ${TIMEOUT_MS / 1000}s for $what and it never appeared. Screen:\n$screen")
-            error("unreachable")
-        }
+        device.wait(Until.findObject(selector), TIMEOUT_MS) ?: failWithScreen("Waited ${TIMEOUT_MS / 1000}s for $what and it never appeared")
+
+    private fun tapUntil(target: BySelector, next: BySelector, what: String) {
+        if (!device.tapUntil(target, next, TIMEOUT_MS)) failWithScreen("Tapped for $what for ${TIMEOUT_MS / 1000}s and it never opened")
+    }
+
+    private fun failWithScreen(message: String): Nothing {
+        val screen = ByteArrayOutputStream().also { device.dumpWindowHierarchy(it) }
+        fail("$message. Screen:\n$screen")
+        error("unreachable")
+    }
 
     private fun shell(command: String): String =
         ParcelFileDescriptor.AutoCloseInputStream(
@@ -108,3 +114,31 @@ class FirstCaptureTest {
         const val TIMEOUT_MS = 30_000L
     }
 }
+
+/**
+ * Tap [target] until [next] is on screen, or [timeoutMs] passes; true if it is.
+ *
+ * **One tap is not enough, because the screen can move between UiAutomator
+ * reading [target]'s bounds and the tap arriving.** On a fresh install the
+ * banner strip is drawn only once `MainActivity.sampleHealth` has opened the
+ * database, which can be seconds after the first frame, and it pushes the top
+ * bar 208px down: a tap aimed at SETTINGS then lands on the banner's text.
+ * Measured on a 320x640 emulator tapping at first sight: 2 misses in 20
+ * (issue #16). Re-tapping is safe only for navigation -- `pushOnce` makes a
+ * second tap on a screen already opening a no-op -- so a toggle must not
+ * come through here.
+ */
+internal fun UiDevice.tapUntil(target: BySelector, next: BySelector, timeoutMs: Long): Boolean {
+    val deadline = System.currentTimeMillis() + timeoutMs
+    while (System.currentTimeMillis() < deadline) {
+        val left = deadline - System.currentTimeMillis()
+        val found = wait(Until.findObject(target), left) ?: return hasObject(next)
+        runCatching { found.click() } // stale if the screen changed under it; the next pass re-finds it
+        if (wait(Until.hasObject(next), minOf(TAP_SETTLE_MS, deadline - System.currentTimeMillis()))) return true
+    }
+    return hasObject(next)
+}
+
+/** How long one tap gets to open its screen; the slowest open measured idle was 1.9s. */
+private const val TAP_SETTLE_MS = 5_000L
+
