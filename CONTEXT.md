@@ -36,3 +36,7 @@ _Avoid_: alias, nickname
 **Dictionary**:
 The categories the app ships for well-known merchants, part of the parser pack. The user cannot edit it. A rule the user taught outranks it, and a new pack changes how new payments are filed but never re-files old ones.
 _Avoid_: bundled rules, shipped rules, seeded rules
+
+**Learned rule**:
+The category the user taught for a merchant identity, by saving the category chooser with "Always call this" on. It files every later payment of that merchant, whichever of its keys the payment arrives under, and outranks the dictionary. A merge or a pack change carries it with the merchant.
+_Avoid_: merchant rule, auto-category
