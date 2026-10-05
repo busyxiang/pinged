@@ -40,6 +40,24 @@ object TransferStore {
     suspend fun lastExportAt(context: Context): Long =
         context.transferStore.data.first()[LAST_EXPORT_AT] ?: 0L
 
+    private val NUDGE_DISMISSED_AT = longPreferencesKey("nudge_dismissed_at")
+
+    /**
+     * When the user last dismissed the backup nudge, which silences it for a
+     * while without claiming anything is saved.
+     *
+     * Here rather than its own store because [forget] has to clear it with
+     * the export: a delete or a restore leaves a ledger the dismissal was not
+     * about, and the nudge should judge that one afresh.
+     */
+    suspend fun recordNudgeDismissed(context: Context, at: Long) {
+        context.transferStore.edit { it[NUDGE_DISMISSED_AT] = at }
+    }
+
+    /** `0L` for never. */
+    suspend fun nudgeDismissedAt(context: Context): Long =
+        context.transferStore.data.first()[NUDGE_DISMISSED_AT] ?: 0L
+
     /**
      * Every change [recordExport] or [forget] makes to [lastExportAt] in this
      * process, and nothing on subscription.

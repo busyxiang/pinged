@@ -476,7 +476,28 @@ class MainActivity : ComponentActivity() {
                     "reset, so is all of it.",
                 actionLabel = nudgeAction(damaged),
                 onAction = onExportEverything,
+                dismissLabel = NUDGE_DISMISS,
+                onDismiss = ::dismissNudge,
             )
+        }
+    }
+
+    /**
+     * Silence the backup nudge for [NUDGE_DISMISSED_FOR_MILLIS].
+     *
+     * Re-reads rather than setting [exportOverdue] to false, so the banner
+     * goes because the stored dismissal says so: a write that failed leaves it
+     * up, which is the truth about what the next foreground will show.
+     */
+    private fun dismissNudge() {
+        lifecycleScope.launch {
+            try {
+                TransferStore.recordNudgeDismissed(applicationContext, System.currentTimeMillis())
+            } catch (thrown: IOException) {
+                // No `CoroutineExceptionHandler` on this scope; see [onResume].
+                Log.w(TAG, "Could not record the backup nudge's dismissal", thrown)
+            }
+            exportOverdue.value = readExportOverdue(applicationContext)
         }
     }
 
@@ -547,6 +568,12 @@ private const val TAG = "PingedMain"
 internal const val EXPORT_STALE_AFTER_MILLIS: Long = 30L * 24 * 60 * 60 * 1000
 
 /**
+ * How long dismissing the backup nudge silences it. Seven days because that is
+ * what was asked for; like the thirty above, nothing measured it.
+ */
+internal const val NUDGE_DISMISSED_FOR_MILLIS: Long = 7L * 24 * 60 * 60 * 1000
+
+/**
  * Whether to tell the user their data is not backed up anywhere.
  *
  * There has to be something to lose: a banner on an empty ledger is the app
@@ -557,8 +584,11 @@ internal const val EXPORT_STALE_AFTER_MILLIS: Long = 30L * 24 * 60 * 60 * 1000
  * different: the sheet itemises what the user would recognise losing, and this
  * asks only whether an export file would carry anything at all.
  */
-internal fun exportIsOverdue(txns: Int, lastExportAt: Long, now: Long): Boolean {
+internal fun exportIsOverdue(txns: Int, lastExportAt: Long, now: Long, nudgeDismissedAt: Long = 0L): Boolean {
     if (txns == 0) return false
+    // `now >= nudgeDismissedAt`: a dismissal in the future is a clock set
+    // back, and silencing until the clock catches up could be years.
+    if (now >= nudgeDismissedAt && now - nudgeDismissedAt < NUDGE_DISMISSED_FOR_MILLIS) return false
     return now - lastExportAt > EXPORT_STALE_AFTER_MILLIS
 }
 
@@ -607,6 +637,7 @@ internal suspend fun readExportOverdue(
     context: Context,
     countTxns: suspend () -> Int = { Databases.txnDao(context).countAll() },
     lastExportAt: suspend () -> Long = { TransferStore.lastExportAt(context) },
+    nudgeDismissedAt: suspend () -> Long = { TransferStore.nudgeDismissedAt(context) },
 ): Boolean = try {
     CaptureStorage.guarded(
         context,
@@ -620,6 +651,7 @@ internal suspend fun readExportOverdue(
             txns = countTxns(),
             lastExportAt = lastExportAt(),
             now = System.currentTimeMillis(),
+            nudgeDismissedAt = nudgeDismissedAt(),
         )
     }
 } catch (thrown: SQLException) {
@@ -636,6 +668,9 @@ internal suspend fun readExportOverdue(
     Log.w(TAG, "Could not read the last export for the backup nudge", thrown)
     false
 }
+
+/** The backup nudge's second button; see [NUDGE_DISMISSED_FOR_MILLIS]. */
+internal const val NUDGE_DISMISS: String = "Remind me in a week"
 
 /**
  * The backup nudge's button, which leads to settings: what settings will
