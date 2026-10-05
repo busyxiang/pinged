@@ -10,6 +10,8 @@ import my.pinged.data.PingedDatabase
 import my.pinged.data.entity.CaptureDay
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
+import my.pinged.data.entity.MerchantAlias
+import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
@@ -91,6 +93,8 @@ object ExportJson {
         merchantRules = PagedRows(nextPage = { after -> db.merchantRuleDao().pageFrom(after, PAGE) }, idOf = { it.id }),
         rawCaptures = PagedRows(nextPage = { after -> db.rawCaptureDao().pageFrom(after, PAGE) }, idOf = { it.id }),
         txns = PagedRows(nextPage = { after -> db.txnDao().pageFrom(after, PAGE) }, idOf = { it.id }),
+        merchantAliases = { db.merchantIdentityDao().allAliases() },
+        merchantNames = { db.merchantIdentityDao().allNames() },
     )
 
     /**
@@ -147,6 +151,8 @@ object ExportJson {
             written = writePaged(w, MERCHANT_RULE_SECTION, source.merchantRules, written, onProgress, isCancelled)
             written = writePaged(w, RAW_CAPTURE_SECTION, source.rawCaptures, written, onProgress, isCancelled)
             written = writePaged(w, TXN_SECTION, source.txns, written, onProgress, isCancelled)
+            written = writeWhole(w, MERCHANT_ALIAS_SECTION, source.merchantAliases(), written, onProgress)
+            written = writeWhole(w, MERCHANT_NAME_SECTION, source.merchantNames(), written, onProgress)
 
             w.endObject()
         }
@@ -155,9 +161,10 @@ object ExportJson {
     }
 
     /**
-     * A section read in one query, for the three small tables only. `category` is
+     * A section read in one query, for the small tables only. `category` is
      * bounded by spec 4's fourteen plus what the user adds, `capture_source` by the
-     * number of apps on the phone, and `capture_day` gains one row a day. Paging
+     * number of apps on the phone, `capture_day` gains one row a day, and spec
+     * 6.4's two gain a row per merchant the user merges or renames by hand. Paging
      * machinery on a fourteen-row table is code never exercised at its interesting
      * boundary.
      */
@@ -250,6 +257,8 @@ internal class DocumentSource(
     val merchantRules: PagedRows<MerchantRule>,
     val rawCaptures: PagedRows<RawCapture>,
     val txns: PagedRows<Txn>,
+    val merchantAliases: () -> List<MerchantAlias>,
+    val merchantNames: () -> List<MerchantName>,
 )
 
 /**

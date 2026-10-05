@@ -13,7 +13,7 @@ import my.pinged.capture.CaptureStorage
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
-import my.pinged.data.entity.Txn
+import my.pinged.data.dao.FeedRow
 import my.pinged.ledger.home.LeasedFeed
 import my.pinged.ledger.settings.SettingsViewModel
 import my.pinged.ledger.settings.StoredSettings
@@ -60,8 +60,8 @@ class LeasedReadTest {
     @Test(timeout = 60_000)
     fun aFeedPageWhoseInstanceIsReplacedDuringItFinishes() = runBlocking<Unit> {
         context.freshLedger()
-        val room = object : PagingSource<Int, Txn>() {
-            override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Txn> {
+        val room = object : PagingSource<Int, FeedRow>() {
+            override suspend fun load(params: LoadParams<Int>): LoadResult<Int, FeedRow> {
                 val db = Databases.shared(context)
                 val count = db.runInTransaction<Int> {
                     runBlocking { context.replaceFromAnotherCaller() }
@@ -70,7 +70,7 @@ class LeasedReadTest {
                 return LoadResult.Page(emptyList(), prevKey = null, nextKey = null, itemsBefore = 0, itemsAfter = count)
             }
 
-            override fun getRefreshKey(state: PagingState<Int, Txn>): Int? = null
+            override fun getRefreshKey(state: PagingState<Int, FeedRow>): Int? = null
         }
 
         val loaded = runCatching {

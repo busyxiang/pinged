@@ -285,6 +285,15 @@ private class References {
             idOf = Txn::id,
             keep = ::txn,
         ),
+        // Kept whole, with nothing filtered: an alias or a name refers to no
+        // row, so one whose transactions did not read refers to nothing worse
+        // than a key no row carries, which every query ignores.
+        merchantAliases = {
+            reader.whole("merchant_alias") { it.merchantIdentityDao().allAliases() } ?: lost("merchant_alias")
+        },
+        merchantNames = {
+            reader.whole("merchant_name") { it.merchantIdentityDao().allNames() } ?: lost("merchant_name")
+        },
     )
 
     fun report(rows: Int, unreadable: Map<String, Unreadable>) = SalvageReport(

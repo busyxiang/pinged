@@ -175,6 +175,40 @@ class QueryPlanTest {
         val p = plan(bindable(TxnDao.FEED_SQL))
         assertUsesIndex("index_txn_local_date_occurred_at", p)
         assertNoSort(p)
+        assertLooksUpByKey(p)
+    }
+
+    /**
+     * Section 8's ranking, as [TxnDao.MERCHANT_TOTALS_SQL] issues it: the
+     * period's rows through the range index, spec 6.4's alias looked up by
+     * primary key per row, and the name by primary key per merchant.
+     *
+     * The `GROUP BY` sorts in a temporary B-tree and is asserted to, because
+     * the group key is an expression over two tables and no index can hold it.
+     * That sort is over one period's rows; what would grow with the ledger is
+     * a scan of either small table per row, which [assertLooksUpByKey] rules
+     * out.
+     */
+    @Test fun theMerchantRankingTakesTheRangeIndexAndLooksIdentitiesUpByKey() {
+        val p = plan(bindable(TxnDao.MERCHANT_TOTALS_SQL), *MONTH, 10)
+        assertUsesIndex("index_txn_local_date_occurred_at", p)
+        assertTrue("Expected the grouping sort:\n$p", p.contains("TEMP B-TREE FOR GROUP BY"))
+        assertLooksUpByKey(p, tables = listOf("merchant_alias", "merchant_name"))
+    }
+
+    /**
+     * Each of spec 6.4's two tables is reached through its primary key, never
+     * scanned. A text primary key is served by SQLite's own
+     * `sqlite_autoindex_<table>_1`.
+     */
+    private fun assertLooksUpByKey(plan: String, tables: List<String> = listOf("merchant_alias", "merchant_name")) {
+        tables.forEach { table ->
+            assertTrue(
+                "$table is not looked up by its key:\n$plan",
+                plan.contains("SEARCH $table USING INDEX sqlite_autoindex_${table}_1"),
+            )
+            assertTrue("$table is scanned:\n$plan", !plan.contains("SCAN $table"))
+        }
     }
 
     // ---- the month list and the month aggregates -----------------------

@@ -192,8 +192,11 @@ fun Txn.requireStorable() {
         // "used by N transactions" count is a per-open query that would
         // otherwise scan txn.
         Index("category_id"),
-        // Section 8's "Top merchants" groups on this and orders by the sum, so
-        // the index turns a full scan plus a sort into an ordered walk.
+        // Not the ranking's any more: section 8 groups by spec 6.4's resolved
+        // identity, an expression over two tables that no index holds
+        // (`QueryPlanTest` pins that plan). Kept because dropping it moves the
+        // identity hash, and because the merchant sheet's per-key lookups
+        // (`MerchantIdentityDao.membersOf`) are point reads on it.
         Index("merchant_key"),
     ],
 )
@@ -230,6 +233,10 @@ data class Txn(
      * 6.1's learned-rule key, where `TNG*99SPEEDMART` keeps its `TNG`. The two
      * coincide wherever 6.1 operates, since chains and acquirer strings never
      * reach the learning path.
+     *
+     * Not the final word on identity: spec 6.4's `merchant_alias` lets the
+     * user declare two keys one shop, resolved at read time through
+     * `MerchantSql`, so this column itself is never rewritten by a merge.
      *
      * Stored rather than derived: it depends on the pack's normalisation lists,
      * so re-deriving would have to reproduce the pack of each row's era. Spec

@@ -56,6 +56,8 @@ class RoundTripTest {
         "merchant_rule" to source.merchantRuleDao().pageFrom(0L, 1_000).byKey { it.id },
         "raw_capture" to source.rawCaptureDao().pageFrom(0L, 1_000).byKey { it.id },
         "txn" to source.txnDao().pageFrom(0L, 1_000).byKey { it.id },
+        "merchant_alias" to source.merchantIdentityDao().allAliases().byKey { it.merchantKey },
+        "merchant_name" to source.merchantIdentityDao().allNames().byKey { it.merchantKey },
     )
 
     /**
@@ -116,7 +118,9 @@ class RoundTripTest {
         assertEquals(2, report.merchantRules)
         assertEquals(4, report.rawCaptures)
         assertEquals(2, report.txns)
-        assertEquals(27, report.rows)
+        assertEquals(1, report.merchantAliases)
+        assertEquals(1, report.merchantNames)
+        assertEquals(29, report.rows)
         assertEquals(Backup.FORMAT_VERSION, report.formatVersion)
         assertNotNull("The export stamps its own time and the report carries it", report.exportedAt)
 
@@ -132,6 +136,28 @@ class RoundTripTest {
         val pending = restored.txnDao().pageFrom(0L, 100).first { it.state == TxnState.PENDING }
         assertEquals(PendingReason.DUPLICATE_SUSPECT, pending.pendingReason)
         assertEquals(seeded.userCategory, pending.categoryId)
+    }
+
+    /**
+     * A format-1 file -- every export before spec 6.4 -- still restores, with
+     * nothing merged and nothing renamed, which is what its ledger held.
+     */
+    @Test fun aFormatOneFileRestoresWithNoMerges() {
+        val original = fresh()
+        seedOneOfEverything(original)
+        val current = String(exportBytes(original), Charsets.UTF_8)
+        val formatOne = current
+            .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":1")
+            .let { it.substring(0, it.indexOf(",\"${Backup.MERCHANT_ALIASES}\":")) + "}" }
+
+        val restored = fresh()
+        val report = ImportJson.read(restored, ByteArrayInputStream(formatOne.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(1, report.formatVersion)
+        assertEquals(2, report.txns)
+        assertEquals(0, report.merchantAliases)
+        assertEquals(0, restored.merchantIdentityDao().countAliases())
+        assertEquals(0, restored.merchantIdentityDao().countNames())
     }
 
     /**

@@ -29,6 +29,10 @@ class MigrationTest {
         ),
     )
 
+    private companion object {
+        const val MIGRATED = "migration-1-2.db"
+    }
+
     @Test fun schemaVersionOneIsCreatable() {
         helper.createDatabase("migration-test.db", 1).close()
     }
@@ -43,6 +47,46 @@ class MigrationTest {
         // EncryptionTest: the two copies had already diverged, and this was
         // the weaker one.
         file.assertNotPlaintextSqlite("The migration harness database")
+    }
+
+    /**
+     * Spec 6.4's v1 -> v2, under the SQLCipher factory: every v1 row survives,
+     * the two new tables are there and empty, and the result validates against
+     * `2.json`, which `runMigrationsAndValidate` checks table by table.
+     *
+     * The rows are written as raw SQL into the harness's v1, the only shape a
+     * real user's v1 file has.
+     */
+    @Test fun versionOneMigratesToTwoKeepingEveryRow() {
+        helper.createDatabase(MIGRATED, 1).use { v1 ->
+            v1.execSQL(
+                "INSERT INTO category (id, name, icon_key, sort_order, is_protected) " +
+                    "VALUES (1, 'Uncategorized', 'circle-dashed', 0, 1)",
+            )
+            v1.execSQL(
+                "INSERT INTO txn (id, raw_capture_id, amount_sen, currency, direction, occurred_at, " +
+                    "local_date, merchant_raw, merchant_display, merchant_key, category_id, " +
+                    "source_package, source_label, confidence, state, pending_reason, is_excluded, " +
+                    "exclusion_reason, note, user_edited, created_at, updated_at) VALUES " +
+                    "(7, NULL, 1250, 'MYR', 'EXPENSE', 1788739200000, 20260907, " +
+                    "'YUENKEEHOMETOWNCAFE', 'Yuenkeehometowncafe', 'YUENKEEHOMETOWNCAFE', 1, " +
+                    "NULL, NULL, 'HIGH', 'COMMITTED', NULL, 0, NULL, NULL, 0, 1, 1)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED, 2, true).use { v2 ->
+            v2.query("SELECT id, merchant_key, amount_sen FROM txn").use { c ->
+                assertTrue("the v1 transaction is gone", c.moveToFirst())
+                assertEquals(7L, c.getLong(0))
+                assertEquals("YUENKEEHOMETOWNCAFE", c.getString(1))
+                assertEquals(1250L, c.getLong(2))
+                assertEquals(1, c.count)
+            }
+            assertEquals(1L, v2.count("category"))
+            assertEquals(0L, v2.count("merchant_alias"))
+            assertEquals(0L, v2.count("merchant_name"))
+            assertEquals(2L, v2.pragma("user_version"))
+        }
     }
 
     // ---- harness/app DDL parity ----------------------------------------
@@ -69,7 +113,9 @@ class MigrationTest {
      *
      * `sqlite_master.sql` holds each statement as executed, which is the one place
      * both databases are observable on equal terms, so the two are compared there:
-     * **all 22 schema objects, tables and indices alike, as whole strings.**
+     * **every schema object, tables and indices alike, as whole strings** --
+     * 25 at schema v2, logged on every run. Both sides are built at
+     * [PingedDatabase.VERSION], since the app only ever creates the current one.
      *
      * **Nothing is normalised and nothing is excluded** -- not whitespace, not `IF
      * NOT EXISTS`, not ordering, and no table is skipped. That is a measurement
@@ -145,7 +191,7 @@ class MigrationTest {
     // ---- reading the two databases -------------------------------------
 
     private fun harnessSchema(): Map<String, String> =
-        helper.createDatabase("ddl-parity-harness.db", 1).use { schemaObjects(it) }
+        helper.createDatabase("ddl-parity-harness.db", PingedDatabase.VERSION).use { schemaObjects(it) }
 
     private fun shippedSchema(): Map<String, String> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -154,6 +200,9 @@ class MigrationTest {
             schemaObjects(it.openHelper.readableDatabase)
         }
     }
+
+    private fun SupportSQLiteDatabase.count(table: String): Long =
+        query("SELECT COUNT(*) FROM $table").use { it.moveToFirst(); it.getLong(0) }
 
     private fun schemaObjects(db: SupportSQLiteDatabase): Map<String, String> {
         val out = sortedMapOf<String, String>()

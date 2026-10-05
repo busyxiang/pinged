@@ -7,6 +7,8 @@ import my.pinged.data.PingedDatabase
 import my.pinged.data.entity.CaptureDay
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
+import my.pinged.data.entity.MerchantAlias
+import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
@@ -67,6 +69,8 @@ class ExportCompletenessTest {
         MERCHANT_RULE_SECTION to MerchantRule::class.java,
         RAW_CAPTURE_SECTION to RawCapture::class.java,
         TXN_SECTION to Txn::class.java,
+        MERCHANT_ALIAS_SECTION to MerchantAlias::class.java,
+        MERCHANT_NAME_SECTION to MerchantName::class.java,
     )
 
     /**
@@ -96,7 +100,7 @@ class ExportCompletenessTest {
     }
 
     /**
-     * And every name the export writes is a real column of the frozen v1
+     * And every name the export writes is a real column of the current
      * schema -- read off SQLite, not off the entity, so a typo in a
      * `BackupColumn` name is caught even though the property beside it is
      * right.
@@ -180,13 +184,14 @@ class ExportCompletenessTest {
      * It was called `theFormatVersionIsNotTheSchemaVersion`, and its own doc
      * said the two being 1 today "is precisely why something has to say they
      * are two different numbers before one of them moves". It cannot say that.
-     * Both assertions compare against 1, so an export that wrote
-     * `FORMAT_VERSION` into the schema slot, or the reverse, still passes.
+     * Spec 6.4 moved both to 2 together, so the two assertions still compare
+     * against one value, and an export that wrote `FORMAT_VERSION` into the
+     * schema slot, or the reverse, still passes.
      *
      * What it does prove: both fields are present, `format` is first in the
      * document, and the schema field carries the version of the database the
      * export was actually taken from. The discriminating assertion arrives for
-     * free the day either number moves, and this test starts failing then --
+     * free the day the two numbers part, and this test starts failing then --
      * which is the right moment for it to.
      */
     @Test fun theExportStampsBothVersions() {

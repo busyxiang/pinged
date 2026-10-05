@@ -17,7 +17,21 @@ import java.time.YearMonth
  * an insert is stale. Absent means no number yet, and never zero.
  */
 sealed interface LedgerItem {
-    data class Row(val txn: Txn) : LedgerItem
+    /**
+     * A transaction, with spec 6.4's resolution of its merchant beside it.
+     *
+     * The defaults are what the row would show with no merge and no rename,
+     * which is what a test that builds a row by hand means by one.
+     *
+     * @property identityKey the merchant the row groups under, and what the
+     *   merchant sheet edits; null exactly when `merchant_key` is.
+     * @property displayName the user's name for that merchant, else the row's own.
+     */
+    data class Row(
+        val txn: Txn,
+        val identityKey: String? = txn.merchantKey,
+        val displayName: String? = txn.merchantDisplay ?: txn.merchantRaw,
+    ) : LedgerItem
 
     /**
      * A day heading, identified by the row it sits above as well as by its day.

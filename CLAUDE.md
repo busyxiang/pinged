@@ -9,8 +9,8 @@ numbers in comments and commit messages refer to it.
 
 ## Commands
 
-    ./gradlew test                        # 261 JVM tests
-    ./gradlew connectedDebugAndroidTest   # 622, needs a device
+    ./gradlew test                        # 269 JVM tests
+    ./gradlew connectedDebugAndroidTest   # 655, needs a device
     ./gradlew :smoke:connectedMinifiedAndroidTest   # 1, the R8 build
     ./gradlew test lint :app:assembleDebug   # what CI runs
 
@@ -42,8 +42,11 @@ phone than in the tests. `PackLoader` refuses `\d` at load.
 
 **Money is `Long` sen.** `BigDecimal` appears only in the string-to-sen step.
 
-**Schema v1 is frozen.** Changing an entity moves Room's identity hash, and CI
-regenerates the schema and fails on drift. Room's hash cannot see a renamed
+**A released schema is frozen.** The current one is v2 (spec 6.4's two
+merchant tables, added by a Room auto-migration from v1). Changing an entity
+moves Room's identity hash, and CI regenerates the schema and fails on drift,
+so a change is a version bump, a committed `schemas/N.json` and a migration
+`MigrationTest` runs from every released version. Room's hash cannot see a renamed
 enum constant, so the stored strings are frozen separately by
 `EnumVocabularyTest`, nor a collation, which `SchemaConstraintTest` asserts off
 `sqlite_master`.

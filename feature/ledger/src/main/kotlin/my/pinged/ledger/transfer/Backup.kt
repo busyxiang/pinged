@@ -5,6 +5,8 @@ import my.pinged.data.PingedDatabase
 import my.pinged.data.entity.CaptureDay
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
+import my.pinged.data.entity.MerchantAlias
+import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
@@ -33,7 +35,7 @@ import my.pinged.data.entity.Txn
  * A round trip only exercises the fields somebody remembered to write, so the
  * columns are a **list**, each naming the Kotlin property it reads, and
  * `ExportCompletenessTest` asserts reflectively that it covers every field the
- * entity declares and that every name is a real column of the frozen v1 schema.
+ * entity declares and that every name is a real column of the current schema.
  * These are instrumented tests, so a working branch stays green until a PR into
  * main -- the same shape as `EnumVocabularyTest` and `MigrationTest`.
  *
@@ -61,12 +63,20 @@ object Backup {
      * sections would move this and not that; widening a nullable column would move
      * that and not this.
      *
-     * [ImportJson] accepts this value and no other. A newer file is refused by
-     * number rather than by whatever it fails on first, because reading what it
-     * recognises and skipping the rest is a restore that silently drops the columns
-     * the newer build added -- the exact failure the column list above prevents.
+     * [ImportJson] accepts this value and every older one back to
+     * [OLDEST_READABLE]. A newer file is refused by number rather than by
+     * whatever it fails on first, because reading what it recognises and
+     * skipping the rest is a restore that silently drops the columns the newer
+     * build added -- the exact failure the column list above prevents.
+     *
+     * 2 added spec 6.4's `merchant_aliases` and `merchant_names`. A format-1
+     * file has neither and restores with both tables empty, which is exactly
+     * what the ledger it came from held.
      */
-    const val FORMAT_VERSION = 1
+    const val FORMAT_VERSION = 2
+
+    /** The oldest format [ImportJson] still reads; see [BackupSection.sinceFormat]. */
+    const val OLDEST_READABLE = 1
 
     /** The first name in the document, so a reader can gate before it reads a row. */
     const val FIELD_FORMAT = "format"
@@ -88,6 +98,8 @@ object Backup {
     const val MERCHANT_RULES = "merchant_rules"
     const val RAW_CAPTURES = "raw_captures"
     const val TXNS = "txns"
+    const val MERCHANT_ALIASES = "merchant_aliases"
+    const val MERCHANT_NAMES = "merchant_names"
 
     /**
      * Derived from [ALL_SECTIONS] rather than restated: the two were hand-
@@ -98,6 +110,10 @@ object Backup {
      * and no initialisation cycle exists.
      */
     val SECTION_ORDER: List<String> get() = ALL_SECTIONS.map { it.name }
+
+    /** [SECTION_ORDER] as a file of [format] carries it: the sections that existed then. */
+    fun sectionsIn(format: Int): List<String> =
+        ALL_SECTIONS.filter { it.sinceFormat <= format }.map { it.name }
 }
 
 /**
@@ -145,6 +161,11 @@ internal class BackupSection<T>(
     val table: String,
     val columns: List<BackupColumn<T>>,
     val clearFirst: ((PingedDatabase) -> Unit)? = null,
+    /**
+     * The first [Backup.FORMAT_VERSION] that writes this section. An older file
+     * is not expected to carry it, and one that does has been edited.
+     */
+    val sinceFormat: Int = 1,
     val insert: (PingedDatabase, List<BackupRow>) -> Unit,
 ) {
     fun writeRow(writer: JsonWriter, row: T) {
@@ -308,6 +329,33 @@ internal val TXN_SECTION = BackupSection<Txn>(
 )
 
 /**
+ * Spec 6.4's merges. After `txns` only because they arrived later: neither
+ * table has a foreign key, so their place in the order constrains nothing.
+ */
+internal val MERCHANT_ALIAS_SECTION = BackupSection<MerchantAlias>(
+    name = Backup.MERCHANT_ALIASES,
+    table = "merchant_alias",
+    columns = listOf(
+        BackupColumn("merchant_key", "merchantKey") { w, r -> w.value(r.merchantKey) },
+        BackupColumn("canonical_key", "canonicalKey") { w, r -> w.value(r.canonicalKey) },
+    ),
+    sinceFormat = 2,
+    insert = { db, rows -> db.merchantIdentityDao().insertAllAliases(rows.map(ImportJson::merchantAlias)) },
+)
+
+/** Spec 6.4's renames. */
+internal val MERCHANT_NAME_SECTION = BackupSection<MerchantName>(
+    name = Backup.MERCHANT_NAMES,
+    table = "merchant_name",
+    columns = listOf(
+        BackupColumn("merchant_key", "merchantKey") { w, r -> w.value(r.merchantKey) },
+        BackupColumn("display", "display") { w, r -> w.value(r.display) },
+    ),
+    sinceFormat = 2,
+    insert = { db, rows -> db.merchantIdentityDao().insertAllNames(rows.map(ImportJson::merchantName)) },
+)
+
+/**
  * Every section, **in the order they appear in the file, and the order is
  * load-bearing.**
  *
@@ -324,6 +372,8 @@ internal val ALL_SECTIONS: List<BackupSection<*>> = listOf(
     MERCHANT_RULE_SECTION,
     RAW_CAPTURE_SECTION,
     TXN_SECTION,
+    MERCHANT_ALIAS_SECTION,
+    MERCHANT_NAME_SECTION,
 )
 
 /** What an import wrote, for the screen that reports it back to the user. */
@@ -336,9 +386,12 @@ data class ImportReport(
     val merchantRules: Int,
     val rawCaptures: Int,
     val txns: Int,
+    val merchantAliases: Int,
+    val merchantNames: Int,
 ) {
     val rows: Int
-        get() = categories + captureSources + captureDays + merchantRules + rawCaptures + txns
+        get() = categories + captureSources + captureDays + merchantRules + rawCaptures + txns +
+            merchantAliases + merchantNames
 }
 
 /**

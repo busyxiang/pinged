@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.pinged.data.dao.CaptureDayDao
+import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.CaptureSourceDao
 import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.RawCaptureDao
@@ -147,6 +148,7 @@ object Databases {
     fun categoryDao(context: Context): CategoryDao = shared(context).categoryDao()
     fun captureSourceDao(context: Context): CaptureSourceDao = shared(context).captureSourceDao()
     fun captureDayDao(context: Context): CaptureDayDao = shared(context).captureDayDao()
+    fun merchantIdentityDao(context: Context): MerchantIdentityDao = shared(context).merchantIdentityDao()
 
     /**
      * Closes the database and forces the next call to rebuild, then announces

@@ -11,10 +11,22 @@ The merchant string exactly as the bank's notification sent it. It is never alte
 _Avoid_: original name, bank string
 
 **Merchant key**:
-A merchant's identity, derived from the merchant raw by the parser pack's normalisation. Two transactions are the same merchant exactly when their merchant keys are equal, and a pack change can give the same shop a new key.
+The merchant identity a capture produced, derived from the merchant raw by the parser pack's normalisation. One shop can arrive under more than one key, because the rail that moved the money composes the string, and a pack change can give the same shop a new key.
 _Avoid_: normalised form, learned-rule form, cleaned name
 
+**Merchant identity**:
+The merchant a transaction belongs to: its merchant key, or the key that one is merged into. Totals and rankings group by it, so two transactions are the same merchant exactly when their identities are equal.
+_Avoid_: canonical merchant, resolved key
+
+**Merge**:
+The user's statement that one merchant key is the same shop as another, made from the merchant sheet. It changes no transaction, so separating restores the split exactly.
+_Avoid_: link, combine, dedupe (that is spec 7.2's duplicate detection)
+
 **Merchant display**:
-The merchant's name as the user sees it, derived from the merchant raw and editable by the user. It plays no part in identity.
-_Avoid_: merchant name, label
+A transaction's own name for its merchant, derived from the merchant raw. The user does not edit it per transaction: a rename is a merchant name. It plays no part in identity.
+_Avoid_: label
+
+**Merchant name**:
+The name the user gave a merchant identity. Every transaction of that identity shows it in place of its own merchant display.
+_Avoid_: alias, nickname
 

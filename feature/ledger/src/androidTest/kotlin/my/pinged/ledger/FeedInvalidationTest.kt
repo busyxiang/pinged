@@ -75,6 +75,37 @@ class FeedInvalidationTest {
         )
     }
 
+    /**
+     * Spec 6.4's rename and merge write no `txn` row, so a feed observing only
+     * `txn` would go on drawing the old name. The same race is forced as
+     * above, since Room's own source subscribes to both tables just as late.
+     */
+    @Test(timeout = 60_000)
+    fun aRenameWrittenBeforeRoomsSourceSubscribesStillInvalidatesTheFeed() = runBlocking<Unit> {
+        val category = db.categoryDao().requireUncategorizedId()
+        db.txnDao().insert(
+            ledgerTxn(amountSen = 100L, categoryId = category)
+                .copy(merchantKey = "KOKYIMKEI", merchantRaw = "KOKYIMKEI", merchantDisplay = "Kokyimkei"),
+        )
+        dispatcher.holding = true
+        val room = db.txnDao().feed()
+        dispatcher.holding = false
+        val feed = LeasedFeed(room, db.invalidationTracker)
+
+        val first = withContext(Dispatchers.IO) { feed.load(PagingSource.LoadParams.Refresh(null, 10, false)) }
+        assertTrue("the first page was not read: $first", first is PagingSource.LoadResult.Page)
+        db.merchantIdentityDao().rename("KOKYIMKEI", "Kok Yim Kei", derivedName = "Kokyimkei")
+        dispatcher.release()
+
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (!feed.invalid && System.nanoTime() < deadline) Thread.sleep(10)
+        assertTrue(
+            "The feed was not invalidated by a rename after its first page, so " +
+                "the row would show its old name until the next payment",
+            feed.invalid,
+        )
+    }
+
     /** [Dispatchers.IO], except that what is dispatched while [holding] waits for [release]. */
     private class HoldingDispatcher : CoroutineDispatcher() {
         @Volatile var holding = false

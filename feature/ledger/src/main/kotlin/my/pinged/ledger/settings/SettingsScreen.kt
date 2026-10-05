@@ -567,6 +567,12 @@ internal fun salvageSentences(report: SalvageReport): List<String> = buildList {
         add("The list of apps Pinged reads could not be read, so choose them again after restoring.")
     }
     if ("capture_day" in report.lostWhole) add("Pinged's record of which days it was listening could not be read.")
+    if ("merchant_alias" in report.lostWhole) {
+        add("Which merchants you marked as the same shop could not be read, so mark them again after restoring.")
+    }
+    if ("merchant_name" in report.lostWhole) {
+        add("The names you gave merchants could not be read, so they show the names the banks sent.")
+    }
     add("To start again from this file, use Replace everything from a backup and choose it.")
 }
 

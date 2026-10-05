@@ -4,6 +4,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,8 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -99,6 +103,7 @@ fun LedgerScreen(
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
     val read by viewModel.read.collectAsState()
+    val merchantSheet by viewModel.merchantSheet.collectAsState()
     val unavailable by viewModel.storageUnavailable.collectAsState()
 
     // Once per foreground, not once per holder -- see `SourcesScreen`, which
@@ -130,6 +135,16 @@ fun LedgerScreen(
         storageUnavailable = unavailable,
         onAssign = { txnId, categoryId -> viewModel.assignCategory(txnId, categoryId) },
         onOpenSettings = onOpenSettings,
+        merchantSheet = merchantSheet,
+        merchantActions = remember(viewModel) {
+            MerchantActions(
+                open = viewModel::openMerchant,
+                rename = viewModel::renameMerchant,
+                merge = viewModel::mergeMerchant,
+                separate = viewModel::separateMerchant,
+                close = viewModel::closeMerchant,
+            )
+        },
         modifier = modifier,
     )
 }
@@ -152,6 +167,8 @@ internal fun LedgerScreenContent(
     onAssign: (txnId: Long, categoryId: Long) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    merchantSheet: MerchantSheetState? = null,
+    merchantActions: MerchantActions = MerchantActions.None,
 ) {
     // Which row is being categorized, hoisted to here rather than held in the
     // row: a `ModalBottomSheet` emitted from inside the `LazyColumn` scrolls
@@ -206,6 +223,7 @@ internal fun LedgerScreenContent(
                 uncategorizedId = read.uncategorizedId,
                 hasChoices = choices.isNotEmpty(),
                 onCategorize = { txnId -> categorizing = txnId },
+                onOpenMerchant = merchantActions.open,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -229,6 +247,11 @@ internal fun LedgerScreenContent(
             onDismiss = { categorizing = null },
         )
     }
+
+    // A sibling for the same reason as the picker. Its state is the holder's,
+    // not saved here: it is a read of the database, and after a process death
+    // it would be a read of a ledger that may have moved.
+    if (merchantSheet != null) MerchantSheet(merchantSheet, merchantActions)
 }
 
 /**
@@ -388,6 +411,7 @@ private fun Feed(
     uncategorizedId: Long?,
     hasChoices: Boolean,
     onCategorize: (Long) -> Unit,
+    onOpenMerchant: (ownKey: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
@@ -430,6 +454,10 @@ private fun Feed(
                     is LedgerItem.DayHeader -> DayHeader(item.date, subtotals[item.date])
                     is LedgerItem.Row -> TxnRow(
                         txn = item.txn,
+                        name = item.displayName,
+                        // Spec 6.4: a row with no merchant has nothing to rename
+                        // or merge, so it is offered no sheet.
+                        onOpenMerchant = item.txn.merchantKey?.let { key -> { onOpenMerchant(key) } },
                         category = categoriesById[item.txn.categoryId],
                         // A fact about the row, and nothing else: the row §7.1's
                         // gate could not file. A null [uncategorizedId] -- the
@@ -609,6 +637,8 @@ private fun DayHeader(date: LocalDate, subtotal: List<CurrencyTotal>?) {
 @Composable
 private fun TxnRow(
     txn: Txn,
+    name: String?,
+    onOpenMerchant: (() -> Unit)?,
     category: Category?,
     uncategorized: Boolean,
     onCategorize: (() -> Unit)?,
@@ -617,6 +647,7 @@ private fun TxnRow(
     Row(
         Modifier
             .fillMaxWidth()
+            .merchantLongPress(onOpenMerchant)
             .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -624,9 +655,10 @@ private fun TxnRow(
         RowIcon(excluded = excluded, uncategorized = uncategorized, iconKey = category?.iconKey)
         Column(Modifier.weight(1f)) {
             Text(
-                // `merchant_key` is not offered as a fallback: it is the
-                // grouping identity, uppercased and stripped, not a name.
-                txn.merchantDisplay ?: txn.merchantRaw ?: "Unknown merchant",
+                // Spec 6.4's resolved name. `merchant_key` is not offered as a
+                // fallback: it is the grouping identity, uppercased and
+                // stripped, not a name.
+                name ?: "Unknown merchant",
                 fontFamily = Body,
                 fontWeight = FontWeight.Medium,
                 fontSize = 15.sp,
@@ -689,6 +721,23 @@ private fun TxnRow(
 
 /** The chip's label, named so the screen and its test cannot spell it differently. */
 internal const val CATEGORY_CHIP = "+ CATEGORY"
+
+/** The accessibility action a row offers for spec 6.4's sheet. */
+internal const val EDIT_MERCHANT = "Edit merchant"
+
+/**
+ * Spec 6.4's long press, which opens the merchant sheet.
+ *
+ * A long press, not a tap, so that it cannot be mistaken for the
+ * uncategorized chip inside the same row; and through `pointerInput` rather
+ * than `combinedClickable`, which would make the whole row a tap target that
+ * does nothing. The semantics action is what a screen reader offers instead,
+ * since a long press is a gesture TalkBack does not pass through as one.
+ */
+private fun Modifier.merchantLongPress(onOpen: (() -> Unit)?): Modifier =
+    if (onOpen == null) this else this
+        .pointerInput(onOpen) { detectTapGestures(onLongPress = { onOpen() }) }
+        .semantics { onLongClick(label = EDIT_MERCHANT) { onOpen(); true } }
 
 /**
  * The artboard's "+ CATEGORY": the one control on a row, and the only thing on

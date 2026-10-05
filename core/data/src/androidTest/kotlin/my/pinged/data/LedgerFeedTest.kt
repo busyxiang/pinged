@@ -39,7 +39,7 @@ class LedgerFeedTest {
             PagingSource.LoadParams.Refresh(key = null, loadSize = size, placeholdersEnabled = false),
         )
         assertTrue("The feed refused to load: $page", page is PagingSource.LoadResult.Page)
-        (page as PagingSource.LoadResult.Page).data
+        (page as PagingSource.LoadResult.Page).data.map { it.txn }
     }
 
     @Test fun theFeedIsNewestFirst() {

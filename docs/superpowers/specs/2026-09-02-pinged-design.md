@@ -384,6 +384,35 @@ rule for one merchant is refused rather than leaving the resolved category a
 function of the query plan. Section 6.1's "tap once more to correct it"
 therefore updates the existing row rather than writing a rival to it.
 
+### `merchant_alias` and `merchant_name`
+
+Schema v2. Both are written only by section 6.4's merchant sheet, and both
+are keyed by `txn.merchant_key` values rather than by a foreign key: a key is
+a string several rows share, not a row of any table.
+
+`merchant_alias`:
+
+| Column | Type | Notes |
+|---|---|---|
+| merchant_key | Text PK | a `txn.merchant_key` the user has declared to be another merchant |
+| canonical_key | Text NOT NULL | the `merchant_key` it groups under |
+
+**One level, never a chain.** No `canonical_key` appears as a
+`merchant_key`, and no row's `merchant_key` equals its own `canonical_key`.
+Section 6.4's merge maintains this, so resolution is one `LEFT JOIN` and
+never a recursive query. The column is not called `key`, which is an SQLite
+keyword that Room's query parser refuses as a result-column alias.
+
+`merchant_name`:
+
+| Column | Type | Notes |
+|---|---|---|
+| merchant_key | Text PK | a `merchant_key`; read only while it is canonical, i.e. not a `merchant_alias.merchant_key` |
+| display | Text NOT NULL | the merchant's name, never blank |
+
+A name whose key is later merged into another stays, unread, so that
+separating the merge gives the merchant its name back.
+
 ### `category`
 
 Flat, no hierarchy. Seeded: Food & Drinks, Groceries, Transport, Petrol & tolls,
@@ -767,6 +796,15 @@ Section 5.9's dry run already computes this count; it is the same
 calculation, and treating a non-zero result as a reviewable diff rather than
 as a validation failure is what makes packs able to fix real damage.
 
+**A re-parse that changes a row's `merchant_key` carries the user's merchant
+decisions with it.** Section 6.4's aliases and names are keyed by
+`merchant_key`, so a pack whose normalization moves a key from `K` to `K'`
+would otherwise drop the moved rows out of a merge the user made, and out
+from under the name they gave it. Accepting such a diff writes `K'` into
+`merchant_alias` beside `K`, pointing at the same canonical key, and moves a
+`merchant_name` keyed by `K` to `K'` when `K` was canonical and no row keeps
+it. Rows the user never merged or renamed need nothing.
+
 ### 5.6 Rule authoring loop
 
 Coverage grows through a fixed loop, supported by in-app tooling:
@@ -1024,6 +1062,155 @@ user has already confirmed is the one thing this feature must never do.
 Learned rules are reviewable and deletable in settings. Deleting a rule
 leaves already-categorized transactions untouched.
 
+### 6.4 One shop, two keys: the user says so
+
+`merchant_key` is derived from what the bank sent, and what the bank sends
+depends on the rail that moved the money rather than on the shop. One
+restaurant, measured on a real device:
+
+| Rail | Sent | `merchant_key` |
+|---|---|---|
+| MAE Scan & Pay | `YUENKEEHOMETOWNCAFE` | `YUENKEEHOMETOWNCAFE` |
+| TNG DuitNow | `Restoran Yuen Kee Home Town Cafe` | `RESTORAN YUEN KEE HOME TOWN CAFE` |
+
+Section 8's "Top merchants" groups by `merchant_key`, so this shop would be
+listed twice with its spending split between the two rows. **This is not
+rare.** A device export at pack 11 (76 transactions) had 4 of its 7 MAE Scan
+& Pay merchants sent with the spaces stripped out, which was 8 of 15 Scan &
+Pay payments. MAE card spend (11 merchants) and every TnG wording (25) had
+none. It depends on the merchant, not on the rail: `MR KOPI` keeps its space
+on Scan & Pay.
+
+**No normalization recovers it.** Removing every space still leaves
+`RESTORAN` in front. Treating one key as a suffix of the other is a guess
+that merges two different shops, and section 6.2's longest-common-substring
+test finds only `CAFE`-sized overlaps, because the spaces it would line up
+on are gone. And no casing rule can fix the name either: section 5.4's
+title-caser has no word boundaries left, so it produces
+`Yuenkeehometowncafe`. The only party who knows these are the same shop is
+the user.
+
+**So the user says so, from the merchant sheet.** A long press on a ledger
+row whose `merchant_key` is not null opens it. A tap is not used, so that it
+cannot be confused with the uncategorized chip that already sits inside the
+row. The sheet offers two things.
+
+- **Rename.** A text field, filled with the name the row shows now. Saving it
+  writes `merchant_name` for the row's canonical key (section 4). It renames
+  every past and future transaction of that merchant, exactly as a category
+  rename does (section 4, `category`), and the sheet shows how far it reaches
+  first: "23 transactions will show the new name". Saving a blank name, or
+  the name the pack would derive anyway, deletes the row instead, so that no
+  stored value merely restates the default. A merged merchant is the
+  exception and keeps that name stored: unnamed, each row falls back to its
+  own capture's name, and the two halves would read apart again.
+- **Same shop as…** A searchable list of the other merchants, each with its
+  transaction count. Choosing one merges this merchant into it.
+
+**Merging is reversible, which a category merge is not.** A category merge
+rewrites `txn.category_id` and destroys the record of where each row came
+from. A merchant merge rewrites no `txn` row. Every row keeps the key its
+own capture produced, and the merge is only a `merchant_alias` row, so
+"Separate from Yuen Kee" in the same sheet deletes that row and the split
+comes back exactly as it was. Rewriting `merchant_key` in place was
+rejected for this reason. It would also have put a fourth writer on a
+column that spec 5.5's re-parse owns, and every new capture under the old
+key would have split again until a lookup was added to stage two as well.
+
+A merge of source `S` into target `T` is one transaction:
+
+1. Resolve both to canonical keys: `s = alias(S) ?: S`, `t = alias(T) ?: T`.
+   If `s = t`, stop.
+2. `UPDATE merchant_alias SET canonical_key = t WHERE canonical_key = s`, so
+   whatever was already merged into `s` follows it. This is the step that
+   keeps aliases one level deep.
+3. `INSERT INTO merchant_alias (merchant_key, canonical_key) VALUES (s, t)`.
+   A plain insert: `s` is canonical, so it is not already a `merchant_key`,
+   and a conflict here means step 1 or 2 is wrong. It should fail loudly.
+4. When `t` has no name yet, write the name the sheet showed for it. The
+   merged merchant takes the target's name. `s`'s own name, if it had one,
+   is left in place: nothing reads it while `s` is merged, and separating
+   gives it back. Without that write, a merged row would go on
+   showing its own capture's name, `Yuenkeehometowncafe` under `Restoran
+   Yuen Kee Home Town Cafe`, which is half of what the merge was for. The
+   sheet says this before the tap, and the user can rename it afterwards.
+
+Each step is a targeted statement naming its own columns, never a
+whole-row upsert, for the reason `capture_source` gives. Writing
+`merchant_name` is SQLite's `INSERT … ON CONFLICT(merchant_key) DO UPDATE`,
+which updates the row in place. `REPLACE` would delete it and insert it
+again.
+
+**Resolution is at read time, in SQL.** The identity of a transaction is
+`COALESCE(merchant_alias.canonical_key, txn.merchant_key)`, through
+`LEFT JOIN merchant_alias ON merchant_alias.merchant_key = txn.merchant_key`. The
+name it shows is `COALESCE(merchant_name.display, txn.merchant_display,
+txn.merchant_raw)`, joined on that identity. Every place that shows a
+merchant name reads it through that one expression: the ledger row, the
+review inbox, section 8's ranking, section 15.2's search, and section 12's
+CSV. Section 15.3 still holds, because both joins are on primary keys and
+the grouping stays in SQL. They do cost the `txn(merchant_key)` index its
+ordered walk of a `GROUP BY`. A period's rows are found through
+`local_date` and grouped in a temporary B-tree, which `QueryPlanTest` pins
+alongside the two primary-key lookups. Measured on emulator-5554 with 5,000
+transactions over 200 merchants, 50 of them merged: the feed's page 4,000
+rows deep went from 0.29 ms to 0.90 ms, because Room's `OFFSET` evaluates
+the joins for every row it skips, and the ranking over a year took 3.2 ms.
+The 15.8 fixture is still to be measured before the ranking's screen ships.
+
+`merchant_display` therefore stays what the pack derived from the capture.
+The user's edit of a merchant's name is this sheet, at the merchant level,
+and it does not set `user_edited`. That flag still means that section 5.5
+must not touch the row.
+
+**Suggestions, never merges.** The "Same shop as…" list puts first any
+merchant whose key, with every non-alphanumeric removed, contains this one's
+key or is contained by it, provided the shorter key is at least eight
+characters. That puts `RESTORAN YUEN KEE HOME TOWN CAFE` at the top of
+`YUENKEEHOMETOWNCAFE`'s list. The test only orders the list, and it never
+merges anything, so its threshold, which reuses section 6.2's eight and is
+judgement, can be wrong without anything being written. It lives in
+`:core:parse` as a pure function and is tested on the JVM. It is written with
+explicit character classes, for the reason section 5.4 gives about `\w`.
+
+**Categories are untouched.** A merge changes how merchants group, not
+which category any row is filed under. A learned rule (section 6.1) still
+matches its own exact string, so the two halves of a merged merchant can
+carry two categories. The ranking shows the merchant once either way.
+Applying one half's rule to the other is section 6.3's question and needs
+its conflict check, so a merge does not do it implicitly.
+
+**Schema v2 and backup format 2.** The two tables are new entities, so this
+is the schema's first migration: two `CREATE TABLE`s and nothing changed in
+v1's tables, tested from v1 under the SQLCipher factory as section 13
+requires. The JSON backup gains `merchant_aliases` and `merchant_names`
+sections and moves to format 2. A format-1 file still imports, and restores
+with both tables empty. An older build refuses a format-2 file by number,
+which is the behaviour `Backup.FORMAT_VERSION` already specifies. `Wipe`,
+salvage and the export completeness check cover both tables like the other
+six.
+
+**Tests that must fail without the change:**
+
+- `MigrationTest`: a v1 file with transactions migrates to v2 with every row
+  intact and both tables empty, and the result matches `2.json`.
+- Merging A into B and then B into C leaves both A and B pointing at C, and
+  no row has a `canonical_key` that is also a `key`.
+- The Yuen Kee pair ranks as one merchant with the summed amount and count
+  of 2 after the merge, and as two again after "Separate".
+- A capture parsed *after* a rename shows the new name with no further write.
+  This proves resolution happens at read time and that stage two needs no
+  lookup.
+- A backup round trip carries both tables. A format-1 file imports. A
+  format-3 file is refused.
+- The suggestion ordering puts `RESTORAN YUEN KEE HOME TOWN CAFE` first for
+  `YUENKEEHOMETOWNCAFE`, and does not suggest a 7-character key at all.
+
+**Not drawn.** The merchant sheet has no `design/*.dc.html`. It was built
+from the existing sheets' parts (`WipeSheet`'s underlined field and
+bordered buttons, `CategoryPicker`'s list rows), and a drawing should
+replace that when one exists.
+
 ## 7. Confidence, duplicates, transfers
 
 ### 7.1 Two queues, deliberately separate
@@ -1243,6 +1430,11 @@ insight-per-pixel screen in the app: the characteristic Malaysian spending
 leak is a small amount repeated many times, which a category total hides
 completely. "Transport RM388" is inert; "Grab, 18 times, RM312" is
 actionable.
+
+It ranks by section 6.4's resolved identity, not by raw `merchant_key`, and
+does not ship before section 6.4 does. Without the merge, a shop paid
+through two rails splits its total between two rows, and the export that
+measured this found it in 4 of 7 Scan & Pay merchants.
 
 ### Honesty rules, enforced in the presentation layer
 
@@ -1744,7 +1936,7 @@ app's attack surface to other apps.
 - **CSV** for spreadsheets: date, amount, currency, direction, merchant
   display, merchant raw, category, source app, excluded flag, note.
 - **JSON** for full fidelity: transactions plus raw captures plus learned
-  rules plus categories, sufficient to rebuild the database — and read back
+  rules plus categories plus section 6.4's merchant aliases and names, sufficient to rebuild the database — and read back
   by the importer in section 11.2, which is what makes that claim true.
 
 Both are written through the Storage Access Framework.
