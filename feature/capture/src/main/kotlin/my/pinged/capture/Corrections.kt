@@ -32,7 +32,8 @@ import my.pinged.parse.RuleMatcher
  * the rule id is applied by [sweep] without asking: none of the three is drawn
  * anywhere, and `merchant_key` is the column section 8 groups by, so leaving a
  * shop keyed two ways until someone answers a question they cannot see the
- * point of is the worse outcome.
+ * point of is the worse outcome. Either way the user's merges and name move
+ * with the key, in the same transaction (`MerchantDecisions.carry`).
  *
  * **No table of its own.** Schema v1 is frozen, and the list is derivable: a
  * capture still at an older `pack_version` with an unedited transaction is

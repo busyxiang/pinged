@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.ListenableWorker
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
+import my.pinged.data.dao.MerchantSql
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
@@ -207,6 +208,132 @@ class CorrectionsTest {
         assertEquals(before.merchantDisplay, after.merchantDisplay)
         assertEquals(packVersion, captures.byId(id).packVersion)
         assertNull(offered(id))
+    }
+
+    private val merchants = Databases.merchantIdentityDao(context)
+
+    /** A row's merchant identity and name, through spec 6.4's own resolution SQL. */
+    private fun resolved(captureId: Long): Pair<String?, String?> =
+        Databases.shared(context).openHelper.readableDatabase.query(
+            "SELECT ${MerchantSql.IDENTITY}, ${MerchantSql.NAME} FROM txn ${MerchantSql.JOINS} WHERE txn.raw_capture_id = ?",
+            arrayOf<Any>(captureId),
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            cursor.getString(0) to cursor.getString(1)
+        }
+
+    /**
+     * A KEDAI payment the older pack keyed [olderKey], which the current pack
+     * keys differently but displays the same: a [Corrections.sweep] applies it
+     * unasked. [amount] differing too makes it a correction to accept instead.
+     */
+    private fun rekeyed(n: Int, olderKey: String, at: Long, amount: Boolean = false): Long =
+        readByAnOlderPack(
+            text = "Payment of RM9$n.00 to KEDAI $n $marker successful",
+            title = "Touch 'n Go $marker",
+            at = at,
+            oldRule = "tng-payment-v1",
+            olderRead = "merchant_key = '$olderKey'" + if (amount) ", amount_sen = 9$n" else "",
+        )
+
+    /** A shop paid once under the current pack, to merge into. */
+    private fun warung(at: Long): Pair<Long, String> {
+        val id = ParseFixtures.insertCapture(
+            context = context,
+            text = "Payment of RM12.00 to WARUNG $marker successful",
+            title = "Touch 'n Go $marker",
+            pkg = ParseFixtures.TNG,
+            sbnKey = "$marker-$at",
+            postedAt = at,
+        )
+        ParseFixtures.pass(context).run()
+        return id to txn(id).merchantKey!!
+    }
+
+    /**
+     * Spec 5.5: a re-key "carries the user's merchant decisions with it". A
+     * row merged into another shop at `K` stays in that shop at `K'`.
+     */
+    @Test
+    fun aSilentReKeyKeepsAMergedRowInItsMerge() {
+        val (_, target) = warung(base - 2_900L)
+        val olderKey = "KEDAI 1 $marker SDN BHD"
+        val id = rekeyed(1, olderKey, base - 2_800L)
+        assertTrue(merchants.merge(source = olderKey, target = target, targetName = "Warung Mak Su"))
+        assertEquals("The fixture is not the shop it was merged into", target to "Warung Mak Su", resolved(id))
+
+        assertEquals("A key-only difference was put to the user", 0, sweep().offered)
+        assertTrue("The fixture was not re-keyed", txn(id).merchantKey != olderKey)
+        assertEquals("The re-keyed row dropped out of the merge", target to "Warung Mak Su", resolved(id))
+    }
+
+    /** The same through [Corrections.accept], whose diff can move the key too. */
+    @Test
+    fun anAcceptedReKeyKeepsAMergedRowInItsMerge() {
+        val (_, target) = warung(base - 2_700L)
+        val olderKey = "KEDAI 2 $marker SDN BHD"
+        val id = rekeyed(2, olderKey, base - 2_600L, amount = true)
+        assertTrue(merchants.merge(source = olderKey, target = target, targetName = "Warung Mak Su"))
+
+        sweep()
+        assertTrue(Corrections.accept(captures, offered(id)!!))
+        assertTrue("The fixture was not re-keyed", txn(id).merchantKey != olderKey)
+        assertEquals("The accepted row dropped out of the merge", target to "Warung Mak Su", resolved(id))
+    }
+
+    /**
+     * A renamed, unmerged `K` that no row keeps any more: the name moves to
+     * `K'`, which is canonical in its place.
+     */
+    @Test
+    fun aRenamedMerchantKeepsItsNameWhenEveryRowIsReKeyed() {
+        val olderKey = "KEDAI 3 $marker SDN BHD"
+        val id = rekeyed(3, olderKey, base - 2_500L)
+        merchants.rename(olderKey, "Kedai Kak Ton", derivedName = txn(id).merchantDisplay)
+        assertEquals(olderKey to "Kedai Kak Ton", resolved(id))
+
+        sweep()
+        val newKey = txn(id).merchantKey!!
+        assertTrue("The fixture was not re-keyed", newKey != olderKey)
+        assertEquals("The re-keyed row lost its name", newKey to "Kedai Kak Ton", resolved(id))
+        assertNull("The name was copied rather than moved", merchants.nameOf(olderKey))
+    }
+
+    /**
+     * A renamed `K` that an edited row -- never re-read -- still keeps: the
+     * name stays for that row, and `K'` is aliased to `K` to share it.
+     */
+    @Test
+    fun aRenamedMerchantAnotherRowKeepsIsSharedByTheReKeyedRow() {
+        val olderKey = "KEDAI 4 $marker SDN BHD"
+        val kept = rekeyed(4, olderKey, base - 2_400L)
+        val moved = rekeyed(5, olderKey, base - 2_300L)
+        txn(kept).let { Databases.txnDao(context).setCategory(it.id, it.categoryId, System.currentTimeMillis()) }
+        merchants.rename(olderKey, "Kedai Kak Ton", derivedName = txn(moved).merchantDisplay)
+
+        sweep()
+        assertEquals("The edited row was re-keyed", olderKey, txn(kept).merchantKey)
+        assertTrue("The fixture was not re-keyed", txn(moved).merchantKey != olderKey)
+        assertEquals(olderKey to "Kedai Kak Ton", resolved(kept))
+        assertEquals("The re-keyed row lost the name its shop still has", olderKey to "Kedai Kak Ton", resolved(moved))
+    }
+
+    /**
+     * A canonical `K` with another key merged into it, and no row left at `K`:
+     * `K'` takes its place, so the member and the re-keyed row stay one shop.
+     */
+    @Test
+    fun aMergeWhoseCanonicalKeyIsReKeyedStaysOneShop() {
+        val (member, memberKey) = warung(base - 2_200L)
+        val olderKey = "KEDAI 6 $marker SDN BHD"
+        val id = rekeyed(6, olderKey, base - 2_100L)
+        assertTrue(merchants.merge(source = memberKey, target = olderKey, targetName = "Kedai Enam"))
+
+        sweep()
+        val newKey = txn(id).merchantKey!!
+        assertTrue("The fixture was not re-keyed", newKey != olderKey)
+        assertEquals("The re-keyed row left its shop", newKey to "Kedai Enam", resolved(id))
+        assertEquals("The member was left in a shop with no rows", newKey to "Kedai Enam", resolved(member))
     }
 
     /** Spec 5.5: "a human decision outranks any rule". */
