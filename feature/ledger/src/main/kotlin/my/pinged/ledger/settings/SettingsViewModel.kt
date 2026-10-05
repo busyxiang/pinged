@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import my.pinged.capture.Corrections
+import my.pinged.capture.Graph
 import my.pinged.data.DatabaseKeyUnavailableException
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
@@ -241,6 +243,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         val met = Met()
         val sourcesOn = db?.let { countEnabledSources(it, met) }
+        val correctionsPending = if (recorded == Storage.HEALTHY) db?.let { countCorrections(it, met) } else null
         val counts = if (damaged == null) null else db?.let { wipeCounts(recorded, it, met) }
         if (met.damage && db != null) {
             Databases.replacePoisoned(db)
@@ -254,6 +257,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
                 storage = storage,
                 storageAsOf = asOf,
                 sourcesOn = sourcesOn,
+                correctionsPending = correctionsPending,
                 wipeCounts = counts,
                 lastExportAt = lastExportAt,
                 lastCheckAt = lastCheckAt,
@@ -349,6 +353,24 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         db.captureSourceDao().enabledCount()
     } catch (thrown: SQLException) {
         met.record(thrown)
+        null
+    }
+
+    /**
+     * Spec 5.5's corrections awaiting an answer, or null while the sweep is
+     * unfinished or the read fails, as [countEnabledSources]'s does.
+     *
+     * Only on a [Storage.HEALTHY] ledger: it re-reads every unanswered
+     * capture, so on a damaged one it walks pages the integrity check has
+     * already said will not all read.
+     */
+    private suspend fun countCorrections(db: PingedDatabase, met: Met): Int? = try {
+        Corrections.pending(app, db.rawCaptureDao(), Graph.ruleMatcher())?.size
+    } catch (thrown: SQLException) {
+        met.record(thrown)
+        null
+    } catch (thrown: IOException) {
+        Log.w(TAG, "Could not read the corrections sweep's mark", thrown)
         null
     }
 

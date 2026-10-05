@@ -114,6 +114,12 @@ data class SettingsState(
      */
     val sourcesOn: Int? = null,
     /**
+     * Spec 5.5's corrections awaiting an answer. Null while the current
+     * pack's sweep has not finished, or when it could not be read: "NONE"
+     * then would be a claim about history nobody has compared yet.
+     */
+    val correctionsPending: Int? = null,
+    /**
      * What the delete sheet itemises, or null when it may not itemise
      * anything -- see [WipeCounts], and [SettingsViewModel.wipeCounts] for
      * when it is left null. Only the delete sheet reads it.

@@ -16,10 +16,9 @@ import my.pinged.data.entity.ParseStatus
  * captured payments it could not parse for two releases and held them in full,
  * readable and never re-read.
  *
- * **Mode three is not here.** Spec 5.5 also re-runs `MATCHED` captures and
- * offers the differences for review, which is how a rule that recorded
- * RM1,234.00 as RM1.23 gets repaired. This sweep only ever creates
- * transactions, never revisits one.
+ * **Mode three is [Corrections].** This sweep only ever creates
+ * transactions, never revisits one: re-running a `MATCHED` capture here
+ * would write a second transaction for it.
  */
 internal object Reparse {
     /**

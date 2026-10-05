@@ -848,7 +848,7 @@ private fun Badge(text: String, color: Color) {
 }
 
 /** `RULE_REVIEW` as "RULE REVIEW", and an absent reason as nothing. */
-private fun words(name: String?): String = name?.replace('_', ' ') ?: "REASON NOT RECORDED"
+internal fun words(name: String?): String = name?.replace('_', ' ') ?: "REASON NOT RECORDED"
 
 /**
  * Sen as a string, with the grouping the artboard draws.
@@ -865,7 +865,7 @@ private fun words(name: String?): String = name?.replace('_', ' ') ?: "REASON NO
  * string the UI test matches exactly, and a device that groups with a full stop
  * would turn a green test red for a reason that has nothing to do with money.
  */
-private fun money(sen: Long, currency: String, symbol: Boolean = false): String {
+internal fun money(sen: Long, currency: String, symbol: Boolean = false): String {
     val sign = if (sen < 0) "-" else ""
     val magnitude = abs(sen)
     val digits = String.format(Locale.ROOT, "%,d", magnitude / 100) +
@@ -898,7 +898,7 @@ private fun monthLabel(month: YearMonth): String =
  * a setting, and English because every other label in this app is an English
  * string uppercased in the source rather than by a text transform.
  */
-private fun dayLabel(date: LocalDate): String {
+internal fun dayLabel(date: LocalDate): String {
     val day = LocalDates.calendarDay(date)
     return (
         day.dayOfWeek.getDisplayName(JavaTextStyle.SHORT, CALENDAR) + " " +

@@ -74,7 +74,7 @@ class WipeHostTest {
                 SettingsScreen(
                     viewModel = viewModel,
                     onBack = {},
-                    onOpenSources = {},
+                    onOpenSources = {}, onOpenCorrections = {},
                     onExport = onExport,
                     onRestore = {},
                     onRescue = onRescue,

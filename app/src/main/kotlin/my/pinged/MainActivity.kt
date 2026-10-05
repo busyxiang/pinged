@@ -49,6 +49,8 @@ import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.settings.DocumentSink
 import my.pinged.ledger.settings.ExportSheet
 import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.corrections.CorrectionsScreen
+import my.pinged.ledger.corrections.CorrectionsViewModel
 import my.pinged.ledger.settings.SettingsScreen
 import my.pinged.ledger.settings.SettingsState
 import my.pinged.ledger.settings.SettingsViewModel
@@ -101,6 +103,7 @@ class MainActivity : ComponentActivity() {
         val sourcesFactory = AppViewModelFactory(application, ::SourcesViewModel)
         val ledgerFactory = AppViewModelFactory(application, ::LedgerViewModel)
         val settingsFactory = AppViewModelFactory(application, ::SettingsViewModel)
+        val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         setContent {
             PingedTheme {
                 val backStack = rememberNavBackStack(Ledger)
@@ -216,6 +219,7 @@ class MainActivity : ComponentActivity() {
                                     viewModel = settings,
                                     onBack = { backStack.pop() },
                                     onOpenSources = { backStack.pushOnce(Sources) },
+                                    onOpenCorrections = { backStack.pushOnce(Corrections) },
                                     onExport = { exportOpen = true },
                                     // Reached only after `SettingsScreen`'s own
                                     // confirmation -- see `RestoreConfirmSheet`
@@ -241,6 +245,15 @@ class MainActivity : ComponentActivity() {
                                         },
                                     )
                                 }
+                            }
+                            entry<Corrections> {
+                                val corrections: CorrectionsViewModel =
+                                    viewModel(factory = correctionsFactory)
+                                CorrectionsScreen(
+                                    viewModel = corrections,
+                                    onBack = { backStack.pop() },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
                             }
                             entry<Sources> {
                                 val sources: SourcesViewModel =

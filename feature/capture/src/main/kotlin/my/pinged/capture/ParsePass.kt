@@ -329,23 +329,8 @@ internal class ParsePass(
         slotSuspectOf: Long?,
     ) {
         val occurredAt = occurredAt(capture)
-        // Blank collapses to null so the stored column is exactly the predicate spec
-        // 7.1's MERCHANT_MISSING is recomputable from. The string is otherwise
-        // untouched: spec 5.4 preserves `merchant_raw` as parsed.
-        //
-        // **A capture that cleans away to nothing has no merchant either.** A pattern
-        // can capture a string that is entirely payment rail -- `TNG*`, `DUITNOWQR-`, a
-        // bare terminal code -- which `Merchant.clean` reduces to empty. Kept as raw
-        // that reads as a merchant: no `MERCHANT_MISSING` fires, the row commits, and
-        // section 8 groups it into the NULL bucket with every other such row, which is
-        // what `merchant_key` exists to prevent.
-        //
-        // Nothing recoverable is lost. Spec 5.5's re-parse works from the capture's own
-        // text, and an acquirer prefix on its own names nobody -- so it goes to the
-        // review inbox, where a person can say who it was.
-        val merchantRaw = outcome.merchantRaw
-            ?.takeIf { it.isNotBlank() }
-            ?.takeIf { Merchant.clean(it, matcher.merchantNormalization).value.isNotEmpty() }
+        val merchant = MerchantColumns.of(outcome.merchantRaw, matcher.merchantNormalization)
+        val merchantRaw = merchant.raw
 
         // A layer-two lookup that meets damage leaves the capture a suspect
         // with no pair named, on the next pass: a transaction on the damaged
@@ -391,25 +376,8 @@ internal class ParsePass(
             // reshuffles history when the user travels.
             localDate = LocalDates.of(occurredAt),
             merchantRaw = merchantRaw,
-            // `displayFor(raw)`, not `display(clean(raw))`. The old
-            // composition handed the title-caser a string that `clean` had
-            // already uppercased, so spec 5.4's "only when the raw string is
-            // entirely uppercase" guard was true by construction and every
-            // merchant was title-cased: `foodpanda KLCC` was stored as
-            // `Foodpanda Klcc`. `displayFor` starts from the same raw string
-            // `merchant_raw` keeps and strips without folding the case.
-            merchantDisplay = merchantRaw
-                ?.let { Merchant.displayFor(it, matcher.merchantNormalization) }
-                ?.takeIf { it.isNotEmpty() },
-            // The identity, beside the name. `merchant_display` is what the
-            // user reads and may edit; this is what section 8 groups by, and
-            // it is written from the same pack the rest of this parse used.
-            // No `takeIf` here any more, and its absence is the invariant.
-            // `merchantRaw` above is already filtered to strings that clean to
-            // something, so this is null exactly when that is -- which is what
-            // the column's KDoc has always claimed and did not used to be true.
-            merchantKey = merchantRaw
-                ?.let { Merchant.clean(it, matcher.merchantNormalization).value },
+            merchantDisplay = merchant.display,
+            merchantKey = merchant.key,
             categoryId = uncategorizedId,
             sourcePackage = capture.sourcePackage,
             sourceLabel = sourceLabel(capture.sourcePackage),

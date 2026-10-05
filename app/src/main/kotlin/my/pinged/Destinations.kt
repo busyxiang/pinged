@@ -29,15 +29,23 @@ import kotlinx.serialization.Serializable
  * (`SettingsScreen`'s `onOpenSources`) and left by either route through
  * [pop].
  *
- * See [Ledger] for why all three are `@Serializable` objects registered nowhere.
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
  */
 @Serializable data object Sources : NavKey
+
+/**
+ * Spec 5.5's reviewable list of corrections a newer pack offers, pushed from
+ * its row in settings (`SettingsScreen`'s `onOpenCorrections`).
+ *
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ */
+@Serializable data object Corrections : NavKey
 
 /**
  * Spec 9.5's settings, reached from the ledger's top-bar control. [Sources] is
  * a row inside it, as `design/Settings.dc.html` draws.
  *
- * See [Ledger] for why all three are `@Serializable` objects registered nowhere.
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
  */
 @Serializable data object Settings : NavKey
 

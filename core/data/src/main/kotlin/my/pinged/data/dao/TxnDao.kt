@@ -306,7 +306,8 @@ interface TxnDao {
      * row.
      *
      * `user_edited` is set because §5.5's re-parse must not overwrite a
-     * decision a person made. Nothing re-parses yet.
+     * decision a person made: `RawCaptureDao.matchedStaleAfter` never
+     * returns an edited row.
      *
      * Returns the rows written, which is 0 when the row is gone. The caller
      * decides what that means -- see `LedgerViewModel.assignCategory`.

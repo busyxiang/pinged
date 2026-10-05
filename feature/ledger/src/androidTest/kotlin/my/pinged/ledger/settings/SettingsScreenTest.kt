@@ -17,7 +17,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, sourcesOn = 4, loaded = true),
-                onOpenSources = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertIsDisplayed()
@@ -35,7 +35,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, lastExportAt = null, lastCheckAt = null, loaded = true),
-                onOpenSources = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertIsDisplayed()
@@ -48,7 +48,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.KEY_GONE, loaded = true),
-                onOpenSources = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -66,7 +66,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.DAMAGED, loaded = true),
-                onOpenSources = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -78,7 +78,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.UNREADABLE, loaded = true),
-                onOpenSources = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -95,7 +95,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.DAMAGED, sourcesOn = null, loaded = true),
-                onOpenSources = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Capture sources").assertIsDisplayed()
