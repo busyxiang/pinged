@@ -62,6 +62,7 @@ fun SettingsScreen(
     onOpenSources: () -> Unit,
     onExport: () -> Unit,
     onRestore: () -> Unit,
+    onOpenCorrections: () -> Unit,
     onRescue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -88,6 +89,7 @@ fun SettingsScreen(
         SettingsRows(
             state = state,
             onOpenSources = onOpenSources,
+            onOpenCorrections = onOpenCorrections,
             onExport = onExport,
             onRestore = { confirmingRestore = true },
             onCheck = viewModel::check,
@@ -426,6 +428,7 @@ internal fun SettingsRows(
     onRestore: () -> Unit,
     onCheck: () -> Unit,
     onDelete: () -> Unit,
+    onOpenCorrections: () -> Unit,
 ) {
     val readable = state.storage == Storage.HEALTHY || state.storage == Storage.DAMAGED
     val idle = state.running == null
@@ -434,16 +437,23 @@ internal fun SettingsRows(
     val exportable = state.storage == Storage.HEALTHY
 
     SectionLabel("CAPTURE")
-    // Its section's only row here -- the five that would follow it in the
-    // artboard belong to milestones that do not exist -- so it is also its
-    // section's last, and draws no divider for the same reason `Delete
-    // everything` draws none below.
     SettingsRow(
         "Capture sources",
         // No placeholder when the count is unavailable (`SettingsState.sourcesOn`'s
         // KDoc): a blank value is honest, a substituted one is not.
         value = state.sourcesOn?.let { "${grouped(it)} ON" },
         onClick = onOpenSources,
+        chevron = true,
+    )
+    // The section's last row -- the rest of the artboard's belong to
+    // milestones that do not exist -- so it draws no divider, for the same
+    // reason `Delete everything` draws none below.
+    SettingsRow(
+        "Corrections from pack updates",
+        // Blank, not NONE, while the sweep is unfinished or unreadable; see
+        // `SettingsState.correctionsPending`.
+        value = state.correctionsPending?.let { if (it == 0) "NONE" else "${grouped(it)} TO REVIEW" },
+        onClick = onOpenCorrections,
         chevron = true,
         divider = false,
     )

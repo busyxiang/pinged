@@ -59,6 +59,9 @@ class DamagedConnectionTest {
         CaptureCaches.clear(context)
         IntegrityStore.forget(context)
         CaptureFixtures.cancelStageTwo(context)
+        // Spec 5.5's third mode reads every MATCHED row once per pack, the
+        // damaged ones included; what is under test here is stage two's drain.
+        Corrections.markSwept(context, Graph.ruleMatcher().packVersion)
     }
 
     /** The damaged file must not outlive this class: every other one shares `pinged.db`. */
@@ -166,6 +169,28 @@ class DamagedConnectionTest {
             try { own.rawCaptureDao().byId(id).parseStatus } finally { own.close() }
         }
         assertEquals("the capture was not parsed", ParseStatus.MATCHED, status)
+    }
+
+    /**
+     * Spec 5.5's third mode walks every `MATCHED` row, which is where damage
+     * on a ledger usually is. Meeting it is damage recorded and the instance
+     * replaced -- not a failed run when the drain succeeded -- and it ends
+     * this pack's sweep, so the next run does not meet the page again.
+     */
+    @Test(timeout = 60_000)
+    fun theMatchedRereadMeetingDamageDoesNotFailTheRunAndIsNotRepeated() = runBlocking<Unit> {
+        damagedLedger()
+        IntegrityStore.record(context, at = System.currentTimeMillis(), ok = true)
+        Corrections.forgetSweeps(context)
+        val generation = Databases.generation.value
+
+        assertEquals("stage two failed for damage its drain never met", ListenableWorker.Result.success(), ParseFixtures.runWorker(context))
+
+        assertTrue("the sweep met no damage, so this test proves nothing", Databases.generation.value > generation)
+        assertTrue("the damage the sweep met was not recorded", IntegrityStore.damaged(context))
+        val replaced = Databases.generation.value
+        assertEquals(ListenableWorker.Result.success(), ParseFixtures.runWorker(context))
+        assertEquals("the next run met the same damaged page again", replaced, Databases.generation.value)
     }
 
     /**

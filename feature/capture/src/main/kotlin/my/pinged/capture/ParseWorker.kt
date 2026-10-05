@@ -104,16 +104,21 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                 // held was recorded by the run that found it.
                 if (progress.replacements > 0) IntegrityStore.recordDamage(app)
 
+                // After the drain, which is money not yet in the ledger; this
+                // only revisits money that is.
+                val compared = compare(app, matcher)
+
                 Log.i(
                     TAG,
                     "Stage two: ${summary.processed} processed, ${summary.failed} failed, " +
                         "${progress.undecidable.size} undecidable, ${progress.replacements} replaced, " +
-                        "requeued=${swept.moved}, remaining=${summary.remaining}",
+                        "requeued=${swept.moved}, compared=${compared.compared}, " +
+                        "offered=${compared.offered}, remaining=${summary.remaining}",
                 )
-                // `swept.more` as well as the drain's own answer: what a full
-                // sweep batch left behind is still at a settled status, so no
-                // later capture schedules a run on its behalf.
-                if (summary.remaining || swept.more) Result.retry() else Result.success()
+                // `swept.more` and `compared.more` as well as the drain's own
+                // answer: what either sweep left behind is at a settled status,
+                // so no later capture schedules a run on its behalf.
+                if (summary.remaining || swept.more || compared.more) Result.retry() else Result.success()
             }
         } catch (failure: Exception) {
             // A pack that will not load, an absent seed, a transient database
@@ -177,6 +182,39 @@ class ParseWorker(context: Context, params: WorkerParameters) :
             }
         } finally {
             if (replaced) Databases.announceReplacement()
+        }
+    }
+
+    /**
+     * Spec 5.5's third mode, [Corrections.sweep], on the current instance.
+     *
+     * **Its failure is not the drain's.** A comparison that throws leaves the
+     * cursor where it got to, and the next run resumes from it; the drain's
+     * captures are committed by then. It reports nothing more, so a failure
+     * that repeats does not hold the worker in retry.
+     *
+     * **Damage is not the drain's either.** Rethrown, `CaptureStorage.guarded`
+     * answered `failure()` for a run whose drain had succeeded, which
+     * `DamagedConnectionTest` caught on four runs: the sweep reads `MATCHED`
+     * rows, which is where a damaged page usually is. So the instance it
+     * poisoned is replaced and the damage recorded, as [drain] does, and the
+     * run keeps the drain's verdict. [Corrections.sweep] ends its pack's sweep
+     * on damage, so the next run does not meet the page again.
+     */
+    private suspend fun compare(app: Context, matcher: my.pinged.parse.RuleMatcher): Corrections.Swept {
+        val db = Databases.shared(app)
+        return try {
+            Corrections.sweep(app, db.rawCaptureDao(), matcher, isStopped = { isStopped })
+        } catch (failure: RuntimeException) {
+            if (failure is java.util.concurrent.CancellationException) throw failure
+            if (Databases.poisons(failure)) {
+                Log.e(TAG, "Re-reading matched captures meets a damaged page", failure)
+                if (Databases.retire(db)) Databases.announceReplacement()
+                IntegrityStore.recordDamage(app)
+            } else {
+                Log.e(TAG, "Re-reading matched captures failed", failure)
+            }
+            Corrections.Swept(compared = 0, offered = 0, more = false)
         }
     }
 

@@ -6,9 +6,13 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
 import my.pinged.data.entity.ParseStatus
+import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
+import my.pinged.data.entity.TxnState
 import my.pinged.data.entity.requireStorable
+import my.pinged.parse.Confidence
+import my.pinged.parse.Direction
 
 /**
  * Raised when a guarded write found the capture no longer in the state the
@@ -348,9 +352,9 @@ interface RawCaptureDao {
      * Spec 15.5's keyset cursor, and **no production caller reads it.**
      * Re-parse went to [requeueStale] instead, which needs no position: it
      * moves rows out of the statuses it selects on, so the candidate set
-     * shrinks on its own. Kept for the measurement below, which three other
-     * cursors cite, and because spec 5.5's third mode re-runs `MATCHED`
-     * captures without writing to them -- a reader, which does need one.
+     * shrinks on its own; spec 5.5's third mode reads through
+     * [matchedStaleAfter], which needs the join. Kept for the measurement
+     * below, which other cursors cite.
      *
      * The position is the last `id` seen, which is what makes resumption exact
      * -- an `OFFSET` cursor's position shifts under any concurrent insert, and
@@ -452,7 +456,129 @@ interface RawCaptureDao {
     )
     fun requeueMatchedWithoutTxn(from: ParseStatus = ParseStatus.MATCHED, to: ParseStatus = ParseStatus.NEW): Int
 
+    /**
+     * Spec 5.5's third mode: `MATCHED` captures an older pack read, whose
+     * transaction nobody has edited, after [afterId] in id order.
+     *
+     * A reader with a cursor, unlike [requeueStale]: a capture whose re-read
+     * differs from its transaction stays at its old `pack_version` until the
+     * user answers, so the candidate set does not shrink on its own and a
+     * claim from the head would return the same rows every time.
+     *
+     * `user_edited = 0` is spec 5.5's "excluded from the comparison entirely",
+     * in the query rather than the caller, so an edited row is never read,
+     * never re-parsed and never stamped with a pack that did not decide it.
+     * `QueryPlanTest` pins the plan: `raw_capture(parse_status, id)` for the
+     * order, and the unique `txn(raw_capture_id)` for the join.
+     */
+    @Query(MATCHED_STALE_SQL)
+    fun matchedStaleAfter(
+        packVersion: Int,
+        afterId: Long,
+        limit: Int,
+        status: ParseStatus = ParseStatus.MATCHED,
+    ): List<RawCapture>
+
+    /** The transaction [captureId] wrote, off the unique `txn(raw_capture_id)`. */
+    @Query("SELECT * FROM txn WHERE raw_capture_id = :captureId")
+    fun txnForCapture(captureId: Long): Txn?
+
+    /**
+     * Records that the pack at [toPackVersion] has compared this `MATCHED`
+     * capture against its transaction and [ruleId] is the rule it would
+     * use: the capture leaves spec 5.5's third mode until the next pack.
+     *
+     * Guarded on [fromPackVersion], the version the caller read, so a second
+     * writer answering the same capture -- the sweep and a tap, or two taps --
+     * becomes a zero-row update rather than a second answer.
+     */
+    @Query(
+        "UPDATE raw_capture SET pack_version = :toPackVersion, matched_rule_id = :ruleId " +
+            "WHERE id = :id AND parse_status = :status AND pack_version = :fromPackVersion"
+    )
+    fun markCompared(
+        id: Long,
+        fromPackVersion: Int,
+        toPackVersion: Int,
+        ruleId: String?,
+        status: ParseStatus = ParseStatus.MATCHED,
+    ): Int
+
+    /**
+     * The parse-derived columns of one transaction, rewritten from a re-read.
+     *
+     * Targeted, naming its columns: category, note, exclusion and the dates
+     * are not the parse's to change. Guarded on `user_edited = 0`, so an edit
+     * that lands between the comparison and the write is never overwritten.
+     */
+    @Query(
+        "UPDATE txn SET amount_sen = :amountSen, direction = :direction, " +
+            "merchant_raw = :merchantRaw, merchant_display = :merchantDisplay, " +
+            "merchant_key = :merchantKey, confidence = :confidence, state = :state, " +
+            "pending_reason = :pendingReason, updated_at = :updatedAt " +
+            "WHERE id = :id AND user_edited = 0"
+    )
+    fun rewriteParsedFields(
+        id: Long,
+        amountSen: Long,
+        direction: Direction,
+        merchantRaw: String?,
+        merchantDisplay: String?,
+        merchantKey: String?,
+        confidence: Confidence,
+        state: TxnState,
+        pendingReason: PendingReason?,
+        updatedAt: Long,
+    ): Int
+
+    /**
+     * A re-read applied: [corrected]'s parse-derived columns onto its row,
+     * and the capture marked compared, as one unit.
+     *
+     * Returns false, having written nothing, when the transaction has been
+     * edited. A capture another writer has answered since [fromPackVersion]
+     * was read throws [StaleCaptureException], which rolls the transaction's
+     * rewrite back with it -- so of two answers to one re-read, one lands.
+     */
+    @Transaction
+    fun applyReread(
+        captureId: Long,
+        fromPackVersion: Int,
+        toPackVersion: Int,
+        ruleId: String,
+        corrected: Txn,
+    ): Boolean {
+        corrected.requireStorable()
+        val rewritten = rewriteParsedFields(
+            id = corrected.id,
+            amountSen = corrected.amountSen,
+            direction = corrected.direction,
+            merchantRaw = corrected.merchantRaw,
+            merchantDisplay = corrected.merchantDisplay,
+            merchantKey = corrected.merchantKey,
+            confidence = corrected.confidence,
+            state = corrected.state,
+            pendingReason = corrected.pendingReason,
+            updatedAt = corrected.updatedAt,
+        )
+        if (rewritten == 0) return false
+        if (markCompared(captureId, fromPackVersion, toPackVersion, ruleId) == 0) {
+            throw StaleCaptureException(
+                "Capture $captureId is no longer MATCHED at pack $fromPackVersion; " +
+                    "another writer answered its re-read. Nothing was written.",
+            )
+        }
+        return true
+    }
+
     companion object {
+        /** [matchedStaleAfter]'s query, hoisted for `QueryPlanTest`. */
+        const val MATCHED_STALE_SQL =
+            "SELECT c.* FROM raw_capture AS c JOIN txn AS t ON t.raw_capture_id = c.id " +
+                "WHERE c.parse_status = :status AND c.id > :afterId " +
+                "AND c.pack_version < :packVersion AND t.user_edited = 0 " +
+                "ORDER BY c.id ASC LIMIT :limit"
+
         /** [claimNextIds]'s query, hoisted so `QueryPlanTest` plans this string and not a copy. */
         const val CLAIM_IDS_SQL =
             "SELECT id, posted_at FROM raw_capture WHERE parse_status = :status " +

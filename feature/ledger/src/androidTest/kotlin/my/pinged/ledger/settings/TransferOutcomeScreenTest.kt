@@ -96,7 +96,7 @@ class TransferOutcomeScreenTest {
                         loaded = true,
                         running = TransferJob.Running(Operation.RESTORE, 1_200),
                     ),
-                    onOpenSources = {},
+                    onOpenSources = {}, onOpenCorrections = {},
                     onExport = { taps.incrementAndGet() },
                     onRestore = { taps.incrementAndGet() },
                     onCheck = { taps.incrementAndGet() },
@@ -235,7 +235,7 @@ class TransferOutcomeScreenTest {
                 SettingsScreen(
                     viewModel = viewModel,
                     onBack = {},
-                    onOpenSources = {},
+                    onOpenSources = {}, onOpenCorrections = {},
                     onExport = {},
                     onRestore = {},
                     onRescue = {},
@@ -257,7 +257,7 @@ class TransferOutcomeScreenTest {
                 SettingsScreen(
                     viewModel = viewModel,
                     onBack = {},
-                    onOpenSources = {},
+                    onOpenSources = {}, onOpenCorrections = {},
                     onExport = {},
                     onRestore = {},
                     onRescue = {},

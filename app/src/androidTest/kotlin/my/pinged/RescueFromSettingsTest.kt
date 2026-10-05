@@ -116,8 +116,11 @@ class RescueFromSettingsTest {
             assertTrue("the delete sheet's rescue opened no picker", compose.waitFor { asked.size == 1 })
 
             choose = true
+            // Scrolled back to: the delete row above left the notice above
+            // the fold on CI's 320x640 emulator, where a click does nothing.
             compose.onNodeWithText(RESCUE)
                 .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+                .performScrollTo()
                 .performClick()
             assertTrue("tapping the rescue opened no picker", compose.waitFor { asked.size == 2 })
             assertEquals("the picker suggests the wrong name", RESCUE_FILE_NAME, asked[1].getStringExtra(Intent.EXTRA_TITLE))

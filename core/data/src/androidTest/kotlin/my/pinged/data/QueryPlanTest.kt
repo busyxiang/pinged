@@ -475,6 +475,25 @@ class QueryPlanTest {
         assertNoSort(p)
     }
 
+    /**
+     * Spec 5.5's third mode walks every `MATCHED` capture once per pack, so it
+     * must page off `raw_capture(parse_status, id)` and reach each transaction
+     * through the unique `txn(raw_capture_id)`. Driven from `txn` instead, the
+     * plan reads the whole ledger per page to apply `user_edited = 0`.
+     */
+    @Test fun theMatchedRereadCursorDoesNotSortAndProbesTheTxnIndex() {
+        val p = plan(bindable(RawCaptureDao.MATCHED_STALE_SQL), "MATCHED", 0, 12, 100)
+        assertTrue(
+            "The re-read cursor does not page off index_raw_capture_parse_status_id:\n$p",
+            p.contains("SEARCH c USING INDEX index_raw_capture_parse_status_id (parse_status=? AND id>?)"),
+        )
+        assertTrue(
+            "The re-read cursor does not reach txn through its unique raw_capture_id index:\n$p",
+            p.contains("SEARCH t USING INDEX index_txn_raw_capture_id (raw_capture_id=?)"),
+        )
+        assertNoSort(p)
+    }
+
     // ---- lookups -------------------------------------------------------
 
     /** `CategoryDao.uncategorizedIdOrNull`, which was a `SCAN category`. */

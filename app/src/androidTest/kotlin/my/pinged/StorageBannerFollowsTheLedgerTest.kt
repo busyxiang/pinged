@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -268,7 +269,9 @@ class StorageBannerFollowsTheLedgerTest {
                 // refusal having run, since the watched flag can take the
                 // banner down before a wait for it to be up sees it.
                 assertTrue("precondition: the sample never met the refusal", compose.waitFor { !refuse.get() })
-                compose.onNodeWithText(CHECK_ROW).performClick()
+                // Scrolled to: on CI's 320x640 emulator the row starts below
+                // the fold, and a click on an off-screen node does nothing.
+                compose.onNodeWithText(CHECK_ROW).performScrollTo().performClick()
                 assertTrue(
                     "precondition: the check never settled",
                     compose.waitFor { Transfers.state.value.outcome != null && Transfers.state.value.running == null },
