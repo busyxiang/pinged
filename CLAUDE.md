@@ -122,3 +122,17 @@ and the body is still where the value is. Conventional Commits governs the
 first line only.
 
 Do not claim a test count or a verification you did not run.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on busyxiang/pinged, via `gh`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
