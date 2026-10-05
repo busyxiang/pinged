@@ -132,15 +132,27 @@ jobs:
           retention-days: 14
 
   instrumented:
-    name: Instrumented tests on an emulator
+    name: Instrumented tests on an emulator (${{ matrix.shard }})
     runs-on: ubuntu-latest
     # `draft == false` is what keeps a draft PR usable as a branch's CI now that
     # branch pushes run nothing: a draft gets unit tests and lint on every push
-    # and fourteen minutes of emulator not at all, until `ready_for_review`.
+    # and the emulator not at all, until `ready_for_review`.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.draft == false) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
+
+    # One emulator per runner, each running its shard of the suites; the split
+    # and the measurements behind it are SHARDS in affected_suites.py, which a
+    # test holds to this list. Not several emulators on one runner: a starved
+    # guest misses render timeouts, which is how CI flakes were reproduced.
+    #
+    # fail-fast off for the reason `--continue` is on below: one shard's flake
+    # must not cancel the others' results.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ledger-1, ledger-2, data-app-capture, smoke]
 
     # Defined once because the two emulator steps have to agree exactly: pass
     # them different options and the second discards the snapshot and cold-boots
@@ -164,8 +176,9 @@ jobs:
           fetch-depth: 2
 
       # A PR runs only the suites its change can reach through the module
-      # graph -- the rules are affected_suites.py's. Main runs every suite,
-      # which is what catches anything a rule there let a PR skip.
+      # graph -- the rules are affected_suites.py's -- and of those, only this
+      # shard's. Main runs every suite, which is what catches anything a rule
+      # there let a PR skip.
       #
       # `HEAD^1..HEAD` on the merge commit GitHub checks out is exactly what
       # the PR adds to the base as it is now, with no stale base SHA. A diff
@@ -177,11 +190,11 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = pull_request ]; then
             git rev-parse --verify HEAD^2 >/dev/null
-            git diff --name-only HEAD^1 HEAD | python3 .github/scripts/affected_suites.py
+            git diff --name-only HEAD^1 HEAD \
+              | python3 .github/scripts/affected_suites.py --shard ${{ matrix.shard }}
           else
             echo "Every suite: ${{ github.event_name }} on ${{ github.ref }}"
-            echo "tasks=connectedDebugAndroidTest :smoke:connectedMinifiedAndroidTest" >> "$GITHUB_OUTPUT"
-            echo "smoke=true" >> "$GITHUB_OUTPUT"
+            python3 .github/scripts/affected_suites.py --all --shard ${{ matrix.shard }}
           fi
 
       - uses: ./.github/actions/setup-android
@@ -257,10 +270,6 @@ jobs:
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-snapshot-save ${{ env.EMULATOR_OPTIONS }}
-          # :smoke drives the R8 build the release ships. Root
-          # connectedDebugAndroidTest does not reach it: it has no debug
-          # variant, so the full list names it.
-          #
           # `--continue` so one suite's failure does not cancel the others:
           # the list starts with :app, and a flake there stopped :feature:capture,
           # :feature:ledger and :smoke from running at all (#17's run 37209862807).
@@ -280,7 +289,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: reports-${{ github.job }}
+          name: reports-${{ github.job }}-${{ matrix.shard }}
           path: |
             **/build/reports/**
             **/build/outputs/androidTest-results/**

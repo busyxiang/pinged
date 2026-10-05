@@ -5,12 +5,13 @@ A suite selected wrongly is skipped silently: the run is green and shorter,
 which is what success also looks like. So each rule has a case here, and the
 cases name suites, not counts.
 """
+import re
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from affected_suites import select  # noqa: E402
+from affected_suites import SHARDS, select, unsharded  # noqa: E402
 
 APP = ":app:connectedDebugAndroidTest"
 DATA = ":core:data:connectedDebugAndroidTest"
@@ -66,6 +67,23 @@ class AffectedSuites(unittest.TestCase):
 
     def test_smoke_runs_alone(self):
         self.assertEqual({SMOKE}, suites("smoke/src/main/kotlin/my/pinged/smoke/FirstCaptureTest.kt"))
+
+
+class Shards(unittest.TestCase):
+    def test_every_suite_has_a_shard(self):
+        self.assertEqual([], unsharded())
+
+    def test_no_suite_runs_whole_in_two_shards(self):
+        # Two halves of one suite are fine; the same suite unsplit in two jobs
+        # is the device time this split exists to save.
+        whole = [t for tasks, extra in SHARDS.values() if not extra for t in tasks]
+        self.assertEqual(len(whole), len(set(whole)))
+
+    def test_the_workflow_runs_every_shard(self):
+        ci = (Path(__file__).resolve().parents[1] / "workflows" / "ci.yml").read_text()
+        listed = re.search(r"^\s*shard: \[([^\]]*)\]", ci, re.M)
+        self.assertIsNotNone(listed, "ci.yml has no `shard: [...]` matrix")
+        self.assertEqual(set(SHARDS), {s.strip() for s in listed.group(1).split(",")})
 
 
 if __name__ == "__main__":
