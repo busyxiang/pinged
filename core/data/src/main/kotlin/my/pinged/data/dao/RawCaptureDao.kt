@@ -29,7 +29,7 @@ class StaleCaptureException(message: String) : IllegalStateException(message)
  * loses nothing and an interrupted run simply resumes.
  */
 @Dao
-interface RawCaptureDao {
+interface RawCaptureDao : MerchantDecisions {
     @Insert
     fun insert(capture: RawCapture): Long
 
@@ -479,6 +479,9 @@ interface RawCaptureDao {
         status: ParseStatus = ParseStatus.MATCHED,
     ): List<RawCapture>
 
+    @Query("SELECT merchant_key FROM txn WHERE id = :id")
+    fun merchantKeyOf(id: Long): String?
+
     /** The transaction [captureId] wrote, off the unique `txn(raw_capture_id)`. */
     @Query("SELECT * FROM txn WHERE raw_capture_id = :captureId")
     fun txnForCapture(captureId: Long): Txn?
@@ -533,7 +536,8 @@ interface RawCaptureDao {
 
     /**
      * A re-read applied: [corrected]'s parse-derived columns onto its row,
-     * and the capture marked compared, as one unit.
+     * the user's merchant decisions carried to its new key
+     * ([MerchantDecisions.carry]), and the capture marked compared, as one unit.
      *
      * Returns false, having written nothing, when the transaction has been
      * edited. A capture another writer has answered since [fromPackVersion]
@@ -549,6 +553,7 @@ interface RawCaptureDao {
         corrected: Txn,
     ): Boolean {
         corrected.requireStorable()
+        val previousKey = merchantKeyOf(corrected.id)
         val rewritten = rewriteParsedFields(
             id = corrected.id,
             amountSen = corrected.amountSen,
@@ -562,6 +567,8 @@ interface RawCaptureDao {
             updatedAt = corrected.updatedAt,
         )
         if (rewritten == 0) return false
+        val key = corrected.merchantKey
+        if (previousKey != null && key != null) carry(from = previousKey, to = key)
         if (markCompared(captureId, fromPackVersion, toPackVersion, ruleId) == 0) {
             throw StaleCaptureException(
                 "Capture $captureId is no longer MATCHED at pack $fromPackVersion; " +

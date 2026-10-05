@@ -805,6 +805,12 @@ from under the name they gave it. Accepting such a diff writes `K'` into
 `merchant_name` keyed by `K` to `K'` when `K` was canonical and no row keeps
 it. Rows the user never merged or renamed need nothing.
 
+In that last case `K'` takes `K`'s place outright: keys merged into `K` are
+repointed to `K'`, or they would form a shop no row is keyed by. A `K'` the
+user has already decided about -- merged elsewhere, with members of its own, or
+named -- is left alone, because folding it in would merge two shops the user
+kept apart; the moved rows then join `K'`'s shop.
+
 ### 5.6 Rule authoring loop
 
 Coverage grows through a fixed loop, supported by in-app tooling:

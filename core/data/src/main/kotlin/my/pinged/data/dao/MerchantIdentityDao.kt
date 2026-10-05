@@ -8,6 +8,100 @@ import my.pinged.data.entity.MerchantAlias
 import my.pinged.data.entity.MerchantName
 
 /**
+ * The statements every writer of spec 6.4's two tables shares, and spec 5.5's
+ * [carry]. A parent of `RawCaptureDao` too, so a re-read's key change and its
+ * carry are one transaction on one instance without a second DAO passed in.
+ */
+interface MerchantDecisions {
+    /** The canonical key [key] is merged into, or null when it is canonical itself. */
+    @Query("SELECT canonical_key FROM merchant_alias WHERE merchant_key = :key")
+    fun canonicalOf(key: String): String?
+
+    /**
+     * Undo a merge of [key], whatever it was merged into. Its rows group under
+     * their own key again at the next read; nothing else moves. Returns the
+     * rows deleted, 0 when [key] was not merged.
+     */
+    @Query("DELETE FROM merchant_alias WHERE merchant_key = :key")
+    fun separate(key: String): Int
+
+    @Query("SELECT COUNT(*) FROM merchant_alias WHERE canonical_key = :canonicalKey")
+    fun memberCount(canonicalKey: String): Int
+
+    @Query("UPDATE merchant_alias SET canonical_key = :to WHERE canonical_key = :from")
+    fun repoint(from: String, to: String): Int
+
+    @Insert
+    fun insertAlias(alias: MerchantAlias)
+
+    @Query("SELECT display FROM merchant_name WHERE merchant_key = :key")
+    fun nameOf(key: String): String?
+
+    /** SQLite's upsert, which updates in place; `REPLACE` would delete and re-insert. */
+    @Query(
+        """
+        INSERT INTO merchant_name (merchant_key, display) VALUES (:key, :display)
+        ON CONFLICT(merchant_key) DO UPDATE SET display = excluded.display
+        """,
+    )
+    fun setName(key: String, display: String)
+
+    @Query("DELETE FROM merchant_name WHERE merchant_key = :key")
+    fun deleteName(key: String): Int
+
+    @Query("SELECT EXISTS(SELECT 1 FROM txn WHERE merchant_key = :key)")
+    fun keyInUse(key: String): Boolean
+
+    /**
+     * Spec 5.5: a re-read moved a row from [from] to [to]; carry the user's
+     * merges and name with it. Call inside the transaction that moved it, after
+     * the move, so [keyInUse] no longer counts that row.
+     *
+     * - [from] merged into `c`: [to] is aliased to `c` as well.
+     * - [from] canonical, and some row still keyed by it: [to] is aliased to
+     *   [from], which keeps its members and its name.
+     * - [from] canonical, and no row keyed by it: [to] takes its place. Its
+     *   members are repointed to [to] and its name moved, so the one-level rule
+     *   holds and no identity is left that only aliases resolve to.
+     *
+     * **A [to] the user already decided about is left alone**: one in another
+     * merge, one with members, or one with a name of its own. Folding it in
+     * would merge two shops the user kept apart, which is theirs to do. The
+     * row then resolves to [to]'s identity, as it would with no carry at all.
+     *
+     * A [from] with no decision -- unmerged, no members, no name -- writes
+     * nothing, so a pack that re-keys thousands of rows costs three point reads
+     * each. Category rules are not carried here (issue #35).
+     */
+    fun carry(from: String, to: String) {
+        if (from == to) return
+        val fromCanonical = canonicalOf(from)
+        val name = if (fromCanonical == null) nameOf(from) else null
+        if (fromCanonical == null && name == null && memberCount(from) == 0) return
+
+        val toCanonical = canonicalOf(to)
+        val stillKept = keyInUse(from)
+        // Already one shop: [to] is `c` or merged into it, or aliased to a [from] rows still keep.
+        if ((toCanonical ?: to) == (fromCanonical ?: from) && (fromCanonical != null || stillKept)) return
+        val ours = toCanonical == from
+        if (!ours && (toCanonical != null || memberCount(to) > 0 || nameOf(to) != null)) return
+
+        if (fromCanonical != null || stillKept) {
+            insertAlias(MerchantAlias(merchantKey = to, canonicalKey = fromCanonical ?: from))
+            return
+        }
+        // [to] may be aliased to [from] by an earlier row of this sweep, or be
+        // a member the user merged in; either way it is canonical from here.
+        separate(to)
+        repoint(from = from, to = to)
+        if (name != null) {
+            setName(to, name)
+            deleteName(from)
+        }
+    }
+}
+
+/**
  * Spec 6.4: which `merchant_key`s are one shop, and what the user calls it.
  *
  * **No `txn` row is written here.** A merge is a `merchant_alias` row and a
@@ -19,11 +113,7 @@ import my.pinged.data.entity.MerchantName
  * whole-row `REPLACE`, for the reason `CaptureSourceDao` gives.
  */
 @Dao
-interface MerchantIdentityDao {
-    /** The canonical key [key] is merged into, or null when it is canonical itself. */
-    @Query("SELECT canonical_key FROM merchant_alias WHERE merchant_key = :key")
-    fun canonicalOf(key: String): String?
-
+interface MerchantIdentityDao : MerchantDecisions {
     /**
      * Merge [source] into [target], spec 6.4's four steps, in one transaction.
      *
@@ -53,14 +143,6 @@ interface MerchantIdentityDao {
     }
 
     /**
-     * Undo a merge of [key], whatever it was merged into. Its rows group under
-     * their own key again at the next read; nothing else moves. Returns the
-     * rows deleted, 0 when [key] was not merged.
-     */
-    @Query("DELETE FROM merchant_alias WHERE merchant_key = :key")
-    fun separate(key: String): Int
-
-    /**
      * Name the merchant [key] resolves to.
      *
      * A blank [name], or the one [derivedName] the transactions would show
@@ -80,9 +162,6 @@ interface MerchantIdentityDao {
             else -> setName(canonical, derivedName)
         }
     }
-
-    @Query("SELECT COUNT(*) FROM merchant_alias WHERE canonical_key = :canonicalKey")
-    fun memberCount(canonicalKey: String): Int
 
     /** The keys merged into [canonicalKey], each with the name its latest transaction derives. */
     @Query(
@@ -123,27 +202,6 @@ interface MerchantIdentityDao {
         """,
     )
     fun choices(): List<MerchantChoice>
-
-    @Query("UPDATE merchant_alias SET canonical_key = :to WHERE canonical_key = :from")
-    fun repoint(from: String, to: String): Int
-
-    @Insert
-    fun insertAlias(alias: MerchantAlias)
-
-    @Query("SELECT display FROM merchant_name WHERE merchant_key = :key")
-    fun nameOf(key: String): String?
-
-    /** SQLite's upsert, which updates in place; `REPLACE` would delete and re-insert. */
-    @Query(
-        """
-        INSERT INTO merchant_name (merchant_key, display) VALUES (:key, :display)
-        ON CONFLICT(merchant_key) DO UPDATE SET display = excluded.display
-        """,
-    )
-    fun setName(key: String, display: String)
-
-    @Query("DELETE FROM merchant_name WHERE merchant_key = :key")
-    fun deleteName(key: String): Int
 
     // ---- backup ------------------------------------------------------------
 
