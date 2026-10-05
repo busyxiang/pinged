@@ -61,6 +61,8 @@ class ImportFailureTest {
         assertEquals("a learned rule survived", 0, target.merchantRuleDao().countAll())
         assertEquals("a capture source survived", 0, target.captureSourceDao().countAll())
         assertEquals("a capture day survived", 0, target.captureDayDao().countAll())
+        assertEquals("a merged merchant survived", 0, target.merchantIdentityDao().countAliases())
+        assertEquals("a merchant's name survived", 0, target.merchantIdentityDao().countNames())
         assertEquals(
             "the seeded categories were deleted and not put back",
             14,
@@ -95,12 +97,13 @@ class ImportFailureTest {
      *
      * The document below is otherwise a valid backup -- it is a real export
      * with one digit changed -- so an importer that gated on anything other
-     * than the version would import it happily and drop whatever version 2
-     * added.
+     * than the version would import it happily and drop whatever the next
+     * version added.
      */
     @Test fun aFutureFormatVersionIsRefusedByNumberAndNotByWhatItFailsOn() {
+        val future = Backup.FORMAT_VERSION + 1
         val document = goodExport().replaceFirst(
-            "{\"${Backup.FIELD_FORMAT}\":1", "{\"${Backup.FIELD_FORMAT}\":2",
+            "{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":$future",
         )
         val target = fresh()
         val thrown = assertThrows(ImportFormatException::class.java) {
@@ -108,8 +111,8 @@ class ImportFailureTest {
         }
         assertTrue(
             "The message has to name both versions: ${thrown.message}",
-            thrown.message!!.contains("format version 2") &&
-                thrown.message!!.contains("version ${Backup.FORMAT_VERSION}"),
+            thrown.message!!.contains("format version $future") &&
+                thrown.message!!.contains("versions ${Backup.OLDEST_READABLE} to ${Backup.FORMAT_VERSION}"),
         )
         assertTrue(thrown.message!!.contains("update Pinged"))
         assertUntouched(target)
@@ -164,6 +167,44 @@ class ImportFailureTest {
             )
         }
         assertTrue(thrown.message!!.contains("out of order"))
+        assertUntouched(target)
+    }
+
+    /**
+     * A file that says format 1 and carries spec 6.4's sections disagrees with
+     * itself, and is refused rather than half-believed.
+     */
+    @Test fun aFormatOneFileCarryingAMergeIsRefused() {
+        val document = goodExport().replaceFirst(
+            "{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":1",
+        )
+        val target = fresh()
+        val thrown = assertThrows(ImportFormatException::class.java) {
+            importInto(target, document)
+        }
+        assertTrue(
+            "The message has to name the section: ${thrown.message}",
+            thrown.message!!.contains(Backup.MERCHANT_ALIASES),
+        )
+        assertUntouched(target)
+    }
+
+    /**
+     * `merchant_alias` is kept one level deep by its only writer, and a file
+     * can say anything: an alias pointing at a merged merchant rolls back.
+     */
+    @Test fun aChainedMergeRollsTheWholeImportBack() {
+        val document = goodExport().editingOnly(Backup.MERCHANT_ALIASES) {
+            it.replaceFirst(
+                "[{",
+                "[{\"merchant_key\":\"STARBUCKS KLCC\",\"canonical_key\":\"ELSEWHERE\"},{",
+            )
+        }
+        val target = fresh()
+        val thrown = assertThrows(ImportIntegrityException::class.java) {
+            importInto(target, document)
+        }
+        assertTrue(thrown.message!!.contains("merged"))
         assertUntouched(target)
     }
 

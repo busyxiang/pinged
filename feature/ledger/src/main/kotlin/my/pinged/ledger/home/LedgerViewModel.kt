@@ -32,9 +32,11 @@ import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CurrencyTotal
+import my.pinged.data.dao.FeedRow
+import my.pinged.data.dao.MerchantIdentityDao
+import my.pinged.parse.SameShop
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
-import my.pinged.data.entity.Txn
 import java.time.YearMonth
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -73,6 +75,10 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val _storageUnavailable = MutableStateFlow(false)
     val storageUnavailable: StateFlow<Boolean> = _storageUnavailable.asStateFlow()
+
+    /** Spec 6.4's merchant sheet, while one is open; see [openMerchant]. */
+    private val _merchantSheet = MutableStateFlow<MerchantSheetState?>(null)
+    val merchantSheet: StateFlow<MerchantSheetState?> = _merchantSheet.asStateFlow()
 
     /**
      * The `category` table, read once per database this holder reads from.
@@ -116,7 +122,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * observer is registered with the instance a reset closed. Main-thread
      * only, as [bound] is.
      */
-    private var feedSource: PagingSource<Int, Txn>? = null
+    private var feedSource: PagingSource<Int, FeedRow>? = null
 
     /**
      * Tests only: a suspension point between [ReopeningFeed]'s open and its
@@ -197,7 +203,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             )).also { feedSource = it }
         }
             .flow
-            .map { paging -> paging.map { LedgerItem.Row(it) as LedgerItem } }
+            .map { paging -> paging.map { LedgerItem.Row(it.txn, it.identityKey, it.displayName) as LedgerItem } }
             .map { paging ->
                 paging.insertSeparators { before, after -> dayHeaderBetween(before, after) }
             }
@@ -399,6 +405,73 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         refresh(now).join()
     }
 
+    /**
+     * Open spec 6.4's sheet for the merchant a row's [ownKey] belongs to.
+     *
+     * One read of everything the sheet shows, published whole, so a sheet
+     * never draws a name from one read beside a list from another. A key that
+     * no longer resolves to any transaction opens nothing.
+     *
+     * Guarded like [assignCategory], for the same reason and with the same
+     * uncovered remainder.
+     */
+    fun openMerchant(ownKey: String): Job = viewModelScope.launch {
+        CaptureStorage.guarded(
+            context,
+            what = "The merchant could not be read",
+            unavailable = { _storageUnavailable.value = true },
+            damageStopsCapture = false,
+        ) {
+            _merchantSheet.value = readMerchantSheet(Databases.merchantIdentityDao(context), ownKey)
+        }
+    }
+
+    fun closeMerchant() {
+        _merchantSheet.value = null
+    }
+
+    /** Spec 6.4's rename, of the merchant the open sheet is about. */
+    fun renameMerchant(name: String): Job = writeMerchant("The merchant could not be renamed") { dao, sheet ->
+        dao.rename(sheet.identityKey, name, sheet.derivedName)
+    }
+
+    /**
+     * Spec 6.4's merge of the open sheet's merchant into [targetKey], under the
+     * name the sheet showed for it.
+     */
+    fun mergeMerchant(targetKey: String): Job = writeMerchant("The merchants could not be merged") { dao, sheet ->
+        val target = sheet.others.firstOrNull { it.identityKey == targetKey } ?: return@writeMerchant
+        dao.merge(source = sheet.ownKey, target = targetKey, targetName = target.displayName ?: targetKey)
+    }
+
+    /** Undo the merge of [key]. */
+    fun separateMerchant(key: String): Job = writeMerchant("The merchants could not be separated") { dao, _ ->
+        dao.separate(key)
+    }
+
+    /**
+     * One write against the open sheet, which then closes.
+     *
+     * Nothing is refreshed: the feed observes both of spec 6.4's tables
+     * (`LeasedFeed`), and no aggregate [refresh] reads depends on which
+     * merchant a row belongs to.
+     */
+    private fun writeMerchant(
+        what: String,
+        write: (MerchantIdentityDao, MerchantSheetState) -> Unit,
+    ): Job = viewModelScope.launch {
+        val sheet = _merchantSheet.value ?: return@launch
+        _merchantSheet.value = null
+        CaptureStorage.guarded<Unit>(
+            context,
+            what = what,
+            unavailable = { _storageUnavailable.value = true },
+            damageStopsCapture = false,
+        ) {
+            write(Databases.merchantIdentityDao(context), sheet)
+        }
+    }
+
     companion object {
         /** §9.1 says three. The query takes it as a parameter so the two cannot disagree. */
         const val TOP_CATEGORIES = 3
@@ -423,6 +496,32 @@ private class Catalogue(
     val uncategorizedId: Long?,
     val generation: Long,
 )
+
+/**
+ * What spec 6.4's sheet shows for [ownKey], or null when no transaction carries
+ * it any more. Blocking; called inside `CaptureStorage.guarded`.
+ *
+ * Suggestions are judged against [ownKey], the string the row the user pressed
+ * actually carries, not against the merchant it may already be merged into.
+ */
+@VisibleForTesting
+internal fun readMerchantSheet(dao: MerchantIdentityDao, ownKey: String): MerchantSheetState? {
+    val identity = dao.canonicalOf(ownKey) ?: ownKey
+    val choices = dao.choices()
+    val self = choices.firstOrNull { it.identityKey == identity } ?: return null
+    val others = SameShop.suggestionsFirst(ownKey, choices.filter { it.identityKey != identity }) { it.identityKey }
+    return MerchantSheetState(
+        ownKey = ownKey,
+        identityKey = identity,
+        name = self.displayName ?: identity,
+        derivedName = self.derivedName,
+        txnCount = self.txnCount,
+        mergedInto = if (identity != ownKey) self.displayName ?: identity else null,
+        members = if (identity == ownKey) dao.membersOf(identity) else emptyList(),
+        others = others,
+        suggested = others.filter { SameShop.likely(ownKey, it.identityKey) }.mapTo(HashSet()) { it.identityKey },
+    )
+}
 
 /** [LedgerViewModel.bound]: a database, and the `Databases.generation` it came from. */
 private class Bound(val db: PingedDatabase, val generation: Long)
@@ -460,10 +559,12 @@ private class Bound(val db: PingedDatabase, val generation: Long)
  */
 @VisibleForTesting
 internal class LeasedFeed(
-    private val room: PagingSource<Int, Txn>,
+    private val room: PagingSource<Int, FeedRow>,
     private val tracker: InvalidationTracker,
-) : PagingSource<Int, Txn>() {
-    private val observer = object : InvalidationTracker.Observer("txn") {
+) : PagingSource<Int, FeedRow>() {
+    // Every table `TxnDao.FEED_SQL` reads, so a rename or a merge (spec 6.4)
+    // redraws the rows it names, for the same reason a capture does.
+    private val observer = object : InvalidationTracker.Observer(FEED_TABLES) {
         override fun onInvalidated(tables: Set<String>) = invalidate()
     }
     private val observing = AtomicBoolean()
@@ -479,7 +580,7 @@ internal class LeasedFeed(
 
     // On IO, because the release is where a retired instance is closed, and
     // Paging calls this from whatever its collector runs on.
-    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Txn> =
+    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, FeedRow> =
         withContext(Dispatchers.IO) {
             Databases.leasing {
                 if (observing.compareAndSet(false, true)) {
@@ -500,14 +601,16 @@ internal class LeasedFeed(
             }
         }
 
-    override fun getRefreshKey(state: PagingState<Int, Txn>): Int? = room.getRefreshKey(state)
+    override fun getRefreshKey(state: PagingState<Int, FeedRow>): Int? = room.getRefreshKey(state)
 
     private fun stopObserving() {
         runCatching { tracker.removeObserver(observer) }
     }
 
-    private companion object {
-        val untracking = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal companion object {
+        private val untracking = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        val FEED_TABLES = arrayOf("txn", "merchant_alias", "merchant_name")
     }
 }
 
@@ -540,12 +643,12 @@ internal class LeasedFeed(
 private class ReopeningFeed(
     private val open: suspend () -> Result<Bound>,
     private val onOpened: (Bound) -> Unit,
-) : PagingSource<Int, Txn>() {
-    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Txn> =
+) : PagingSource<Int, FeedRow>() {
+    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, FeedRow> =
         open().fold(
             { dao -> onOpened(dao); LoadResult.Invalid() },
             { failure -> LoadResult.Error(failure) },
         )
 
-    override fun getRefreshKey(state: PagingState<Int, Txn>): Int? = null
+    override fun getRefreshKey(state: PagingState<Int, FeedRow>): Int? = null
 }

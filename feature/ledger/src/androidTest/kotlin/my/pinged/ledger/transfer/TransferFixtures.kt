@@ -16,6 +16,7 @@ import my.pinged.data.entity.Category
 import my.pinged.parse.ExclusionReason
 import my.pinged.data.entity.MatchType
 import my.pinged.data.entity.RuleOrigin
+import my.pinged.data.entity.MerchantAlias
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.PendingReason
@@ -241,6 +242,12 @@ fun seedOneOfEverything(db: PingedDatabase): SeededLedger {
             updatedAt = 4L,
         ),
     )
+
+    // Spec 6.4: the two transactions' merchants merged, and the result renamed
+    // to something neither row derives, so a name that does not survive is
+    // visible as the rows' own.
+    db.merchantIdentityDao().insertAlias(MerchantAlias(merchantKey = "MCD KLCC", canonicalKey = "STARBUCKS KLCC"))
+    db.merchantIdentityDao().setName("STARBUCKS KLCC", "Kopi at KLCC")
 
     return SeededLedger(db, uncategorized, userCategory, captures, txns)
 }

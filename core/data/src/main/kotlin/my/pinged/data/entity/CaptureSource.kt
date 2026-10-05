@@ -10,7 +10,7 @@ data class CaptureSource(
      * Spec section 4 names this column `package`; it is `pkg` here because
      * `package` is a Kotlin hard keyword and every DAO query in the plan
      * reads `WHERE pkg = :pkg`. The column and the property agree, which is
-     * what matters for the frozen v1 schema.
+     * what matters for a frozen schema.
      */
     @PrimaryKey val pkg: String,
     val label: String,

@@ -20,6 +20,8 @@ import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
 import my.pinged.parse.ExclusionReason
 import my.pinged.data.entity.MatchType
+import my.pinged.data.entity.MerchantAlias
+import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RuleOrigin
 import my.pinged.data.entity.ParseStatus
@@ -135,6 +137,8 @@ object ImportJson {
         val counts = LinkedHashMap<String, Int>()
         var exportedAt: Long? = null
         var lastSection = -1
+        // Read first, inside the `try`; the checks after it need it too.
+        var format = 0
 
         try {
             if (reader.peek() != JsonToken.BEGIN_OBJECT) {
@@ -155,11 +159,11 @@ object ImportJson {
                         ". Nothing was imported.",
                 )
             }
-            val format = reader.nextInt()
-            if (format != Backup.FORMAT_VERSION) {
+            format = reader.nextInt()
+            if (format !in Backup.OLDEST_READABLE..Backup.FORMAT_VERSION) {
                 throw ImportFormatException(
                     "This backup is in format version $format and this build of " +
-                        "Pinged reads version ${Backup.FORMAT_VERSION}. " +
+                        "Pinged reads versions ${Backup.OLDEST_READABLE} to ${Backup.FORMAT_VERSION}. " +
                         (if (format > Backup.FORMAT_VERSION) {
                             "It was written by a newer build. Importing the parts this " +
                                 "build understands would silently drop the rest, so it is " +
@@ -171,14 +175,23 @@ object ImportJson {
                 )
             }
 
+            val sections = Backup.sectionsIn(format)
             while (reader.hasNext()) {
                 val name = reader.nextName()
-                val sectionIndex = Backup.SECTION_ORDER.indexOf(name)
+                val sectionIndex = sections.indexOf(name)
+                if (sectionIndex < 0 && name in Backup.SECTION_ORDER) {
+                    throw ImportFormatException(
+                        "This backup says it is format version $format, which has no " +
+                            "'$name' section, and carries one. A file that disagrees with " +
+                            "its own version has been edited, so none of it is believed. " +
+                            "Nothing was imported.",
+                    )
+                }
                 if (sectionIndex >= 0) {
                     if (sectionIndex <= lastSection) {
                         throw ImportFormatException(
                             "'$name' appears out of order in this backup. The sections " +
-                                "have to arrive as ${Backup.SECTION_ORDER.joinToString(", ")} " +
+                                "have to arrive as ${sections.joinToString(", ")} " +
                                 "because the rows are written to the database as they are " +
                                 "read, and a transaction cannot be stored before the " +
                                 "category it belongs to. Nothing was imported.",
@@ -248,11 +261,11 @@ object ImportJson {
             )
         }
 
-        val missing = Backup.SECTION_ORDER.filterNot { counts.containsKey(it) }
+        val missing = Backup.sectionsIn(format).filterNot { counts.containsKey(it) }
         if (missing.isNotEmpty()) {
             throw ImportFormatException(
                 "This backup has no ${missing.joinToString(", ")} section. Every Pinged " +
-                    "export writes all ${Backup.SECTION_ORDER.size}, even when a table is " +
+                    "export writes all ${Backup.sectionsIn(format).size} of its format, even when a table is " +
                     "empty, so a file missing one has been cut short or edited. Nothing " +
                     "was imported.",
             )
@@ -262,7 +275,7 @@ object ImportJson {
         requeueCapturesWithoutTheirTxn(db)
 
         val report = ImportReport(
-            formatVersion = Backup.FORMAT_VERSION,
+            formatVersion = format,
             exportedAt = exportedAt,
             categories = counts.getValue(Backup.CATEGORIES),
             captureSources = counts.getValue(Backup.CAPTURE_SOURCES),
@@ -270,6 +283,9 @@ object ImportJson {
             merchantRules = counts.getValue(Backup.MERCHANT_RULES),
             rawCaptures = counts.getValue(Backup.RAW_CAPTURES),
             txns = counts.getValue(Backup.TXNS),
+            // Absent from a format-1 file, which held no merges to carry.
+            merchantAliases = counts[Backup.MERCHANT_ALIASES] ?: 0,
+            merchantNames = counts[Backup.MERCHANT_NAMES] ?: 0,
         )
         state.report()
         return report
@@ -282,6 +298,8 @@ object ImportJson {
             db.rawCaptureDao().countAll().let { if (it > 0) add("$it captured notification(s)") }
             db.txnDao().countAll().let { if (it > 0) add("$it transaction(s)") }
             db.merchantRuleDao().countAll().let { if (it > 0) add("$it learned rule(s)") }
+            db.merchantIdentityDao().countAliases().let { if (it > 0) add("$it merged merchant(s)") }
+            db.merchantIdentityDao().countNames().let { if (it > 0) add("$it renamed merchant(s)") }
         }
         if (held.isEmpty()) return
         throw ImportNotEmptyException(
@@ -319,6 +337,15 @@ object ImportJson {
                     "the backup does not contain. Spec 4 keeps raw captures forever so " +
                     "that every transaction can be traced back to the notification that " +
                     "produced it, and these could not be. Nothing was imported.",
+            )
+        }
+        val chained = db.merchantIdentityDao().chainedAliasCount()
+        if (chained > 0) {
+            throw ImportIntegrityException(
+                "$chained merged merchant(s) in this backup point at a merchant that is " +
+                    "itself merged into another, or at themselves. Spec 6.4 keeps merges " +
+                    "one level deep so that each payment belongs to exactly one shop, and " +
+                    "Pinged never writes a file like this. Nothing was imported.",
             )
         }
         db.categoryDao().uncategorizedIdOrNull() ?: throw ImportIntegrityException(
@@ -562,6 +589,16 @@ object ImportJson {
         userEdited = r.bool("user_edited"),
         createdAt = r.long("created_at"),
         updatedAt = r.long("updated_at"),
+    )
+
+    internal fun merchantAlias(r: BackupRow) = MerchantAlias(
+        merchantKey = r.text("merchant_key"),
+        canonicalKey = r.text("canonical_key"),
+    )
+
+    internal fun merchantName(r: BackupRow) = MerchantName(
+        merchantKey = r.text("merchant_key"),
+        display = r.text("display"),
     )
 
     // ---- messages --------------------------------------------------------

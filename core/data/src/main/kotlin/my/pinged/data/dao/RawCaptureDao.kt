@@ -414,7 +414,7 @@ interface RawCaptureDao {
      * not hold.
      *
      * Nothing in the schema enforces this: declaring `duplicate_of_id` a Room
-     * `ForeignKey` would change the frozen v1 identity hash. In the app it
+     * `ForeignKey` would change a released schema's identity hash. In the app it
      * cannot break, because `markOutcome` only ever writes an id it just read
      * from this table.
      *

@@ -100,9 +100,18 @@ jobs:
       # and the guard reports a deletion on a PR that changed nothing. Hence its
       # own invocation with a forced rerun -- `--rerun`, which scopes to the
       # requested task, not `--rerun-tasks`, which invalidates all fourteen.
+      #
+      # Only the current version's file goes. An older one is a released
+      # schema, which the entities no longer describe and Room cannot write: it
+      # reads it, to generate the auto-migration from that version, and with
+      # `1.json` deleted KSP fails "Schema '1.json' required for migration was
+      # not found".
       - name: Regenerate the exported schema from the entities
         run: |
-          rm -rf core/data/schemas
+          version=$(sed -n 's/^ *const val VERSION = \([0-9]*\)$/\1/p' \
+            core/data/src/main/kotlin/my/pinged/data/PingedDatabase.kt)
+          test -n "$version" || { echo "::error::PingedDatabase.VERSION not found"; exit 1; }
+          rm -f "core/data/schemas/my.pinged.data.PingedDatabase/$version.json"
           ./gradlew --stacktrace :core:data:kspDebugKotlin --rerun
 
       # No pathspec: naming core/data/schemas would quietly exempt the second

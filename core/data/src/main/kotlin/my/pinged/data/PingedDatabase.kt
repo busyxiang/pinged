@@ -1,16 +1,20 @@
 package my.pinged.data
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import my.pinged.data.dao.CaptureDayDao
 import my.pinged.data.dao.CaptureSourceDao
 import my.pinged.data.dao.CategoryDao
+import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.CaptureDay
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
+import my.pinged.data.entity.MerchantAlias
+import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
@@ -18,10 +22,14 @@ import my.pinged.data.entity.Txn
 @Database(
     entities = [
         RawCapture::class, Txn::class, Category::class, CaptureSource::class,
-        MerchantRule::class, CaptureDay::class,
+        MerchantRule::class, CaptureDay::class, MerchantAlias::class, MerchantName::class,
     ],
     version = PingedDatabase.VERSION,
     exportSchema = true,
+    // v2 adds spec 6.4's two tables and changes nothing in v1's, so Room's
+    // generated migration is two CREATE TABLEs. `MigrationTest` runs it under
+    // the SQLCipher factory, from v1, as spec 13 requires.
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class PingedDatabase : RoomDatabase() {
     companion object {
@@ -31,7 +39,7 @@ abstract class PingedDatabase : RoomDatabase() {
          * because reading it back through `openHelper` is a path ruling R42
          * keeps to an allowlist.
          */
-        const val VERSION = 1
+        const val VERSION = 2
     }
 
     abstract fun rawCaptureDao(): RawCaptureDao
@@ -46,6 +54,8 @@ abstract class PingedDatabase : RoomDatabase() {
      * `schemas/1.json` and its identity hash are untouched.
      */
     abstract fun merchantRuleDao(): MerchantRuleDao
+
+    abstract fun merchantIdentityDao(): MerchantIdentityDao
 
     /**
      * Whether [close] has been called on this instance, which Room's own

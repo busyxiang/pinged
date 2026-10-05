@@ -202,7 +202,7 @@ interface TxnDao {
      * behind a leading equality column, so none of them can order an
      * unfiltered query. The index therefore costs a B-tree per insert for a
      * query only tests make; dropping it is a schema change and the schema is
-     * frozen (see "Schema v1 is frozen" in the module's CLAUDE.md).
+     * frozen (see "A released schema is frozen" in the repository's CLAUDE.md).
      */
     @Query("SELECT * FROM txn ORDER BY occurred_at DESC LIMIT :limit")
     fun recent(limit: Int): List<Txn>
@@ -360,7 +360,25 @@ interface TxnDao {
      * either way. Pinned by `QueryPlanTest.theFeedTakesTheDayOrderedIndex`.
      */
     @Query(FEED_SQL)
-    fun feed(): PagingSource<Int, Txn>
+    fun feed(): PagingSource<Int, FeedRow>
+
+    /**
+     * Section 8's "Top merchants" for a period: net spending per merchant,
+     * largest first, grouped by spec 6.4's resolved identity rather than by
+     * `merchant_key`, so a shop paid through two rails is one row.
+     *
+     * [COUNTED]'s rows only, and per currency, for the reasons [dayTotals]
+     * gives. A row with no merchant is left out rather than ranked as a
+     * merchant called nothing.
+     *
+     * The join costs `txn(merchant_key)` its ordered walk of the `GROUP BY`:
+     * the period's rows are found through `index_txn_local_date_occurred_at`
+     * and grouped in a temporary B-tree, which `QueryPlanTest` pins. Measured
+     * on emulator-5554 over a year of 5,000 rows, 200 merchants and 50 merged:
+     * 3.2ms. Nothing draws this yet; section 8's screen is not built.
+     */
+    @Query(MERCHANT_TOTALS_SQL)
+    fun merchantTotals(from: LocalDate, to: LocalDate, limit: Int): List<MerchantTotal>
 
     /**
      * The ledger's SQL, hoisted so `QueryPlanTest` pins the plan of the string
@@ -372,10 +390,26 @@ interface TxnDao {
      * into the annotation reaches it.
      */
     companion object {
+        /**
+         * `txn.*` plus spec 6.4's identity and name, both through primary-key
+         * joins on the two small tables, so a rename redraws the rows it
+         * names without touching any of them.
+         *
+         * The joins cost: on emulator-5554, 5,000 rows over 200 merchants with
+         * 50 merged, a page 4,000 rows deep in Room's `LIMIT 40 OFFSET 4000`
+         * wrapper took 0.90ms against 0.29ms without them, since `OFFSET`
+         * evaluates the joins for every row it skips. Under a millisecond at a
+         * depth few users scroll to, so the name is joined rather than cached
+         * on `txn`, which would need a writer per rename.
+         */
         const val FEED_SQL =
             """
-            SELECT * FROM txn WHERE state != 'REJECTED'
-            ORDER BY local_date DESC, occurred_at DESC, id DESC
+            SELECT txn.*,
+                   """ + MerchantSql.IDENTITY + """ AS identity_key,
+                   """ + MerchantSql.NAME + """ AS display_name
+            FROM txn """ + MerchantSql.JOINS + """
+            WHERE txn.state != 'REJECTED'
+            ORDER BY txn.local_date DESC, txn.occurred_at DESC, txn.id DESC
             """
 
         /**
@@ -390,7 +424,7 @@ interface TxnDao {
          * `+` reads every `COMMITTED` row ever captured while the suite stays
          * green. A `@DatabaseView` would have shared the predicate too and is
          * ruled out on its own terms: it would move the schema's identity hash
-         * (see "Schema v1 is frozen" in the module's CLAUDE.md).
+         * (see "A released schema is frozen" in the repository's CLAUDE.md).
          */
         const val COUNTED = "+state = 'COMMITTED' AND is_excluded = 0"
 
@@ -430,6 +464,29 @@ interface TxnDao {
             WHERE """ + COUNTED + """
               AND local_date BETWEEN :from AND :to
             GROUP BY currency
+            """
+
+        const val MERCHANT_TOTALS_SQL =
+            """
+            SELECT g.identity_key AS identityKey,
+                   COALESCE(merchant_name.display, g.derived) AS displayName,
+                   g.currency AS currency, g.net_sen AS netSen, g.txn_count AS txnCount
+            FROM (
+                SELECT """ + MerchantSql.IDENTITY + """ AS identity_key, txn.currency AS currency,
+                       SUM(CASE WHEN txn.direction = 'EXPENSE' THEN txn.amount_sen
+                                ELSE -txn.amount_sen END) AS net_sen,
+                       COUNT(*) AS txn_count,
+                       MAX(txn.occurred_at) AS last_at,
+                       COALESCE(txn.merchant_display, txn.merchant_raw) AS derived
+                FROM txn """ + MerchantSql.ALIAS_JOIN + """
+                WHERE """ + COUNTED + """
+                  AND txn.local_date BETWEEN :from AND :to
+                  AND txn.merchant_key IS NOT NULL
+                GROUP BY identity_key, txn.currency
+            ) g
+            LEFT JOIN merchant_name ON merchant_name.merchant_key = g.identity_key
+            ORDER BY g.net_sen DESC
+            LIMIT :limit
             """
 
         const val MONTH_BY_CATEGORY_SQL =

@@ -127,7 +127,7 @@ class RecoveryStateTest {
      */
     @Test fun anUnacknowledgedLossWithholdsTheClaimEvenAfterARestore() {
         val lost = Outcome(1, Operation.RESTORE, TransferJob.Failed("gone", ledgerLost = true))
-        val restored = Outcome(2, Operation.RESTORE, TransferJob.Restored(ImportReport(1, null, 0, 0, 0, 0, 1, 0)))
+        val restored = Outcome(2, Operation.RESTORE, TransferJob.Restored(ImportReport(1, null, 0, 0, 0, 0, 1, 0, 0, 0)))
         val body = recoveryCopy(
             SettingsState(storage = Storage.UNREADABLE, loss = lost, lastWipe = restored, storageAsOf = 2, loaded = true),
         )?.second
