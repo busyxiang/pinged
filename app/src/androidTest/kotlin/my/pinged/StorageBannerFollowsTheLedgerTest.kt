@@ -27,6 +27,7 @@ import my.pinged.ledger.transfer.ExportJson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -127,11 +128,10 @@ class StorageBannerFollowsTheLedgerTest {
                 }
                 assertTrue("precondition: the restore did not finish", compose.waitFor { compose.countOf(RESTORED) == 1 })
 
-                assertTrue(
+                assertEventually(
                     "The ledger was restored and opens, and the banner still says Pinged " +
-                        "cannot open its database: " + report(),
-                    compose.waitFor { compose.countOf(LABEL) == 0 },
-                )
+                        "cannot open its database",
+                ) { compose.countOf(LABEL) == 0 }
             }
         }
     }
@@ -154,13 +154,57 @@ class StorageBannerFollowsTheLedgerTest {
                     withTimeout(TIMEOUT) { Transfers.restoreFrom(context, { ByteArrayInputStream(backup) }, Job()).await() }
                 }
 
-                assertTrue(
+                assertEventually(
                     "A restore finished under the ledger, and the banner still says Pinged " +
-                        "cannot open its database: " + report(),
-                    compose.waitFor { compose.countOf(LABEL) == 0 },
-                )
+                        "cannot open its database",
+                ) { compose.countOf(LABEL) == 0 }
                 assertEquals("precondition: settings was opened after all", 0, compose.countOf(SETTINGS_ONLY))
             }
+        }
+    }
+
+    /**
+     * **A clear that lands after the banner sampled takes it down.** A sample
+     * can read the flag inside a refusal's window -- a ledger read refused
+     * mid-restore raises it, and the next one that opens clears it 2-3ms
+     * later -- and nothing samples again: the banner stood over a healthy
+     * ledger for the rest of the visit (issue #16, 3 in 40 under load). Here
+     * the refusal is put inside the sample through [betweenProbeAndReport].
+     * The clear is left to whichever open comes next, as it was there: what
+     * decides the banner is whether anything samples after it.
+     */
+    @Test fun aClearAfterTheBannerSampledTakesItDown() {
+        // Counted so the refusal is armed only once the launch's own sample
+        // is past it; met there, the reset's sample reads a clean flag.
+        val samples = AtomicInteger()
+        val refuse = AtomicBoolean(false)
+        betweenProbeAndReport = {
+            samples.incrementAndGet()
+            if (refuse.compareAndSet(true, false)) {
+                CaptureStorage.guarded(context, what = "a read refused mid-restore", unavailable = { }) {
+                    throw DatabaseKeyUnavailableException("simulated: refused mid-restore")
+                }
+            }
+        }
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use {
+                assertTrue("precondition: the launch never sampled", compose.waitFor { samples.get() >= 1 })
+                assertEquals("precondition: a banner over a healthy ledger", 0, compose.countOf(LABEL))
+                refuse.set(true)
+                Databases.reset()
+                // The refusal having run, not the banner having shown: with
+                // the flag watched, the banner can come down before a wait
+                // for it to be up sees it.
+                assertTrue("precondition: the sample never met the refusal", compose.waitFor { !refuse.get() })
+
+                assertEventually(
+                    "The flag was cleared after the banner sampled it, and the banner still " +
+                        "says Pinged cannot open its database",
+                ) { compose.countOf(LABEL) == 0 }
+            }
+        } finally {
+            betweenProbeAndReport = {}
+            runBlocking { CaptureStorage.guarded(context, what = "clearing the flag", unavailable = { }) { } }
         }
     }
 
@@ -181,11 +225,10 @@ class StorageBannerFollowsTheLedgerTest {
                 compose.waitFor { compose.countOf(SETTINGS_ONLY) == 1 && compose.countOf(KEY_GONE) == 0 },
             )
 
-            assertTrue(
+            assertEventually(
                 "Settings reads the database as healthy, and the banner above it still " +
-                    "says it cannot be opened and that settings says more: " + report(),
-                compose.waitFor { compose.countOf(LABEL) == 0 },
-            )
+                    "says it cannot be opened and that settings says more",
+            ) { compose.countOf(LABEL) == 0 }
         }
     }
 
@@ -221,18 +264,20 @@ class StorageBannerFollowsTheLedgerTest {
 
                 refuse.set(true)
                 Databases.reset()
-                assertTrue("precondition: the refusal never put the banner up", compose.waitFor { compose.countOf(LABEL) == 1 })
+                // As in [aClearAfterTheBannerSampledTakesItDown]: the
+                // refusal having run, since the watched flag can take the
+                // banner down before a wait for it to be up sees it.
+                assertTrue("precondition: the sample never met the refusal", compose.waitFor { !refuse.get() })
                 compose.onNodeWithText(CHECK_ROW).performClick()
                 assertTrue(
                     "precondition: the check never settled",
                     compose.waitFor { Transfers.state.value.outcome != null && Transfers.state.value.running == null },
                 )
 
-                assertTrue(
+                assertEventually(
                     "Settings read the ledger as healthy after its check, and the banner above " +
-                        "it still says Pinged cannot open its database: " + report(),
-                    compose.waitFor { compose.countOf(LABEL) == 0 },
-                )
+                        "it still says Pinged cannot open its database",
+                ) { compose.countOf(LABEL) == 0 }
             }
         } finally {
             betweenProbeAndReport = {}
@@ -272,6 +317,16 @@ class StorageBannerFollowsTheLedgerTest {
     }
 
     private fun report() = runBlocking { ListenerStatus.report(context) }.toString()
+
+    /**
+     * Fails with the report as it stands when the wait ran out. Built into the
+     * message instead, it is read before the wait starts: issue #16's failure
+     * printed `storageUnavailable=true` from the instant after the restore,
+     * when the flag had been cleared for 30s.
+     */
+    private fun assertEventually(message: String, condition: () -> Boolean) {
+        if (!compose.waitFor(condition)) fail("$message: ${report()}")
+    }
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
         runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess

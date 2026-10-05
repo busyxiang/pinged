@@ -6,7 +6,11 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 /**
  * One DataStore for the whole module, declared once.
@@ -127,4 +131,10 @@ internal object CaptureHealth {
     suspend fun storageUnavailable(context: Context): Boolean =
         context.captureStore.data.first()[STORAGE_UNAVAILABLE] ?: false
 
+    /** See [ListenerStatus.storageUnavailableChanges]. */
+    fun storageUnavailableChanges(context: Context): Flow<Boolean> =
+        context.captureStore.data
+            .map { it[STORAGE_UNAVAILABLE] ?: false }
+            .distinctUntilChanged()
+            .drop(1)
 }

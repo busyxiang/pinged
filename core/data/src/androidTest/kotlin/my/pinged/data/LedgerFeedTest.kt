@@ -14,7 +14,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The feed's order, its membership, and its invalidation.
+ * The feed's order and its membership. Its invalidation is `LeasedFeed`'s,
+ * because Room's source alone does not guarantee it: see `FeedInvalidationTest`
+ * in `:feature:ledger`.
  *
  * Order is asserted rather than assumed for two reasons. Paging makes an
  * arbitrary order an unstable one: without a tiebreaker two rows sharing
@@ -129,28 +131,5 @@ class LedgerFeedTest {
         )
         assertTrue("An excluded row must still be shown, struck through", amounts.contains(300L))
         assertFalse("A REJECTED row was shown", amounts.contains(400L))
-    }
-
-    @Test fun insertingATransactionInvalidatesTheFeed() {
-        val cat = uncategorized()
-        val source = db.txnDao().feed()
-        runBlocking {
-            source.load(PagingSource.LoadParams.Refresh(null, 10, false))
-        }
-        assertFalse("The source was invalid before anything was written", source.invalid)
-
-        db.txnDao().insert(sampleTxn(occurredAt = 1_000L, categoryId = cat))
-
-        // Room's invalidation is delivered on its own executor, so poll rather
-        // than assert immediately. A fixed sleep here would be flaky on a loaded
-        // emulator in one direction and slow in the other.
-        val deadline = System.nanoTime() + 5_000_000_000L
-        while (!source.invalid && System.nanoTime() < deadline) Thread.sleep(20)
-
-        assertTrue(
-            "The PagingSource was not invalidated by an insert, so a captured " +
-                "payment would not appear until the screen was recreated",
-            source.invalid,
-        )
     }
 }

@@ -343,6 +343,14 @@ class MainActivity : ComponentActivity() {
                 // the same reason the store's own first value is not. Its own
                 // collection, so the store's failure below cannot end it.
                 launch { Databases.rewrites.drop(1).collect { sampleHealth() } }
+                // And on the stored flag changing, which is what clears a
+                // banner sampled inside a refusal's window: the clear comes
+                // from whichever open succeeds next, and only this hears it.
+                launch {
+                    ListenerStatus.storageUnavailableChanges(applicationContext)
+                        .catch { thrown -> Log.w(TAG, "Could not watch the storage flag", thrown) }
+                        .collect { sampleHealth() }
+                }
                 launch {
                     IntegrityStore.damagedUpdates(applicationContext)
                         .catch { thrown ->

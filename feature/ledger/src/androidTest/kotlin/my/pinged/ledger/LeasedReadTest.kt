@@ -74,7 +74,7 @@ class LeasedReadTest {
         }
 
         val loaded = runCatching {
-            withContext(Dispatchers.IO) { LeasedFeed(room).load(PagingSource.LoadParams.Refresh(null, 40, false)) }
+            withContext(Dispatchers.IO) { LeasedFeed(room, Databases.shared(context).invalidationTracker).load(PagingSource.LoadParams.Refresh(null, 40, false)) }
         }
 
         assertWritable()

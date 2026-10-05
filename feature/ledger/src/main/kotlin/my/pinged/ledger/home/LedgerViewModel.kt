@@ -12,9 +12,12 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
+import androidx.room.InvalidationTracker
 import androidx.paging.map
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,11 +30,13 @@ import my.pinged.capture.CaptureStorage
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
+import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import java.time.YearMonth
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Home's state (§9.1). The feed and the aggregates are separate reads, and
@@ -176,12 +181,12 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      */
     val items: Flow<PagingData<LedgerItem>> =
         Pager(PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false)) {
-            (bound?.dao?.feed()?.let(::LeasedFeed) ?: ReopeningFeed(
+            (bound?.db?.let { LeasedFeed(it.txnDao().feed(), it.invalidationTracker) } ?: ReopeningFeed(
                 open = {
                     withContext(Dispatchers.IO) {
                         runCatching {
                             val generation = Databases.generation.value
-                            Bound(Databases.txnDao(context), generation)
+                            Bound(Databases.shared(context), generation)
                                 .also { afterOpen() }
                         }
                     }
@@ -419,11 +424,12 @@ private class Catalogue(
     val generation: Long,
 )
 
-/** [LedgerViewModel.bound]: a DAO, and the `Databases.generation` it came from. */
-private class Bound(val dao: TxnDao, val generation: Long)
+/** [LedgerViewModel.bound]: a database, and the `Databases.generation` it came from. */
+private class Bound(val db: PingedDatabase, val generation: Long)
 
 /**
- * Room's `PagingSource`, with each page read under `Databases.leasing`.
+ * Room's `PagingSource`, with each page read under `Databases.leasing`, and
+ * invalidated by every write to `txn` after its first page is read.
  *
  * **Room's first page is a transaction** -- `CommonLimitOffsetImpl.initialLoad`
  * in room-paging 2.8.4 runs it in `withTransaction(DEFERRED)`, read off the
@@ -433,14 +439,39 @@ private class Bound(val dao: TxnDao, val generation: Long)
  * guarded caller while the feed may still be reading through it; the lease
  * is what keeps it open until the read is done.
  *
+ * **Room's own source cannot be trusted to see a write that follows its
+ * first page.** Its constructor launches the coroutine that subscribes it to
+ * the tracker, and a write committed before that coroutine runs is never
+ * replayed to it: the captured payment stays off the ledger until the next
+ * write. On a CI emulator with its four cores loaded that was 8 to 20 of
+ * every 100 inserts (issue #16). So this feed registers its own observer
+ * before the first read, through `addObserver`, which installs the triggers
+ * before it returns (room-runtime 2.8.4's bytecode), so no write after the
+ * read can go unseen. Pinned by `FeedInvalidationTest`.
+ *
+ * The observer is removed on invalidation, on IO: `removeObserver` blocks on
+ * a trigger sync, and `LedgerViewModel.rebind` invalidates from the main
+ * thread. A sync on an instance since closed is skipped by Room's
+ * `CloseBarrier`, and one that fails leaves triggers installed, which costs
+ * a log row per write and nothing else, so neither is reported.
+ *
  * Everything else is Room's, and invalidation runs both ways, so Room's
  * tracker invalidating its source reaches the `Pager` through this one.
  */
 @VisibleForTesting
-internal class LeasedFeed(private val room: PagingSource<Int, Txn>) : PagingSource<Int, Txn>() {
+internal class LeasedFeed(
+    private val room: PagingSource<Int, Txn>,
+    private val tracker: InvalidationTracker,
+) : PagingSource<Int, Txn>() {
+    private val observer = object : InvalidationTracker.Observer("txn") {
+        override fun onInvalidated(tables: Set<String>) = invalidate()
+    }
+    private val observing = AtomicBoolean()
+
     init {
         room.registerInvalidatedCallback(::invalidate)
         registerInvalidatedCallback(room::invalidate)
+        registerInvalidatedCallback { untracking.launch { stopObserving() } }
     }
 
     override val jumpingSupported: Boolean get() = room.jumpingSupported
@@ -449,9 +480,35 @@ internal class LeasedFeed(private val room: PagingSource<Int, Txn>) : PagingSour
     // On IO, because the release is where a retired instance is closed, and
     // Paging calls this from whatever its collector runs on.
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Txn> =
-        withContext(Dispatchers.IO) { Databases.leasing { room.load(params) } }
+        withContext(Dispatchers.IO) {
+            Databases.leasing {
+                if (observing.compareAndSet(false, true)) {
+                    val failed = runCatching { tracker.addObserver(observer) }.exceptionOrNull()
+                    if (failed != null) {
+                        // Room has the observer before the sync that threw, and a
+                        // second `addObserver` of it would not sync again; a retry
+                        // has to start clean.
+                        stopObserving()
+                        observing.set(false)
+                        return@withContext LoadResult.Error(failed)
+                    }
+                    // Invalidated while adding: the callback's removal may have
+                    // run first and found nothing to remove.
+                    if (invalid) stopObserving()
+                }
+                room.load(params)
+            }
+        }
 
     override fun getRefreshKey(state: PagingState<Int, Txn>): Int? = room.getRefreshKey(state)
+
+    private fun stopObserving() {
+        runCatching { tracker.removeObserver(observer) }
+    }
+
+    private companion object {
+        val untracking = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
 }
 
 /**

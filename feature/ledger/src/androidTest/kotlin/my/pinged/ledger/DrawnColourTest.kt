@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -211,9 +213,7 @@ class DrawnColourTest {
         byRow: Boolean = false,
         keep: (Int, Int) -> Boolean,
     ): Double {
-        val pixels = compose.onNodeWithTag(tag, useUnmergedTree = true)
-            .captureToImage()
-            .toPixelMap()
+        val pixels = captured(tag).toPixelMap()
         var ink = 0.0
         var found = false
         for (y in 0 until pixels.height) {
@@ -227,5 +227,36 @@ class DrawnColourTest {
         }
         assertTrue("'$tag' painted nothing but its background", found)
         return ink
+    }
+
+    /**
+     * The tagged node's pixels, waiting out a frame the emulator is slow to draw.
+     *
+     * `captureToImage` forces a redraw and gives it 2000ms, fixed inside
+     * Compose's `WindowCapture`. A CI runner's emulator renders on the host CPU
+     * (SwiftShader) while Gradle builds beside it, and a full screen of
+     * `SourcesScreenContent` can take longer than that: 3 of #17's CI runs
+     * failed here, and with the emulator held to one host core, 7 and 9 of 12
+     * runs of the two tests that draw it, against 0 of 12 for the delete
+     * sheet's smaller frame (issue #16). The assertion is about colour, not
+     * frame time, so the timeout alone is retried; a node that never draws
+     * still fails every attempt, and one that draws only its ground fails
+     * [inkContrast]'s own check.
+     */
+    private fun captured(tag: String): ImageBitmap {
+        var last: ComposeTimeoutException? = null
+        repeat(CAPTURE_ATTEMPTS) {
+            try {
+                return compose.onNodeWithTag(tag, useUnmergedTree = true).captureToImage()
+            } catch (slow: ComposeTimeoutException) {
+                last = slow
+            }
+        }
+        throw checkNotNull(last)
+    }
+
+    private companion object {
+        /** Ten seconds of redraw in all, five of `captureToImage`'s own 2s. */
+        const val CAPTURE_ATTEMPTS = 5
     }
 }
