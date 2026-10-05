@@ -30,3 +30,9 @@ _Avoid_: label
 The name the user gave a merchant identity. Every transaction of that identity shows it in place of its own merchant display.
 _Avoid_: alias, nickname
 
+
+### Categories
+
+**Dictionary**:
+The categories the app ships for well-known merchants, part of the parser pack. The user cannot edit it. A rule the user taught outranks it, and a new pack changes how new payments are filed but never re-files old ones.
+_Avoid_: bundled rules, shipped rules, seeded rules
