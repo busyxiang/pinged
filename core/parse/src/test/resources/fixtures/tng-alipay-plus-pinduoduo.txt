@@ -1,0 +1,13 @@
+package: my.com.tngdigital.ewallet
+title: ALIPAY+ PAYMENT
+expect: matched
+rule: tng-alipay-plus-v1
+amount_sen: 1774
+merchant: PINDUODUO
+merchant_display: Pinduoduo
+direction: EXPENSE
+# A real TnG eWallet notification, from a device export. "at", where the
+# DuitNow wordings say "to" or "for", so no rule read it and the money was
+# missing from the ledger. The amount is already in ringgit.
+
+You have paid RM17.74 at PINDUODUO

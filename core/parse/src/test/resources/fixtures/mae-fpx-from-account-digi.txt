@@ -1,0 +1,18 @@
+package: com.maybank2u.life
+title: Maybank2u: FPX Payments
+expect: matched
+rule: mae-fpx-v1
+amount_sen: 3000
+merchant: DIGI TELEC
+merchant_display: Digi Telec
+direction: EXPENSE
+confidence: REVIEW
+# A real MAE notification, from a device export. No card spend arrived
+# beside it, so this was paid from the account and this notice is the only
+# record of the money: unmatched, it was missing from the ledger.
+# REVIEW, not HIGH, because of mae-fpx-card-funded-ibilik.txt: the same
+# wording arrives when a card paid, and then the card spend has already been
+# counted. Spec 7.2 layer 2 pairs only across packages, and both of these
+# come from MAE, so nothing else would stop the money being counted twice.
+
+Successful payment of RM30.00 to DIGI TELEC on 16 Sep 2026 08:28:04. Did not perform this transaction? Please call 03-58914744. FPX ID: 2609160827250911

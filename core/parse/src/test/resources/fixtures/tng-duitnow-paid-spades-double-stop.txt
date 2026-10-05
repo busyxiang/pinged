@@ -1,0 +1,16 @@
+package: my.com.tngdigital.ewallet
+title: DuitNow Payment
+expect: matched
+rule: duitnow-paid-v1
+amount_sen: 640
+merchant: SPADES BAKERY 3 SDN. BHD..
+merchant_display: Spades Bakery 3
+direction: EXPENSE
+# A real TnG eWallet notification, taken from a device export, so the body
+# is byte-for-byte what was posted.
+# The merchant group runs to the end of the sentence, so a name ending in a
+# suffix that ends in a stop arrives with two. MAE's Scan & Pay sends the
+# same shop as "SPADES BAKERY 3 SDN. BHD." because its rule stops at ". REF:".
+# Both must come out as one shop; the display line is what pins it.
+
+You have paid RM6.40 to SPADES BAKERY 3 SDN. BHD..

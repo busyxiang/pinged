@@ -42,6 +42,9 @@ object ParseFixtures {
         val merchant: String?,
         val merchantDisplay: String?,
         val direction: Direction?,
+        val confidence: Confidence?,
+        val kind: Kind?,
+        val exclusionReason: ExclusionReason?,
         val body: String,
     )
 
@@ -91,6 +94,18 @@ object ParseFixtures {
             direction = h["direction"]?.let { name ->
                 Direction.entries.firstOrNull { it.name == name }
                     ?: error("${file.name} names an unknown direction '$name'")
+            },
+            confidence = h["confidence"]?.let { name ->
+                Confidence.entries.firstOrNull { it.name == name }
+                    ?: error("${file.name} names an unknown confidence '$name'")
+            },
+            kind = h["kind"]?.let { name ->
+                Kind.entries.firstOrNull { it.name == name }
+                    ?: error("${file.name} names an unknown kind '$name'")
+            },
+            exclusionReason = h["exclusion_reason"]?.let { name ->
+                ExclusionReason.entries.firstOrNull { it.name == name }
+                    ?: error("${file.name} names an unknown exclusion_reason '$name'")
             },
             body = body.trim(),
         )

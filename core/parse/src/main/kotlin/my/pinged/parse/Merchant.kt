@@ -131,13 +131,15 @@ object Merchant {
         // SDN BHD MY" cleaned differently -- and spec 6.1 learns by exact normalized
         // string, so one shop became two learned merchants.
         //
-        // A pass removes one suffix, or the run of stops standing between the
-        // end of the string and the next suffix. Interleaved rather than run
+        // A pass removes one suffix, or one stop. Interleaved rather than run
         // one after the other, because the two stack in both orders and
         // either order alone leaves the other untouched: "RESTORAN X via
         // DuitNow." needs the stop off before " via DuitNow" ends the string,
         // and "MACHINES SDN. BHD." needs the suffix -- which carries stops of
-        // its own -- matched before any of them is taken.
+        // its own -- matched before any of them is taken. One stop, not the
+        // run: TnG sends "SPADES BAKERY 3 SDN. BHD..", and taking both stops
+        // takes the suffix's own, so " SDN. BHD." never matches and the shop
+        // keys apart from the same shop paid through MAE.
         //
         // The stops are the sentence's own, taken off a merchant group that
         // ran to the end of one -- "THONG KEE." against "THONG KEE" is two
@@ -150,28 +152,23 @@ object Merchant {
         //
         // The full stop alone: it is the only trailing punctuation the corpus
         // has sent, and a wider class would be a guess about commas.
-        // `trimEnd` rather than `\.+$`: 0.076 microseconds per call to 0.006,
-        // warm, over the corpus's merchant shapes, and one fewer pattern to
-        // differ between java.util.regex and ICU. The two part only before a
-        // final line terminator, which `TextNormalizer.forMatch` has already
-        // collapsed to a space.
+        // A character test rather than `\.$`: one fewer pattern to differ
+        // between java.util.regex and ICU.
         //
-        // The cap is derived from the list rather than a constant: a pass
-        // removes one suffix or one run of stops, and two runs of stops cannot
-        // come off back to back, so a pack cannot need more passes than twice
-        // its suffix list plus the pass that finds nothing left.
+        // The cap is the string's length, not a count of the list: every
+        // pass that continues removes at least one character, and a run of
+        // stops is as long as the bank made it.
         val suffixes = normalization.suffixes
         var passes = 0
-        val maxPasses = 2 * suffixes.size + 2
+        val maxPasses = out.length + 1
         while (passes++ < maxPasses) {
             val hit = suffixes.firstOrNull { out.endsWith(it, ignoreCase = true) }
             if (hit != null) {
                 out = out.substring(0, out.length - hit.length)
                 continue
             }
-            val shortened = out.trimEnd('.')
-            if (shortened == out) break
-            out = shortened
+            if (!out.endsWith('.')) break
+            out = out.dropLast(1)
         }
 
         out = TERMINAL_CODE.replace(out, "")
