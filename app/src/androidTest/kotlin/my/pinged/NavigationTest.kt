@@ -1,5 +1,6 @@
 package my.pinged
 
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -22,10 +23,9 @@ import org.junit.runner.RunWith
  * restored back stack from a fresh one. This walks the whole route: ledger to
  * settings, settings to the allow-list, and back out through both.
  *
- * `SourcesScreen`'s chevron is one of two subjects rather than the system
- * gesture, because the gesture was never in doubt: `NavDisplay` wires it
- * itself. What is in doubt is that each screen carries a way out a user can
- * see -- the allow-list's chevron, and settings' own "Back" text.
+ * `SourcesScreen`'s chevron is a subject because it is the one way off that
+ * screen a user can see. Settings is a tab root with no way out of its own, so
+ * the system gesture is driven for it, through `TabStacks.back`.
  *
  * Text, not `onNodeWithContentDescription`, distinguishes settings from the
  * allow-list: both screens draw a "Capture sources" node -- settings as a row,
@@ -48,7 +48,7 @@ class NavigationTest {
             compose.waitUntil(TIMEOUT) { compose.countOf("Delete everything") == 1 }
         }.isSuccess
         assertTrue(
-            "The ledger's SETTINGS control did not reach settings, so nothing " +
+            "The SETTINGS tab did not reach settings, so nothing " +
                 "below this line is about the way to or from the allow-list",
             reachedSettings,
         )
@@ -80,14 +80,18 @@ class NavigationTest {
             backAtSettings,
         )
 
-        compose.onNodeWithText("Back").performClick()
+        // The system gesture: settings is a tab root and draws no "Back" of
+        // its own, so Back is what returns to the ledger, and the SPENDING tab
+        // is what says that it did.
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         val backAtLedger = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.countOf("SETTINGS") == 1 }
+            compose.waitUntil(TIMEOUT) { compose.countOf("Delete everything") == 0 }
         }.isSuccess
         assertTrue(
-            "Settings' own \"Back\" did not return to the ledger",
+            "Back on settings did not return to the ledger",
             backAtLedger,
         )
+        compose.onNodeWithText("SPENDING").assertIsSelected()
     }
 
     /**

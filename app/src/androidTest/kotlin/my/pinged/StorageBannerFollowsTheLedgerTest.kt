@@ -53,8 +53,8 @@ class StorageBannerFollowsTheLedgerTest {
 
     /**
      * **On settings the banner offers no button.** Its button goes to
-     * settings, which is already on top, so `showOnce` has nothing to do and
-     * the tap did nothing -- a control that does nothing, which ruling R35
+     * settings, which is already on top, so selecting it has nothing to do and
+     * the tap would do nothing -- a control that does nothing, which ruling R35
      * forbids.
      */
     @Test fun theBannerOffersNoButtonOnTheScreenItLeadsTo() = withTheKeyGone {
@@ -259,7 +259,7 @@ class StorageBannerFollowsTheLedgerTest {
         try {
             ActivityScenario.launch(MainActivity::class.java).use {
                 assertTrue("precondition: the launch never sampled", compose.waitFor { samples.get() >= 1 })
-                compose.onNodeWithText(LEDGER_SETTINGS).performClick()
+                compose.onNodeWithText(SETTINGS_TAB).performClick()
                 assertTrue("precondition: settings' first read never sampled", compose.waitFor { samples.get() >= 2 })
                 assertEquals("precondition: a banner over a healthy ledger", 0, compose.countOf(LABEL))
 
@@ -351,8 +351,8 @@ class StorageBannerFollowsTheLedgerTest {
         /** See `ExportNudgeBannerTest.SETTINGS_ONLY`. */
         const val SETTINGS_ONLY = "Delete everything"
 
-        /** The ledger's top-bar control; see `SettingsNavigationTest`. */
-        const val LEDGER_SETTINGS = "SETTINGS"
+        /** The bottom bar's settings tab; see `SettingsNavigationTest`. */
+        const val SETTINGS_TAB = "SETTINGS"
 
         /** Settings' row that runs a check, drawn only over a readable ledger. */
         const val CHECK_ROW = "Check my data"
