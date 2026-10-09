@@ -141,4 +141,29 @@ data class LedgerRead(
      * the single place the name crosses into SQL.
      */
     val uncategorizedId: Long? = null,
-)
+    /**
+     * Every learned rule, by merchant identity, to the `category.id` it files
+     * under. Read with the rest so the chooser's "filed by the user's rule"
+     * marking is of the same moment as the rows it marks; one row per merchant
+     * the user has taught, so the whole table is cheap.
+     */
+    val learnedRules: Map<String, Long> = emptyMap(),
+    /**
+     * The canonical keys that have another key merged into them, read with
+     * [learnedRules] so the chooser can say, before the tap, that a rule on
+     * such an identity files every key of the merged shop.
+     */
+    val mergedIdentities: Set<String> = emptySet(),
+    /**
+     * The `category.id` the dictionary files a merchant key under, null where
+     * it files nothing; see [dictionaryCategoryIds]. A function, built once per
+     * database and not per refresh, so two reads of one database carry the same
+     * instance and `LedgerRead`'s equality does not churn.
+     */
+    val dictionaryFiling: (String?) -> Long? = NO_DICTIONARY,
+) {
+    companion object {
+        /** The dictionary of a read that has not resolved one: it files nothing. */
+        val NO_DICTIONARY: (String?) -> Long? = { null }
+    }
+}

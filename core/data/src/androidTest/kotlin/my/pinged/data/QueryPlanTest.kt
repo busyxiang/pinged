@@ -2,6 +2,7 @@ package my.pinged.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.TxnState
@@ -194,6 +195,18 @@ class QueryPlanTest {
         assertUsesIndex("index_txn_local_date_occurred_at", p)
         assertTrue("Expected the grouping sort:\n$p", p.contains("TEMP B-TREE FOR GROUP BY"))
         assertLooksUpByKey(p, tables = listOf("merchant_alias", "merchant_name"))
+    }
+
+    /**
+     * The retroactive fix's row filter ([MerchantRuleDao.ELIGIBLE]), as the count
+     * and the move both use it: `merchant_key IN (...)` is a seek on
+     * `index_txn_merchant_key` and not a scan of every payment. The bare
+     * `COUNT(*)` is a proxy for the grouped count and the `UPDATE`, which add
+     * columns to the same `WHERE`.
+     */
+    @Test fun theRetroEligibilityFilterSeeksTheMerchantKeyIndex() {
+        val p = plan(bindable("SELECT COUNT(*) FROM txn WHERE " + MerchantRuleDao.ELIGIBLE), "SHOP", "SHOP")
+        assertUsesIndex("index_txn_merchant_key", p)
     }
 
     /**

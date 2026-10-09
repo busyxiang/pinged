@@ -6,7 +6,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.ListenableWorker
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
+import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.MerchantSql
+import my.pinged.data.entity.MatchType
+import my.pinged.data.entity.MerchantRule
+import my.pinged.data.entity.RuleOrigin
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
@@ -334,6 +338,141 @@ class CorrectionsTest {
         assertTrue("The fixture was not re-keyed", newKey != olderKey)
         assertEquals("The re-keyed row left its shop", newKey to "Kedai Enam", resolved(id))
         assertEquals("The member was left in a shop with no rows", newKey to "Kedai Enam", resolved(member))
+    }
+
+    private fun categoryId(name: String): Long =
+        Databases.categoryDao(context).all().first { it.name == name }.id
+
+    /** A learned rule as the teaching save writes it: `EXACT`, `LEARNED`, unscoped, on [identity]. */
+    private fun learn(identity: String, category: String) {
+        Databases.merchantRuleDao(context).insert(
+            MerchantRule(
+                matchType = MatchType.EXACT,
+                pattern = identity,
+                merchantDisplay = identity,
+                categoryId = categoryId(category),
+                origin = RuleOrigin.LEARNED,
+                priority = MerchantRuleDao.LEARNED_PRIORITY,
+            ),
+        )
+    }
+
+    /** The category of the rule whose pattern is exactly [pattern], or null; no alias resolution. */
+    private fun ruleOn(pattern: String): Long? =
+        Databases.shared(context).openHelper.readableDatabase.query(
+            "SELECT category_id FROM merchant_rule WHERE pattern = ?",
+            arrayOf<Any>(pattern),
+        ).use { if (it.moveToFirst()) it.getLong(0) else null }
+
+    /** A later payment to KEDAI [n], read by the current pack and filed by stage two; its capture id. */
+    private fun followingPaymentId(n: Int, at: Long): Long {
+        val id = ParseFixtures.insertCapture(
+            context = context,
+            text = "Payment of RM7$n.${50 + (at / 100L) % 40} to KEDAI $n $marker successful",
+            title = "Touch 'n Go $marker",
+            pkg = ParseFixtures.TNG,
+            sbnKey = "$marker-follow-$at",
+            postedAt = at,
+        )
+        ParseFixtures.pass(context).run()
+        return id
+    }
+
+    /** The category stage two filed [followingPaymentId]'s capture under. */
+    private fun followingPayment(n: Int, at: Long): Long = txn(followingPaymentId(n, at)).categoryId
+
+    /**
+     * Issue #52, `K` still kept by a row: `K'` is aliased to `K`, so the rule
+     * stays on `K` and reaches `K'` through the alias.
+     */
+    @Test
+    fun aLearnedRuleReachesTheReKeyedMerchantThroughAnAliasWhileARowKeepsTheOldKey() {
+        val olderKey = "KEDAI 7 $marker SDN BHD"
+        val kept = rekeyed(7, olderKey, base - 2_000L)
+        val moved = rekeyed(8, olderKey, base - 1_900L)
+        txn(kept).let { Databases.txnDao(context).setCategory(it.id, it.categoryId, System.currentTimeMillis()) }
+        learn(olderKey, "Food & Drinks")
+
+        sweep()
+        val newKey = txn(moved).merchantKey!!
+        assertTrue("The fixture was not re-keyed", newKey != olderKey)
+        assertEquals("The rule's pattern moved while a row still has the key", categoryId("Food & Drinks"), ruleOn(olderKey))
+        assertNull("A second rule was written for the new key", ruleOn(newKey))
+        assertEquals(olderKey, resolved(moved).first)
+        assertEquals(
+            "A following capture at the new key missed the rule",
+            categoryId("Food & Drinks"),
+            followingPayment(8, base - 1_800L),
+        )
+    }
+
+    /** Issue #52, no row keeps `K`: `K'` replaces it and the pattern moves in the same write. */
+    @Test
+    fun aLearnedRuleMovesToTheNewKeyWhenNoRowKeepsTheOldOne() {
+        val olderKey = "KEDAI 9 $marker SDN BHD"
+        val id = rekeyed(9, olderKey, base - 1_700L)
+        val filedBefore = txn(id).categoryId
+        learn(olderKey, "Food & Drinks")
+
+        sweep()
+        val newKey = txn(id).merchantKey!!
+        assertTrue("The fixture was not re-keyed", newKey != olderKey)
+        assertEquals("The pattern did not move to the new key", categoryId("Food & Drinks"), ruleOn(newKey))
+        assertNull("The rule was copied rather than moved", ruleOn(olderKey))
+        assertEquals("Carrying a rule re-filed a row", filedBefore, txn(id).categoryId)
+        assertEquals(
+            "A following capture at the new key missed the rule",
+            categoryId("Food & Drinks"),
+            followingPayment(9, base - 1_600L),
+        )
+    }
+
+    /** Issue #52, `K` merged into `c`: `K'` joins `c` and `c`'s rule carries with no extra step. */
+    @Test
+    fun aLearnedRuleOnTheMergeTargetReachesTheReKeyedMerchant() {
+        val (_, target) = warung(base - 1_500L)
+        val olderKey = "KEDAI 10 $marker SDN BHD"
+        val id = rekeyed(10, olderKey, base - 1_400L)
+        assertTrue(merchants.merge(source = olderKey, target = target, targetName = "Warung Mak Su"))
+        learn(target, "Food & Drinks")
+
+        sweep()
+        val newKey = txn(id).merchantKey!!
+        assertTrue("The fixture was not re-keyed", newKey != olderKey)
+        assertEquals(target, resolved(id).first)
+        assertEquals("The target's rule moved", categoryId("Food & Drinks"), ruleOn(target))
+        assertNull("A rule was written for the new key", ruleOn(newKey))
+        assertEquals(
+            "A following capture at the new key missed the target's rule",
+            categoryId("Food & Drinks"),
+            followingPayment(10, base - 1_300L),
+        )
+    }
+
+    /**
+     * Issue #52, `K'` already has a rule in another category: nothing is
+     * carried, no stored `category_id` changes, and `K`'s orphaned rule stays.
+     */
+    @Test
+    fun aLearnedRuleIsNotCarriedOntoAKeyThatAlreadyHasAnotherCategory() {
+        val olderKey = "KEDAI 11 $marker SDN BHD"
+        val id = rekeyed(11, olderKey, base - 1_200L)
+        val newKey = txn(followingPaymentId(11, base - 1_100L)).merchantKey!!
+        learn(olderKey, "Food & Drinks")
+        learn(newKey, "Shopping")
+        val filedBefore = txn(id).categoryId
+
+        sweep()
+        assertEquals("The fixture was not re-keyed", newKey, txn(id).merchantKey)
+        assertEquals("The old key's rule changed", categoryId("Food & Drinks"), ruleOn(olderKey))
+        assertEquals("The new key's own rule changed", categoryId("Shopping"), ruleOn(newKey))
+        assertEquals("A stored category changed", filedBefore, txn(id).categoryId)
+        assertEquals(newKey, resolved(id).first)
+        assertEquals(
+            "A following capture was not filed under the new key's own rule",
+            categoryId("Shopping"),
+            followingPayment(11, base - 1_000L),
+        )
     }
 
     /** Spec 5.5: "a human decision outranks any rule". */

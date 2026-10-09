@@ -38,7 +38,7 @@ The categories the app ships for well-known merchants, part of the parser pack. 
 _Avoid_: bundled rules, shipped rules, seeded rules
 
 **Learned rule**:
-The category the user taught for a merchant identity, by saving the category chooser with "Always call this" on. It files every later payment of that merchant, whichever of its keys the payment arrives under, and outranks the dictionary. A merge or a pack change carries it with the merchant. The user sees it as a "learned merchant" in settings, where deleting one forgets the teaching for the whole identity and re-files nothing.
+The category the user taught for a merchant identity, by saving the category chooser with "Always call this" on. It files every later payment of that merchant, whichever of its keys the payment arrives under, and outranks the dictionary. A merge or a pack change carries it with the merchant. The UI calls it a "learned merchant", and settings lists them under "Learned merchants" (read and delete only). Deleting one forgets the teaching for the whole identity, dormant source rules included, and re-files nothing.
 _Avoid_: merchant rule, auto-category
 
 **One-off**:

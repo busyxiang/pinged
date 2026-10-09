@@ -32,8 +32,8 @@ import my.pinged.parse.RuleMatcher
  * the rule id is applied by [sweep] without asking: none of the three is drawn
  * anywhere, and `merchant_key` is the column section 8 groups by, so leaving a
  * shop keyed two ways until someone answers a question they cannot see the
- * point of is the worse outcome. Either way the user's merges and name move
- * with the key, in the same transaction (`MerchantDecisions.carry`).
+ * point of is the worse outcome. Either way the user's merges, name and learned
+ * rule move with the key, in the same transaction (`MerchantDecisions.carry`).
  *
  * **No table of its own.** Schema v1 is frozen, and the list is derivable: a
  * capture still at an older `pack_version` with an unedited transaction is
@@ -42,8 +42,12 @@ import my.pinged.parse.RuleMatcher
  * current `pack_version`, so a declined correction returns only if a later pack
  * reads the capture differently again.
  *
- * **`user_edited` rows are never read** (spec 5.5), and that excludes every row
- * whose category was set by hand -- `TxnDao.setCategory` sets the flag.
+ * **`user_edited` rows are never read** (spec 5.5), and that excludes every
+ * one-off -- a row whose category was set for that one payment, which
+ * `TxnDao.setCategory` flags. A row a teaching save filed by the merchant's
+ * learned rule keeps `user_edited = 0` and **is** read, so a pack correction
+ * can still reach it: a re-read never writes `category_id`, so the rule's
+ * choice survives it.
  *
  * **Not offered: a `MATCHED` capture the current pack no longer matches.** It
  * stays at its old version, unanswered. What accepting "this was not a payment"

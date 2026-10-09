@@ -57,8 +57,10 @@ object Merchant {
      * It is **not** spec 6.1's learned-rule key, which replaces every
      * non-alphanumeric with a space and strips nothing: 6.1's own example turns
      * `TNG*99SPEEDMART` into `TNG 99SPEEDMART`, where this returns `99SPEEDMART`.
-     * The two agree wherever 6.1 operates, since acquirer strings never reach the
-     * learning path -- but they are different functions.
+     * They are different functions and they **disagree**: on 36 of the 80 rows of
+     * the 2026-10-05 device export, because acquirer strings do reach the learning
+     * path. A learned rule is therefore matched against this form, the stored
+     * `merchant_key` (spec #45's departure from 6.1), never against 6.1's.
      *
      * The uppercasing is load-bearing for those subsystems, not a display decision;
      * [displayFor] is that, and starts from the same raw string rather than from

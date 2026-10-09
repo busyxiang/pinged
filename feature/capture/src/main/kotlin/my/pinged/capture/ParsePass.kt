@@ -5,12 +5,15 @@ import android.util.Log
 import java.util.concurrent.CancellationException
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
+import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.StaleCaptureException
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
+import my.pinged.parse.Categorizer
+import my.pinged.parse.DictionaryEntry
 import my.pinged.parse.MatchOutcome
 import my.pinged.parse.Merchant
 import my.pinged.parse.RuleMatcher
@@ -29,12 +32,15 @@ import my.pinged.parse.RuleMatcher
  * the last two by `ParseInterruptionTest`, to prove the loop stops where it
  * says it does.
  *
- * ## What is not here
+ * ## Filing
  *
- * **Categorization.** `:core:categorize` is a later module (spec 3), so every
- * transaction is filed under `Uncategorized` -- which spec 7.1 calls the
- * intended landing place and a non-blocking chip, so this is a missing feature
- * and not a wrong state.
+ * A capture is filed by the learned rule for its merchant identity, else by the
+ * pack's dictionary, else under `Uncategorized` (spec 7.1's non-blocking chip).
+ * There is no `:core:categorize` module (spec #45): [Categorizer] lives in
+ * `:core:parse` and [commit] does the lookup of the rule, so it runs in stage
+ * two from the durable `raw_capture` table and never in the listener.
+ *
+ * ## What is not here
  *
  * **`capture_source.is_authoritative`.** Spec 7.2 says a `DUPLICATE_SUSPECT`
  * pair spanning an authoritative and a non-authoritative source resolves toward
@@ -55,9 +61,25 @@ import my.pinged.parse.RuleMatcher
 internal class ParsePass(
     private val captures: RawCaptureDao,
     private val txns: TxnDao,
+    /** Where a learned rule is looked up, by the capture's merchant identity. */
+    private val rules: MerchantRuleDao,
     private val matcher: RuleMatcher,
     private val uncategorizedId: Long,
     private val sourceLabel: (String) -> String?,
+    /**
+     * The pack's dictionary. An entry whose category is absent from
+     * [categoryIds] is dropped before the [Categorizer] is built, so its
+     * merchants fall through to a shorter entry or to Uncategorized rather than
+     * to a category that is gone. Empty files every capture under Uncategorized
+     * unless a learned rule applies.
+     */
+    dictionary: List<DictionaryEntry> = emptyList(),
+    /**
+     * The `category.id` of each category that exists, by name: what resolves a
+     * dictionary entry's category name to an id. A snapshot of the moment the
+     * pass was built; a learned rule is read by id and does not depend on it.
+     */
+    private val categoryIds: Map<String, Long> = emptyMap(),
     /** Across every pass sharing [progress], not per pass. */
     private val maxRows: Int = MAX_ROWS_PER_RUN,
     private val isStopped: () -> Boolean = { false },
@@ -79,6 +101,7 @@ internal class ParsePass(
      */
     private val progress: Progress = Progress(),
 ) {
+    private val categorizer = Categorizer(dictionary.filter { it.category in categoryIds })
 
     /**
      * What one run did. [remaining] is true when this run knowingly left work
@@ -365,6 +388,20 @@ internal class ParsePass(
             duplicateSuspect = slotSuspectOf != null || layerTwoSuspect != null || unpaired,
         )
 
+        // Learned, then dictionary, then Uncategorized. The learned rule is read
+        // by the capture's merchant *identity* (an alias resolved to its
+        // canonical key, inside the one statement) and answers by `category.id`,
+        // so it wins whether or not [categoryIds], a snapshot taken when the
+        // pass was built, still names that category: the foreign key's RESTRICT
+        // means the id exists. The dictionary is matched against the capture's
+        // own key, since it is about how a merchant arrives. A lookup that meets
+        // a damaged page throws out of here as the commit's own write would, and
+        // [decide] leaves the capture at `NEW` rather than file it under
+        // Uncategorized on a question that could not be answered.
+        val categoryId = merchant.key?.let(rules::learnedCategoryFor)
+            ?: categorizer.file(merchant.key, learned = null).categoryName?.let(categoryIds::get)
+            ?: uncategorizedId
+
         val at = System.currentTimeMillis()
         val txn = Txn(
             rawCaptureId = capture.id,
@@ -378,7 +415,7 @@ internal class ParsePass(
             merchantRaw = merchantRaw,
             merchantDisplay = merchant.display,
             merchantKey = merchant.key,
-            categoryId = uncategorizedId,
+            categoryId = categoryId,
             sourcePackage = capture.sourcePackage,
             sourceLabel = sourceLabel(capture.sourcePackage),
             confidence = outcome.confidence,

@@ -532,11 +532,29 @@ object ImportJson {
         pattern = r.text("pattern"),
         merchantDisplay = r.text("merchant_display"),
         categoryId = r.long("category_id"),
-        origin = r.enum("origin", RuleOrigin.entries),
+        origin = bundledRefused(r.enum("origin", RuleOrigin.entries)),
         priority = r.int("priority"),
         hitCount = r.int("hit_count"),
         scopedPackage = r.text("scoped_package"),
     )
+
+    /**
+     * Spec #45: the dictionary is parser-pack data and never a `merchant_rule`
+     * row. `RuleOrigin.BUNDLED` stays in the enum only because
+     * `EnumVocabularyTest` freezes it, nothing writes it, and so a file that
+     * carries one did not come from Pinged. Refused rather than stored, where
+     * it would be a rule nothing reads and the settings list never shows.
+     */
+    private fun bundledRefused(origin: RuleOrigin): RuleOrigin {
+        if (origin == RuleOrigin.BUNDLED) {
+            throw ImportFormatException(
+                "'merchant_rule.origin' in this backup is '${RuleOrigin.BUNDLED.name}'. Pinged keeps its " +
+                    "bundled merchants in the parser pack and never writes one as a rule, so this file " +
+                    "was not made by Pinged. Nothing was imported.",
+            )
+        }
+        return origin
+    }
 
     internal fun rawCapture(r: BackupRow) = RawCapture(
         id = r.rowId("id"),

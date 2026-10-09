@@ -19,6 +19,12 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
+// One boundary table read by this module's JVM test and by
+// :feature:capture's device test, so the two cannot be edited apart.
+sourceSets {
+    test { resources.srcDir("src/sharedTest/resources") }
+}
+
 dependencies {
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)

@@ -88,7 +88,7 @@ class MerchantSheetTest {
                     items = flow.collectAsLazyPagingItems(),
                     read = LedgerRead(),
                     storageUnavailable = false,
-                    onAssign = { _, _ -> },
+                    onAssign = { _, _, _ -> },
                     onOpenSettings = {},
                     merchantSheet = sheet,
                     merchantActions = actions,

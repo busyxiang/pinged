@@ -9,14 +9,20 @@ numbers in comments and commit messages refer to it.
 
 ## Commands
 
-    ./gradlew test                        # 269 JVM tests
-    ./gradlew connectedDebugAndroidTest   # 655, needs a device
+    ./gradlew test                        # 321 JVM tests
+    ./gradlew connectedDebugAndroidTest   # 792, needs a device
     ./gradlew :smoke:connectedMinifiedAndroidTest   # 1, the R8 build
     ./gradlew test lint :app:assembleDebug   # what CI runs
 
 Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
 JVM module and has no instrumented source set, so anything device-specific is
 tested from `:feature:capture`.
+
+A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
+screen is shorter than a dev one, and a new Settings row once pushed "Delete
+everything" off it, so the click missed and two tests failed on CI only.
+`./gradlew test` needs no worktrees under `.claude/worktrees/`, or
+`RawDatabaseAccessTest` scans their copies and fails.
 
 Release is minified. `:app`'s own instrumented suite runs against debug,
 because it shares the app's process and R8 strips the classes it needs;

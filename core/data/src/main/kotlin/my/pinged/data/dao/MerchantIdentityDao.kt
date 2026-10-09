@@ -4,8 +4,11 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
+import my.pinged.data.entity.MatchType
 import my.pinged.data.entity.MerchantAlias
 import my.pinged.data.entity.MerchantName
+import my.pinged.data.entity.MerchantRule
+import my.pinged.data.entity.RuleOrigin
 
 /**
  * The statements every writer of spec 6.4's two tables shares, and spec 5.5's
@@ -49,12 +52,64 @@ interface MerchantDecisions {
     @Query("DELETE FROM merchant_name WHERE merchant_key = :key")
     fun deleteName(key: String): Int
 
+    /**
+     * The category of the learned rule whose pattern is exactly [pattern], or
+     * null. No alias resolution: [carry] asks about a key, not an identity.
+     */
+    @Query(
+        """
+        SELECT category_id FROM merchant_rule
+        WHERE """ + MerchantSql.LEARNED + """ AND pattern = :pattern
+        """,
+    )
+    fun learnedCategoryOn(
+        pattern: String,
+        matchType: MatchType = MatchType.EXACT,
+        origin: RuleOrigin = RuleOrigin.LEARNED,
+        scopedPackage: String = MerchantRule.UNSCOPED,
+    ): Long?
+
+    /** Re-points a learned rule's pattern: a targeted `UPDATE` of that one column. */
+    @Query(
+        """
+        UPDATE merchant_rule SET pattern = :to
+        WHERE """ + MerchantSql.LEARNED + """ AND pattern = :from
+        """,
+    )
+    fun moveLearned(
+        from: String,
+        to: String,
+        matchType: MatchType = MatchType.EXACT,
+        origin: RuleOrigin = RuleOrigin.LEARNED,
+        scopedPackage: String = MerchantRule.UNSCOPED,
+    ): Int
+
+    /**
+     * Deletes the learned rule whose pattern is exactly [pattern]: that one key,
+     * with no alias resolution and none of the rules of keys merged into it.
+     * [carry]'s tool for a rule it has made redundant. Forgetting a merchant
+     * for the user is `MerchantRuleDao.deleteLearnedOfIdentity`. Returns the
+     * rules deleted.
+     */
+    @Query(
+        """
+        DELETE FROM merchant_rule
+        WHERE """ + MerchantSql.LEARNED + """ AND pattern = :pattern
+        """,
+    )
+    fun deleteLearnedOn(
+        pattern: String,
+        matchType: MatchType = MatchType.EXACT,
+        origin: RuleOrigin = RuleOrigin.LEARNED,
+        scopedPackage: String = MerchantRule.UNSCOPED,
+    ): Int
+
     @Query("SELECT EXISTS(SELECT 1 FROM txn WHERE merchant_key = :key)")
     fun keyInUse(key: String): Boolean
 
     /**
      * Spec 5.5: a re-read moved a row from [from] to [to]; carry the user's
-     * merges and name with it. Call inside the transaction that moved it, after
+     * merges, name and learned rule with it. Call inside the transaction that moved it, after
      * the move, so [keyInUse] no longer counts that row.
      *
      * - [from] merged into `c`: [to] is aliased to `c` as well.
@@ -62,22 +117,27 @@ interface MerchantDecisions {
      *   [from], which keeps its members and its name.
      * - [from] canonical, and no row keyed by it: [to] takes its place. Its
      *   members are repointed to [to] and its name moved, so the one-level rule
-     *   holds and no identity is left that only aliases resolve to.
+     *   holds and no identity is left that only aliases resolve to. A learned
+     *   rule on [from] has its pattern moved to [to] in the same write.
      *
      * **A [to] the user already decided about is left alone**: one in another
-     * merge, one with members, or one with a name of its own. Folding it in
-     * would merge two shops the user kept apart, which is theirs to do. The
-     * row then resolves to [to]'s identity, as it would with no carry at all.
+     * merge, one with members, one with a name of its own, or one with a learned
+     * rule in a category other than the one it would join (issue #52). Folding
+     * it in would merge two shops the user kept apart, or shadow the rule that
+     * files [to]'s new captures, which is theirs to do. The row then resolves
+     * to [to]'s identity, as it would with no carry at all; no stored
+     * `category_id` moves and [from]'s rule stays where it is.
      *
-     * A [from] with no decision -- unmerged, no members, no name -- writes
-     * nothing, so a pack that re-keys thousands of rows costs three point reads
-     * each. Category rules are not carried here (issue #35).
+     * A [from] with no decision -- unmerged, no members, no name, no rule --
+     * writes nothing, and returns after the four reads that say so.
      */
     fun carry(from: String, to: String) {
         if (from == to) return
         val fromCanonical = canonicalOf(from)
         val name = if (fromCanonical == null) nameOf(from) else null
-        if (fromCanonical == null && name == null && memberCount(from) == 0) return
+        // A merged [from]'s own rule is dormant: its identity's is read instead.
+        val rule = if (fromCanonical == null) learnedCategoryOn(from) else null
+        if (fromCanonical == null && name == null && rule == null && memberCount(from) == 0) return
 
         val toCanonical = canonicalOf(to)
         val stillKept = keyInUse(from)
@@ -85,6 +145,8 @@ interface MerchantDecisions {
         if ((toCanonical ?: to) == (fromCanonical ?: from) && (fromCanonical != null || stillKept)) return
         val ours = toCanonical == from
         if (!ours && (toCanonical != null || memberCount(to) > 0 || nameOf(to) != null)) return
+        val toRule = learnedCategoryOn(to)
+        if (!ours && toRule != null && toRule != (rule ?: learnedCategoryOn(fromCanonical ?: from))) return
 
         if (fromCanonical != null || stillKept) {
             insertAlias(MerchantAlias(merchantKey = to, canonicalKey = fromCanonical ?: from))
@@ -97,6 +159,17 @@ interface MerchantDecisions {
         if (name != null) {
             setName(to, name)
             deleteName(from)
+        }
+        if (rule != null) {
+            // The unique index allows one rule per pattern. A rule already on
+            // [to] in [from]'s category makes [from]'s redundant; a dormant one
+            // from a merge into [from] is not the rule that was in force.
+            if (toRule == rule) {
+                deleteLearnedOn(from)
+            } else {
+                if (toRule != null) deleteLearnedOn(to)
+                moveLearned(from = from, to = to)
+            }
         }
     }
 }
@@ -139,8 +212,55 @@ interface MerchantIdentityDao : MerchantDecisions {
         // merged, since names join on the resolved identity, and [separate]
         // then gives it back.
         if (nameOf(t) == null) setName(t, targetName)
+        carryRule(s, t)
         return true
     }
+
+    /**
+     * Spec 6.4 as amended by #35, a learned rule at a merge. Rules are read
+     * through the identity, so when [target] has one it already files both
+     * keys and [source]'s stays stored and unread for Separate. When only
+     * [source] had one it is copied onto [target] with `hit_count = 0`, and
+     * [source]'s stays where it is, so Separate gives it back. **No `txn` row
+     * is written**: re-filing is the chooser's retroactive fix, and not doing
+     * it here is what keeps Separate exact.
+     */
+    fun carryRule(source: String, target: String) {
+        if (ruleOn(target) != null) return
+        val rule = learnedRuleOn(source) ?: return
+        insertRule(rule.copy(id = 0, pattern = target, hitCount = 0))
+    }
+
+    /** The rule holding the unique key `(EXACT, [pattern], unscoped)` whatever its origin, or null. */
+    @Query(
+        """
+        SELECT * FROM merchant_rule
+        WHERE match_type = :matchType AND pattern = :pattern AND scoped_package = :scopedPackage
+        """,
+    )
+    fun ruleOn(
+        pattern: String,
+        matchType: MatchType = MatchType.EXACT,
+        scopedPackage: String = MerchantRule.UNSCOPED,
+    ): MerchantRule?
+
+    /** [pattern]'s `LEARNED` `EXACT` unscoped rule, the one a teaching save writes, or null. */
+    @Query(
+        """
+        SELECT * FROM merchant_rule
+        WHERE """ + MerchantSql.LEARNED + """ AND pattern = :pattern
+        """,
+    )
+    fun learnedRuleOn(
+        pattern: String,
+        matchType: MatchType = MatchType.EXACT,
+        origin: RuleOrigin = RuleOrigin.LEARNED,
+        scopedPackage: String = MerchantRule.UNSCOPED,
+    ): MerchantRule?
+
+    /** Plain `@Insert` (`ABORT`): the unique index refusing it means [carryRule]'s check is wrong. */
+    @Insert
+    fun insertRule(rule: MerchantRule): Long
 
     /**
      * Name the merchant [key] resolves to.
@@ -169,11 +289,18 @@ interface MerchantIdentityDao : MerchantDecisions {
         SELECT merchant_alias.merchant_key AS merchantKey,
                (SELECT COALESCE(txn.merchant_display, txn.merchant_raw) FROM txn
                 WHERE txn.merchant_key = merchant_alias.merchant_key
-                ORDER BY txn.occurred_at DESC LIMIT 1) AS derivedName
+                ORDER BY txn.occurred_at DESC LIMIT 1) AS derivedName,
+               NOT EXISTS(SELECT 1 FROM merchant_rule WHERE """ + MerchantSql.LEARNED + """
+                  AND merchant_rule.pattern = merchant_alias.merchant_key) AS noOwnRule
         FROM merchant_alias WHERE canonical_key = :canonicalKey ORDER BY merchant_key
         """,
     )
-    fun membersOf(canonicalKey: String): List<MerchantMember>
+    fun membersOf(
+        canonicalKey: String,
+        matchType: MatchType = MatchType.EXACT,
+        origin: RuleOrigin = RuleOrigin.LEARNED,
+        scopedPackage: String = MerchantRule.UNSCOPED,
+    ): List<MerchantMember>
 
     /**
      * Every merchant the ledger holds, by resolved identity, most recently paid
@@ -187,7 +314,10 @@ interface MerchantIdentityDao : MerchantDecisions {
         SELECT g.identity_key AS identityKey,
                COALESCE(merchant_name.display, g.derived) AS displayName,
                g.derived AS derivedName,
-               g.txn_count AS txnCount
+               g.txn_count AS txnCount,
+               (SELECT category.name FROM merchant_rule JOIN category ON category.id = merchant_rule.category_id
+                WHERE """ + MerchantSql.LEARNED + """
+                  AND merchant_rule.pattern = g.identity_key) AS ruleCategory
         FROM (
             SELECT """ + MerchantSql.IDENTITY + """ AS identity_key,
                    COUNT(*) AS txn_count,
@@ -201,7 +331,11 @@ interface MerchantIdentityDao : MerchantDecisions {
         ORDER BY g.last_at DESC
         """,
     )
-    fun choices(): List<MerchantChoice>
+    fun choices(
+        matchType: MatchType = MatchType.EXACT,
+        origin: RuleOrigin = RuleOrigin.LEARNED,
+        scopedPackage: String = MerchantRule.UNSCOPED,
+    ): List<MerchantChoice>
 
     // ---- backup ------------------------------------------------------------
 
@@ -221,6 +355,32 @@ interface MerchantIdentityDao : MerchantDecisions {
 
     @Insert
     fun insertAllNames(names: List<MerchantName>)
+
+    /**
+     * The category [key]'s own learned rule files under, whether or not [key] is
+     * merged away (a merged-away rule is stored and unread). Null with no rule.
+     */
+    @Query(
+        """
+        SELECT category.name FROM merchant_rule JOIN category ON category.id = merchant_rule.category_id
+        WHERE """ + MerchantSql.LEARNED + """
+          AND merchant_rule.pattern = :key
+        """,
+    )
+    fun ownRuleCategory(
+        key: String,
+        matchType: MatchType = MatchType.EXACT,
+        origin: RuleOrigin = RuleOrigin.LEARNED,
+        scopedPackage: String = MerchantRule.UNSCOPED,
+    ): String?
+
+    /**
+     * Every canonical key that has at least one key merged into it: the shops
+     * the user merged, by identity. Read whole, for the chooser's note that a
+     * rule files every key of a merged shop; a person makes each row by hand.
+     */
+    @Query("SELECT DISTINCT canonical_key FROM merchant_alias")
+    fun mergedIdentities(): List<String>
 
     @Query("SELECT COUNT(*) FROM merchant_alias")
     fun countAliases(): Int
@@ -249,12 +409,16 @@ data class MerchantChoice(
     val displayName: String?,
     val derivedName: String?,
     val txnCount: Int,
+    /** The category the identity's learned rule files under, or null when it has none. */
+    val ruleCategory: String? = null,
 )
 
 /** One row of [MerchantIdentityDao.membersOf]. */
 data class MerchantMember(
     val merchantKey: String,
     val derivedName: String?,
+    /** True when [merchantKey] has no learned rule of its own, so Separate leaves it with none. */
+    val noOwnRule: Boolean = false,
 )
 
 /**
@@ -276,4 +440,14 @@ object MerchantSql {
 
     /** The name a `txn` row shows, under [JOINS]. */
     const val NAME = "COALESCE(merchant_name.display, txn.merchant_display, txn.merchant_raw)"
+
+    /**
+     * The predicate that names a learned rule: `EXACT`, `LEARNED` and unscoped,
+     * the one row a teaching save writes per identity. The three binds are
+     * `matchType`, `origin` and `scopedPackage`, which every query using it
+     * declares as parameters defaulting to those values, so a literal never
+     * appears beside the enum it must agree with. Unqualified, so it serves
+     * a query over `merchant_rule` whatever alias it gives it.
+     */
+    const val LEARNED = "match_type = :matchType AND origin = :origin AND scoped_package = :scopedPackage"
 }

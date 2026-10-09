@@ -1,0 +1,61 @@
+# One table, two engines. CategorizerTest runs it on the JVM and
+# CategorizerDeviceTest (:feature:capture androidTest) runs the same file on
+# Android, where Character's tables come from ICU. Columns, tab separated:
+#   entry  mode  key  expected
+# expected is MATCH (the entry files the key) or NONE (it does not). \uXXXX is
+# unescaped by the reader, so a full-width or combining character is visible
+# in review and survives an editor that normalises text. Every row is
+# constructed: none is a merchant string, only a shape the boundary must hold.
+
+# contains needs a word boundary on both sides.
+KFC	contains	KFC	MATCH
+KFC	contains	KFC KLCC	MATCH
+KFC	contains	MY KFC KLCC	MATCH
+KFC	contains	KFC-12	MATCH
+KFC	contains	KFCX	NONE
+KFC	contains	AKFC	NONE
+KFC	contains	AKFC KFCX	NONE
+KFC	contains	KFCX KFC	MATCH
+KFC	contains	AKFC KFC	MATCH
+KFC	contains	KFC1	NONE
+KFC	contains	1KFC	NONE
+
+# prefix is the start of the key, then a boundary.
+KFC	prefix	KFC KLCC	MATCH
+KFC	prefix	KFC	MATCH
+KFC	prefix	KFCX	NONE
+KFC	prefix	MY KFC	NONE
+
+# exact is the whole key and nothing else; case does not matter.
+KFC	exact	KFC	MATCH
+KFC	exact	kfc	MATCH
+KFC	exact	KFC KLCC	NONE
+KFC	exact	KFCX	NONE
+
+# A digit counts as part of a word, so a short numeric brand does not match
+# inside a longer number.
+99	prefix	99 SPEEDMART	MATCH
+99	prefix	99SPEEDMART	NONE
+99	prefix	990	NONE
+99	contains	X 99	MATCH
+99	contains	X 199	NONE
+
+# Full-width Latin letters and digits are letters and digits.
+KFC	contains	KFCＡ	NONE
+KFC	contains	ＡKFC	NONE
+KFC	contains	KFC１	NONE
+KFC	contains	KFC １	MATCH
+ＫＦＣ	prefix	ｋｆｃ KLCC	MATCH
+ＫＦＣ	prefix	ｋｆｃX	NONE
+
+# Accented letters are letters, and case folds across them.
+KFC	contains	KFCÉ	NONE
+KFC	contains	ÉKFC	NONE
+KFC	contains	KFCé	NONE
+CAFÉ	prefix	café BAR	MATCH
+CAFÉ	prefix	cafés	NONE
+
+# A combining mark is neither a letter nor a digit, so it ends a word.
+KFC	contains	KFĆ	MATCH
+KFC	prefix	KFĆ KLCC	MATCH
+KFC	contains	́KFC	MATCH

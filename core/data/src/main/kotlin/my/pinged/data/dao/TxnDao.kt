@@ -298,7 +298,9 @@ interface TxnDao {
     fun monthByCategory(from: LocalDate, to: LocalDate, limit: Int): List<CategoryTotal>
 
     /**
-     * Assign a category by hand (§9.1's chip, without §6.1's learned rule).
+     * Assign a category as a one-off (§9.1's chooser with "Always call this"
+     * off): this payment only, and no rule. A teaching save is
+     * `MerchantRuleDao.teach`, which leaves `user_edited` at 0.
      *
      * A targeted `UPDATE` naming its own columns, for the reason
      * [CaptureSourceDao] has no whole-row upsert: SQLite's `REPLACE` deletes

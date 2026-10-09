@@ -42,6 +42,14 @@ import kotlinx.serialization.Serializable
 @Serializable data object Corrections : NavKey
 
 /**
+ * The learned-merchants list (#50), pushed from its row in settings
+ * (`SettingsScreen`'s `onOpenLearned`).
+ *
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ */
+@Serializable data object Learned : NavKey
+
+/**
  * Spec 9.5's settings, reached from the ledger's top-bar control. [Sources] is
  * a row inside it, as `design/Settings.dc.html` draws.
  *

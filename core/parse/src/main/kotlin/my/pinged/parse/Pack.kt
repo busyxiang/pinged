@@ -265,6 +265,12 @@ data class ParsePack(
      * collide with any package rule's.
      */
     @SerialName("shared_rules") val sharedRules: List<TemplateRule> = emptyList(),
+    /**
+     * Well-known merchants and the seeded category each is filed under, for
+     * [Categorizer]. Data in the pack and never `merchant_rule` rows, so a pack
+     * bump changes how new payments are filed and re-files no old one.
+     */
+    val dictionary: List<DictionaryEntry> = emptyList(),
 )
 
 object PackLoader {
@@ -365,6 +371,13 @@ object PackLoader {
     private val REJECT_KEYS: Set<String> = serialNamesOf(RejectRule.serializer().descriptor)
 
     /**
+     * Every key a dictionary entry may declare. `mode` is optional, so a
+     * misspelling would load as the default `prefix` and quietly narrow or
+     * widen what the entry files.
+     */
+    private val DICTIONARY_KEYS: Set<String> = serialNamesOf(DictionaryEntry.serializer().descriptor)
+
+    /**
      * Both parsing phases fail the same way, so the recovery is stated once.
      * A [PackValidationException] raised by a validator passes through
      * untouched rather than being re-wrapped as a parse failure.
@@ -399,6 +412,7 @@ object PackLoader {
         // them faces applies here too. A separate validator for the shared
         // block is how one ends up missing a check that has cost money.
         validate(sharedScope(pack.sharedRules), pack.fragments)
+        validateDictionary(pack.dictionary)
 
         val sharedIds = pack.sharedRules.map { it.id }.toSet()
         val seenPackages = mutableSetOf<String>()
@@ -513,6 +527,12 @@ object PackLoader {
         val root = tree as? JsonObject ?: return
         validateRuleKeys(root[SHARED_SCOPE] as? JsonArray, SHARED_SCOPE)
 
+        for (entry in root["dictionary"] as? JsonArray ?: JsonArray(emptyList())) {
+            val obj = entry as? JsonObject ?: continue
+            val text = (obj["text"] as? JsonPrimitive)?.contentOrNull ?: "<unnamed entry>"
+            requireOnlyKeys(obj.keys, DICTIONARY_KEYS, "Dictionary entry '$text'")
+        }
+
         val packages = root["packages"] as? JsonArray ?: return
         for (packageElement in packages) {
             val packageObject = packageElement as? JsonObject ?: continue
@@ -541,6 +561,55 @@ object PackLoader {
             val field = (requires["field"] as? JsonPrimitive)?.contentOrNull
             if (field != null && field !in FIELD_VALUES) {
                 throw PackValidationException("Rule '$id' in $scope selects unknown field '$field'")
+            }
+        }
+    }
+
+    /**
+     * The dictionary's whole contract, for a built-in and an imported pack
+     * alike: [Categorizer] trusts what passes here and checks nothing itself.
+     *
+     * The text may not hold `\d` for the reason a pattern may not: it is not a
+     * regex here, but an author who writes one believes it is, and the entry
+     * would then match nothing on either engine.
+     */
+    private fun validateDictionary(entries: List<DictionaryEntry>) {
+        val seen = mutableSetOf<String>()
+        entries.forEach { entry ->
+            val text = entry.text
+            requireNonBlank(text, "Dictionary")
+            // A boundary is decided between a letter or digit and anything
+            // else, so an entry that begins or ends on punctuation has no
+            // boundary of its own to be matched at.
+            if (!Character.isLetterOrDigit(text.codePointAt(0)) ||
+                !Character.isLetterOrDigit(text.codePointBefore(text.length))
+            ) {
+                throw PackValidationException(
+                    "Dictionary entry '$text' must begin and end with a letter or digit: " +
+                        "a word boundary is the edge of a run of letters and digits"
+                )
+            }
+            UNICODE_DIGIT_CLASS.find(text)?.let {
+                throw PackValidationException(
+                    "Dictionary entry '$text' uses '${it.value}'. An entry is matched as " +
+                        "plain text, never as a pattern, so write the text as the " +
+                        "merchant sends it."
+                )
+            }
+            if (entry.category !in SeededCategories.NAMES) {
+                throw PackValidationException(
+                    "Dictionary entry '$text' names category '${entry.category}', which is " +
+                        "not one of the seeded categories: " + SeededCategories.NAMES.joinToString(", ")
+                )
+            }
+            // Case-folded with Locale.ROOT: `Digi` and `DIGI` are one text, and
+            // two entries of one text would tie on length and on mode.
+            if (!seen.add(text.uppercase(java.util.Locale.ROOT))) {
+                throw PackValidationException(
+                    "Dictionary lists '$text' twice. Two entries of the same text, " +
+                        "whatever their modes, are refused so that no result depends " +
+                        "on which one the pack lists first."
+                )
             }
         }
     }

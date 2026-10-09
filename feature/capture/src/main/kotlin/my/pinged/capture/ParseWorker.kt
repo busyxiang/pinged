@@ -162,6 +162,7 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                     return ParsePass(
                         captures = db.rawCaptureDao(),
                         txns = db.txnDao(),
+                        rules = db.merchantRuleDao(),
                         matcher = matcher,
                         // requireUncategorizedId, not the nullable form: spec 7.1
                         // files an unknown merchant here, and a missing seed row
@@ -169,6 +170,10 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                         // path into a foreign-key error far from the cause.
                         uncategorizedId = db.categoryDao().requireUncategorizedId(),
                         sourceLabel = sourceLabels(db),
+                        // Read per pass, so a category deleted between two
+                        // runs stops its entries filing on the next one.
+                        dictionary = Graph.parsePack().dictionary,
+                        categoryIds = db.categoryDao().all().associate { it.name to it.id },
                         isStopped = { isStopped },
                         progress = progress,
                     ).run()

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import my.pinged.ledger.learned.LEARNED_MERCHANTS
 import my.pinged.ledger.theme.Body
 import my.pinged.ledger.theme.Chevron
 import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
@@ -48,10 +49,10 @@ import my.pinged.ledger.transfer.Unreadable
  * Spec 9.5, drawn from `design/Settings.dc.html`.
  *
  * **Only the rows with a screen behind them are here.** The artboard's six
- * others -- capture health, unread notifications, pack import, taught rules,
- * categories, the review threshold -- belong to milestones that do not exist,
- * and dead rows are worse than a short screen. `HOW THINGS GET SORTED` is
- * absent for the same reason and returns with the first row that fills it.
+ * others -- capture health, unread notifications, pack import, categories, the
+ * review threshold -- belong to milestones that do not exist, and dead rows are
+ * worse than a short screen. `HOW THINGS GET SORTED` holds the one that does:
+ * the learned merchants (#50), the artboard's "taught rules".
  *
  * No bottom navigation: the artboards draw a CHARTS tab that has no screen.
  */
@@ -63,6 +64,7 @@ fun SettingsScreen(
     onExport: () -> Unit,
     onRestore: () -> Unit,
     onOpenCorrections: () -> Unit,
+    onOpenLearned: () -> Unit,
     onRescue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -90,6 +92,7 @@ fun SettingsScreen(
             state = state,
             onOpenSources = onOpenSources,
             onOpenCorrections = onOpenCorrections,
+            onOpenLearned = onOpenLearned,
             onExport = onExport,
             onRestore = { confirmingRestore = true },
             onCheck = viewModel::check,
@@ -429,6 +432,7 @@ internal fun SettingsRows(
     onCheck: () -> Unit,
     onDelete: () -> Unit,
     onOpenCorrections: () -> Unit,
+    onOpenLearned: () -> Unit,
 ) {
     val readable = state.storage == Storage.HEALTHY || state.storage == Storage.DAMAGED
     val idle = state.running == null
@@ -454,6 +458,17 @@ internal fun SettingsRows(
         // `SettingsState.correctionsPending`.
         value = state.correctionsPending?.let { if (it == 0) "NONE" else "${grouped(it)} TO REVIEW" },
         onClick = onOpenCorrections,
+        chevron = true,
+        divider = false,
+    )
+
+    SectionLabel("HOW THINGS GET SORTED")
+    // The count is the list's length, so the two cannot disagree; see
+    // `SettingsState.learnedCount`. The section's only row, so no divider.
+    SettingsRow(
+        LEARNED_MERCHANTS,
+        value = state.learnedCount?.let { grouped(it) },
+        onClick = onOpenLearned,
         chevron = true,
         divider = false,
     )

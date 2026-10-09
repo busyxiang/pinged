@@ -230,9 +230,10 @@ data class Txn(
      *
      * `Merchant.clean` supplies it -- uppercased, acquirer prefix and terminal
      * code stripped, whitespace collapsed -- which is deliberately *not* spec
-     * 6.1's learned-rule key, where `TNG*99SPEEDMART` keeps its `TNG`. The two
-     * coincide wherever 6.1 operates, since chains and acquirer strings never
-     * reach the learning path.
+     * 6.1's key, where `TNG*99SPEEDMART` keeps its `TNG`. **The two do not
+     * agree**: they differ on 36 of the 80 rows of the 2026-10-05 device export,
+     * so nothing may assume one is the other. A learned rule is matched against
+     * this column (spec #45, a departure from 6.1), not against 6.1's form.
      *
      * Not the final word on identity: spec 6.4's `merchant_alias` lets the
      * user declare two keys one shop, resolved at read time through
