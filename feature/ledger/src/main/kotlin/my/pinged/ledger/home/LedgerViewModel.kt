@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import my.pinged.capture.CaptureStorage
+import my.pinged.capture.Graph
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
@@ -34,6 +35,7 @@ import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.MerchantIdentityDao
+import my.pinged.data.dao.RetroPreview
 import my.pinged.parse.SameShop
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
@@ -309,6 +311,11 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 .boundDayCount(month.start, month.endInclusive)
 
             val catalogue = readCatalogueOnce()
+            // Every refresh, unlike the catalogue: a teaching save changes it,
+            // and the next chooser has to start from the rule just written.
+            val learned = Databases.merchantRuleDao(context).learnedRules()
+                .associate { it.pattern to it.categoryId }
+            val merged = Databases.merchantIdentityDao(context).mergedIdentities().toSet()
             val summary = MonthSummary(
                 month = now,
                 totals = txns.monthTotals(month.start, month.endInclusive),
@@ -323,6 +330,9 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 summary = summary,
                 categories = catalogue.categories,
                 uncategorizedId = catalogue.uncategorizedId,
+                learnedRules = learned,
+                mergedIdentities = merged,
+                dictionaryFiling = catalogue.dictionaryFiling,
             )
             _storageUnavailable.value = false
         }
@@ -346,9 +356,16 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         val generation = Databases.generation.value
         return catalogue?.takeIf { it.generation == generation } ?: run {
             val categories = Databases.categoryDao(context)
+            val all = categories.all()
             Catalogue(
-                categories = categories.all(),
+                categories = all,
                 uncategorizedId = categories.uncategorizedIdOrNull(),
+                // The pack is the shipped one and the categories are this
+                // generation's, so the marking is the filing stage two makes.
+                dictionaryFiling = dictionaryCategoryIds(
+                    Graph.parsePack().dictionary,
+                    all.associate { it.name to it.id },
+                ),
                 generation = generation,
             ).also { catalogue = it }
         }
@@ -356,6 +373,11 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Move one transaction to [categoryId] and re-read the month (§9.1's chip).
+     *
+     * [teach] is the chooser's "Always call this" switch: on writes the
+     * merchant's learned rule and leaves the row `user_edited = 0`
+     * (`MerchantRuleDao.teach`); off, or a row with no merchant key, is a
+     * one-off (`TxnDao.setCategory`, `user_edited = 1`).
      *
      * **The refresh is not tidiness.** The feed invalidates itself -- Room
      * invalidates the `PagingSource` on the `UPDATE`, so the row redraws on its
@@ -391,6 +413,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     fun assignCategory(
         txnId: Long,
         categoryId: Long,
+        teach: Boolean = false,
         now: YearMonth = YearMonth.now(),
     ): Job = viewModelScope.launch {
         CaptureStorage.guarded<Unit>(
@@ -399,11 +422,32 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             unavailable = { _storageUnavailable.value = true },
             damageStopsCapture = false,
         ) {
-            Databases.txnDao(context)
-                .setCategory(txnId, categoryId, System.currentTimeMillis())
+            val at = System.currentTimeMillis()
+            // A teaching save writes the merchant's learned rule and leaves the
+            // row filed by it. It answers false for a row with no merchant key,
+            // which is then saved as the one-off the sheet said it would be.
+            //
+            // `teachAndFix` also moves the merchant's past payments (#49), under
+            // the lease `guarded` holds, in the one transaction that wrote the rule.
+            val taught = teach && Databases.merchantRuleDao(context).teachAndFix(txnId, categoryId, at).taught
+            if (!taught) Databases.txnDao(context).setCategory(txnId, categoryId, at)
         }
         refresh(now).join()
     }
+
+    /**
+     * What teaching [categoryId] on the row [txnId] would also fix (#49), for the
+     * chooser's count line. A read, guarded like [assignCategory]: an unreadable
+     * ledger answers "nothing", which draws as a count of 0 and is corrected by
+     * the save, which re-checks inside its own transaction.
+     */
+    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview =
+        CaptureStorage.guarded(
+            context,
+            what = "The past payments could not be counted",
+            unavailable = { RetroPreview(0, emptyList()) },
+            damageStopsCapture = false,
+        ) { Databases.merchantRuleDao(context).retroPreview(txnId, categoryId) }
 
     /**
      * Open spec 6.4's sheet for the merchant a row's [ownKey] belongs to.
@@ -494,6 +538,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 private class Catalogue(
     val categories: List<Category>,
     val uncategorizedId: Long?,
+    val dictionaryFiling: (String?) -> Long?,
     val generation: Long,
 )
 
@@ -520,6 +565,8 @@ internal fun readMerchantSheet(dao: MerchantIdentityDao, ownKey: String): Mercha
         members = if (identity == ownKey) dao.membersOf(identity) else emptyList(),
         others = others,
         suggested = others.filter { SameShop.likely(ownKey, it.identityKey) }.mapTo(HashSet()) { it.identityKey },
+        ruleCategory = self.ruleCategory,
+        noOwnRule = dao.ownRuleCategory(ownKey) == null,
     )
 }
 

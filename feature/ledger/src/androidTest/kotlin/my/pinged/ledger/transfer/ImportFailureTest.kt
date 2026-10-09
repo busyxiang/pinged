@@ -208,6 +208,28 @@ class ImportFailureTest {
         assertUntouched(target)
     }
 
+    /**
+     * Spec #45: `BUNDLED` stays in the enum because `EnumVocabularyTest` freezes
+     * it, but the dictionary is parser-pack data and nothing writes such a row,
+     * so a file carrying one did not come from Pinged. Refused by name, and
+     * rolled back like any other refusal.
+     */
+    @Test fun aBundledRuleRowIsRefused() {
+        val document = goodExport().editingOnly(Backup.MERCHANT_RULES) {
+            it.replaceFirst("\"origin\":\"LEARNED\"", "\"origin\":\"BUNDLED\"")
+        }
+        assertTrue("The fixture has no rule to turn into a BUNDLED one", document.contains("\"origin\":\"BUNDLED\""))
+        val target = fresh()
+        val thrown = assertThrows(ImportFormatException::class.java) {
+            importInto(target, document)
+        }
+        assertTrue(
+            "The message has to name the value: ${thrown.message}",
+            thrown.message!!.contains("BUNDLED") && thrown.message!!.contains("Nothing was imported"),
+        )
+        assertUntouched(target)
+    }
+
     // ---- a file whose rows do not resolve --------------------------------
 
     /**

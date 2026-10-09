@@ -131,7 +131,7 @@ fun seedOneOfEverything(db: PingedDatabase): SeededLedger {
             pattern = "STARBUCKS KLCC",
             merchantDisplay = "Starbucks KLCC",
             categoryId = uncategorized,
-            origin = RuleOrigin.BUNDLED,
+            origin = RuleOrigin.LEARNED,
             priority = 10,
         ),
     )

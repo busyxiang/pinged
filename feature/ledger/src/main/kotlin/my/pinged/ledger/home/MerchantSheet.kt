@@ -57,6 +57,17 @@ internal const val SAME_SHOP_HEADING = "SAME SHOP AS…"
 internal const val ALSO_PAID_AS = "ALSO PAID AS"
 internal const val SUGGESTED = "SUGGESTED"
 internal const val SEPARATE = "Separate"
+
+/**
+ * What Separate says when the key it frees has no learned rule of its own while
+ * the merged shop has one: the key goes back to Uncategorized going forward
+ * (#35). Rules it already filed stay as they are.
+ */
+internal const val SEPARATE_NO_RULE = "No rule of its own: new payments go back to Uncategorized."
+
+/** What a merge row says when both halves have rules: the target's is the one that stays (#35). */
+internal fun bothHaveRules(targetCategory: String) = "Both have a rule: new payments will be filed under $targetCategory."
+
 internal const val NAME_FIELD_TAG = "merchant-name"
 internal const val FILTER_FIELD_TAG = "merchant-filter"
 
@@ -76,6 +87,10 @@ internal const val FILTER_FIELD_TAG = "merchant-filter"
  * @property others every other merchant, [SameShop][my.pinged.parse.SameShop]'s
  *   suggestions first.
  * @property suggested which of [others] are suggestions.
+ * @property ruleCategory the category the merchant [identityKey]'s learned rule
+ *   files under, or null when it has none.
+ * @property noOwnRule whether [ownKey] has no learned rule of its own, which
+ *   is what Separate then gives it back.
  */
 data class MerchantSheetState(
     val ownKey: String,
@@ -87,6 +102,8 @@ data class MerchantSheetState(
     val members: List<MerchantMember>,
     val others: List<MerchantChoice>,
     val suggested: Set<String>,
+    val ruleCategory: String? = null,
+    val noOwnRule: Boolean = false,
 )
 
 /** The sheet's writes, so `LedgerScreenContent` takes one parameter for all of them. */
@@ -179,6 +196,7 @@ internal fun MerchantSheet(
                             onClick = { actions.separate(sheet.ownKey) },
                             modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
                         )
+                        if (sheet.noOwnRule && sheet.ruleCategory != null) RuleNote(SEPARATE_NO_RULE)
                     }
                 }
             }
@@ -193,7 +211,11 @@ internal fun MerchantSheet(
                     )
                 }
                 items(sheet.members, key = { "member-" + it.merchantKey }) { member ->
-                    MemberRow(member, onSeparate = { actions.separate(member.merchantKey) })
+                    MemberRow(
+                        member,
+                        warnNoRule = member.noOwnRule && sheet.ruleCategory != null,
+                        onSeparate = { actions.separate(member.merchantKey) },
+                    )
                 }
             }
 
@@ -222,6 +244,7 @@ internal fun MerchantSheet(
                     ChoiceRow(
                         choice,
                         suggested = choice.identityKey in sheet.suggested,
+                        rulesNote = choice.ruleCategory?.takeIf { sheet.ruleCategory != null }?.let(::bothHaveRules),
                         onChoose = { actions.merge(choice.identityKey) },
                     )
                 }
@@ -246,7 +269,7 @@ internal fun filtered(others: List<MerchantChoice>, filter: String): List<Mercha
 }
 
 @Composable
-private fun ChoiceRow(choice: MerchantChoice, suggested: Boolean, onChoose: () -> Unit) {
+private fun ChoiceRow(choice: MerchantChoice, suggested: Boolean, rulesNote: String?, onChoose: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -270,26 +293,30 @@ private fun ChoiceRow(choice: MerchantChoice, suggested: Boolean, onChoose: () -
                 style = MonoLabel,
                 color = if (suggested) Stamp else Muted,
             )
+            if (rulesNote != null) RuleNote(rulesNote)
         }
     }
 }
 
 @Composable
-private fun MemberRow(member: MerchantMember, onSeparate: () -> Unit) {
+private fun MemberRow(member: MerchantMember, warnNoRule: Boolean, onSeparate: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            member.derivedName ?: member.merchantKey,
-            fontFamily = Body,
-            fontSize = 15.sp,
-            color = Ink,
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f)) {
+            Text(member.derivedName ?: member.merchantKey, fontFamily = Body, fontSize = 15.sp, color = Ink)
+            if (warnNoRule) RuleNote(SEPARATE_NO_RULE)
+        }
         SheetButton(SEPARATE, enabled = true, onClick = onSeparate)
     }
+}
+
+/** A line about what a merge or separate does to category rules, in the sheet's small print. */
+@Composable
+private fun RuleNote(text: String) {
+    Text(text, fontFamily = Body, fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
 }
 
 private fun payments(count: Int): String = if (count == 1) "1 PAYMENT" else "$count PAYMENTS"

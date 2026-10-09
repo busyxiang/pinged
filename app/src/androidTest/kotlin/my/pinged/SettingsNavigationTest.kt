@@ -1,6 +1,7 @@
 package my.pinged
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsDisplayed
@@ -28,6 +29,17 @@ class SettingsNavigationTest {
         // The Sources screen's own header line: "Capture sources" is drawn on
         // both screens, so asserting it passed a click that went nowhere.
         compose.onNodeWithText("TEXT IS STORED ONLY FOR THESE", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Replace everything from a backup").assertDoesNotExist()
+    }
+
+    /** #50: the row is wired to the list, whose empty state is its own text. */
+    @Test fun settingsReachesTheLearnedMerchantsList() {
+        compose.onNodeWithText("SETTINGS").performClick()
+        compose.onNodeWithText("Learned merchants").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("Nothing taught yet", substring = true).fetchSemanticsNodes().isNotEmpty() ||
+                compose.onAllNodesWithText("PAYMENTS", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Replace everything from a backup").assertDoesNotExist()
     }
 }

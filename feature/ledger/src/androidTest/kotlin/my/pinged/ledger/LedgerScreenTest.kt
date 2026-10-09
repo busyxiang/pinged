@@ -38,6 +38,7 @@ import my.pinged.ledger.home.LedgerScreenContent
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.home.MonthSummary
 import my.pinged.ledger.home.PICKER_HEADING
+import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ledger.theme.Separator
 import my.pinged.ledger.theme.PingedTheme
@@ -749,6 +750,7 @@ class LedgerScreenTest {
             "The picker did not open, or it drew no categories to choose from",
         )
         compose.onNodeWithText(FOOD).performClick()
+        compose.onNodeWithText(SAVE_LABEL).performClick()
 
         compose.waitForText(
             // Spelled out, not `FOOD + Separator + SOURCE_LABEL`: built from
@@ -775,9 +777,9 @@ class LedgerScreenTest {
             compose.onAllNodesWithTextSafely(UNCATEGORIZED),
         )
         assertEquals(
-            "A row that already has a category still offers the chip. §6.1's " +
-                "learned rules are out of this milestone, so a second tap has " +
-                "nothing to teach and the control would promise otherwise",
+            "A row that already has a category still draws the chip. The chip " +
+                "marks an Uncategorized row; a categorised one opens the " +
+                "chooser from its category line instead (#48)",
             0,
             compose.onAllNodesWithTextSafely(CATEGORY_CHIP),
         )
@@ -801,13 +803,14 @@ class LedgerScreenTest {
             refresh = LoadState.NotLoading(true),
             categories = TWO_CATEGORIES,
             uncategorizedId = UNCATEGORIZED_ID,
-            onAssign = { txnId, categoryId -> assigned += txnId to categoryId },
+            onAssign = { txnId, categoryId, _ -> assigned += txnId to categoryId },
         )
         compose.waitForText("12.34", "The row was never drawn")
 
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForText("Groceries", "The chip did not open the picker")
         compose.onNodeWithText("Groceries").performClick()
+        compose.onNodeWithText(SAVE_LABEL).performClick()
 
         assertEquals(
             "The chip reported the wrong row, the wrong category, or fired " +
@@ -1062,7 +1065,7 @@ class LedgerScreenTest {
         val viewModel = ledgerViewModel()
 
         runBlocking {
-            withTimeout(TIMEOUT) { viewModel.assignCategory(1L, 1L, FIXED_MONTH).join() }
+            withTimeout(TIMEOUT) { viewModel.assignCategory(1L, 1L, now = FIXED_MONTH).join() }
         }
 
         assertTrue(
@@ -1416,8 +1419,8 @@ class LedgerScreenTest {
                     // [month], not `assignCategory`'s default: the write is
                     // followed by a refresh, and a refresh of today's month
                     // would empty the summary this fixture is dated for.
-                    onAssign = { txnId, categoryId ->
-                        viewModel.assignCategory(txnId, categoryId, month)
+                    onAssign = { txnId, categoryId, teach ->
+                        viewModel.assignCategory(txnId, categoryId, teach, month)
                     },
                     onOpenSettings = {},
                 )
@@ -1444,7 +1447,7 @@ class LedgerScreenTest {
         storageUnavailable: Boolean = false,
         categories: List<Category> = emptyList(),
         uncategorizedId: Long? = null,
-        onAssign: (Long, Long) -> Unit = { _, _ -> },
+        onAssign: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
         onOpenSettings: () -> Unit = {},
     ) {
         // The four read fields stay separate parameters here and are packed at

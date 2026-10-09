@@ -1,0 +1,27 @@
+# Other merchants' strings that the dictionary must leave unfiled. One per
+# line: provenance, a tab, the merchant exactly as the pack's rule captures it
+# (the test cleans it into a key the way stage two does).
+#
+# observed     the merchant_raw of a real capture already in fixtures/.
+# constructed  written to sit one edit away from a shipped entry; not seen
+#              from a bank, and labelled so.
+#
+# Add a row here, not a new test, when a dictionary entry is added or a
+# false positive is found.
+observed	Maybank Master Card
+observed	HOCK KEE - THE GARDENS KUALA LUMPUR MYS
+observed	TENAGA NASIONAL via DuitNow
+observed	myBurgerLab Sdn Bhd via DuitNow
+observed	PINDUODUO
+observed	SPADES BAKERY 3 SDN. BHD..
+observed	Restoran Yuen Kee Home Town Cafe
+observed	Versatile Wisdom Sdn Bhd
+observed	POPUPKITCHENENTERPRISE
+observed	IBILIK 02
+observed	THONG KEE BHD.
+constructed	DIGITAL BANK
+constructed	DIGIMAX CAFE
+constructed	MY500 MART
+constructed	MY50X
+constructed	foodpanda KLCC
+constructed	McDonald's Mid Valley

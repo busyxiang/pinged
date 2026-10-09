@@ -421,6 +421,209 @@ class ParseWorkerTest {
         )
     }
 
+    private fun categoryId(name: String): Long =
+        Databases.categoryDao(context).all().first { it.name == name }.id
+
+    /** A TnG travel-pass capture, which the bundled dictionary files by its `MY50` entry. */
+    private fun insertMy50Capture(postedAt: Long, rm: String, sbnKey: String): Long =
+        ParseFixtures.insertCapture(
+            context = context,
+            title = "Payment successful",
+            text = "Travel Pass: You have paid $rm for your My50 Pass. View your updated pass details now.",
+            sbnKey = sbnKey,
+            postedAt = postedAt,
+        )
+
+    /**
+     * #46: a capture from a dictionary brand commits under the dictionary's
+     * category, through the real worker and the pack that ships. The expected
+     * id is read off the seeded `Transport` row, so a worker that wrote
+     * Uncategorized, or any other category, fails here.
+     */
+    @Test
+    fun aCaptureFromADictionaryBrandCommitsWithTheDictionarysCategory() {
+        val (_, rm) = ParseFixtures.uniqueAmount()
+        val captureId = insertMy50Capture(base - 7_000L, rm, "$marker-my50")
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        val txn = requireNotNull(ParseFixtures.txnForCapture(context, captureId))
+        assertEquals("MY50 PASS", txn.merchantKey)
+        assertEquals(TxnState.COMMITTED, txn.state)
+        assertEquals(categoryId("Transport"), txn.categoryId)
+        assertNotEquals(Databases.categoryDao(context).requireUncategorizedId(), txn.categoryId)
+    }
+
+    /** #46: a merchant the dictionary does not know is committed Uncategorized. */
+    @Test
+    fun aCaptureWithNoDictionaryHitCommitsUncategorized() {
+        val (_, rm) = ParseFixtures.uniqueAmount()
+        val captureId = ParseFixtures.insertCapture(
+            context = context,
+            title = "Touch 'n Go $marker",
+            text = "Payment of $rm to foodpanda KLCC successful",
+            sbnKey = "$marker-nohit",
+            postedAt = base - 8_000L,
+        )
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        val txn = requireNotNull(ParseFixtures.txnForCapture(context, captureId))
+        assertEquals(Databases.categoryDao(context).requireUncategorizedId(), txn.categoryId)
+    }
+
+    /**
+     * #46: an entry whose category the user deleted is skipped, so its
+     * merchants fall through to Uncategorized rather than to an id that is
+     * gone (which the foreign key would refuse, stranding the capture at NEW).
+     *
+     * A pass of its own over a dictionary the test writes, naming a category
+     * the test creates, because deleting a *seeded* category would fail on a
+     * phone that holds real transactions in it. The control entry names a
+     * seeded category that stays, so a pass that ignored the dictionary
+     * altogether cannot satisfy both halves.
+     */
+    @Test
+    fun anEntryWhoseCategoryWasDeletedFallsThroughToUncategorized() {
+        val categories = Databases.categoryDao(context)
+        val doomed = "ZZ doomed $marker"
+        categories.insertAll(listOf(my.pinged.data.entity.Category(name = doomed, iconKey = "circle-dashed", sortOrder = 99)))
+        categories.deleteIfUnused(categoryId(doomed))
+
+        val (_, kept) = ParseFixtures.uniqueAmount()
+        val keptKey = "ZZKEPT$marker"
+        val goneKey = "ZZGONE$marker"
+        val keptCapture = ParseFixtures.insertCapture(
+            context = context, title = "Touch 'n Go", sbnKey = "$marker-kept", postedAt = base - 9_000L,
+            text = "Payment of $kept to $keptKey successful",
+        )
+        val goneCapture = ParseFixtures.insertCapture(
+            context = context, title = "Touch 'n Go", sbnKey = "$marker-gone", postedAt = base - 9_500L,
+            text = "Payment of ${ParseFixtures.uniqueAmount().second} to $goneKey successful",
+        )
+
+        ParseFixtures.pass(
+            context,
+            dictionary = listOf(
+                my.pinged.parse.DictionaryEntry(keptKey, "Shopping", my.pinged.parse.MatchMode.EXACT),
+                my.pinged.parse.DictionaryEntry(goneKey, doomed, my.pinged.parse.MatchMode.EXACT),
+            ),
+        ).run()
+
+        assertEquals(
+            "the control entry did not file, so the dictionary was never consulted",
+            categoryId("Shopping"),
+            requireNotNull(ParseFixtures.txnForCapture(context, keptCapture)).categoryId,
+        )
+        assertEquals(
+            categories.requireUncategorizedId(),
+            requireNotNull(ParseFixtures.txnForCapture(context, goneCapture)).categoryId,
+        )
+    }
+
+    /** A learned rule as the teaching save writes it; a test's own, so no row is shared. */
+    private fun learn(identity: String, category: String) {
+        Databases.merchantRuleDao(context).insert(
+            my.pinged.data.entity.MerchantRule(
+                matchType = my.pinged.data.entity.MatchType.EXACT,
+                pattern = identity,
+                merchantDisplay = identity,
+                categoryId = categoryId(category),
+                origin = my.pinged.data.entity.RuleOrigin.LEARNED,
+                priority = 100,
+            ),
+        )
+    }
+
+    private fun forget(identity: String) {
+        Databases.shared(context).openHelper.writableDatabase
+            .execSQL("DELETE FROM merchant_rule WHERE pattern = ?", arrayOf(identity))
+    }
+
+    /**
+     * #48: a learned rule outranks the dictionary, through the real worker and
+     * the pack that ships. `MY50 PASS` is a dictionary hit (Transport, the
+     * test above); the rule says Shopping. The rule is removed afterwards
+     * because the database outlives the test and `MY50 PASS` is shared with it.
+     */
+    @Test
+    fun aLearnedRuleBeatsTheDictionary() {
+        learn("MY50 PASS", "Shopping")
+        try {
+            val (_, rm) = ParseFixtures.uniqueAmount()
+            val captureId = insertMy50Capture(base - 6_000L, rm, "$marker-my50-learned")
+
+            assertEquals(ListenableWorker.Result.success(), runWorker())
+
+            val txn = requireNotNull(ParseFixtures.txnForCapture(context, captureId))
+            assertEquals("MY50 PASS", txn.merchantKey)
+            assertEquals(categoryId("Shopping"), txn.categoryId)
+            assertNotEquals("The dictionary answered over the rule", categoryId("Transport"), txn.categoryId)
+        } finally {
+            forget("MY50 PASS")
+        }
+    }
+
+    /**
+     * #48: a rule on a canonical key files a capture that arrives under a key
+     * merged into it, and the capture's own key is left as it came. A pass of
+     * its own over keys the test writes, so no shared merchant is touched; the
+     * control capture is the canonical key's own, which the rule files directly.
+     */
+    @Test
+    fun aRuleOnAnAliasResolvedIdentityFilesTheMergedKeysCapture() {
+        val canonical = "ZZCANON$marker"
+        val merged = "ZZMERGED$marker"
+        Databases.merchantIdentityDao(context).insertAlias(
+            my.pinged.data.entity.MerchantAlias(merchantKey = merged, canonicalKey = canonical),
+        )
+        learn(canonical, "Health")
+        val viaMerged = ParseFixtures.insertCapture(
+            context = context, title = "Touch 'n Go", sbnKey = "$marker-merged", postedAt = base - 10_000L,
+            text = "Payment of ${ParseFixtures.uniqueAmount().second} to $merged successful",
+        )
+        val direct = ParseFixtures.insertCapture(
+            context = context, title = "Touch 'n Go", sbnKey = "$marker-canon", postedAt = base - 10_500L,
+            text = "Payment of ${ParseFixtures.uniqueAmount().second} to $canonical successful",
+        )
+
+        ParseFixtures.pass(context).run()
+
+        assertEquals(
+            "The canonical key's own capture was not filed by its rule",
+            categoryId("Health"),
+            requireNotNull(ParseFixtures.txnForCapture(context, direct)).categoryId,
+        )
+        val txn = requireNotNull(ParseFixtures.txnForCapture(context, viaMerged))
+        assertEquals("The merged key kept its own key", merged, txn.merchantKey)
+        assertEquals(categoryId("Health"), txn.categoryId)
+    }
+
+    /**
+     * The order is learned, then dictionary, then none. A pass whose name map
+     * does not hold the rule's category (the map is a snapshot, taken when the
+     * pass is built) still files by the rule: the dictionary, which says
+     * Shopping here, must not answer over a rule the user taught.
+     */
+    @Test
+    fun aLearnedRuleWhoseCategoryIsMissingFromThePassSnapshotStillBeatsTheDictionary() {
+        val key = "ZZSNAP$marker"
+        learn(key, "Health")
+        val everything = Databases.categoryDao(context).all().associate { it.name to it.id }
+        val captureId = ParseFixtures.insertCapture(
+            context = context, title = "Touch 'n Go", sbnKey = "$marker-snap", postedAt = base - 11_000L,
+            text = "Payment of ${ParseFixtures.uniqueAmount().second} to $key successful",
+        )
+
+        ParseFixtures.pass(
+            context,
+            dictionary = listOf(my.pinged.parse.DictionaryEntry(key, "Shopping", my.pinged.parse.MatchMode.EXACT)),
+            categoryIds = everything - "Health",
+        ).run()
+
+        assertEquals(categoryId("Health"), requireNotNull(ParseFixtures.txnForCapture(context, captureId)).categoryId)
+    }
+
     private fun renameCategory(from: String, to: String) {
         Databases.shared(context).openHelper.writableDatabase
             .execSQL("UPDATE category SET name = ? WHERE name = ?", arrayOf(to, from))

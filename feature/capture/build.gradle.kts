@@ -23,6 +23,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    sourceSets {
+        // CategorizerDeviceTest runs the boundary table :core:parse's JVM test
+        // runs. One file, so the two engines cannot be tested against tables
+        // that have drifted apart.
+        getByName("androidTest") {
+            resources.directories.add("$rootDir/core/parse/src/sharedTest/resources")
+        }
+    }
+
     testOptions {
         // Robolectric builds a real Notification, which reaches into
         // framework resources. Without this the unit tests run against a

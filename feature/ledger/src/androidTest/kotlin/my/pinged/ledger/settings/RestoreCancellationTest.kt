@@ -46,7 +46,7 @@ class RestoreCancellationTest {
                 SettingsScreen(
                     viewModel = viewModel,
                     onBack = {},
-                    onOpenSources = {}, onOpenCorrections = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {},
                     onExport = {},
                     // Stands in for `MainActivity`'s launcher receiving a null
                     // `Uri` -- the user backed out of the system picker before

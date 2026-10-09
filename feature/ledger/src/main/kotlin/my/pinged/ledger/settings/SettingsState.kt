@@ -120,6 +120,12 @@ data class SettingsState(
      */
     val correctionsPending: Int? = null,
     /**
+     * The "Learned merchants" row's value (#50): the live learned rules, which
+     * is the list's length. Null when it could not be read, drawn as nothing
+     * as [sourcesOn] is; `0` is a true "nothing taught".
+     */
+    val learnedCount: Int? = null,
+    /**
      * What the delete sheet itemises, or null when it may not itemise
      * anything -- see [WipeCounts], and [SettingsViewModel.wipeCounts] for
      * when it is left null. Only the delete sheet reads it.

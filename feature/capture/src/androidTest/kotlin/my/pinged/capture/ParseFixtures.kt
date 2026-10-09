@@ -145,11 +145,18 @@ internal object ParseFixtures {
         onCaptureFinished: (Long) -> Unit = {},
         progress: ParsePass.Progress = ParsePass.Progress(),
         sourceLabel: ((String) -> String?)? = null,
+        dictionary: List<my.pinged.parse.DictionaryEntry> = emptyList(),
+        categoryIds: Map<String, Long>? = null,
     ): ParsePass {
         val sources = Databases.captureSourceDao(context)
         return ParsePass(
+            dictionary = dictionary,
+            // Read when the pass is built, as `ParseWorker.drain` does, so a
+            // category deleted before this call is absent from it.
+            categoryIds = categoryIds ?: Databases.categoryDao(context).all().associate { it.name to it.id },
             captures = Databases.rawCaptureDao(context),
             txns = Databases.txnDao(context),
+            rules = Databases.merchantRuleDao(context),
             matcher = matcher,
             uncategorizedId = Databases.categoryDao(context).requireUncategorizedId(),
             sourceLabel = sourceLabel ?: { pkg -> sources.byPackage(pkg)?.label },

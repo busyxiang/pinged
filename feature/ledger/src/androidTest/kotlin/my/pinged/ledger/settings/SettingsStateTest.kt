@@ -49,6 +49,38 @@ class SettingsStateTest {
     }
 
     /**
+     * #50: the "Learned merchants" row's value is the live rule count, not the
+     * table's size: a dormant source rule kept for Separate is not one the
+     * user sees, and a bundled rule is not one they taught.
+     */
+    @Test fun theLearnedCountIsTheLiveLearnedRulesAndNothingElse() = runBlocking {
+        DatabaseFactory.build(app).useDb { db ->
+            val shopping = db.categoryDao().all().first { it.name == "Shopping" }.id
+            val rules = db.merchantRuleDao()
+            for (key in listOf("MR DIY", "ZUS COFFEE")) {
+                val id = db.txnDao().insert(
+                    ledgerTxn(amountSen = 1_000L).copy(id = 0, merchantRaw = key, merchantDisplay = key, merchantKey = key),
+                )
+                rules.teach(id, shopping, 2_000L)
+            }
+            db.merchantIdentityDao().merge("ZUS COFFEE", "MR DIY", "Mr DIY")
+            rules.insert(
+                my.pinged.data.entity.MerchantRule(
+                    matchType = my.pinged.data.entity.MatchType.EXACT,
+                    pattern = "GRAB",
+                    merchantDisplay = "GRAB",
+                    categoryId = shopping,
+                    origin = my.pinged.data.entity.RuleOrigin.BUNDLED,
+                    priority = 1,
+                ),
+            )
+        }
+        val model = SettingsViewModel(app)
+        model.refresh()
+        assertEquals(1, model.state.value.learnedCount)
+    }
+
+    /**
      * **A connection closed under the counts is `android.database.SQLException`,
      * which `SQLiteException` extends rather than the other way round.** A
      * restore left running by a settings screen that went away resets the

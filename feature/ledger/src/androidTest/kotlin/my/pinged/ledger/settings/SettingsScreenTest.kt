@@ -3,6 +3,12 @@ package my.pinged.ledger.settings
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
 import org.junit.Test
 
@@ -17,7 +23,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, sourcesOn = 4, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertIsDisplayed()
@@ -35,7 +41,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, lastExportAt = null, lastCheckAt = null, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertIsDisplayed()
@@ -48,7 +54,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.KEY_GONE, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -66,7 +72,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.DAMAGED, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -78,7 +84,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.UNREADABLE, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -95,10 +101,41 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.DAMAGED, sourcesOn = null, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Capture sources").assertIsDisplayed()
         compose.onNodeWithText(" ON", substring = true).assertDoesNotExist()
+    }
+
+    /** #50: the row's value is the rule count, and it opens the list. */
+    @Test fun theLearnedMerchantsRowShowsTheRuleCountAndOpensTheList() {
+        var opened = 0
+        compose.setContent {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+            SettingsRows(
+                state = SettingsState(storage = Storage.HEALTHY, learnedCount = 1_234, loaded = true),
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = { opened++ },
+                onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+            )
+            }
+        }
+        compose.onNodeWithText("Learned merchants").assertIsDisplayed()
+        compose.onNodeWithText("1,234").assertIsDisplayed()
+        compose.onNodeWithText("Learned merchants").performScrollTo().performClick()
+        org.junit.Assert.assertEquals(1, opened)
+    }
+
+    /** A count nobody could read is drawn as nothing, as every count on this screen is. */
+    @Test fun anUnreadCountIsDrawnAsNothing() {
+        compose.setContent {
+            SettingsRows(
+                state = SettingsState(storage = Storage.HEALTHY, learnedCount = null, loaded = true),
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {},
+                onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+            )
+        }
+        compose.onNodeWithText("Learned merchants").assertIsDisplayed()
+        compose.onNodeWithText("0").assertDoesNotExist()
     }
 }

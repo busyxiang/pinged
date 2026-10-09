@@ -74,7 +74,7 @@ class WipeHostTest {
                 SettingsScreen(
                     viewModel = viewModel,
                     onBack = {},
-                    onOpenSources = {}, onOpenCorrections = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {},
                     onExport = onExport,
                     onRestore = {},
                     onRescue = onRescue,
@@ -109,7 +109,7 @@ class WipeHostTest {
             viewModel.state.value.sourcesOn,
         )
 
-        compose.onNodeWithText("Delete everything").performClick()
+        compose.onNodeWithText("Delete everything").performScrollTo().performClick()
         compose.onNodeWithText("THIS CANNOT BE UNDONE").assertIsDisplayed()
 
         compose.onNode(hasSetTextAction()).performTextInput("DELETE")
@@ -152,7 +152,7 @@ class WipeHostTest {
         screen(viewModel)
         hostile.refusing = true
 
-        compose.onNodeWithText("Delete everything").performClick()
+        compose.onNodeWithText("Delete everything").performScrollTo().performClick()
         compose.onNode(hasSetTextAction()).performTextInput("DELETE")
         compose.onNodeWithText("Delete").performScrollTo().performClick()
 
@@ -171,8 +171,8 @@ class WipeHostTest {
         val viewModel = SettingsViewModel(app)
         screen(viewModel, onExport = { exports.incrementAndGet() })
 
-        compose.onNodeWithText("Delete everything").performClick()
-        compose.onNodeWithText("Export it first").performClick()
+        compose.onNodeWithText("Delete everything").performScrollTo().performClick()
+        compose.onNodeWithText("Export it first").performScrollTo().performClick()
 
         compose.waitUntil(TIMEOUT) { exports.get() == 1 }
         compose.onNodeWithText("THIS CANNOT BE UNDONE").assertDoesNotExist()
@@ -207,7 +207,7 @@ class WipeHostTest {
         screen(viewModel, onExport = { offers.incrementAndGet() }, onRescue = { offers.incrementAndGet() })
         compose.waitUntil(TIMEOUT) { viewModel.state.value.storage == storage }
 
-        compose.onNodeWithText("Delete everything").performClick()
+        compose.onNodeWithText("Delete everything").performScrollTo().performClick()
         compose.onNodeWithText("THIS CANNOT BE UNDONE").assertIsDisplayed()
         compose.onNodeWithTag(EXPORT_FIRST_TAG).assertDoesNotExist()
         compose.onNodeWithText(EXPORT_FIRST).assertDoesNotExist()

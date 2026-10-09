@@ -51,6 +51,8 @@ import my.pinged.ledger.settings.ExportSheet
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
+import my.pinged.ledger.learned.LearnedScreen
+import my.pinged.ledger.learned.LearnedViewModel
 import my.pinged.ledger.settings.SettingsScreen
 import my.pinged.ledger.settings.SettingsState
 import my.pinged.ledger.settings.SettingsViewModel
@@ -104,6 +106,7 @@ class MainActivity : ComponentActivity() {
         val ledgerFactory = AppViewModelFactory(application, ::LedgerViewModel)
         val settingsFactory = AppViewModelFactory(application, ::SettingsViewModel)
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
+        val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
         setContent {
             PingedTheme {
                 val backStack = rememberNavBackStack(Ledger)
@@ -220,6 +223,7 @@ class MainActivity : ComponentActivity() {
                                     onBack = { backStack.pop() },
                                     onOpenSources = { backStack.pushOnce(Sources) },
                                     onOpenCorrections = { backStack.pushOnce(Corrections) },
+                                    onOpenLearned = { backStack.pushOnce(Learned) },
                                     onExport = { exportOpen = true },
                                     // Reached only after `SettingsScreen`'s own
                                     // confirmation -- see `RestoreConfirmSheet`
@@ -251,6 +255,14 @@ class MainActivity : ComponentActivity() {
                                     viewModel(factory = correctionsFactory)
                                 CorrectionsScreen(
                                     viewModel = corrections,
+                                    onBack = { backStack.pop() },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            entry<Learned> {
+                                val learned: LearnedViewModel = viewModel(factory = learnedFactory)
+                                LearnedScreen(
+                                    viewModel = learned,
                                     onBack = { backStack.pop() },
                                     modifier = Modifier.fillMaxSize(),
                                 )

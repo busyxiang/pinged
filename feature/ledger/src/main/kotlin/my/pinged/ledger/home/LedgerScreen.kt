@@ -51,6 +51,7 @@ import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
+import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
@@ -89,11 +90,14 @@ import kotlin.math.abs
  * lost nothing (WCAG 1.4.1); §4 lets the user re-icon a category, so the name
  * is the half that cannot drift from what the row is filed under.
  *
- * The "+ CATEGORY" chip assigns a category directly: §6.1's learned rules are
- * out of this milestone, so the tap writes one `category_id` -- and
- * `user_edited`, the record that a person decided (§5.5) -- and teaches
- * nothing. That is why a row that already has a category is not tappable: a
- * chip on every row would imply the deferred half is here.
+ * The category chooser opens on any row that is not excluded: the "+ CATEGORY"
+ * chip stays the marker on an Uncategorized row, and on a categorised one the
+ * category line opens the same sheet. The sheet picks a category and then
+ * saves it (#49), and the save either teaches or does not, by the "Always call
+ * this" switch (#45, #48). With it on the save writes the merchant's learned
+ * rule, moves the merchant's past payments when none was set by hand, and
+ * leaves the row `user_edited = 0`, filed by the rule; with it off the save is a one-off,
+ * `user_edited = 1`, the record that a person decided this one payment (§5.5).
  */
 @Composable
 fun LedgerScreen(
@@ -133,7 +137,8 @@ fun LedgerScreen(
         items = items,
         read = read,
         storageUnavailable = unavailable,
-        onAssign = { txnId, categoryId -> viewModel.assignCategory(txnId, categoryId) },
+        onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
+        retroPreview = viewModel::retroPreview,
         onOpenSettings = onOpenSettings,
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
@@ -164,9 +169,10 @@ internal fun LedgerScreenContent(
     items: LazyPagingItems<LedgerItem>,
     read: LedgerRead,
     storageUnavailable: Boolean,
-    onAssign: (txnId: Long, categoryId: Long) -> Unit,
+    onAssign: (txnId: Long, categoryId: Long, teach: Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
 ) {
@@ -179,14 +185,15 @@ internal fun LedgerScreenContent(
     // rebuilding a fourteen-entry map per frame is work for nothing.
     val categoriesById = remember(read.categories) { read.categories.associateBy { it.id } }
 
-    // Everything but the category the row is already in. `Uncategorized` would
-    // read as the "never mind" tap and is not a no-op: `setCategory` writes
-    // `user_edited = 1`, and §5.5 excludes an edited row from the re-parse
+    // Everything but `Uncategorized`, which would read as the "never mind" tap
+    // and is not a no-op: a save writes the row's category, and a one-off
+    // writes `user_edited = 1`, which §5.5 excludes from the re-parse
     // comparison for good, so one stray tap would opt that transaction out of
-    // every future pack fix while nothing on screen changed. Removed from the
-    // list rather than refused at the write, so the whole class goes with it.
-    // Both halves come off one [LedgerRead], which is what keeps the filter
-    // from being handed a new list beside a stale id.
+    // every future pack fix. Removed from the list rather than refused at the
+    // write, so the whole class goes with it. The row's own category is still
+    // offered, because saving it again is how a one-off becomes a rule. Both
+    // halves come off one [LedgerRead], which is what keeps the filter from
+    // being handed a new list beside a stale id.
     val choices = remember(read.categories, read.uncategorizedId) {
         read.categories.filter { it.id != read.uncategorizedId }
     }
@@ -236,13 +243,38 @@ internal fun LedgerScreenContent(
     // but a restore can: `categorizing` comes back from `rememberSaveable`
     // after a process death while `categories` is still the empty initial
     // value, because the refresh that fills it is asynchronous.
+    //
+    // The row is found among those loaded rather than saved with the id: what
+    // the sheet needs of it (its key, its category, whether a person set it)
+    // is a read of the database, and after a process death it would be a read
+    // of a ledger that may have moved. A row not loaded draws no sheet.
     val chosen = categorizing
-    if (chosen != null && choices.isNotEmpty()) {
+    val chosenRow = chosen?.let { id ->
+        items.itemSnapshotList.firstOrNull { it is LedgerItem.Row && it.txn.id == id } as LedgerItem.Row?
+    }
+    if (chosen != null && chosenRow != null && choices.isNotEmpty()) {
+        val startsOn = teachSwitchDefault(
+            hasKey = chosenRow.identityKey != null,
+            categoryId = chosenRow.txn.categoryId,
+            userEdited = chosenRow.txn.userEdited,
+            uncategorizedId = read.uncategorizedId,
+            learnedCategoryId = chosenRow.identityKey?.let(read.learnedRules::get),
+            dictionaryCategoryId = read.dictionaryFiling(chosenRow.txn.merchantKey),
+        )
+        // Merged: this key is aliased away, or other keys are aliased to it.
+        // Either way the one rule on the identity files them all.
+        val mergedRuleCategory = chosenRow.identityKey
+            ?.takeIf { it != chosenRow.txn.merchantKey || it in read.mergedIdentities }
+            ?.let(read.learnedRules::get)
+            ?.let { ruleId -> categoriesById[ruleId]?.name }
         CategoryPicker(
             categories = choices,
-            onChoose = { categoryId ->
+            teach = startsOn?.let { TeachOffer(chosenRow.displayName, it, mergedRuleCategory) },
+            initial = chosenRow.txn.categoryId.takeIf { it != read.uncategorizedId },
+            preview = { categoryId -> retroPreview(chosen, categoryId) },
+            onSave = { categoryId, teach ->
                 categorizing = null
-                onAssign(chosen, categoryId)
+                onAssign(chosen, categoryId, teach)
             },
             onDismiss = { categorizing = null },
         )
@@ -465,18 +497,14 @@ private fun Feed(
                         // which is the honest answer there: nothing knows which
                         // rows are uncategorized, so no row is claimed to be.
                         uncategorized = item.txn.categoryId == uncategorizedId,
-                        // Whether the chip can be *offered* is the separate
+                        // Whether the sheet can be *offered* is the separate
                         // question, asked by handing over an action or not.
-                        // Each extra gate would otherwise be a chip that takes
-                        // a tap and does nothing: no `hasChoices` leaves the
-                        // sheet with nothing to open, and an excluded row is
-                        // out of every total (§7.3), so a category assigned to
-                        // it changes no number on any screen.
-                        onCategorize = if (
-                            hasChoices &&
-                            !item.txn.isExcluded &&
-                            item.txn.categoryId == uncategorizedId
-                        ) {
+                        // Each extra gate would otherwise be a control that
+                        // takes a tap and does nothing: no `hasChoices` leaves
+                        // the sheet with nothing to open, and an excluded row
+                        // is out of every total (§7.3), so a category assigned
+                        // to it changes no number on any screen.
+                        onCategorize = if (hasChoices && !item.txn.isExcluded) {
                             { onCategorize(item.txn.id) }
                         } else {
                             null
@@ -675,23 +703,38 @@ private fun TxnRow(
             // is punctuation for a name that is not there.
             val name = category?.name.takeUnless { uncategorized || excluded }
             val line = listOfNotNull(name, source).joinToString(Separator)
+            // The chip is the marker on an uncategorized row; on a categorised
+            // one the line itself opens the sheet, as one control so the line
+            // still reads as one line to a screen reader.
+            val chip = onCategorize != null && uncategorized
+            val lineOpensSheet = onCategorize != null && !uncategorized && name != null
             // No row at all when there is neither chip nor line, rather than an
             // empty one: `source_package` and `source_label` are both nullable
             // -- an imported row can have neither -- and the 2.dp would then be
             // a gap under the merchant holding a line that is not there.
-            if (onCategorize != null || line.isNotEmpty()) {
+            if (chip || line.isNotEmpty()) {
                 Row(
                     Modifier.padding(top = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (onCategorize != null) {
-                        CategoryChip(onClick = onCategorize)
+                    if (chip) {
+                        CategoryChip(onClick = onCategorize!!)
                     }
                     if (line.isNotEmpty()) {
                         Text(
-                            (if (onCategorize != null) Separator else "") + line,
+                            (if (chip) Separator else "") + line,
                             style = MonoLabel,
                             color = Muted,
+                            modifier = if (lineOpensSheet) {
+                                // Padding outside the click, as the chip's is:
+                                // it enlarges the target and not the drawing.
+                                Modifier
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .clickable(role = Role.Button, onClick = onCategorize!!)
+                                    .padding(vertical = 6.dp)
+                            } else {
+                                Modifier
+                            },
                         )
                     }
                 }
