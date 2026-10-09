@@ -84,7 +84,10 @@ class StorageBannerFollowsTheLedgerTest {
             assertTrue("precondition: the storage banner never appeared", compose.waitFor { compose.countOf(LABEL) == 1 })
             compose.onNodeWithText(ACTION).performClick()
             assertTrue("precondition: settings never opened", compose.waitFor { compose.countOf(SETTINGS_ONLY) == 1 })
-            compose.onNodeWithText(SOURCES_ROW).performClick()
+            // Scrolled to, as in the test below: with the banner and the bottom
+            // bar drawn, the row starts below the fold on CI's 320x640
+            // emulator, and a click on an off-screen node does nothing.
+            compose.onNodeWithText(SOURCES_ROW).performScrollTo().performClick()
             assertTrue("precondition: the allow-list never opened", compose.waitFor { compose.countOf(SOURCES_ONLY) == 1 })
             assertEquals("precondition: no button over the allow-list", 1, compose.countOf(ACTION))
 
