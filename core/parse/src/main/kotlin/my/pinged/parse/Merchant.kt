@@ -105,9 +105,22 @@ object Merchant {
                 word
             } else {
                 exceptions[word.uppercase(Locale.ROOT)]
-                    ?: (word[0].uppercase(Locale.ROOT) + word.drop(1).lowercase(Locale.ROOT))
+                    ?: capitalised(word)
             }
         }
+    }
+
+    /**
+     * [word] lower-cased with its first **letter** upper-cased, not its first
+     * character: uppercasing a leading digit is a no-op, which would leave
+     * `7ELEVEN` as `7eleven` (#32). Decided by [Char.isLetter], not a regex, for the reason
+     * `\d` is banned (CLAUDE.md). A word with no letter is returned as it is.
+     */
+    private fun capitalised(word: String): String {
+        val lower = word.lowercase(Locale.ROOT)
+        val at = lower.indexOfFirst { it.isLetter() }
+        if (at < 0) return lower
+        return lower.substring(0, at) + lower[at].uppercase(Locale.ROOT) + lower.substring(at + 1)
     }
 
     /**
