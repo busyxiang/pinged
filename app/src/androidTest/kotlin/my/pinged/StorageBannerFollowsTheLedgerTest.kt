@@ -53,8 +53,8 @@ class StorageBannerFollowsTheLedgerTest {
 
     /**
      * **On settings the banner offers no button.** Its button goes to
-     * settings, which is already on top, so `showOnce` has nothing to do and
-     * the tap did nothing -- a control that does nothing, which ruling R35
+     * settings, which is already on top, so selecting it has nothing to do and
+     * the tap would do nothing -- a control that does nothing, which ruling R35
      * forbids.
      */
     @Test fun theBannerOffersNoButtonOnTheScreenItLeadsTo() = withTheKeyGone {
@@ -84,7 +84,10 @@ class StorageBannerFollowsTheLedgerTest {
             assertTrue("precondition: the storage banner never appeared", compose.waitFor { compose.countOf(LABEL) == 1 })
             compose.onNodeWithText(ACTION).performClick()
             assertTrue("precondition: settings never opened", compose.waitFor { compose.countOf(SETTINGS_ONLY) == 1 })
-            compose.onNodeWithText(SOURCES_ROW).performClick()
+            // Scrolled to, as in the test below: with the banner and the bottom
+            // bar drawn, the row starts below the fold on CI's 320x640
+            // emulator, and a click on an off-screen node does nothing.
+            compose.onNodeWithText(SOURCES_ROW).performScrollTo().performClick()
             assertTrue("precondition: the allow-list never opened", compose.waitFor { compose.countOf(SOURCES_ONLY) == 1 })
             assertEquals("precondition: no button over the allow-list", 1, compose.countOf(ACTION))
 
@@ -259,7 +262,7 @@ class StorageBannerFollowsTheLedgerTest {
         try {
             ActivityScenario.launch(MainActivity::class.java).use {
                 assertTrue("precondition: the launch never sampled", compose.waitFor { samples.get() >= 1 })
-                compose.onNodeWithText(LEDGER_SETTINGS).performClick()
+                compose.onNodeWithText(SETTINGS_TAB).performClick()
                 assertTrue("precondition: settings' first read never sampled", compose.waitFor { samples.get() >= 2 })
                 assertEquals("precondition: a banner over a healthy ledger", 0, compose.countOf(LABEL))
 
@@ -351,8 +354,8 @@ class StorageBannerFollowsTheLedgerTest {
         /** See `ExportNudgeBannerTest.SETTINGS_ONLY`. */
         const val SETTINGS_ONLY = "Delete everything"
 
-        /** The ledger's top-bar control; see `SettingsNavigationTest`. */
-        const val LEDGER_SETTINGS = "SETTINGS"
+        /** The bottom bar's settings tab; see `SettingsNavigationTest`. */
+        const val SETTINGS_TAB = "SETTINGS"
 
         /** Settings' row that runs a check, drawn only over a readable ledger. */
         const val CHECK_ROW = "Check my data"

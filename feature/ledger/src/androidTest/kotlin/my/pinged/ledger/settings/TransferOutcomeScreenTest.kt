@@ -234,7 +234,6 @@ class TransferOutcomeScreenTest {
             PingedTheme {
                 SettingsScreen(
                     viewModel = viewModel,
-                    onBack = {},
                     onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {},
                     onExport = {},
                     onRestore = {},
@@ -256,7 +255,6 @@ class TransferOutcomeScreenTest {
             PingedTheme {
                 SettingsScreen(
                     viewModel = viewModel,
-                    onBack = {},
                     onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {},
                     onExport = {},
                     onRestore = {},

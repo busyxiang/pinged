@@ -45,7 +45,6 @@ class RestoreCancellationTest {
             PingedTheme {
                 SettingsScreen(
                     viewModel = viewModel,
-                    onBack = {},
                     onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {},
                     onExport = {},
                     // Stands in for `MainActivity`'s launcher receiving a null

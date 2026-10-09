@@ -80,10 +80,9 @@ import kotlin.math.abs
 /**
  * Spec 9.1's transaction list, drawn from `design/Main.dc.html`.
  *
- * **The artboard's bottom navigation is not here**, and neither is its cash
- * button: two of its three tabs (charts, settings) do not exist, and it would
- * give the allow-list -- touched about once -- the same prominence as the
- * screen looked at daily. The top-bar control is the route there instead.
+ * **The artboard's bottom navigation is not drawn here**: `MainActivity` hosts
+ * it, because it is shared with settings and a tab switch is not this screen's
+ * to decide. Its charts tab and its cash button have no screen to lead to.
  *
  * The category is spelled out in the line beneath the merchant as well as drawn
  * as an icon ([RowIcon]), so a reader who cannot tell two 18dp glyphs apart has
@@ -199,10 +198,9 @@ internal fun LedgerScreenContent(
     }
 
     Column(modifier.fillMaxSize().background(Paper)) {
-        // Above the branch: the month being summarised and the way out to
-        // settings are true in every state, including the two with nothing to
-        // show -- which are the states a user most needs that route from.
-        TopBar(month = read.summary?.month ?: YearMonth.now(), onOpenSettings = onOpenSettings)
+        // Above the branch: the month being summarised is true in every state,
+        // including the two with nothing to show.
+        TopBar(month = read.summary?.month ?: YearMonth.now())
 
         when {
             // First, because it is the only state where the ledger is certainly
@@ -287,17 +285,14 @@ internal fun LedgerScreenContent(
 }
 
 /**
- * The month being summarised, and the way to settings.
+ * The month being summarised.
  *
  * The month comes from the summary rather than the clock so the label cannot
  * name a period the numbers below it did not cover; before the first aggregate
  * lands there is no number to label and it names the current month.
- *
- * [onOpenSettings] opens spec 9.5's settings, which holds the allow-list as
- * one row among several.
  */
 @Composable
-private fun TopBar(month: YearMonth, onOpenSettings: () -> Unit) {
+private fun TopBar(month: YearMonth) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -305,26 +300,6 @@ private fun TopBar(month: YearMonth, onOpenSettings: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(monthLabel(month), style = MonoLabel, color = Muted, modifier = Modifier.weight(1f))
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(2.dp))
-                // A labelled control, so it reports as a button and takes a
-                // 44dp target -- see `SourcesScreen`'s `Header`.
-                .clickable(role = Role.Button, onClick = onOpenSettings)
-                .heightIn(min = 44.dp)
-                // `Faint`, not the artboard's `Border`: that is 1.35:1 on
-                // Paper, and WCAG 1.4.11 asks 3:1 of a component. Same
-                // overrule, for the same reason, as the capture toggle.
-                .border(1.dp, Faint, RoundedCornerShape(2.dp))
-                .padding(horizontal = 12.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            // No explicit `contentDescription` -- this label is the
-            // accessible name, the same choice every other text-labelled
-            // control on this screen makes; see `SourcesScreen.Header` for
-            // the one that needs one.
-            Text("SETTINGS", style = MonoLabel, color = Ink)
-        }
     }
 }
 

@@ -1,5 +1,6 @@
 package my.pinged
 
+import androidx.compose.runtime.MutableState
 import androidx.navigation3.runtime.NavKey
 import kotlinx.serialization.Serializable
 
@@ -50,8 +51,8 @@ import kotlinx.serialization.Serializable
 @Serializable data object Learned : NavKey
 
 /**
- * Spec 9.5's settings, reached from the ledger's top-bar control. [Sources] is
- * a row inside it, as `design/Settings.dc.html` draws.
+ * Spec 9.5's settings, the second tab of `design/Main.dc.html`'s bottom bar.
+ * [Sources] is a row inside it, as `design/Settings.dc.html` draws.
  *
  * See [Ledger] for why these are `@Serializable` objects registered nowhere.
  */
@@ -74,21 +75,96 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
 }
 
 /**
- * Show [key]: back to its entry if it is on the stack, pushed if it is not.
+ * The bottom bar's tabs, each with the destination its stack starts on.
  *
- * For a control drawn over every destination, whose screen can already be
- * *under* the one showing: the banner strip leads to [Settings], and
- * [Sources] is pushed from there. [pushOnce] would add a second settings,
- * with a holder of its own, above the allow-list, and back would then go
- * through the allow-list to the first. The entries above [key]'s go as back
- * would take them.
- *
- * With [key] on top this does nothing, so a control that calls it has
- * nothing to offer there (ruling R35).
+ * Two, not the artboard's three: charts (spec 9.3) has no screen, and a tab
+ * that leads nowhere is worse than a missing one. It joins here when it exists.
  */
-internal fun MutableList<NavKey>.showOnce(key: NavKey) {
-    val at = lastIndexOf(key)
-    if (at < 0) add(key) else while (lastIndex > at) removeAt(lastIndex)
+internal enum class Tab(val root: NavKey) {
+    Spending(Ledger),
+    Settings(my.pinged.Settings),
+}
+
+/**
+ * One back stack per [Tab], and which tab is showing.
+ *
+ * [entries] is every tab's stack in one list, the shown tab's last, because
+ * `NavDisplay` draws the last entry and its decorators keep an entry's
+ * `ViewModel` and saved state only while the entry is *in* the list. Handing it
+ * just the shown tab's stack would clear the ledger's holder and scroll
+ * position at every visit to settings. A tab not shown is not composed, so a
+ * settings never opened never builds its holder.
+ *
+ * The stacks and the selection are passed in rather than built here so the
+ * Activity can keep them in saved state (`rememberNavBackStack`,
+ * `rememberSaveable`) while the rules stay assertable on plain lists.
+ */
+internal class TabStacks(
+    private val stacks: Map<Tab, MutableList<NavKey>>,
+    private val selection: MutableState<Tab>,
+) {
+    /** The tab showing. */
+    val selected: Tab get() = selection.value
+
+    /** The shown tab's own stack, which is where a screen pushes and pops. */
+    val current: MutableList<NavKey> get() = stacks.getValue(selected)
+
+    /** What `NavDisplay` is handed: the other tabs' stacks, then [current]. */
+    val entries: List<NavKey>
+        get() = Tab.entries.filter { it != selected }.flatMap { stacks.getValue(it) } + current
+
+    private val atRoot: Boolean get() = current.size == 1
+
+    /**
+     * Whether the bar is drawn: on a tab's root only. A pushed screen has the
+     * chevron back of its own, and the bar there would offer a way out of a
+     * screen the user is partway through.
+     */
+    val showsBar: Boolean get() = atRoot
+
+    /**
+     * Whether settings' own root is what the user is looking at.
+     *
+     * The banner's buttons lead to settings and have nothing to offer there
+     * (ruling R35), so the Activity draws none.
+     */
+    val showingSettingsRoot: Boolean get() = selected == Tab.Settings && atRoot
+
+    /** Show [tab] as it was left. */
+    fun select(tab: Tab) {
+        selection.value = tab
+    }
+
+    /**
+     * Show settings from its root, for a control drawn over every destination.
+     *
+     * Unwound, not left as it was: the banner says "Settings says more", and
+     * the allow-list over settings is not where that is said.
+     */
+    fun showSettings() {
+        val settings = stacks.getValue(Tab.Settings)
+        while (settings.size > 1) settings.removeAt(settings.lastIndex)
+        select(Tab.Settings)
+    }
+
+    /** Push [key] on the shown tab; see [pushOnce]. */
+    fun push(key: NavKey) = current.pushOnce(key)
+
+    /** Pop the shown tab's top screen; see [pop]. */
+    fun pop() = current.pop()
+
+    /**
+     * The system Back gesture: pop a pushed screen, else leave a tab for
+     * Spending, else say it is not handled.
+     *
+     * `false` is the Activity's cue to leave the app as an unhandled Back would;
+     * returning `true` there would make the app impossible to leave.
+     */
+    fun back(): Boolean = when {
+        !atRoot -> { pop(); true }
+        selected != Tab.Spending -> { select(Tab.Spending); true }
+        else -> false
+    }
 }
 
 /**

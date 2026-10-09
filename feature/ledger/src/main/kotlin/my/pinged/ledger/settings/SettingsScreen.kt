@@ -54,12 +54,12 @@ import my.pinged.ledger.transfer.Unreadable
  * worse than a short screen. `HOW THINGS GET SORTED` holds the one that does:
  * the learned merchants (#50), the artboard's "taught rules".
  *
- * No bottom navigation: the artboards draw a CHARTS tab that has no screen.
+ * The root of the SETTINGS tab, so no back control: the artboard draws none, and
+ * the bar `MainActivity` hosts is the way out.
  */
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    onBack: () -> Unit,
     onOpenSources: () -> Unit,
     onExport: () -> Unit,
     onRestore: () -> Unit,
@@ -85,7 +85,7 @@ fun SettingsScreen(
     var confirmingWipe by remember { mutableStateOf(false) }
 
     Column(modifier.fillMaxSize().background(Paper).verticalScroll(rememberScrollState())) {
-        Header(onBack)
+        Header()
         RunningNotice(state.running)
         RecoveryNotice(state, onRescue)
         SettingsRows(
@@ -724,26 +724,18 @@ private fun SettingsRow(
 }
 
 @Composable
-private fun Header(onBack: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Back",
-            style = MonoLabel,
-            color = Muted,
-            modifier = Modifier.clickable(role = Role.Button, onClick = onBack),
-        )
-        Text(
-            "Settings",
-            fontFamily = Display,
-            fontWeight = FontWeight.Normal,
-            fontSize = 24.sp,
-            color = Ink,
-            modifier = Modifier.padding(start = 16.dp),
-        )
-    }
+private fun Header() {
+    Text(
+        "Settings",
+        fontFamily = Display,
+        fontWeight = FontWeight.Normal,
+        fontSize = 24.sp,
+        color = Ink,
+        modifier = Modifier
+            .fillMaxWidth()
+            .dottedRule(atTop = false)
+            .padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 12.dp),
+    )
 }
 
 /** The artboard's footer. Both halves are true, and worth saying. */

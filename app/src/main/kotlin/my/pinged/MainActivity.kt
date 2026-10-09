@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -69,9 +70,10 @@ import my.pinged.ledger.transfer.TransferStore
 
 /**
  * The only Activity. It hosts spec 9.1's ledger, which is home; spec 9.5's
- * settings; and spec 9.6's allow-list, reachable from either, with one banner
- * strip above all three: spec 10.2's capture states, and the backup nudge that
- * [bannerFor] ranks below every one of them.
+ * settings; and spec 9.6's allow-list, reachable from settings. One banner
+ * strip sits above all three: spec 10.2's capture states, and the backup nudge
+ * that [bannerFor] ranks below every one of them. The bottom bar sits under the
+ * two tab roots and not under a pushed screen.
  */
 class MainActivity : ComponentActivity() {
 
@@ -109,7 +111,19 @@ class MainActivity : ComponentActivity() {
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
         setContent {
             PingedTheme {
-                val backStack = rememberNavBackStack(Ledger)
+                // One saved stack per tab and the tab showing, kept in saved
+                // state for the reason `Ledger` gives. `TabStacks` holds the
+                // rules; see it for why `NavDisplay` is handed every tab's
+                // entries and not the shown tab's.
+                val selection = rememberSaveable { mutableStateOf(Tab.Spending) }
+                val spendingStack = rememberNavBackStack(Tab.Spending.root)
+                val settingsStack = rememberNavBackStack(Tab.Settings.root)
+                val tabs = remember(selection, spendingStack, settingsStack) {
+                    TabStacks(
+                        mapOf(Tab.Spending to spendingStack, Tab.Settings to settingsStack),
+                        selection,
+                    )
+                }
                 // Insets are handled here rather than inside the screen, at
                 // the one place that owns the window. API 35+ draws every app
                 // edge-to-edge whatever the theme says about bar colours, so
@@ -124,21 +138,26 @@ class MainActivity : ComponentActivity() {
                     // Above the NavDisplay, not inside a screen: capture being
                     // dead matters whichever destination is showing, and one
                     // holder computing it is one place to get it wrong.
-                    // The back stack lives in this composition and not in the
+                    // The tab stacks live in this composition and not in the
                     // Activity, so the banners with somewhere to go are
                     // handed the destination rather than reaching for it.
-                    // Both buttons lead to settings, which can be under the
-                    // allow-list: `showOnce` goes back to that entry rather
-                    // than pushing a second. On settings itself it would do
-                    // nothing, so there is no button (ruling R35).
-                    val onSettings = backStack.lastOrNull() == Settings
+                    // Both buttons lead to settings, from its root: `TabStacks`
+                    // selects the tab and unwinds whatever is pushed over it.
+                    // On settings' own root it would do nothing, so there is no
+                    // button (ruling R35).
+                    val onSettings = tabs.showingSettingsRoot
                     GrantBanner(
-                        onExportEverything = { backStack.showOnce(Settings) }.takeUnless { onSettings },
-                        onOpenSettings = { backStack.showOnce(Settings) }.takeUnless { onSettings },
+                        onExportEverything = tabs::showSettings.takeUnless { onSettings },
+                        onOpenSettings = tabs::showSettings.takeUnless { onSettings },
                     )
                     NavDisplay(
-                        backStack = backStack,
-                        onBack = { backStack.pop() },
+                        backStack = tabs.entries,
+                        // `entries` always holds both tabs' roots, so NavDisplay
+                        // always takes Back; an unhandled one (`false`, on
+                        // Spending's root) must leave the app, or the user is
+                        // trapped. `moveTaskToBack` is what a launcher Activity's
+                        // unhandled Back does on Android 12+.
+                        onBack = { if (!tabs.back()) moveTaskToBack(true) },
                         // Both, spelled out, because naming this parameter
                         // replaces the default rather than adding to it --
                         // navigation3-ui 1.1.7 defaults to the saveable-state
@@ -165,7 +184,7 @@ class MainActivity : ComponentActivity() {
                                     // Settings, not `Sources`: the
                                     // allow-list is a row inside settings
                                     // (spec 9.5).
-                                    onOpenSettings = { backStack.pushOnce(Settings) },
+                                    onOpenSettings = tabs::showSettings,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -220,10 +239,9 @@ class MainActivity : ComponentActivity() {
                                 ) { uri -> if (uri != null) settings.salvageTo(DocumentSink(contentResolver, uri)) }
                                 SettingsScreen(
                                     viewModel = settings,
-                                    onBack = { backStack.pop() },
-                                    onOpenSources = { backStack.pushOnce(Sources) },
-                                    onOpenCorrections = { backStack.pushOnce(Corrections) },
-                                    onOpenLearned = { backStack.pushOnce(Learned) },
+                                    onOpenSources = { tabs.push(Sources) },
+                                    onOpenCorrections = { tabs.push(Corrections) },
+                                    onOpenLearned = { tabs.push(Learned) },
                                     onExport = { exportOpen = true },
                                     // Reached only after `SettingsScreen`'s own
                                     // confirmation -- see `RestoreConfirmSheet`
@@ -255,7 +273,7 @@ class MainActivity : ComponentActivity() {
                                     viewModel(factory = correctionsFactory)
                                 CorrectionsScreen(
                                     viewModel = corrections,
-                                    onBack = { backStack.pop() },
+                                    onBack = tabs::pop,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -263,7 +281,7 @@ class MainActivity : ComponentActivity() {
                                 val learned: LearnedViewModel = viewModel(factory = learnedFactory)
                                 LearnedScreen(
                                     viewModel = learned,
-                                    onBack = { backStack.pop() },
+                                    onBack = tabs::pop,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -274,13 +292,14 @@ class MainActivity : ComponentActivity() {
                                     viewModel = sources,
                                     // The same expression NavDisplay's onBack
                                     // is given; see `pop`.
-                                    onBack = { backStack.pop() },
+                                    onBack = tabs::pop,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
                         },
                         modifier = Modifier.weight(1f),
                     )
+                    if (tabs.showsBar) TabBar(selected = tabs.selected, onSelect = tabs::select)
                 }
             }
         }

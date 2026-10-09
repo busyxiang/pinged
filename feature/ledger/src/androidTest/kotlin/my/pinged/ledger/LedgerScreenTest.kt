@@ -101,11 +101,12 @@ class LedgerScreenTest {
     }
 
     /**
-     * Both entries push Settings, which is where the allow-list is reached
-     * from -- the empty state's button said `CHOOSE CAPTURE SOURCES` while
-     * doing this, which named a screen the tap does not open.
+     * The way into settings is the bottom bar `MainActivity` hosts, so this
+     * screen's top bar carries no control for it. The empty state's button is
+     * the exception: it says what to do about having nothing captured, which
+     * the bar does not.
      */
-    @Test fun theTopBarAndTheEmptyStateBothRouteToSettings() {
+    @Test fun theEmptyStateRoutesToSettingsAndTheTopBarHasNoControlOfItsOwn() {
         val opened = AtomicInteger(0)
         content(
             items = emptyList(),
@@ -114,13 +115,12 @@ class LedgerScreenTest {
         )
         compose.waitForText(NOTHING_CAPTURED, "The empty ledger does not say so")
 
-        compose.onNodeWithText("SETTINGS").performClick()
+        compose.onNodeWithText("SETTINGS").assertDoesNotExist()
         compose.onNodeWithText("OPEN SETTINGS").performClick()
 
         assertEquals(
-            "A route to Settings did not fire. Until this screen existed " +
-                "nothing in the app pushed it, so its entry never composed",
-            2,
+            "The empty state's route to Settings did not fire",
+            1,
             opened.get(),
         )
     }
