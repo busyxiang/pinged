@@ -5,6 +5,28 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.5.0](https://github.com/busyxiang/pinged/compare/v0.4.0...v0.5.0) (2026-10-09)
+
+
+### Features
+
+* learn merchant categories, ship a dictionary, fix past payments from the chooser ([#53](https://github.com/busyxiang/pinged/issues/53)) ([db04f0e](https://github.com/busyxiang/pinged/commit/db04f0e7e9f8824fa6ccff50b6339d8bbb040f3a))
+* let the backup nudge be dismissed for a week ([8ab81ce](https://github.com/busyxiang/pinged/commit/8ab81ce2958b306bc4c91d9f28d79f188e3977eb))
+* let the backup nudge be dismissed for a week ([9c0acb6](https://github.com/busyxiang/pinged/commit/9c0acb665317e66b709772d4cc11df79e4f87c94))
+* make settings a bottom tab, as the design draws it ([#55](https://github.com/busyxiang/pinged/issues/55)) ([595b1a2](https://github.com/busyxiang/pinged/commit/595b1a21c4de1b4dd91e33d3fa698de805aa50de))
+* merge one shop's two merchant keys, and rename a merchant ([4432ba1](https://github.com/busyxiang/pinged/commit/4432ba1651c39b177dfe088215e6c3b3317e5748))
+* merge one shop's two merchant keys, and rename a merchant ([#4](https://github.com/busyxiang/pinged/issues/4)) ([0a3aa12](https://github.com/busyxiang/pinged/commit/0a3aa122a04a22bce9674130902779797686bb00))
+* offer corrections when a newer pack reads a committed payment differently ([4742f2b](https://github.com/busyxiang/pinged/commit/4742f2b094b53920e3ffd08793e2317e3be1207d))
+* offer corrections when a newer pack reads a committed payment differently ([6cd6ea3](https://github.com/busyxiang/pinged/commit/6cd6ea3169e6d6812b4becbc854687e25efd8a61))
+
+
+### Bug Fixes
+
+* capitalise a merchant's first letter, not its first character ([#54](https://github.com/busyxiang/pinged/issues/54)) ([a620ccb](https://github.com/busyxiang/pinged/commit/a620ccb58b94d395bbafce704886e9a33d0e6e6d))
+* keep merged and renamed merchants together when a pack re-keys their rows ([#36](https://github.com/busyxiang/pinged/issues/36)) ([e7bbc2a](https://github.com/busyxiang/pinged/commit/e7bbc2a9ac6ccad4cbdbddd1750729ef1155a91e))
+* merchant keys and five unread payment wordings, from a device export ([#19](https://github.com/busyxiang/pinged/issues/19)) ([64a1b87](https://github.com/busyxiang/pinged/commit/64a1b8701e771a8b03f69fb0c92a3c438e5ecce0))
+* show a payment captured while the ledger's page is loading ([#17](https://github.com/busyxiang/pinged/issues/17)) ([5dfe099](https://github.com/busyxiang/pinged/commit/5dfe0992d3f447747e8547620c2e01dfcfd4e4a7))
+
 ## [0.4.0](https://github.com/busyxiang/pinged/compare/v0.3.0...v0.4.0) (2026-10-04)
 
 
