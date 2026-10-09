@@ -70,8 +70,20 @@ class MerchantTest {
 
     // Spec 5.4's other two named casualties of unconditional title-casing.
     @Test fun `the exception list keeps an acronym and a name shape`() {
-        assertEquals("TNG 99speedmart", Merchant.displayFor("TNG 99SPEEDMART", bundled))
+        assertEquals("TNG 99Speedmart", Merchant.displayFor("TNG 99SPEEDMART", bundled))
         assertEquals("McDonald's", Merchant.displayFor("MCDONALD'S", bundled))
+    }
+
+    // Issue #32: a word's first character being a digit used to lowercase every
+    // letter after it, because uppercasing a digit is a no-op.
+    @Test fun `a word that starts with a digit capitalises its first letter`() {
+        assertEquals("7Eleven", Merchant.displayFor("7ELEVEN", bundled))
+        assertEquals("99Speedmart", Merchant.displayFor("99SPEEDMART", bundled))
+        assertEquals("1Utama Cafe", Merchant.displayFor("1UTAMA CAFE", bundled))
+        assertEquals("Kedai 2Brothers", Merchant.displayFor("KEDAI 2BROTHERS", bundled))
+        assertEquals("Mr Diy 3F", Merchant.displayFor("MR DIY 3F", bundled))
+        assertEquals("99 Speedmart", Merchant.displayFor("99 SPEEDMART", bundled))
+        assertEquals("123", Merchant.displayFor("123", bundled))
     }
 
     // Spec 5.4 applies title-casing "only when the raw string is entirely
