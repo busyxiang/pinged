@@ -20,5 +20,7 @@ direction: EXPENSE
 # merchant_raw keeps the registered suffix, which spec 5.4 requires. The key
 # and the display drop it, and what survives is not entirely uppercase, so the
 # display rule leaves the wallet's own capitalisation alone.
+# The transaction reference is masked to zeros of the same shape (CLAUDE.md,
+# fixtures). No rule reads it.
 
-Versatile Wisdom Sdn Bhd: RM16.80 has been deducted from your TNG eWallet. Merchant Reference No. T178745100726
+Versatile Wisdom Sdn Bhd: RM16.80 has been deducted from your TNG eWallet. Merchant Reference No. T000000000000

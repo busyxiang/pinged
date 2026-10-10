@@ -14,5 +14,7 @@ confidence: REVIEW
 # Nothing in this text tells it apart from mae-fpx-from-account-digi.txt,
 # which is the only record of its money. So both wait for review: counted
 # here at HIGH, this one is RM75 spent twice with nobody asked.
+# The transaction reference is masked to zeros of the same shape (CLAUDE.md,
+# fixtures). No rule reads it.
 
-Successful payment of RM75.00 to IBILIK 02 on 19 Sep 2026 16:09:46. Did not perform this transaction? Please call 03-58914744. FPX ID: 2609191609160642
+Successful payment of RM75.00 to IBILIK 02 on 19 Sep 2026 16:09:46. Did not perform this transaction? Please call 03-58914744. FPX ID: 0000000000000000

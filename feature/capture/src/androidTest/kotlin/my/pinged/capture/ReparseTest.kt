@@ -82,7 +82,7 @@ class ReparseTest {
     fun aPaymentAnOlderPackCouldNotReadBecomesATransaction() {
         val id = staleCapture(
             text = "Versatile Wisdom $marker Sdn Bhd: RM16.80 has been deducted from " +
-                "your TNG eWallet. Merchant Reference No. T178745100726",
+                "your TNG eWallet. Merchant Reference No. T000000000000",
             status = ParseStatus.UNMATCHED,
             at = base - 9_000L,
         )
