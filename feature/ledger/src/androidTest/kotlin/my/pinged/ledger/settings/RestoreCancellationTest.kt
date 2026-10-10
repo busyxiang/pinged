@@ -12,7 +12,7 @@ import java.io.OutputStream
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test

@@ -595,9 +595,29 @@ Rows are created by the discovery screen (section 9.5), not hardcoded.
 | listener_bound | Bool | the grant was present and something was bound |
 | saw_any_notification | Bool | at least one notification from any app arrived |
 
-One row per day, upserted at most once per day from the same throttled path
-that writes the `DataStore` heartbeat, gated on the local date having
-changed since the last upsert. It exists so the daily rhythm grid
+One row per day, written by three writers and by nothing else. The heartbeat
+path (section 10.2) does not touch it.
+
+- **The bind.** `onListenerConnected` sets `listener_bound = 1`, creating
+  the row with `saw_any_notification = 0` if it is missing.
+- **A foreground that finds the listener bound.** `ListenerStatus.onAppForeground`
+  makes the same write as the bind. A process bound since yesterday gets no
+  `onListenerConnected` today, and `requestRebind` on a bound listener fires
+  none either, so without this a day on which nothing posted kept no row (#72).
+- **The first notification of the day**, from any app. It sets
+  `saw_any_notification = 1`, creating the row with `listener_bound = 1` if
+  it is missing: a notification arriving proves the listener was bound.
+
+Each is deduplicated once per day per process (`CaptureDays`). Every
+mutation is a targeted `UPDATE` naming its own column, never a whole-row
+upsert. **No writer ever writes `listener_bound = 0`.** Only an import
+can store it, and such a row is not evidence of capture (section 8).
+
+**Today's row can land late.** The foreground's write is launched, not
+awaited, so a read on that same foreground can run before it lands. Today is
+never counted as not captured for this reason (section 8).
+
+It exists so the daily rhythm grid
 (section 8) can tell "you spent nothing" apart from "Pinged was not
 watching" — a distinction no aggregate over `txn` can recover, because both
 cases are an absence of rows.
@@ -1387,15 +1407,24 @@ Malaysian spending is rhythmic — payday, weekend makan, the monthly grocery
 run, the bills cluster — and a month total flattens all of it. Thirty
 squares are also the cheapest visualization in the app: a `Row` of `Box`es
 per week, reading the `local_date` aggregate that section 9.1 already
-computes for the day subtotals. No new query.
+computes for the day subtotals. That aggregate alone cannot tell a quiet day
+from an unwatched one, so the grid also reads the capture evidence below:
+`capturedDates` over the month and the history start's read (#81).
 
-**A cell has three states, and conflating any two of them is a lie.**
+**A cell has four states, and conflating any two of them is a lie.**
 
 | State | Rendering | Means |
 |---|---|---|
-| Spent | filled, ramp step by magnitude | there were transactions, and this is their total |
-| Nothing spent | outlined, unfilled | Pinged was watching and saw no spending |
+| Spent | filled, ramp step by magnitude | the day's counted transactions net above zero, and this is their total |
+| Net negative | outlined, with a dot | more came back than went out that day: a refund larger than the day's spending (#68) |
+| Nothing spent | outlined, unfilled | Pinged was watching and nothing counted, or the day nets exactly zero |
 | Not captured | hatched | Pinged was **not** watching, so nothing is known |
+
+A day with a counted total draws it, captured or not: today, a day whose
+only evidence is its own capture-backed transactions, and a hand-entered
+total before the history start (drawn, never counted as captured or not).
+Today is never hatched and carries a today marker (#64). Every square but a
+blank one opens that day.
 
 The third state is the one that makes this visualization honest, and the
 reason a naive heatmap must not ship. An empty cell for a day the listener
@@ -1410,21 +1439,59 @@ heartbeat in section 10.2 cannot supply it.** That heartbeat is a single
 from any app and must not touch Room. One timestamp answers "is capture
 alive now", which is all the capture-stopped banner needs, and it cannot
 answer "was capture alive on 14 August". So the heatmap adds `capture_day`
-(section 4) — one row per local date, upserted at most once a day from the
-same throttled path that writes the heartbeat, gated on the date having
-changed. One Room write per day does not have the invalidation problem that
-put the heartbeat in `DataStore`.
+(section 4): one row per local date, written by the bind, by a foreground
+that finds the listener bound, and by the day's first notification, never
+by the heartbeat path. One Room write per day
+does not have the invalidation problem that put the heartbeat in
+`DataStore`.
 
-Days before the install date are outside the grid's range entirely, drawn
-blank rather than hatched, with the install date named in the footer — the
-`Months` screen already establishes that vocabulary. Days after today in an
-open month are likewise blank, never "nothing spent".
+**A past day on or after the history start is a captured day** when it has
+a `capture_day` row with `listener_bound = 1`, or any `txn` captured from a
+notification (non-null `raw_capture_id`), whatever its state. A
+hand-entered transaction is not evidence, and `saw_any_notification` plays
+no part. Every other such day is **not captured**. Today is neither: its
+row may not have landed yet (section 4, today's row can land late), so it
+is never counted. A month is **untrusted** when it holds one not-captured day.
+Charts, `Months` and the Ledger all decide this with one function,
+`notCapturedDays` in `:core:data`, so they cannot disagree.
 
-**Ramp buckets are quartiles of the displayed month's non-zero days, and
-the legend prints the ringgit range they span.** A ramp keyed to the
-month's own distribution keeps a quiet month legible instead of uniformly
-pale, but it makes two months' colours incomparable, so the absolute
-anchors are always on screen. Never let the colour be the only reading.
+**The mid-day-death limit.** A captured day says nothing about the whole
+day. There is no part-day state: a listener that dies at noon, after one
+notification, leaves the rest of the day drawn as "nothing spent". The grid
+does not defend against this. The defence is section 10.2's
+capture-stopped banner on the next foreground.
+
+**The history start** is derived when a screen loads, never stored: the
+earlier of the earliest `capture_day.local_date` and the local date of the
+earliest `raw_capture.posted_at` (converted as section 15.7 converts a
+transaction's). A restore carries it over, a salvage that lost
+`capture_day` falls back to the captures, Delete everything resets it, and
+a hand-entered transaction never moves it. With no evidence at all there is
+no history start.
+
+Days before the history start are outside the grid's range entirely, drawn
+blank rather than hatched, with the history start named in the footer
+(`Nothing before 4 April 2026`) — the `Months` screen already establishes
+that vocabulary. Days after today in an open month are likewise blank,
+never "nothing spent".
+
+**The ramp ranks the displayed month's spending days, and the legend prints
+the ringgit range they span** (#68). The largest day is always the darkest
+step, and equal amounts always share a step. The grid takes `k` steps, as
+many as the month has distinct positive amounts up to four, and uses the
+darkest `k`. A day's step is `floor(r × k / d)`, where `d` is the number of
+distinct positive amounts and `r` its amount's index among them, ascending:
+one step per amount when `d ≤ 4`, and the largest amount on step `k − 1`
+for every `d`. (The prototype ranked by position among the days, which put
+a largest amount repeated on many days below the darkest step.)
+Quartiles, the earlier rule, left the darkest step unused with fewer than
+four distinct amounts and printed `RM12 → RM12` on a flat month. The legend reads `RMmin → RMmax A
+DAY` in whole ringgit, or `RMx EVERY DAY YOU SPENT` beside one swatch when
+every spending day is the same amount; `MORE CAME BACK` is listed only when
+a day nets negative. A ramp keyed to the month's own distribution keeps a
+quiet month legible instead of uniformly pale, but it makes two months'
+colours incomparable, so the absolute anchors are always on screen. Never
+let the colour be the only reading.
 
 Zero-spend days are outlined rather than given a fifth ramp step: zero is
 categorically different from "the least you spent", and the ramp means
@@ -1444,21 +1511,43 @@ measured this found it in 4 of 7 Scan & Pay merchants.
 
 ### Honesty rules, enforced in the presentation layer
 
-- **No unfair period comparison.** A month-to-date total is never compared
-  against a completed month. Either compare same-day-of-month to
-  same-day-of-month, or suppress the comparison until the month closes.
-- **No charts on thin data.** Below 14 days of capture history, show
-  "collecting — N days of data" in place of the chart rather than a
-  partial-month shape that reads as a trend.
+- **No unfair period comparison.** A month is compared only with the
+  calendar month directly before it, and only when both are **comparable
+  months** (`CONTEXT.md`): each has ended in local time (section 15.7), lies
+  wholly on or after the history start, and has no not-captured day. So a
+  month-to-date total is never set against a whole month, a part-month cut
+  by the history start is never set against a whole one, and an untrusted
+  month is never compared, since a missing day can push its total either
+  way. The comparison never reaches back past an unusable month to an older
+  one. Held back, it is absent. (#67)
+- **No charts on thin data.** Until Pinged holds 14 **captured days**
+  (`CONTEXT.md`), counted across all history from the history start to
+  yesterday, the category bars and the merchant ranking give way to one
+  block: `COLLECTING · N OF 14 DAYS` and "Category bars and top merchants
+  appear after two weeks of capture." Five days of proportions, or a "top"
+  built from five days, is a trend-shaped claim. Captured days, not calendar
+  days, so a dead listener does not open the gate early; across all history,
+  not the selected month, so a restored history counts in full and no month
+  hides its charts until its 14th. Today never counts. Nothing is stored:
+  the count only grows short of Delete everything, so the gate stays open
+  once open. The daily rhythm grid, the hero and the "not in the total"
+  block still draw, the grid being the user's proof in the first two weeks
+  that capture works. (#66)
 - **Excluded and pending rows never enter a total.** A day whose only
   transactions are excluded therefore reads as "nothing spent", which is
   correct for the total and misleading for the day. Tapping the cell opens
-  that day filtered, excluded rows visible and struck through, so the money
-  that moved is never hidden — only kept out of the arithmetic.
-- **A gap in capture is never drawn as a zero.** See the three cell states
-  above. This applies to every visualization: the month total goes grey and
-  is labelled do-not-trust when the month contains uncaptured days
-  (section 9, `Stopped`).
+  the `Day` screen (section 9.3), excluded rows visible and struck through
+  and pending rows badged, under a header that says how much was kept out of
+  the total, so the money that moved is never hidden — only kept out of the
+  arithmetic. (#69)
+- **A not-captured day is never drawn as a zero.** See the cell states
+  above. This applies to every visualization: when the month contains even
+  one not-captured day, the month total, every category bar amount
+  (`Everything else` and Uncategorized included) and every merchant total and
+  count go grey, and one line under the hero explains it for the whole
+  screen (section 9, `Stopped`). A bar is the hero's claim at a finer grain,
+  and a missed day can reorder the bars or the ranking. The bar fills keep
+  the ramp, which means magnitude only. (#73)
 
 Category bars use a single-hue ramp, darkest for the largest category.
 Categorical colour is not used anywhere in the app: category identity is
@@ -1558,6 +1647,76 @@ saw.
 The three v1 visualizations, with a month selector: the daily rhythm grid
 first, because it is the month's shape and the smallest of the three, then
 category bars, then the merchant ranking.
+
+**Header.** The selected month in mono capitals (`SEPTEMBER 2026`); a tap on
+it opens the `Months` sheet. Beside it one chip, the first that applies:
+`N DAYS NOT CAPTURED` in the accent colour when the month is untrusted, else
+`MONTH COMPLETE` for a month that has ended, else `DAY N OF M` for the
+month still running.
+
+**Hero.** The month's ringgit net, labelled `TOTAL SPENT` while it is above
+zero. At or below zero it reads `NET SPENT`, keeps its sign, and a mono line
+under it gives the two halves: `SPENT RMx · CAME BACK RMy`. An untrusted
+month greys the figure and adds `MAY BE INCOMPLETE · N DAYS NOT CAPTURED`,
+never "at least", since a missed refund makes the real figure lower.
+
+**Comparison line.** Under the hero, when the selected month and the month
+before are both comparable (section 8, "No unfair period comparison"), one
+mono line compares the two months' signed nets, the figures each hero
+shows: `RM87.20 ABOVE AUGUST'S RM2,760.10`, `… BELOW …`, or
+`SAME AS AUGUST'S RM2,760.10` when the nets match to the sen. The
+difference is unsigned and the direction word carries the sign; the other
+month's figure is signed when it nets negative (`ABOVE AUGUST'S −RM20.00`).
+There is no percentage, since a zero or negative base makes one
+meaningless. Held back, nothing renders and no space is kept. The line and
+`MAY BE INCOMPLETE` never appear together, because an untrusted month is
+never comparable. (#67)
+
+**`NOT IN THE TOTAL`.** Last in the scroll, not pinned: the month's ringgit
+money that moved but is in no figure above, as ruled lines with signed
+amounts and no symbol, in this order. `Transfers, left out` (every
+exclusion reason but the user's own), `You excluded`, and `N awaiting
+review` (pending rows; a pending row that is also excluded is counted here
+only). An amount line whose net is zero is dropped; the review line stays
+while any row is pending, whatever it nets to. With no line the block,
+heading included, is not drawn. (#89)
+
+**Accepted at build time.**
+
+- The category bars draw nothing, heading included, when every category
+  nets exactly zero: neither a bar nor the "more came back" sentence would
+  be true there.
+- The grid legend's range is in whole ringgit; when both ends round to one
+  figure it falls back to sen (`RM12.10 → RM12.40 A DAY`), so it never reads
+  from a number to itself.
+- Counts are singular at one: `1 more merchant`, `1 DAY NOT CAPTURED`.
+
+**`Day` screen.** A tap on a grid cell that is spent, nothing spent, net
+negative or not captured opens that day; a blank cell does nothing. (#69)
+
+- **Key.** `Day(date)`, the ISO `local_date` and nothing else, pushed on the
+  Charts tab's own stack. Everything is read when it opens, so a back stack
+  restored after a process death shows nothing stale.
+- **Rows.** `TxnDao.dayRows(date)`: the ledger feed's select, merchant joins,
+  `REJECTED` filter and order, for one `local_date`, not paged. They are drawn
+  by the ledger's own row, so excluded rows are struck through and pending
+  rows badged, and they stay interactive: the category chip and the merchant
+  sheet's long press. The category and merchant actions live in one piece of
+  `:feature:ledger` (`RowActions`) that the ledger's and the day's holders
+  both use; the day's holder re-reads after each write, since nothing
+  invalidates a list.
+- **Header.** The date, then the day's counted MYR total, the cell's
+  arithmetic. When the day has any row on its "not in the total" aggregate
+  (N + M > 0, whatever the lines net to, so an excluded purchase and a
+  pending refund of one amount do not hide each other):
+  `RM… kept out of the total: N excluded, M pending`. A not-captured day
+  (past, on or after the history start, no evidence: the rule a month greys
+  by) adds "Pinged was not watching on this day. These are only the
+  transactions it has from elsewhere." With no rows that line stands alone,
+  with no total, so the screen never says "nothing spent".
+- **Back,** by gesture or chevron, pops to Charts with the same transition
+  either way. The selected month is in the Charts screen's saved state, never
+  on a key, so it survives the push, the pop and a process death.
 
 ### 9.4 Manual entry
 
@@ -2095,7 +2254,8 @@ Stated here so that it gets scheduled rather than assumed.
 3. Confidence gate, review inbox, transaction list.
 4. Categorization with bundled dictionary and learned rules.
 5. Dedup layers and transfer handling.
-6. The two visualizations.
+6. The three visualizations: the daily rhythm grid, category bars and the
+   merchant ranking (section 9.3).
 7. Manual entry, capture health, OEM onboarding, and the rebinding
    receivers from section 10.1 — which in practice want doing on day one,
    because without them capture dies on every build installed.
@@ -2197,12 +2357,16 @@ to be summed in application code.
 Refunds subtract, so the aggregate is
 `SUM(CASE WHEN direction = 'REFUND' THEN -amount_sen ELSE amount_sen END)`
 — which can return zero or a negative for a category, or for a whole month.
-`Box(Modifier.fillMaxWidth(fraction))` requires a fraction in `(0f, 1f]`,
-and a month total of zero makes the denominator zero. So the mapping layer
-clamps: a net-negative category renders at zero width with its true
-signed amount shown as text, and a zero or negative month total suppresses
-the bars entirely rather than dividing by it. Both cases are in the fixture
-set, because both arrive on a real refund. The chart composables take
+Each bar is a fraction of the **largest positive drawn bar** (`Everything
+else` and Uncategorized included), not of the month total, as the artboard
+draws it: the largest takes the full width. A refund can push the month total
+below its largest category, or to zero, and the bars still draw. The mapping
+layer clamps the fraction to `(0f, 1f]` as a guard: a net-negative category
+renders at zero width with its true signed amount shown as text. Only when
+**every** category is ≤ 0 are the bars suppressed, giving way to one
+sentence, `MORE CAME BACK THAN WENT OUT THIS MONTH, SO THERE IS NO SHARE TO
+DRAW.`, followed by the negative categories. These cases are in the fixture
+set, because they arrive on a real refund. (#68) The chart composables take
 `List<CategoryTotal>`/`List<MerchantTotal>` — already the shape section 8
 requires for a possible later chart library — so the aggregate is computed
 once by SQLite and the UI holds only the result.

@@ -23,7 +23,7 @@ import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.SEPARATE_NO_RULE
 import my.pinged.ledger.home.bothHaveRules
 import my.pinged.ledger.home.readMerchantSheet
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule

@@ -47,6 +47,16 @@ interface RawCaptureDao : MerchantDecisions {
     fun countAll(): Int
 
     /**
+     * The earliest `posted_at` of any capture, or null when there is none: the
+     * other half of the history start (`CaptureEvidence.historyStart`).
+     *
+     * Every status counts, `REJECTED` and `UNMATCHED` included: any capture
+     * proves the listener was bound when it arrived.
+     */
+    @Query(EARLIEST_POSTED_SQL)
+    fun earliestPostedAt(): Long?
+
+    /**
      * Stage two's work queue. Served by `raw_capture(parse_status, posted_at)`
      * (spec 15.1) -- the same index covers both the equality and the ordering,
      * so there is no sort step.
@@ -579,6 +589,16 @@ interface RawCaptureDao : MerchantDecisions {
     }
 
     companion object {
+        /**
+         * [earliestPostedAt]'s query, hoisted for `QueryPlanTest`. No index
+         * leads with `posted_at`; it is answered from
+         * `(parse_status, posted_at)` as a covering index, never from the
+         * table. Measured on emulator-5554 with 20,000 captures and 740
+         * `capture_day` rows: 0.83ms for the whole history-start read, so a
+         * `posted_at` index (a schema change) is not worth it.
+         */
+        const val EARLIEST_POSTED_SQL = "SELECT MIN(posted_at) FROM raw_capture"
+
         /** [matchedStaleAfter]'s query, hoisted for `QueryPlanTest`. */
         const val MATCHED_STALE_SQL =
             "SELECT c.* FROM raw_capture AS c JOIN txn AS t ON t.raw_capture_id = c.id " +

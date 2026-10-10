@@ -57,7 +57,8 @@ INERT = (
 # and :smoke's 6s test behind a ~3 min R8 build that took the runner's CPU
 # from whichever suite was on the device meanwhile. Balanced on those sums:
 # each half of :feature:ledger, :core:data + :app + :feature:capture
-# (184-227s), and :smoke with its R8 build.
+# (184-227s), and :smoke with its R8 build. :feature:charts joins the
+# middle job: one test class, under a second on emulator-5554.
 #
 # The halves are AndroidJUnitRunner's numShards/shardIndex, which split by
 # test, not by class, in one process per half.
@@ -70,6 +71,7 @@ SHARDS = {
         ":core:data:connectedDebugAndroidTest",
         ":app:connectedDebugAndroidTest",
         ":feature:capture:connectedDebugAndroidTest",
+        ":feature:charts:connectedDebugAndroidTest",
     ], ""),
     "smoke": ([":smoke:connectedMinifiedAndroidTest"], ""),
 }

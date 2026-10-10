@@ -13,7 +13,7 @@ import my.pinged.data.dao.LearnedMerchant
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule

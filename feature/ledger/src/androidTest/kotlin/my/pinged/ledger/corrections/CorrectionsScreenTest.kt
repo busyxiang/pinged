@@ -8,7 +8,7 @@ import my.pinged.capture.Corrections
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

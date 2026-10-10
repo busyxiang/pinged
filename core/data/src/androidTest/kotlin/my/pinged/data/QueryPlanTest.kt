@@ -2,6 +2,7 @@ package my.pinged.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import my.pinged.data.dao.CaptureDayDao
 import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
@@ -180,6 +181,22 @@ class QueryPlanTest {
     }
 
     /**
+     * `TxnDao.dayRows`, the `Day` screen's read (#69): [TxnDao.FEED_SQL] cut
+     * to one `local_date`, so it must **seek** that day in the index the feed
+     * walks -- `SEARCH`, since a `SCAN` of the same index also names it -- and
+     * still take its order from the index rather than a sort.
+     */
+    @Test fun aDaysRowsSeekTheDayInTheFeedsIndex() {
+        val p = plan(bindable(TxnDao.DAY_ROWS_SQL), 20260907)
+        assertTrue(
+            "The day's rows do not seek the day:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at (local_date=?)"),
+        )
+        assertNoSort(p)
+        assertLooksUpByKey(p)
+    }
+
+    /**
      * Section 8's ranking, as [TxnDao.MERCHANT_TOTALS_SQL] issues it: the
      * period's rows through the range index, spec 6.4's alias looked up by
      * primary key per row, and the name by primary key per merchant.
@@ -301,6 +318,98 @@ class QueryPlanTest {
 
         val byCategory = plan(bindable(TxnDao.MONTH_BY_CATEGORY_SQL), *MONTH, 3)
         assertUsesIndex("index_txn_local_date_occurred_at", byCategory)
+    }
+
+    /**
+     * The Charts hero's split, [TxnDao.MONTH_TOTALS_SQL]'s predicate with two
+     * `SUM`s, ranges over the month as the total does. `SEARCH`, not only the
+     * index name: a `SCAN` of the same index names it too, and walks every
+     * row ever counted.
+     */
+    @Test fun theHeroSplitTakesTheMonthRange() {
+        val p = plan(bindable(TxnDao.MONTH_SPLIT_SQL), *MONTH)
+        assertUsesIndex("index_txn_local_date_occurred_at", p)
+        assertTrue(
+            "The split does not read txn by a local_date range:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
+        )
+    }
+
+    /**
+     * The `Months` sheet's totals range over `local_date` as the month total
+     * does, over the sheet's whole span: the history from its first day to
+     * the current month's end. `SEARCH` for the reason the split gives.
+     */
+    @Test fun theMonthsSheetTotalsTakeTheDayRange() {
+        val p = plan(bindable(TxnDao.MONTHLY_TOTALS_SQL), 0, 20260930)
+        assertUsesIndex("index_txn_local_date_occurred_at", p)
+        assertTrue(
+            "The monthly totals do not read txn by a local_date range:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
+        )
+    }
+
+    /**
+     * The "not in the total" aggregate (#89) ranges over its period as the
+     * totals do, so a month's block, or a day's header, reads that period's
+     * rows and not every pending or committed row ever written. `SEARCH`, not
+     * only the index name, as [theHeroSplitTakesTheMonthRange] says.
+     */
+    @Test fun theNotInTotalAggregateTakesThePeriodRange() {
+        val p = plan(bindable(TxnDao.NOT_IN_TOTAL_SQL), *MONTH)
+        assertTrue(
+            "The not-in-the-total aggregate does not read txn by a local_date range:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
+        )
+    }
+
+    // ---- capture evidence, #81 ------------------------------------------
+
+    /**
+     * `capturedDates` runs once per month a screen draws, and its `txn` half
+     * must range over the month rather than over every captured transaction.
+     * `capture_day`'s `local_date` is an `INTEGER PRIMARY KEY`, so its half is
+     * a rowid range.
+     *
+     * `SEARCH`, not just the index name: with the range disabled the `UNION`'s
+     * merge still walks `index_txn_local_date_occurred_at` for its order, as a
+     * `SCAN` of the whole index.
+     */
+    @Test fun capturedDatesTakesTheDayRangeOnBothTables() {
+        val p = plan(bindable(CaptureDayDao.CAPTURED_DATES_SQL), *MONTH, *MONTH)
+        assertUsesIndex("index_txn_local_date_occurred_at", p)
+        assertTrue(
+            "txn is not read by a local_date range:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
+        )
+        assertTrue(
+            "capturedDates walks index_txn_raw_capture_id, which is every " +
+                "captured transaction ever made:\n$p",
+            !p.contains("index_txn_raw_capture_id"),
+        )
+        assertTrue(
+            "capture_day is not read by a primary-key range:\n$p",
+            p.contains("SEARCH capture_day USING INTEGER PRIMARY KEY"),
+        )
+    }
+
+    /**
+     * The history start's two reads. `MIN` of `capture_day`'s rowid is one
+     * step. `raw_capture` has no index leading with `posted_at`, so its `MIN`
+     * is answered from `index_raw_capture_parse_status_posted_at` as a
+     * covering index -- never from the table, whose rows carry the
+     * notification text.
+     */
+    @Test fun theHistoryStartReadsAnIndexAndNeverTheCaptureTable() {
+        val days = plan(CaptureDayDao.EARLIEST_DATE_SQL)
+        assertTrue("capture_day's MIN is a scan of the table:\n$days", !days.contains("SCAN capture_day\n"))
+
+        val captures = plan(RawCaptureDao.EARLIEST_POSTED_SQL)
+        assertUsesIndex("index_raw_capture_parse_status_posted_at", captures, table = "raw_capture")
+        assertTrue(
+            "raw_capture's MIN reads the table, text and all:\n$captures",
+            captures.contains("COVERING INDEX"),
+        )
     }
 
     /**

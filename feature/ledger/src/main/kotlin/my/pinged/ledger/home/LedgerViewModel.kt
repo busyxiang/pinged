@@ -27,18 +27,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import my.pinged.capture.CaptureStorage
-import my.pinged.capture.Graph
+import my.pinged.data.CaptureEvidence
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
+import my.pinged.data.notCapturedDays
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
-import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RetroPreview
-import my.pinged.parse.SameShop
 import my.pinged.data.dao.TxnDao
-import my.pinged.data.entity.Category
 import java.time.YearMonth
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -78,32 +76,18 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     private val _storageUnavailable = MutableStateFlow(false)
     val storageUnavailable: StateFlow<Boolean> = _storageUnavailable.asStateFlow()
 
-    /** Spec 6.4's merchant sheet, while one is open; see [openMerchant]. */
-    private val _merchantSheet = MutableStateFlow<MerchantSheetState?>(null)
-    val merchantSheet: StateFlow<MerchantSheetState?> = _merchantSheet.asStateFlow()
-
     /**
-     * The `category` table, read once per database this holder reads from.
-     *
-     * **Safe only while nothing writes the table**: §4's editor is out and the
-     * one write on this screen is `txn.category_id`. Read per refresh these are
-     * two of the six statements a chip tap issues, re-reading fourteen rows to
-     * move one row between them. A restore does replace the table, with the
-     * backup's rows, which is why [Catalogue] carries the generation it was
-     * read under and [readCatalogueOnce] reads again when that has moved.
-     *
-     * **Null means "not read yet", never "read and empty".** A refresh that
-     * cannot open the database throws out of `all()` before the assignment, so
-     * a failed first refresh memoizes nothing and the next one tries again;
-     * that is why a single nullable field holds both values rather than two,
-     * since a resolved `uncategorizedId` is legitimately null.
-     *
-     * `@Volatile` because two refreshes can overlap -- the resume effect and a
-     * chip tap both launch on `viewModelScope` and both suspend into
-     * `Dispatchers.IO`. The worst a stale read costs is one extra pass over
-     * fourteen rows, never a wrong answer.
+     * The row's category and merchant actions, shared with any other screen
+     * that draws ledger rows. Its failures raise this screen's banner.
      */
-    @Volatile private var catalogue: Catalogue? = null
+    private val rows = RowActions(
+        context = { context },
+        scope = viewModelScope,
+        unavailable = { _storageUnavailable.value = true },
+    )
+
+    /** Spec 6.4's merchant sheet, while one is open; see [openMerchant]. */
+    val merchantSheet: StateFlow<MerchantSheetState?> = rows.merchantSheet
 
     /**
      * The DAO once the database has opened, with the `Databases.generation`
@@ -246,8 +230,8 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * this collector running bound the new database, and invalidating it
      * would only read the first page twice.
      *
-     * [catalogue] needs nothing here: [readCatalogueOnce] compares its
-     * generation itself.
+     * [rows]' category memo needs nothing here: it compares its generation
+     * itself.
      */
     private fun rebind() {
         val stale = bound
@@ -277,7 +261,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * **[assignCategory]'s escape is this method's too.** `guarded` catches
      * the open; a statement that fails afterwards -- a `SQLiteFullException`
      * on a full disk -- is outside [DatabaseUnavailableException] and escapes
-     * `viewModelScope`. Left uncovered for the reason recorded there.
+     * `viewModelScope`. Left uncovered for the reason [RowActions] records.
      */
     fun refresh(now: YearMonth = YearMonth.now()): Job = viewModelScope.launch {
         val month = LocalDates.monthRange(now)
@@ -296,31 +280,28 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             val daySubtotals = txns.dayTotals(month.start, month.endInclusive)
                 .groupBy({ it.localDate }, { CurrencyTotal(it.currency, it.netSen) })
 
-            // Elapsed, not the whole month: days that have not happened yet
-            // are not gaps, and counting them would grey out every month
-            // total until its last day.
-            //
-            // Today can still be a false positive on the first foreground of
-            // a day: a process bound across midnight writes today's row from
-            // that foreground, launched and not awaited, so this read may run
-            // first. Erring toward the warning is the safe direction.
-            // `CaptureDayDao.boundDayCount` carries the same note.
-            val elapsed = if (YearMonth.now() == now) java.time.LocalDate.now().dayOfMonth
-            else now.lengthOfMonth()
-            val bound = Databases.captureDayDao(context)
-                .boundDayCount(month.start, month.endInclusive)
+            // The one month-trust rule Charts and `Months` grey on too (#81),
+            // so the three cannot disagree. It never counts today: the first
+            // foreground of a day writes today's row launched, not awaited,
+            // so this read can run before it lands.
+            val captureDays = Databases.captureDayDao(context)
+            val historyStart = CaptureEvidence.historyStart(
+                captureDays,
+                Databases.rawCaptureDao(context),
+            )
+            val captured = CaptureEvidence.capturedDates(
+                captureDays,
+                now.atDay(1),
+                now.atEndOfMonth(),
+            )
+            val notCaptured = notCapturedDays(now, historyStart, java.time.LocalDate.now(), captured)
 
-            val catalogue = readCatalogueOnce()
-            // Every refresh, unlike the catalogue: a teaching save changes it,
-            // and the next chooser has to start from the rule just written.
-            val learned = Databases.merchantRuleDao(context).learnedRules()
-                .associate { it.pattern to it.categoryId }
-            val merged = Databases.merchantIdentityDao(context).mergedIdentities().toSet()
+            val chooser = rows.readChooser()
             val summary = MonthSummary(
                 month = now,
                 totals = txns.monthTotals(month.start, month.endInclusive),
                 top = txns.monthByCategory(month.start, month.endInclusive, limit = TOP_CATEGORIES),
-                trustworthy = bound >= elapsed,
+                trustworthy = notCaptured == 0,
             )
 
             // One assignment, at the end, built from locals: see [LedgerRead]
@@ -328,193 +309,49 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             _read.value = LedgerRead(
                 daySubtotals = daySubtotals,
                 summary = summary,
-                categories = catalogue.categories,
-                uncategorizedId = catalogue.uncategorizedId,
-                learnedRules = learned,
-                mergedIdentities = merged,
-                dictionaryFiling = catalogue.dictionaryFiling,
+                categories = chooser.categories,
+                uncategorizedId = chooser.uncategorizedId,
+                learnedRules = chooser.learnedRules,
+                mergedIdentities = chooser.mergedIdentities,
+                dictionaryFiling = chooser.dictionaryFiling,
             )
             _storageUnavailable.value = false
         }
     }
 
     /**
-     * [catalogue], filled in on the first refresh that gets to the database.
+     * Move one transaction to [categoryId] and re-read the month (§9.1's chip);
+     * see [RowActions.assignCategory].
      *
-     * All fourteen categories, not a lookup per line: the table is seeded and
-     * tiny, so three point lookups cost more than one walk.
-     * `uncategorizedIdOrNull` beside it is one indexed point lookup, measured
-     * at under a millisecond next to the four aggregate reads around it -- so
-     * [catalogue] is a memo about statement count, not about a slow read.
-     *
-     * Blocking, like every `CategoryDao` method here, so it may only be called
-     * from inside a `CaptureStorage.guarded` block.
-     */
-    private fun readCatalogueOnce(): Catalogue {
-        // Read before the query, so a reset landing during it leaves the
-        // older number on the result and the next refresh reads again.
-        val generation = Databases.generation.value
-        return catalogue?.takeIf { it.generation == generation } ?: run {
-            val categories = Databases.categoryDao(context)
-            val all = categories.all()
-            Catalogue(
-                categories = all,
-                uncategorizedId = categories.uncategorizedIdOrNull(),
-                // The pack is the shipped one and the categories are this
-                // generation's, so the marking is the filing stage two makes.
-                dictionaryFiling = dictionaryCategoryIds(
-                    Graph.parsePack().dictionary,
-                    all.associate { it.name to it.id },
-                ),
-                generation = generation,
-            ).also { catalogue = it }
-        }
-    }
-
-    /**
-     * Move one transaction to [categoryId] and re-read the month (§9.1's chip).
-     *
-     * [teach] is the chooser's "Always call this" switch: on writes the
-     * merchant's learned rule and leaves the row `user_edited = 0`
-     * (`MerchantRuleDao.teach`); off, or a row with no merchant key, is a
-     * one-off (`TxnDao.setCategory`, `user_edited = 1`).
-     *
-     * **The refresh is not tidiness.** The feed invalidates itself -- Room
-     * invalidates the `PagingSource` on the `UPDATE`, so the row redraws on its
-     * own -- but the three aggregates are separate queries nothing invalidates,
-     * so without this the top three keeps naming the category the money just
-     * left.
+     * **The refresh is not tidiness.** The three aggregates are separate
+     * queries nothing invalidates, so without it the top three keeps naming
+     * the category the money just left.
      *
      * [now] is a parameter for the same reason [refresh]'s is, and it is load
      * bearing rather than symmetric: a test that assigns on a fixture dated in
      * a fixed month would otherwise re-read *today's* month afterwards and see
      * the summary go empty.
-     *
-     * **`setCategory` returning 0 is ignored on purpose.** It means the row is
-     * gone, and the honest answer is the [refresh] below: it redraws from what
-     * is actually in the database rather than reporting a failure about a row
-     * the user can no longer see.
-     *
-     * Guarded like [refresh], and not because the write is likely to fail:
-     * `Databases.txnDao` throws from the *open* in §11.1's state, this runs on
-     * `viewModelScope`, and nothing in that scope catches -- so an unguarded
-     * write here is a process kill on a tap. `MainThreadRefreshTest` records
-     * the mechanism.
-     *
-     * **The guard covers the open, not the `UPDATE`.** A statement that fails
-     * afterwards -- `SQLiteFullException` on a full disk, or a foreign key
-     * violation if [categoryId] were deleted between the sheet being drawn and
-     * the tap -- is outside [DatabaseUnavailableException] and still escapes
-     * `viewModelScope`. Left uncovered on purpose: nothing in this milestone
-     * can delete a category (§4's editor is out), and a catch-all here would
-     * swallow programming errors it cannot tell from a full disk. §4 is where
-     * this stops being hypothetical and where the handling belongs.
      */
     fun assignCategory(
         txnId: Long,
         categoryId: Long,
         teach: Boolean = false,
         now: YearMonth = YearMonth.now(),
-    ): Job = viewModelScope.launch {
-        CaptureStorage.guarded<Unit>(
-            context,
-            what = "The category could not be assigned",
-            unavailable = { _storageUnavailable.value = true },
-            damageStopsCapture = false,
-        ) {
-            val at = System.currentTimeMillis()
-            // A teaching save writes the merchant's learned rule and leaves the
-            // row filed by it. It answers false for a row with no merchant key,
-            // which is then saved as the one-off the sheet said it would be.
-            //
-            // `teachAndFix` also moves the merchant's past payments (#49), under
-            // the lease `guarded` holds, in the one transaction that wrote the rule.
-            val taught = teach && Databases.merchantRuleDao(context).teachAndFix(txnId, categoryId, at).taught
-            if (!taught) Databases.txnDao(context).setCategory(txnId, categoryId, at)
-        }
-        refresh(now).join()
-    }
+    ): Job = rows.assignCategory(txnId, categoryId, teach) { refresh(now).join() }
 
-    /**
-     * What teaching [categoryId] on the row [txnId] would also fix (#49), for the
-     * chooser's count line. A read, guarded like [assignCategory]: an unreadable
-     * ledger answers "nothing", which draws as a count of 0 and is corrected by
-     * the save, which re-checks inside its own transaction.
-     */
-    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview =
-        CaptureStorage.guarded(
-            context,
-            what = "The past payments could not be counted",
-            unavailable = { RetroPreview(0, emptyList()) },
-            damageStopsCapture = false,
-        ) { Databases.merchantRuleDao(context).retroPreview(txnId, categoryId) }
+    /** See [RowActions.retroPreview]. */
+    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
 
-    /**
-     * Open spec 6.4's sheet for the merchant a row's [ownKey] belongs to.
-     *
-     * One read of everything the sheet shows, published whole, so a sheet
-     * never draws a name from one read beside a list from another. A key that
-     * no longer resolves to any transaction opens nothing.
-     *
-     * Guarded like [assignCategory], for the same reason and with the same
-     * uncovered remainder.
-     */
-    fun openMerchant(ownKey: String): Job = viewModelScope.launch {
-        CaptureStorage.guarded(
-            context,
-            what = "The merchant could not be read",
-            unavailable = { _storageUnavailable.value = true },
-            damageStopsCapture = false,
-        ) {
-            _merchantSheet.value = readMerchantSheet(Databases.merchantIdentityDao(context), ownKey)
-        }
-    }
+    /** See [RowActions.openMerchant]. */
+    fun openMerchant(ownKey: String): Job = rows.openMerchant(ownKey)
 
-    fun closeMerchant() {
-        _merchantSheet.value = null
-    }
+    fun closeMerchant() = rows.closeMerchant()
 
-    /** Spec 6.4's rename, of the merchant the open sheet is about. */
-    fun renameMerchant(name: String): Job = writeMerchant("The merchant could not be renamed") { dao, sheet ->
-        dao.rename(sheet.identityKey, name, sheet.derivedName)
-    }
+    fun renameMerchant(name: String): Job = rows.renameMerchant(name)
 
-    /**
-     * Spec 6.4's merge of the open sheet's merchant into [targetKey], under the
-     * name the sheet showed for it.
-     */
-    fun mergeMerchant(targetKey: String): Job = writeMerchant("The merchants could not be merged") { dao, sheet ->
-        val target = sheet.others.firstOrNull { it.identityKey == targetKey } ?: return@writeMerchant
-        dao.merge(source = sheet.ownKey, target = targetKey, targetName = target.displayName ?: targetKey)
-    }
+    fun mergeMerchant(targetKey: String): Job = rows.mergeMerchant(targetKey)
 
-    /** Undo the merge of [key]. */
-    fun separateMerchant(key: String): Job = writeMerchant("The merchants could not be separated") { dao, _ ->
-        dao.separate(key)
-    }
-
-    /**
-     * One write against the open sheet, which then closes.
-     *
-     * Nothing is refreshed: the feed observes both of spec 6.4's tables
-     * (`LeasedFeed`), and no aggregate [refresh] reads depends on which
-     * merchant a row belongs to.
-     */
-    private fun writeMerchant(
-        what: String,
-        write: (MerchantIdentityDao, MerchantSheetState) -> Unit,
-    ): Job = viewModelScope.launch {
-        val sheet = _merchantSheet.value ?: return@launch
-        _merchantSheet.value = null
-        CaptureStorage.guarded<Unit>(
-            context,
-            what = what,
-            unavailable = { _storageUnavailable.value = true },
-            damageStopsCapture = false,
-        ) {
-            write(Databases.merchantIdentityDao(context), sheet)
-        }
-    }
+    fun separateMerchant(key: String): Job = rows.separateMerchant(key)
 
     companion object {
         /** §9.1 says three. The query takes it as a parameter so the two cannot disagree. */
@@ -528,46 +365,6 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
          */
         const val PAGE_SIZE = 40
     }
-}
-
-/**
- * [LedgerViewModel.catalogue]'s two values, so one nullable field can hold
- * both -- see there for why two fields could not -- beside the
- * `Databases.generation` they were read under.
- */
-private class Catalogue(
-    val categories: List<Category>,
-    val uncategorizedId: Long?,
-    val dictionaryFiling: (String?) -> Long?,
-    val generation: Long,
-)
-
-/**
- * What spec 6.4's sheet shows for [ownKey], or null when no transaction carries
- * it any more. Blocking; called inside `CaptureStorage.guarded`.
- *
- * Suggestions are judged against [ownKey], the string the row the user pressed
- * actually carries, not against the merchant it may already be merged into.
- */
-@VisibleForTesting
-internal fun readMerchantSheet(dao: MerchantIdentityDao, ownKey: String): MerchantSheetState? {
-    val identity = dao.canonicalOf(ownKey) ?: ownKey
-    val choices = dao.choices()
-    val self = choices.firstOrNull { it.identityKey == identity } ?: return null
-    val others = SameShop.suggestionsFirst(ownKey, choices.filter { it.identityKey != identity }) { it.identityKey }
-    return MerchantSheetState(
-        ownKey = ownKey,
-        identityKey = identity,
-        name = self.displayName ?: identity,
-        derivedName = self.derivedName,
-        txnCount = self.txnCount,
-        mergedInto = if (identity != ownKey) self.displayName ?: identity else null,
-        members = if (identity == ownKey) dao.membersOf(identity) else emptyList(),
-        others = others,
-        suggested = others.filter { SameShop.likely(ownKey, it.identityKey) }.mapTo(HashSet()) { it.identityKey },
-        ruleCategory = self.ruleCategory,
-        noOwnRule = dao.ownRuleCategory(ownKey) == null,
-    )
 }
 
 /** [LedgerViewModel.bound]: a database, and the `Databases.generation` it came from. */

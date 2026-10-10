@@ -17,11 +17,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import my.pinged.ledger.theme.Body
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.Stamp
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.Stamp
 
 /**
  * Spec 10.2's capture-stopped banner, drawn from `design/Stopped.dc.html`.

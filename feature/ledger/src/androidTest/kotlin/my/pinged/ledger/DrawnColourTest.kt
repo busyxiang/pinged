@@ -21,10 +21,10 @@ import my.pinged.ledger.sources.PILL_TAG
 import my.pinged.ledger.sources.SourceRow
 import my.pinged.ledger.sources.SourcesScreenContent
 import my.pinged.ledger.sources.SourcesState
-import my.pinged.ledger.theme.Card
-import my.pinged.ledger.theme.Contrast
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.Card
+import my.pinged.ui.theme.Contrast
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test

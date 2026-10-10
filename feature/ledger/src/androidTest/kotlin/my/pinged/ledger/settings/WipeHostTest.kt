@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.entity.CaptureSource
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import my.pinged.ledger.transfer.useDb
 import org.junit.After
 import org.junit.Assert.assertEquals

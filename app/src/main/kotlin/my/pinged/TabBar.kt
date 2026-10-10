@@ -23,19 +23,19 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.Muted
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.Stamp
-import my.pinged.ledger.theme.dottedRule
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.dottedRule
 
 /**
- * `design/Main.dc.html`'s bottom bar, drawn for [Tab]'s two entries.
+ * `design/Main.dc.html`'s bottom bar, drawn for [Tab]'s entries.
  *
  * The label is the accessible name, as on every other text-labelled control
  * here, and the icon is decoration. The unselected tab is [Muted], not the
- * artboard's [my.pinged.ledger.theme.Faint]: that is 3.12:1 on [Paper], which
+ * artboard's [my.pinged.ui.theme.Faint]: that is 3.12:1 on [Paper], which
  * clears WCAG 1.4.11 for a component and fails 1.4.3 for the label.
  *
  * Each tab is 62dp high as drawn, which is over the 48dp target and so needs no
@@ -84,6 +84,7 @@ internal fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier =
 private val Tab.label: String
     get() = when (this) {
         Tab.Spending -> "SPENDING"
+        Tab.Charts -> "CHARTS"
         Tab.Settings -> "SETTINGS"
     }
 
@@ -91,6 +92,7 @@ private val Tab.label: String
 private val Tab.icon: ImageVector
     get() = when (this) {
         Tab.Spending -> icon("M4 6h16M4 12h16M4 18h10")
+        Tab.Charts -> icon("M5 19V10M12 19V5M19 19v-6")
         // The artboard's three sliders: a rule each, and a knob on each.
         Tab.Settings -> icon(
             "M4 7h6M14 7h6M4 12h10M18 12h2M4 17h3M11 17h9" +

@@ -288,6 +288,49 @@ interface TxnDao {
     fun monthTotals(from: LocalDate, to: LocalDate): List<CurrencyTotal>
 
     /**
+     * [monthTotals] split into its two halves, for the Charts hero's
+     * `SPENT RMx · CAME BACK RMy` under a net of zero or less (#81, #68).
+     * Every direction that is not `EXPENSE` counts as came back, as it
+     * subtracts in [monthTotals], so the halves always difference to its net.
+     */
+    @Query(MONTH_SPLIT_SQL)
+    fun monthSplit(from: LocalDate, to: LocalDate): List<MonthSplit>
+
+    /**
+     * [monthTotals] for every month in `[from, to]` in one statement, for the
+     * `Months` sheet (#75): one row per month and currency, so the sheet is
+     * this and one `capturedDates` whatever the history's length. A month
+     * with nothing counted has no row; the sheet draws it at zero. Measured
+     * on emulator-5554 over 5,000 rows across 24 months, the whole span:
+     * 2.1ms median of 21.
+     *
+     * #75 wrote the grouping as `substr(local_date, 1, 7)`, for an ISO text
+     * date. The column is `yyyymmdd` as an `INTEGER`, so the month is
+     * `local_date / 100`, as [MONTH_COUNT_SQL] already takes it.
+     */
+    @Query(MONTHLY_TOTALS_SQL)
+    fun monthlyTotals(from: LocalDate, to: LocalDate): List<MonthlyTotal>
+
+    /**
+     * The money that moved in `[from, to]` without entering its total, per
+     * [NotInTotalLine] and currency (#89; #81, The Charts read): the Charts
+     * "not in the total" block over a month, and `Day`'s header over one day.
+     *
+     * **Each row falls on exactly one line.** `PENDING` is tested first, so a
+     * pending row that is also excluded counts once, as pending: it is
+     * awaiting a decision, and its exclusion is not yet the user's. Every
+     * other row read is `COMMITTED` and excluded, split by whether the user
+     * excluded it. `REJECTED` is not a transaction and is on no line; a
+     * counted row is in the total and is on no line either.
+     *
+     * Grouped in SQL (spec 15.3). A line with no rows has no result row.
+     * Measured on emulator-5554 over a year of 5,000 rows, a tenth of them on
+     * each line: 0.29ms for a month and 0.21ms for one day.
+     */
+    @Query(NOT_IN_TOTAL_SQL)
+    fun notInTotal(from: LocalDate, to: LocalDate): List<NotInTotal>
+
+    /**
      * The summary's top categories, largest first.
      *
      * `LIMIT` is a parameter rather than the literal 3 §9.1 asks for, so the
@@ -366,6 +409,18 @@ interface TxnDao {
     fun feed(): PagingSource<Int, FeedRow>
 
     /**
+     * One day's rows for the `Day` screen (#69): what [feed] shows under that
+     * day's heading, in the same order and with the same names, because both
+     * are [FEED_ROWS] and [FEED_ORDER]. `PENDING` and excluded rows are in it
+     * for the reason they are in the feed.
+     *
+     * A list, not paged: a day holds dozens of rows, not thousands. Nothing
+     * observes it, so its reader re-reads after any write it makes.
+     */
+    @Query(DAY_ROWS_SQL)
+    fun dayRows(date: LocalDate): List<FeedRow>
+
+    /**
      * Section 8's "Top merchants" for a period: net spending per merchant,
      * largest first, grouped by spec 6.4's resolved identity rather than by
      * `merchant_key`, so a shop paid through two rails is one row.
@@ -378,7 +433,13 @@ interface TxnDao {
      * the period's rows are found through `index_txn_local_date_occurred_at`
      * and grouped in a temporary B-tree, which `QueryPlanTest` pins. Measured
      * on emulator-5554 over a year of 5,000 rows, 200 merchants and 50 merged:
-     * 3.2ms. Nothing draws this yet; section 8's screen is not built.
+     * 3.2ms.
+     *
+     * Charts reads one month with no effective limit and ranks in the mapping
+     * layer (#92). Measured on emulator-5554 over a constructed ledger of
+     * 20,000 rows across 24 months, 500 merchants and 100 merged, median of 50
+     * after 10 warm-up reads: a month (333 merchants) 1.74ms, a year (400)
+     * 7.51ms.
      */
     @Query(MERCHANT_TOTALS_SQL)
     fun merchantTotals(from: LocalDate, to: LocalDate, limit: Int): List<MerchantTotal>
@@ -394,6 +455,23 @@ interface TxnDao {
      */
     companion object {
         /**
+         * The feed's select, joins and `REJECTED` filter, without its order,
+         * so [DAY_ROWS_SQL] can add its own clause between the two halves and
+         * cannot otherwise differ from the feed.
+         */
+        const val FEED_ROWS =
+            """
+            SELECT txn.*,
+                   """ + MerchantSql.IDENTITY + """ AS identity_key,
+                   """ + MerchantSql.NAME + """ AS display_name
+            FROM txn """ + MerchantSql.JOINS + """
+            WHERE txn.state != 'REJECTED'
+            """
+
+        /** The feed's order; see [feed] for why each key is there. */
+        const val FEED_ORDER = "ORDER BY txn.local_date DESC, txn.occurred_at DESC, txn.id DESC"
+
+        /**
          * `txn.*` plus spec 6.4's identity and name, both through primary-key
          * joins on the two small tables, so a rename redraws the rows it
          * names without touching any of them.
@@ -405,15 +483,15 @@ interface TxnDao {
          * depth few users scroll to, so the name is joined rather than cached
          * on `txn`, which would need a writer per rename.
          */
-        const val FEED_SQL =
-            """
-            SELECT txn.*,
-                   """ + MerchantSql.IDENTITY + """ AS identity_key,
-                   """ + MerchantSql.NAME + """ AS display_name
-            FROM txn """ + MerchantSql.JOINS + """
-            WHERE txn.state != 'REJECTED'
-            ORDER BY txn.local_date DESC, txn.occurred_at DESC, txn.id DESC
-            """
+        const val FEED_SQL = FEED_ROWS + FEED_ORDER
+
+        /**
+         * [dayRows]' query: the feed cut to one `local_date`. Its plan seeks
+         * the day in `index_txn_local_date_occurred_at`, ordered by the index
+         * with no sort, as `QueryPlanTest.aDaysRowsSeekTheDayInTheFeedsIndex`
+         * pins.
+         */
+        const val DAY_ROWS_SQL = FEED_ROWS + "AND txn.local_date = :date " + FEED_ORDER
 
         /**
          * The rows §8 counts -- "excluded and pending rows never enter a total"
@@ -467,6 +545,52 @@ interface TxnDao {
             WHERE """ + COUNTED + """
               AND local_date BETWEEN :from AND :to
             GROUP BY currency
+            """
+
+        const val MONTHLY_TOTALS_SQL =
+            """
+            SELECT local_date / 100 AS month, currency,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
+            FROM txn
+            WHERE """ + COUNTED + """
+              AND local_date BETWEEN :from AND :to
+            GROUP BY local_date / 100, currency
+            """
+
+        const val MONTH_SPLIT_SQL =
+            """
+            SELECT currency,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE 0 END) AS spentSen,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN 0 ELSE amount_sen END) AS cameBackSen
+            FROM txn
+            WHERE """ + COUNTED + """
+              AND local_date BETWEEN :from AND :to
+            GROUP BY currency
+            """
+
+        /**
+         * [notInTotal]'s query. Every reason but `USER` is one a pack rule
+         * set, so the `ELSE` is "Transfers, left out" by definition rather
+         * than by listing `TRANSFER`, `CARD_PAYMENT` and `ATM_WITHDRAWAL`: a
+         * reason added to the pack later lands there instead of on no line.
+         *
+         * `+state` on both arms, for the reason [COUNTED] carries it: the
+         * period's rows are reached through the `local_date` range, not
+         * through every pending or committed row ever written.
+         * `QueryPlanTest.theNotInTotalAggregateTakesThePeriodRange` pins it.
+         */
+        const val NOT_IN_TOTAL_SQL =
+            """
+            SELECT CASE WHEN state = 'PENDING' THEN 'PENDING'
+                        WHEN exclusion_reason = 'USER' THEN 'USER_EXCLUDED'
+                        ELSE 'TRANSFERS' END AS line,
+                   currency,
+                   COUNT(*) AS txnCount,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
+            FROM txn
+            WHERE (+state = 'PENDING' OR (+state = 'COMMITTED' AND is_excluded = 1))
+              AND local_date BETWEEN :from AND :to
+            GROUP BY line, currency
             """
 
         const val MERCHANT_TOTALS_SQL =

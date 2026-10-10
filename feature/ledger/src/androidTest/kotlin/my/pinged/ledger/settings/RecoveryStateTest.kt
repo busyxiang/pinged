@@ -9,9 +9,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import java.util.concurrent.atomic.AtomicInteger
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ledger.theme.PingedTheme
-import my.pinged.ledger.theme.RESCUE
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.PingedTheme
+import my.pinged.ui.theme.RESCUE
 import my.pinged.ledger.transfer.ImportReport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

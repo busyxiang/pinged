@@ -38,11 +38,17 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
 import androidx.navigationevent.NavigationEvent
 import java.io.IOException
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import androidx.lifecycle.createSavedStateHandle
 import my.pinged.capture.CaptureReport
+import my.pinged.charts.ChartsScreen
+import my.pinged.charts.ChartsViewModel
+import my.pinged.ledger.day.DayScreen
+import my.pinged.ledger.day.DayViewModel
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.ListenerStatus
 import my.pinged.data.Databases
@@ -63,12 +69,12 @@ import my.pinged.ledger.settings.SettingsViewModel
 import my.pinged.ledger.sources.CaptureBanner
 import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesViewModel
-import my.pinged.ledger.theme.EXPORT_EVERYTHING
-import my.pinged.ledger.theme.RESCUE
-import my.pinged.ledger.theme.ReceiptSheet
-import my.pinged.ledger.theme.Separator
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.EXPORT_EVERYTHING
+import my.pinged.ui.theme.RESCUE
+import my.pinged.ui.theme.ReceiptSheet
+import my.pinged.ui.theme.Separator
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.PingedTheme
 import my.pinged.ledger.transfer.TransferStore
 
 /**
@@ -120,10 +126,15 @@ class MainActivity : ComponentActivity() {
                 // entries and not the shown tab's.
                 val selection = rememberSaveable { mutableStateOf(Tab.Spending) }
                 val spendingStack = rememberNavBackStack(Tab.Spending.root)
+                val chartsStack = rememberNavBackStack(Tab.Charts.root)
                 val settingsStack = rememberNavBackStack(Tab.Settings.root)
-                val tabs = remember(selection, spendingStack, settingsStack) {
+                val tabs = remember(selection, spendingStack, chartsStack, settingsStack) {
                     TabStacks(
-                        mapOf(Tab.Spending to spendingStack, Tab.Settings to settingsStack),
+                        mapOf(
+                            Tab.Spending to spendingStack,
+                            Tab.Charts to chartsStack,
+                            Tab.Settings to settingsStack,
+                        ),
                         selection,
                     )
                 }
@@ -198,6 +209,34 @@ class MainActivity : ComponentActivity() {
                                     // allow-list is a row inside settings
                                     // (spec 9.5).
                                     onOpenSettings = tabs::showSettings,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            entry<Charts> {
+                                // `createSavedStateHandle` is the entry's own:
+                                // the saveable-state decorator above gives each
+                                // entry a registry, which is where the selected
+                                // month survives a process death.
+                                val charts: ChartsViewModel = viewModel {
+                                    ChartsViewModel(application, createSavedStateHandle())
+                                }
+                                ChartsScreen(
+                                    viewModel = charts,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onDayClick = { date -> tabs.push(Day(date.toString())) },
+                                )
+                            }
+                            entry<Day> { key ->
+                                // Built from the key alone, so a holder rebuilt
+                                // after a process death reads the day afresh.
+                                val day: DayViewModel = viewModel {
+                                    DayViewModel(application, LocalDate.parse(key.date))
+                                }
+                                DayScreen(
+                                    viewModel = day,
+                                    // The same expression NavDisplay's onBack
+                                    // is given; see `pop`.
+                                    onBack = tabs::pop,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }

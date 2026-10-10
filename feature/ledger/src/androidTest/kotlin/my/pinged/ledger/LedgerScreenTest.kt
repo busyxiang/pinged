@@ -39,9 +39,9 @@ import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.home.MonthSummary
 import my.pinged.ledger.home.PICKER_HEADING
 import my.pinged.ledger.home.SAVE_LABEL
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ledger.theme.Separator
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.Separator
+import my.pinged.ui.theme.PingedTheme
 import my.pinged.parse.ExclusionReason
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -1249,8 +1249,14 @@ class LedgerScreenTest {
 
     // ---- month trust, which is a fact about capture_day ------------------
 
+    /**
+     * A month after the history start with no evidence at all. The bind on
+     * the last day of the month before is what makes it one: with no history
+     * start there is no record for a day to be missing from.
+     */
     @Test fun aMonthWithNoBoundDaysAtAllIsReportedUntrustworthy() {
         freshLedger()
+        bindDays(DEAD_MONTH.minusMonths(1), listOf(DEAD_MONTH.minusMonths(1).lengthOfMonth()))
         val viewModel = ledgerViewModel()
 
         runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() } }
@@ -1265,16 +1271,10 @@ class LedgerScreenTest {
     }
 
     /**
-     * A past month, fully bound, is trustworthy -- and the month is **28 days**
-     * for a reason that is about falsification rather than about February.
-     *
-     * The mutation `elapsed = LocalDate.now().dayOfMonth` unconditionally --
-     * dropping the past-month branch -- reads a 31-day dead month bound for all
-     * 31 days as trustworthy on every possible day of any month, so a January
-     * fixture cannot see it. Twenty-eight bound days are short of today's number
-     * on the 29th, 30th and 31st, which is exactly where
-     * [aMonthOneDayShortOfFullyBoundIsReportedUntrustworthy] stops seeing it.
-     * The pair covers every day of the year.
+     * A past month, fully bound, is trustworthy. 28 days, so a rule that
+     * reads today's day-of-month for a finished month is short of it on the
+     * 29th to the 31st, where [aMonthOneDayShortOfFullyBoundIsReportedUntrustworthy]
+     * stops seeing that.
      */
     @Test fun aMonthWithEveryDayBoundIsReportedTrustworthy() {
         freshLedger()
@@ -1292,15 +1292,9 @@ class LedgerScreenTest {
     }
 
     /**
-     * A month over, missing one day, is a month with a gap.
-     *
-     * The guard on the `else now.lengthOfMonth()` half of the elapsed-day rule:
-     * a month that is not the current one has elapsed entirely, so the number of
-     * days that must be bound is its length and not today's date. Thirty of
-     * thirty-one is short by one under the rule, and long by plenty under the
-     * mutation `elapsed = LocalDate.now().dayOfMonth`, which then calls this
-     * month trustworthy on any day but the 31st -- see
-     * [aMonthWithEveryDayBoundIsReportedTrustworthy] for the 31st.
+     * A month over, missing one past day, is a month with a gap: the total
+     * still greys under the rule that stopped greying mornings. The history
+     * start is the 1st, so the missing 31st is inside the record.
      */
     @Test fun aMonthOneDayShortOfFullyBoundIsReportedUntrustworthy() {
         freshLedger()
@@ -1311,47 +1305,48 @@ class LedgerScreenTest {
 
         assertEquals(
             "A finished month with a day nobody was listening on is reported as " +
-                "trustworthy. Its elapsed length is its whole length, and the " +
-                "day that is missing is a day of spending the total does not hold",
+                "trustworthy. The day that is missing is a day of spending the " +
+                "total does not hold",
             false,
             requireNotNull(viewModel.read.value.summary).trustworthy,
         )
     }
 
     /**
-     * The current month, bound for every day that has happened, is trustworthy.
+     * **The morning greying (#64, #84).** The current month, captured on every
+     * day before today, with no `capture_day` row for today yet -- the state
+     * the first read of a day sees when the foreground's write has not landed
+     * (#82).
      *
-     * The only test in the file that reaches the `YearMonth.now() == now` half
-     * of the elapsed-day rule, and so the only one that runs the branch
-     * production always takes: `refresh()` here is called with its default
-     * argument on purpose. Its subject is the invariant the comment beside that
-     * branch states -- days that have not happened yet are not gaps -- which
-     * every `DEAD_MONTH` fixture in this file leaves untouched, because a past
-     * month takes the other branch.
+     * `refresh()` takes its default argument on purpose: this is the only
+     * test here that reads the current month and today off the clock, which
+     * is the path production always takes.
      *
-     * The mutation `elapsed = now.lengthOfMonth()` unconditionally is what this
-     * kills, on every day of a month but its last. On the last day the two are
-     * equal for the current month and equal by definition for a past one, so
-     * that mutation is not merely uncaught but unobservable, and nothing here
-     * pretends otherwise.
+     * The bind on the last day of last month puts the history start before
+     * this month, so on the 1st -- when no day of this month has passed --
+     * the month still has a record to be judged against, and the old rule
+     * (bound days >= today's day-of-month) greys it.
      */
-    @Test fun theCurrentMonthBoundForEveryDaySoFarIsReportedTrustworthy() {
+    @Test fun theCurrentMonthWithNoRowYetForTodayIsReportedTrustworthy() {
         freshLedger()
         val today = java.time.LocalDate.now()
-        bindDays(YearMonth.from(today), 1..today.dayOfMonth)
+        val lastMonth = YearMonth.from(today).minusMonths(1)
+        bindDays(lastMonth, listOf(lastMonth.lengthOfMonth()))
+        bindDays(YearMonth.from(today), 1 until today.dayOfMonth)
         val viewModel = ledgerViewModel()
 
         runBlocking { withTimeout(TIMEOUT) { viewModel.refresh().join() } }
 
         assertEquals(
-            "This month is bound for every day that has happened and is still " +
-                "labelled do-not-trust. The days left in the month are not gaps " +
-                "-- counting them greys out every total until the last of the " +
-                "month, which is the label on for so long that it means nothing",
+            "This month is captured on every day before today and is still " +
+                "labelled do-not-trust, because today has no evidence yet. That " +
+                "is the label on every ordinary morning, which teaches the user " +
+                "that it means nothing",
             true,
             requireNotNull(viewModel.read.value.summary).trustworthy,
         )
     }
+
 
     /**
      * `capture_day` rows saying the listener was bound on [days] of [month].

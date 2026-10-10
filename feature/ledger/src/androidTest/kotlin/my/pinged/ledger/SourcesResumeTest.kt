@@ -19,7 +19,7 @@ import my.pinged.ledger.settings.TransferJob
 import my.pinged.data.entity.Arrival
 import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesViewModel
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule

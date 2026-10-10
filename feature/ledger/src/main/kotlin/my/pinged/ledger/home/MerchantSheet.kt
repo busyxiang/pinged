@@ -40,14 +40,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.data.dao.MerchantChoice
 import my.pinged.data.dao.MerchantMember
-import my.pinged.ledger.theme.Body
-import my.pinged.ledger.theme.Faint
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.Muted
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.Separator
-import my.pinged.ledger.theme.Stamp
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Faint
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.Separator
+import my.pinged.ui.theme.Stamp
 import java.util.Locale
 
 /** The sheet's labels, named so the screen and its test cannot spell them differently. */

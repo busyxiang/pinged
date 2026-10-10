@@ -9,8 +9,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.Databases
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule

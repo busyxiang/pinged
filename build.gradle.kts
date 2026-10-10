@@ -11,6 +11,7 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.compose.compiler) apply false
+    alias(libs.plugins.roborazzi) apply false
 }
 
 // Lint is a gate, not a report. Configured once here rather than four times,

@@ -16,14 +16,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import my.pinged.ledger.sources.SourcesScreenContent
 import my.pinged.ledger.sources.SourcesState
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ledger.theme.PingedTheme
-import my.pinged.ledger.theme.Stamp
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.PingedTheme
+import my.pinged.ui.theme.Stamp
 import my.pinged.ledger.sources.SourceRow
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import my.pinged.ledger.theme.Separator
+import my.pinged.ui.theme.Separator
 
 /**
  * Source files here are ASCII, so the interpunct between a row's count and its

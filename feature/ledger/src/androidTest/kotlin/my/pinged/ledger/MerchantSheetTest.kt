@@ -41,7 +41,7 @@ import my.pinged.ledger.home.NAME_FIELD_TAG
 import my.pinged.ledger.home.SAVE_NAME
 import my.pinged.ledger.home.SUGGESTED
 import my.pinged.ledger.home.readMerchantSheet
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

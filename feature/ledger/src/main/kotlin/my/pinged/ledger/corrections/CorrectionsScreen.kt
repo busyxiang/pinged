@@ -29,17 +29,17 @@ import my.pinged.capture.Corrections
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.dayLabel
-import my.pinged.ledger.home.money
 import my.pinged.ledger.home.words
-import my.pinged.ledger.theme.Body
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ledger.theme.Display
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.Muted
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.Separator
-import my.pinged.ledger.theme.dottedRule
+import my.pinged.ui.money
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.Separator
+import my.pinged.ui.theme.dottedRule
 
 /**
  * Spec 5.5's reviewable list: each transaction a newer pack reads differently,
