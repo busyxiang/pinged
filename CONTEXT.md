@@ -67,3 +67,7 @@ _Avoid_: do-not-trust month, incomplete month, partial month
 **Comparable month**:
 A month that has ended, lies wholly on or after the history start, and is not untrusted. One month is set against another only when both are comparable. A month still running, a month the history start falls part-way through, and an untrusted month are never compared.
 _Avoid_: complete month, closed month, full month
+
+**Collecting**:
+The stretch before Pinged holds fourteen captured days, counted across all history from the history start. Until it ends, the app shows each day it has but makes no claim about where the money tends to go. It ends once and stays ended, unless deleting everything resets the history start. A restored history counts in full.
+_Avoid_: thin data, warm-up, onboarding period
