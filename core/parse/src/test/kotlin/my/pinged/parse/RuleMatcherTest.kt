@@ -563,7 +563,7 @@ class RuleMatcherTest {
         // makes the wordings above reach captures already on the table. Keys
         // already stored on a committed `txn` still stay as they were -- that
         // is 5.5's third mode, which is not built.
-        assertEquals(13, matcher.packVersion)
+        assertEquals(14, matcher.packVersion)
         assertEquals(7, probePack(PAYMENT_RULE).packVersion)
     }
 

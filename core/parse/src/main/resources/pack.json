@@ -1,5 +1,5 @@
 {
-  "pack_version": 13,
+  "pack_version": 14,
   "fragments": {
     "amount": "(?:RM|MYR)\\s?(?<amount>[0-9,]+(?:\\.[0-9]{1,2})?)"
   },
@@ -179,6 +179,12 @@
   ],
   "dictionary": [
     { "text": "DIGI", "category": "Telco & internet" },
-    { "text": "MY50", "category": "Transport" }
+    { "text": "MY50", "category": "Transport" },
+    { "text": "99 SPEEDMART", "category": "Groceries" },
+    { "text": "MR DIY", "category": "Shopping" },
+    { "text": "KK MART", "category": "Groceries" },
+    { "text": "GRAB", "category": "Transport" },
+    { "text": "PTPTN", "category": "Education" },
+    { "text": "RKL", "category": "Transport", "mode": "contains" }
   ]
 }

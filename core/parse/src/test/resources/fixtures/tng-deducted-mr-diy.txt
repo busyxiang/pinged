@@ -1,0 +1,14 @@
+package: my.com.tngdigital.ewallet
+title: Payment To: MR DIY SDN BHD
+expect: matched
+rule: tng-deducted-v1
+amount_sen: 890
+merchant: MR DIY SDN BHD
+direction: EXPENSE
+# A real TnG eWallet notification, from a device export, and the dictionary's
+# observed sample for MR DIY. The space before "TNG eWallet" is a no-break
+# space (U+00A0), as sent.
+# The merchant reference is masked to zeros of the same shape (CLAUDE.md,
+# fixtures). No rule reads it.
+
+MR DIY SDN BHD: RM8.90 has been deducted from your TNG eWallet. Merchant Reference No. tdw00000000000

@@ -1,0 +1,13 @@
+package: com.maybank2u.life
+title: Maybank2u: Card Transaction
+expect: matched
+rule: mae-card-spend-v1
+amount_sen: 2587
+merchant: GRAB-EC PETALING JAYA MYS
+direction: EXPENSE
+# A real MAE card notification, from a device export, and the dictionary's
+# observed sample for GRAB. The card's last four digits are masked as ****
+# (CLAUDE.md, fixtures). GRAB-EC with a city is the same for every Grab
+# service, so the entry files all of them as Transport.
+
+You've just spent RM 25.87 at GRAB-EC PETALING JAYA MYS with your MasterCard Platinum ending ****. View your receipt now.

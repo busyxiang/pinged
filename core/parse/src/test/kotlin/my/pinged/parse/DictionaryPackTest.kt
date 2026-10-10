@@ -128,6 +128,12 @@ class DictionaryPackTest {
     private val observed = listOf(
         Observed("DIGI", "mae-fpx-from-account-digi.txt", "Telco & internet"),
         Observed("MY50", "tng-travel-pass-my50.txt", "Transport"),
+        Observed("99 SPEEDMART", "tng-duitnow-paid-99-speedmart.txt", "Groceries"),
+        Observed("MR DIY", "tng-deducted-mr-diy.txt", "Shopping"),
+        Observed("KK MART", "tng-duitnow-paid-kk-mart.txt", "Groceries"),
+        Observed("GRAB", "mae-card-spend-grab.txt", "Transport"),
+        Observed("PTPTN", "mae-fpx-ptptn.txt", "Education"),
+        Observed("RKL", "tng-duitnow-paid-rkl.txt", "Transport"),
     )
 
     private fun keyOf(fixtureName: String): String {
@@ -169,6 +175,8 @@ class DictionaryPackTest {
     private val negatives = mapOf(
         "DIGI" to listOf("DIGITAL BANK", "DIGIMAX CAFE", "MY DIGI", "INDIGI"),
         "MY50" to listOf("MY500 MART", "MY5", "SMY50", "MY50X"),
+        "GRAB" to listOf("GRABBER CAFE", "MY GRAB", "AGRAB", "GRAB2GO"),
+        "RKL" to listOf("PARKLANE", "RKLX", "ARKL", "RKL2 STORE"),
     )
 
     @Test fun `every entry that is short or a common word has a negative fixture`() {

@@ -1,0 +1,12 @@
+package: my.com.tngdigital.ewallet
+title: DuitNow Payment
+expect: matched
+rule: duitnow-paid-v1
+amount_sen: 575
+merchant: 99 Speedmart.
+direction: EXPENSE
+# A real TnG eWallet notification, from a device export, and the dictionary's
+# observed sample for 99 SPEEDMART. Nine payments in that export arrived in
+# exactly this form.
+
+You have paid RM5.75 to 99 Speedmart.
