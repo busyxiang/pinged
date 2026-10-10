@@ -44,3 +44,14 @@ _Avoid_: merchant rule, auto-category
 **One-off**:
 A category the user set on a single transaction without teaching a rule. It is history the user has confirmed, so no rule ever re-files it. An Uncategorized transaction is never confirmed.
 _Avoid_: hand-set, manual category, user-edited
+
+
+### Capture
+
+**Captured day**:
+A past day on which Pinged has evidence it was watching: the listener was recorded bound at some moment that day, or the day has transactions. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
+_Avoid_: watched day, covered day, live day
+
+**Not captured**:
+A past day, after the install date, with no evidence Pinged was watching. Nothing is known about its spending, which is different from nothing spent.
+_Avoid_: missed day, gap, unbound day
