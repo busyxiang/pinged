@@ -5,7 +5,14 @@ import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.util.Log
 import java.io.IOException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+import my.pinged.data.CaptureDays
+import my.pinged.data.Databases
+import my.pinged.data.LocalDates
 
 /**
  * What the app can honestly say about capture right now.
@@ -160,12 +167,39 @@ object ListenerStatus {
      * Stage two is scheduled alongside, because a reinstall or a kill can leave
      * rows sitting at `NEW` that no later notification would schedule a run
      * for.
+     *
+     * **Today's `capture_day` row is recorded here when the listener is
+     * bound** (issue #72). A process bound since yesterday gets no
+     * `onListenerConnected` today, and `requestRebind` on a bound listener
+     * does not fire one either: `ForegroundCaptureDayTest` waited 30s and got
+     * no row. Without this, a day on which no app posted keeps no row and
+     * reads as not captured. Always `true`, never `false`: the table has no
+     * part-day state, so a `0` would hatch a day that was partly watched.
      */
     fun onAppForeground(context: Context) {
         if (!isGranted(context)) return
         requestRebind(context)
         ParseWorker.enqueue(context)
+        if (ListenerBinding.connected) {
+            val today = LocalDates.of(System.currentTimeMillis())
+            // Off the main thread: this runs from `onActivityStarted`, and the
+            // first write of a day opens the database.
+            scope.launch {
+                CaptureStorage.guarded(
+                    context,
+                    what = "Cannot record that the listener is bound today",
+                    unavailable = {},
+                ) { CaptureDays.markListenerBound(today) { Databases.captureDayDao(context) } }
+            }
+        }
     }
+
+    /** A `CoroutineExceptionHandler`, so a failure here cannot reach the default handler and kill the process. */
+    private val scope = CoroutineScope(
+        SupervisorJob() + CoroutineExceptionHandler { _, thrown ->
+            Log.e(TAG, "Recording today's binding failed", thrown)
+        },
+    )
 
     /**
      * A snapshot for the capture-stopped banner (spec 9, `Stopped`).
