@@ -300,11 +300,11 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             // are not gaps, and counting them would grey out every month
             // total until its last day.
             //
-            // Today is a known false positive -- a process bound across
-            // midnight has written no `capture_day` row yet, so the whole
-            // month greys until something posts. Erring toward the warning
-            // is the safe direction; the fix belongs where those rows are
-            // written. `CaptureDayDao.boundDayCount` carries the same note.
+            // Today can still be a false positive on the first foreground of
+            // a day: a process bound across midnight writes today's row from
+            // that foreground, launched and not awaited, so this read may run
+            // first. Erring toward the warning is the safe direction.
+            // `CaptureDayDao.boundDayCount` carries the same note.
             val elapsed = if (YearMonth.now() == now) java.time.LocalDate.now().dayOfMonth
             else now.lengthOfMonth()
             val bound = Databases.captureDayDao(context)

@@ -88,10 +88,14 @@ object CaptureDays {
      * were constant and a quiet day with a healthy listener was byte-identical to a
      * day capture was dead.
      *
+     * Also called by the foreground check (`ListenerStatus.onAppForeground`)
+     * while the listener is bound, because a process bound since yesterday
+     * gets no `onListenerConnected` today.
+     *
      * **The write first, the memo after.** Setting the memo first means a write
      * that throws is never retried; every reason this one can throw is a transient
-     * storage failure the process outlives, and the only caller fires once per
-     * bind, so one failure at boot lost the day.
+     * storage failure the process outlives, and a bind fires once, so one
+     * failure at boot lost the day.
      */
     fun markListenerBound(localDate: LocalDate, dao: () -> CaptureDayDao) {
         val generation = Databases.generation.value
@@ -138,4 +142,8 @@ object CaptureDays {
     /** Tests only: the day [markNotificationSeen] believes it has written. */
     @VisibleForTesting
     fun dayLastMarked(): LocalDate? = lastMarked?.day
+
+    /** Tests only: the day [markListenerBound] believes it has written. */
+    @VisibleForTesting
+    fun dayLastBound(): LocalDate? = lastBound?.day
 }

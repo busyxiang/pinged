@@ -45,9 +45,11 @@ interface CaptureDayDao {
     fun markSawNotification(localDate: LocalDate): Int
 
     /**
-     * `listener_bound` is a genuine state and does take a value: spec 10.2's
-     * throttled heartbeat writes what it observed, and a day that started
-     * bound and lost the grant should end up saying so.
+     * Takes a value because [recordListenerBound] does. Both production
+     * writers, `onListenerConnected` and the foreground check
+     * (`ListenerStatus.onAppForeground`), pass `true` only. The table has no
+     * part-day state, so a `false` written mid-day would hatch a day that was
+     * partly watched.
      */
     @Query("UPDATE capture_day SET listener_bound = :bound WHERE local_date = :localDate")
     fun setListenerBound(localDate: LocalDate, bound: Boolean): Int
@@ -182,15 +184,13 @@ interface CaptureDayDao {
      * that would be more honest than the wrong one -- and
      * `LedgerViewModel.refresh` derives both ends from one `YearMonth`.
      *
-     * **Today's row is written by a notification or by a rebind, and by
-     * nothing else.** `CaptureDays.markListenerBound` is called only from
-     * `onListenerConnected`, and the other writer is the row
-     * [recordNotificationSeen] creates -- so a process that stays bound across
-     * midnight writes neither, and the first foreground of a day counts today
-     * as a gap until something posts. The month greys and self-corrects at the
-     * next notification, erring toward the warning, but it will fire on
-     * ordinary mornings. Fixing it means changing when `capture_day` rows are
-     * written, which is capture-path work and not this table's.
+     * **Today's row is written by a notification, a bind, or a foreground
+     * that finds the listener bound.** A process bound since yesterday gets no
+     * bind today, so its row comes from the first notification or the first
+     * foreground, whichever is sooner. The foreground's write is launched,
+     * not awaited, and `LedgerViewModel.refresh` is a one-shot read on resume,
+     * so the first foreground of a day may still count today as a gap. That
+     * race is unmeasured (issue #72).
      */
     @Query(
         """

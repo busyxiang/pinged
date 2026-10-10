@@ -27,12 +27,12 @@ import my.pinged.data.entity.Arrival
 class PingedNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
+        ListenerBinding.connected = true
         scope.launch {
             // The system calls this only when it has bound the service, which
-            // makes it the one honest witness that capture was alive today.
-            // `capture_day.listener_bound` had no other writer, so a quiet day
-            // with a healthy listener was indistinguishable from a dead one --
-            // see CaptureDays.markListenerBound.
+            // makes it an honest witness that capture was alive today. The
+            // foreground check is the other, through ListenerBinding -- see
+            // CaptureDays.markListenerBound.
             CaptureStorage.guarded(
                 applicationContext,
                 what = "Cannot record that the listener bound",
@@ -62,9 +62,15 @@ class PingedNotificationListener : NotificationListenerService() {
     }
 
     override fun onListenerDisconnected() {
+        ListenerBinding.connected = false
         // Covers only the case where the process survives; spec 10.1's other
         // two paths are the receiver and the app-foreground call.
         ListenerStatus.requestRebind(applicationContext)
+    }
+
+    override fun onDestroy() {
+        ListenerBinding.connected = false
+        super.onDestroy()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
