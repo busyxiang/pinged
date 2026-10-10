@@ -55,3 +55,7 @@ _Avoid_: watched day, covered day, live day
 **Not captured**:
 A past day, after the install date, with no evidence Pinged was watching. Nothing is known about its spending, which is different from nothing spent.
 _Avoid_: missed day, gap, unbound day
+
+**Untrusted month**:
+A month that contains at least one not-captured day. Every figure drawn from it may be incomplete, in either direction, since a missed refund lowers a total as surely as a missed payment raises it. A month still running is not untrusted merely because it has not ended.
+_Avoid_: do-not-trust month, incomplete month, partial month
