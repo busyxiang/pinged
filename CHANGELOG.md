@@ -5,6 +5,20 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.6.0](https://github.com/busyxiang/pinged/compare/v0.5.0...v0.6.0) (2026-10-10)
+
+
+### Features
+
+* add a Charts tab with the daily rhythm grid, category bars and top merchants ([#95](https://github.com/busyxiang/pinged/issues/95)) ([34d6cb7](https://github.com/busyxiang/pinged/commit/34d6cb740648f354cfc0b5cda05efc1ab932b62e)), closes [#81](https://github.com/busyxiang/pinged/issues/81)
+* file 99 Speedmart, Mr DIY, KK Mart, Grab, PTPTN and Rapid KL from the dictionary ([#59](https://github.com/busyxiang/pinged/issues/59)) ([563273a](https://github.com/busyxiang/pinged/commit/563273a2143a37be96e88e07c59a32338b63cc52))
+
+
+### Bug Fixes
+
+* play the same transition for the back chevron as for the back gesture ([#58](https://github.com/busyxiang/pinged/issues/58)) ([3d8a226](https://github.com/busyxiang/pinged/commit/3d8a226e4228eecade27366fbc7c8a41e1617f65)), closes [#56](https://github.com/busyxiang/pinged/issues/56)
+* record today's capture_day row when a foreground finds the listener bound ([#82](https://github.com/busyxiang/pinged/issues/82)) ([69db297](https://github.com/busyxiang/pinged/commit/69db297a13e25e7ffb62b09984703ba9666343b4)), closes [#72](https://github.com/busyxiang/pinged/issues/72)
+
 ## [0.5.0](https://github.com/busyxiang/pinged/compare/v0.4.0...v0.5.0) (2026-10-09)
 
 
