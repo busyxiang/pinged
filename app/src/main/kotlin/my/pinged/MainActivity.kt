@@ -30,10 +30,13 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
+import androidx.navigationevent.NavigationEvent
 import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
@@ -124,6 +127,7 @@ class MainActivity : ComponentActivity() {
                         selection,
                     )
                 }
+                val predictivePop = defaultPredictivePopTransitionSpec<NavKey>()
                 // Insets are handled here rather than inside the screen, at
                 // the one place that owns the window. API 35+ draws every app
                 // edge-to-edge whatever the theme says about bar colours, so
@@ -158,6 +162,15 @@ class MainActivity : ComponentActivity() {
                         // trapped. `moveTaskToBack` is what a launcher Activity's
                         // unhandled Back does on Android 12+.
                         onBack = { if (!tabs.back()) moveTaskToBack(true) },
+                        // The chevron pops with `popTransitionSpec`, a cross-fade
+                        // by default, and the back gesture with
+                        // `predictivePopTransitionSpec`, a scale to 0.7 on a
+                        // spring: two looks for one move (#56). The gesture's
+                        // is the system's, so the chevron takes it. A tap has
+                        // no swipe edge, hence `EDGE_NONE`.
+                        // `BackTransitionTest` holds the two looks equal.
+                        popTransitionSpec = { predictivePop(this, NavigationEvent.EDGE_NONE) },
+                        predictivePopTransitionSpec = predictivePop,
                         // Both, spelled out, because naming this parameter
                         // replaces the default rather than adding to it --
                         // navigation3-ui 1.1.7 defaults to the saveable-state
