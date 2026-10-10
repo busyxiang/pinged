@@ -52,8 +52,12 @@ _Avoid_: hand-set, manual category, user-edited
 A past day on which Pinged has evidence it was watching: the listener was recorded bound at some moment that day, or the day has transactions. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
 _Avoid_: watched day, covered day, live day
 
+**History start**:
+The first day Pinged has any capture evidence for, whether gathered on this device or on one whose backup was restored onto it. Days before it are outside the record, not missing from it. A restore carries it over, deleting everything resets it, and a transaction the user enters by hand never moves it.
+_Avoid_: install date, first install
+
 **Not captured**:
-A past day, after the install date, with no evidence Pinged was watching. Nothing is known about its spending, which is different from nothing spent.
+A past day, on or after the history start, with no evidence Pinged was watching. Nothing is known about its spending, which is different from nothing spent.
 _Avoid_: missed day, gap, unbound day
 
 **Untrusted month**:
