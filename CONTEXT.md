@@ -49,7 +49,7 @@ _Avoid_: hand-set, manual category, user-edited
 ### Capture
 
 **Captured day**:
-A past day on which Pinged has evidence it was watching: the listener was recorded bound at some moment that day, or the day has transactions. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
+A past day on which Pinged has evidence it was watching: the listener was recorded bound at some moment that day, or the day has a transaction captured from a notification, whatever its status. A transaction the user entered by hand is not evidence. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
 _Avoid_: watched day, covered day, live day
 
 **History start**:
