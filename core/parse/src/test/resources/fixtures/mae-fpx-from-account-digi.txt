@@ -14,5 +14,7 @@ confidence: REVIEW
 # wording arrives when a card paid, and then the card spend has already been
 # counted. Spec 7.2 layer 2 pairs only across packages, and both of these
 # come from MAE, so nothing else would stop the money being counted twice.
+# The transaction reference is masked to zeros of the same shape (CLAUDE.md,
+# fixtures). No rule reads it.
 
-Successful payment of RM30.00 to DIGI TELEC on 16 Sep 2026 08:28:04. Did not perform this transaction? Please call 03-58914744. FPX ID: 2609160827250911
+Successful payment of RM30.00 to DIGI TELEC on 16 Sep 2026 08:28:04. Did not perform this transaction? Please call 03-58914744. FPX ID: 0000000000000000

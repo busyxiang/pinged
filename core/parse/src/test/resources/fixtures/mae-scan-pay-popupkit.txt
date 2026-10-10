@@ -17,5 +17,7 @@ direction: EXPENSE
 # merchant_display is recorded, not endorsed. Scan & Pay sends some merchants
 # with their spaces removed, so title-casing has one token to work with and
 # no word boundaries to restore; issue #4 is that problem.
+# The transaction reference is masked to zeros of the same shape (CLAUDE.md,
+# fixtures). No rule reads it.
 
-Successful payment of RM 16.15 to POPUPKITCHENENTERPRISE. REF: QR85598443.
+Successful payment of RM 16.15 to POPUPKITCHENENTERPRISE. REF: QR00000000.

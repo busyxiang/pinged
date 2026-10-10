@@ -14,5 +14,7 @@ exclusion_reason: CARD_PAYMENT
 # Spec 7.3 names credit-card bill payments as TRANSFER_SUSPECT. The payee
 # is the only thing marking it; only "Master Card" has been seen, so other
 # card brands are not guessed at.
+# The transaction reference is masked to zeros of the same shape (CLAUDE.md,
+# fixtures). No rule reads it.
 
-Successful payment of RM 2,262.76 to Maybank Master Card. REF:401654699M
+Successful payment of RM 2,262.76 to Maybank Master Card. REF:000000000M

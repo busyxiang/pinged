@@ -29,6 +29,16 @@ because it shares the app's process and R8 strips the classes it needs;
 `:smoke` is the only test of what ships. It installs as Touch 'n Go's package,
 so it will not install on a phone that has the real eWallet.
 
+**The repository is public, and a fixture is a real notification.** Copy
+one into `core/parse/src/test/resources/fixtures/` verbatim except for two
+masks. A card's digits become `****`. Every transaction reference (`REF:`,
+`QR…`, `FPX ID`, `Merchant Reference No.`) becomes zeros of the same shape.
+The header says what was masked. No rule reads either value, and a test that
+needs a sample sentence uses the masked one. The header also says `A real …`
+or `Constructed, not observed`; `DictionaryPackTest` reads it. Device
+exports stay outside the repository. Nothing else from them goes in a file or
+on an issue beyond counts.
+
 ## Architecture
 
 Two stages with a **durable table between them**, not a queue. The listener

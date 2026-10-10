@@ -141,7 +141,7 @@ class RuleMatcherTest {
      * that Maybank sends this sentence.
      */
     @Test fun `an unsuccessful payment is not read as money`() {
-        val text = "Unsuccessful payment of RM 16.15 to POPUPKITCHENENTERPRISE. REF: QR85598443."
+        val text = "Unsuccessful payment of RM 16.15 to POPUPKITCHENENTERPRISE. REF: QR00000000."
         val out = matcher.match(mae, "Maybank2u: Scan & Pay", text, null)
         assertEquals(
             "a failed payment matched a template and went to the ledger as an expense",
@@ -235,7 +235,7 @@ class RuleMatcherTest {
             tng,
             "Payment To: Versatile Wisdom Sdn Bhd",
             "Versatile Wisdom Sdn Bhd: RM16.80 has been deducted from your TNG eWallet. " +
-                "Merchant Reference No. T178745100726",
+                "Merchant Reference No. T000000000000",
             null,
         )
         out as MatchOutcome.Matched
@@ -258,7 +258,7 @@ class RuleMatcherTest {
             "Payment To: Versatile Wisdom Sdn Bhd",
             "Versatile Wisdom Sdn Bhd\u2026",
             "Versatile Wisdom Sdn Bhd: RM16.80 has been deducted from your TNG eWallet. " +
-                "Merchant Reference No. T178745100726",
+                "Merchant Reference No. T000000000000",
         )
         out as MatchOutcome.Matched
         assertEquals("tng-deducted-body-v1", out.ruleId)

@@ -56,10 +56,10 @@ class PackBehaviourTest {
         // TnG's Alipay+ wording, "at" where DuitNow says "to"; the field is the bound.
         "You have paid RM12.50 at STARBUCKS KLCC",
         // MAE's card bill, the QR shape with a card for a payee.
-        "Successful payment of RM12.50 to Maybank Master Card. REF:401654699M",
+        "Successful payment of RM12.50 to Maybank Master Card. REF:000000000M",
         // MAE's FPX wording, bounded by the date after the payee.
         "Successful payment of RM12.50 to STARBUCKS KLCC on 16 Sep 2026 08:28:04. " +
-            "Did not perform this transaction? Please call 03-58914744. FPX ID: 2609160827250911",
+            "Did not perform this transaction? Please call 03-58914744. FPX ID: 0000000000000000",
     )
 
     /**
