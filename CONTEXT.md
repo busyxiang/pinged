@@ -63,3 +63,7 @@ _Avoid_: missed day, gap, unbound day
 **Untrusted month**:
 A month that contains at least one not-captured day. Every figure drawn from it may be incomplete, in either direction, since a missed refund lowers a total as surely as a missed payment raises it. A month still running is not untrusted merely because it has not ended.
 _Avoid_: do-not-trust month, incomplete month, partial month
+
+**Comparable month**:
+A month that has ended, lies wholly on or after the history start, and is not untrusted. One month is set against another only when both are comparable. A month still running, a month the history start falls part-way through, and an untrusted month are never compared.
+_Avoid_: complete month, closed month, full month
