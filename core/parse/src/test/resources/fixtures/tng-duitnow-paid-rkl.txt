@@ -1,0 +1,12 @@
+package: my.com.tngdigital.ewallet
+title: DuitNow Payment
+expect: matched
+rule: duitnow-paid-v1
+amount_sen: 1100
+merchant: 279-MY-RKL-PRMOUNT.
+direction: EXPENSE
+# A real TnG eWallet notification, from a device export, and the dictionary's
+# observed sample for RKL. Rapid KL sends a code per station with RKL in the
+# middle, which is why this is the one contains entry.
+
+You have paid RM11.00 to 279-MY-RKL-PRMOUNT.

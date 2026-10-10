@@ -1,0 +1,12 @@
+package: my.com.tngdigital.ewallet
+title: DuitNow Payment
+expect: matched
+rule: duitnow-paid-v1
+amount_sen: 620
+merchant: KK Mart SEA.
+direction: EXPENSE
+# A real TnG eWallet notification, from a device export, and the dictionary's
+# observed sample for KK MART. The outlet code after the brand is why the entry
+# is a prefix, and the spec's "KK Super Mart" would have missed it.
+
+You have paid RM6.20 to KK Mart SEA.
