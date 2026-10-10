@@ -17,8 +17,9 @@ APP = ":app:connectedDebugAndroidTest"
 DATA = ":core:data:connectedDebugAndroidTest"
 CAPTURE = ":feature:capture:connectedDebugAndroidTest"
 LEDGER = ":feature:ledger:connectedDebugAndroidTest"
+CHARTS = ":feature:charts:connectedDebugAndroidTest"
 SMOKE = ":smoke:connectedMinifiedAndroidTest"
-ALL = {APP, DATA, CAPTURE, LEDGER, SMOKE}
+ALL = {APP, DATA, CAPTURE, LEDGER, CHARTS, SMOKE}
 
 
 def suites(*paths):
@@ -51,6 +52,27 @@ class AffectedSuites(unittest.TestCase):
             {LEDGER, CAPTURE, APP, SMOKE},
             suites("feature/ledger/src/main/kotlin/my/pinged/ledger/home/LedgerViewModel.kt"),
         )
+
+    def test_the_theme_reaches_every_screen_but_not_data(self):
+        # :core:ui has no suite of its own; its fonts and palette are drawn
+        # by :feature:ledger's, :feature:charts' and :app's, and R8 bundles
+        # them for :smoke.
+        self.assertEqual(
+            {LEDGER, CHARTS, CAPTURE, APP, SMOKE},
+            suites("core/ui/src/main/kotlin/my/pinged/ui/theme/Color.kt"),
+        )
+
+    def test_charts_reaches_app_but_not_the_ledger(self):
+        # :feature:charts never depends on :feature:ledger (#81), and nothing
+        # but :app depends on it.
+        self.assertEqual(
+            {CHARTS, APP, SMOKE},
+            suites("feature/charts/src/main/kotlin/my/pinged/charts/ChartsScreen.kt"),
+        )
+
+    def test_capture_reaches_charts(self):
+        # Charts reads through `CaptureStorage.guarded`.
+        self.assertIn(CHARTS, suites("feature/capture/src/main/kotlin/my/pinged/capture/CaptureStorage.kt"))
 
     def test_a_module_build_file_is_a_production_change(self):
         self.assertEqual({LEDGER, CAPTURE, APP, SMOKE}, suites("feature/ledger/build.gradle.kts"))

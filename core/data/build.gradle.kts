@@ -55,6 +55,10 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     ksp(libs.androidx.room.compiler)
 
+    // Plain JVM: `notCapturedDays` and anything else here that is a pure
+    // function of its arguments, tested without a device.
+    testImplementation(libs.junit)
+
     androidTestImplementation(libs.androidx.room.testing)
     // `runBlocking`, for the suspend surface DataStore gives IntegrityStore
     // and, through it, Wipe.everything.

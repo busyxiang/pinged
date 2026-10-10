@@ -17,7 +17,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -35,7 +35,7 @@ import org.junit.Test
  * the real screen.
  *
  * **What this suite cannot see.** The harness is a plain `Column` with the
- * 20dp [my.pinged.ledger.theme.ReceiptSheet] applies, which is enough for the
+ * 20dp [my.pinged.ui.theme.ReceiptSheet] applies, which is enough for the
  * body to compose and for its children to sit in order -- and is not the sheet
  * on the phone. It has no `verticalScroll`, no modal window and no IME, so it
  * never runs short of height -- and a child measured at zero because the sheet

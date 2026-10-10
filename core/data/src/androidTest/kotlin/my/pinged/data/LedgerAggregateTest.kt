@@ -1,6 +1,7 @@
 package my.pinged.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import my.pinged.data.dao.MonthlyTotal
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Direction
 import org.junit.After
@@ -245,6 +246,91 @@ class LedgerAggregateTest {
         assertEquals(
             "Categories were not ordered by size, so the summary names the wrong three",
             listOf(4_000L, 3_000L, 2_000L), top.map { it.netSen },
+        )
+    }
+
+    /**
+     * The Charts hero's `SPENT RMx · CAME BACK RMy` (#81, The Charts read):
+     * the month's gross out and gross back, under the month total's own
+     * predicate, so spent less came back is the net the hero prints.
+     */
+    @Test fun theHeroSplitSumsSpendingAndRefundsApartAndCountsWhatTheTotalCounts() {
+        val cat = uncategorized()
+        db.txnDao().insert(sampleTxn(occurredAt = day1, amountSen = 4_500L, categoryId = cat))
+        db.txnDao().insert(sampleTxn(occurredAt = day2, amountSen = 1_500L, categoryId = cat))
+        db.txnDao().insert(
+            sampleTxn(occurredAt = day1, amountSen = 16_500L, categoryId = cat, direction = Direction.REFUND),
+        )
+        // None of these is in the total, so none may be in either half.
+        db.txnDao().insert(
+            sampleTxn(occurredAt = day1, amountSen = 70_000L, categoryId = cat, state = TxnState.PENDING),
+        )
+        db.txnDao().insert(
+            sampleTxn(occurredAt = day1, amountSen = 80_000L, categoryId = cat, isExcluded = true),
+        )
+        db.txnDao().insert(
+            sampleTxn(
+                occurredAt = day2, amountSen = 90_000L, categoryId = cat,
+                direction = Direction.REFUND, isExcluded = true,
+            ),
+        )
+        db.txnDao().insert(sampleTxn(occurredAt = day1, amountSen = 300L, categoryId = cat, currency = "SGD"))
+        // Outside the month.
+        db.txnDao().insert(
+            sampleTxn(occurredAt = day1, amountSen = 5_000L, categoryId = cat, localDate = LocalDate(20261001)),
+        )
+
+        val split = db.txnDao().monthSplit(sept.first, sept.second).sortedBy { it.currency }
+
+        assertEquals("Currencies were summed together", listOf("MYR", "SGD"), split.map { it.currency })
+        assertEquals("The spent half is not the month's counted expenses", 6_000L, split[0].spentSen)
+        assertEquals("The came-back half is not the month's counted refunds", 16_500L, split[0].cameBackSen)
+        assertEquals("The SGD line is not the SGD expense", 300L to 0L, split[1].spentSen to split[1].cameBackSen)
+        assertEquals(
+            "Spent less came back is not the net the hero prints above it",
+            db.txnDao().monthTotals(sept.first, sept.second).single { it.currency == "MYR" }.netSen,
+            split[0].spentSen - split[0].cameBackSen,
+        )
+    }
+
+    /**
+     * The `Months` sheet's totals (#75): [TxnDao.monthTotals]' figure for
+     * every month in the span at once, one row per month and currency.
+     */
+    @Test fun theMonthlyTotalsAreEachMonthsNetPerCurrency() {
+        val cat = uncategorized()
+        // August's last day and September's first: the grouping is by month.
+        db.txnDao().insert(sampleTxn(amountSen = 2_000L, categoryId = cat, localDate = LocalDate(20260831)))
+        db.txnDao().insert(sampleTxn(amountSen = 4_500L, categoryId = cat, localDate = LocalDate(20260901)))
+        db.txnDao().insert(sampleTxn(amountSen = 1_500L, categoryId = cat, localDate = LocalDate(20260930)))
+        db.txnDao().insert(
+            sampleTxn(amountSen = 16_500L, categoryId = cat, direction = Direction.REFUND, localDate = LocalDate(20260915)),
+        )
+        db.txnDao().insert(sampleTxn(amountSen = 300L, categoryId = cat, currency = "SGD", localDate = LocalDate(20260902)))
+        // Outside the total, so in no month's figure.
+        db.txnDao().insert(
+            sampleTxn(amountSen = 70_000L, categoryId = cat, state = TxnState.PENDING, localDate = LocalDate(20260903)),
+        )
+        db.txnDao().insert(sampleTxn(amountSen = 80_000L, categoryId = cat, isExcluded = true, localDate = LocalDate(20260803)))
+        // A month with money only after the span, and one before it.
+        db.txnDao().insert(sampleTxn(amountSen = 5_000L, categoryId = cat, localDate = LocalDate(20261001)))
+        db.txnDao().insert(sampleTxn(amountSen = 6_000L, categoryId = cat, localDate = LocalDate(20260731)))
+
+        val totals = db.txnDao().monthlyTotals(LocalDate(20260801), LocalDate(20260930))
+            .sortedWith(compareBy({ it.month }, { it.currency }))
+
+        assertEquals(
+            listOf(
+                MonthlyTotal(202608, "MYR", 2_000L),
+                MonthlyTotal(202609, "MYR", -10_500L),
+                MonthlyTotal(202609, "SGD", 300L),
+            ),
+            totals,
+        )
+        assertEquals(
+            "September's row is not the month total the hero prints",
+            db.txnDao().monthTotals(sept.first, sept.second).single { it.currency == "MYR" }.netSen,
+            totals.single { it.month == 202609 && it.currency == "MYR" }.netSen,
         )
     }
 }

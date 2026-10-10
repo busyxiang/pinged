@@ -22,7 +22,7 @@ import kotlinx.coroutines.withTimeout
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import my.pinged.ledger.transfer.exportBytes
 import my.pinged.ledger.transfer.freshDatabase
 import my.pinged.ledger.transfer.seedOneOfEverything

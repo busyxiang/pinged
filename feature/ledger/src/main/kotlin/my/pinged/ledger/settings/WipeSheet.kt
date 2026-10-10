@@ -36,20 +36,20 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import my.pinged.ledger.theme.Body
-import my.pinged.ledger.theme.Border
-import my.pinged.ledger.theme.Display
-import my.pinged.ledger.theme.Faint
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.Mono
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.MonoNumerals
-import my.pinged.ledger.theme.Muted
-import my.pinged.ledger.theme.ReceiptSheet
-import my.pinged.ledger.theme.Rule
-import my.pinged.ledger.theme.Stamp
-import my.pinged.ledger.theme.dashedOutline
-import my.pinged.ledger.theme.dottedRule
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Border
+import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.Faint
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.Mono
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.MonoNumerals
+import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.ReceiptSheet
+import my.pinged.ui.theme.Rule
+import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.dashedOutline
+import my.pinged.ui.theme.dottedRule
 
 /**
  * What the delete is about to destroy, itemised -- or `null` when Pinged

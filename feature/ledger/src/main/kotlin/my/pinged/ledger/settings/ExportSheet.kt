@@ -8,11 +8,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import my.pinged.ledger.theme.Body
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.Muted
-import my.pinged.ledger.theme.Separator
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Separator
 
 /**
  * `design/Export.dc.html`, minus the half that is CSV.

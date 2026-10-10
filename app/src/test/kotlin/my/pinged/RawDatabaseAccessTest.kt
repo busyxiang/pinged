@@ -215,6 +215,12 @@ class RawDatabaseAccessTest {
         const val DIGEST_PROPERTY = "pinged.productionSources"
 
         val ALLOWED = mapOf(
+            "core/data/src/main/kotlin/my/pinged/data/Databases.kt" to Site(
+                mapOf("runInTransaction" to 1),
+                "Databases.inOneTransaction asks for the current instance and runs the " +
+                    "transaction inside Databases' own monitor, where no reset or retire " +
+                    "can close or set it aside.",
+            ),
             "core/data/src/main/kotlin/my/pinged/data/Integrity.kt" to Site(
                 mapOf("openHelper" to 1),
                 "Integrity.check runs the pragma inside Databases.aside, on an instance " +

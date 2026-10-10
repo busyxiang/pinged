@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.os.SystemClock
 import android.util.Log
+import java.util.concurrent.Callable
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -320,6 +321,30 @@ object Databases {
     fun <T> whileLive(database: PingedDatabase, block: () -> T): T = synchronized(this) {
         requireLive(database)
         block()
+    }
+
+    /**
+     * Runs [block] in one transaction on the current instance, so its
+     * statements read one snapshot: a screen's read of several aggregates
+     * that must agree (#81's Charts read, `Months`, the `Day` screen). Each
+     * statement outside a transaction is its own snapshot, and stage two
+     * commits between them.
+     *
+     * [whileLive] and `runInTransaction`, `Transfers.readable`'s pattern, with
+     * the instance asked for inside the monitor: no [retire] or [reset] can
+     * run there, so the instance is the current one and live, and nothing
+     * is refused that a retry would get through.
+     *
+     * **It serialises every other caller** for its duration -- Room 2.8 hands
+     * SQLCipher one connection (`ExportJson.writeDocument`) -- and holds this
+     * object's monitor, so a capture, stage two and a replacement for damage
+     * wait for [block]. Only short, bounded reads belong here; the caller
+     * records its own measured duration. The same deadlock rule as
+     * [whileLive]'s applies: never call this from inside a transaction.
+     */
+    fun <T> inOneTransaction(context: Context, block: (PingedDatabase) -> T): T = synchronized(this) {
+        val database = shared(context)
+        database.runInTransaction(Callable { block(database) })
     }
 
     /**

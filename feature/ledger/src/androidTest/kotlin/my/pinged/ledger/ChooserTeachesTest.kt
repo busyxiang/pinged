@@ -44,7 +44,7 @@ import my.pinged.ledger.home.alwaysNote
 import my.pinged.ledger.home.conflictLine
 import my.pinged.ledger.home.fixLine
 import my.pinged.ledger.home.mergedRuleNote
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import my.pinged.parse.ExclusionReason
 import org.junit.After
 import org.junit.Assert.assertEquals

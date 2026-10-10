@@ -75,13 +75,36 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
 }
 
 /**
- * The bottom bar's tabs, each with the destination its stack starts on.
+ * Spec 9.3's charts, the middle tab of `design/Main.dc.html`'s bottom bar.
  *
- * Two, not the artboard's three: charts (spec 9.3) has no screen, and a tab
- * that leads nowhere is worse than a missing one. It joins here when it exists.
+ * Carries no month: the selected month is in the screen's own saved state, so
+ * a restored back stack never shows a month stale (#81).
+ *
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ */
+@Serializable data object Charts : NavKey
+
+/**
+ * One day's transactions (#69), pushed on the Charts tab's own stack when a
+ * grid square is tapped, and drawn by `:feature:ledger`'s `DayScreen`.
+ *
+ * [date] is the ISO `local_date` and nothing else: the screen reads everything
+ * when it opens, so a back stack restored after a process death shows nothing
+ * stale. The selected month is not on it either; it stays in Charts' own saved
+ * state, so a visit to a day never changes it (#81).
+ *
+ * Here with the other keys rather than in `:feature:ledger`, which has no
+ * navigation dependency; see [Ledger] for why it is registered nowhere.
+ */
+@Serializable data class Day(val date: String) : NavKey
+
+/**
+ * The bottom bar's tabs, in the bar's order, each with the destination its
+ * stack starts on.
  */
 internal enum class Tab(val root: NavKey) {
     Spending(Ledger),
+    Charts(my.pinged.Charts),
     Settings(my.pinged.Settings),
 }
 

@@ -39,6 +39,9 @@ dependencies {
     // SourceCounters, CaptureReport -- is used inside this module rather than
     // re-exported. :app depends on :feature:capture directly for the banner.
     implementation(project(":feature:capture"))
+    // The theme, the fonts and the shared sheet chrome, in their own module so
+    // the Charts can use them without depending on this one (#81, Modules).
+    implementation(project(":core:ui"))
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
@@ -74,10 +77,7 @@ dependencies {
     implementation(libs.androidx.paging.compose)
     implementation(libs.androidx.datastore.preferences)
 
-    // The two things in this module that need no device: `ContrastTest`, which
-    // is arithmetic over the palette -- Colour is a value class over a ULong,
-    // so the ratios compute on the JVM in milliseconds instead of booting an
-    // emulator to multiply six numbers -- and `DayHeaderRuleTest`, which is a
+    // The JVM tests here need no device: `DayHeaderRuleTest`, for one, is a
     // comparison of two Ints over a Room entity and a value class.
     testImplementation(libs.junit)
 

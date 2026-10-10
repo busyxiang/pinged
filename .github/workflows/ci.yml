@@ -23,7 +23,17 @@ on:
     # workflow a path filter skipped stays "expected" forever, so the release
     # PR could not merge (#60). The skip is made per job instead -- see
     # `changes` -- and a job skipped by `if:` reports success.
+  # Here and not in a workflow of its own: a dispatch only reaches a workflow
+  # file that exists on the default branch, and this one does, so a PR branch
+  # can be dispatched with its own copy of the jobs below.
   workflow_dispatch:
+    inputs:
+      record-screenshots:
+        description: >-
+          Record the Roborazzi goldens on this runner and upload them as an
+          artifact, instead of running the checks and the emulator.
+        type: boolean
+        default: false
 
 # `github.ref` is refs/pull/N/merge on a PR and refs/heads/main on the only push
 # this takes, so one expression collapses both.
@@ -77,8 +87,11 @@ jobs:
     # Skipped only on a positive answer. A skipped job satisfies the ruleset,
     # and a dependent of a failed job is skipped by default, so without
     # `!cancelled()` a broken `changes` would pass every PR unbuilt.
+    #
+    # Skipped on a recording run too, which would fail verification on exactly
+    # the goldens it is there to replace.
     if: >-
-      !cancelled() &&
+      !cancelled() && !inputs.record-screenshots &&
       !(needs.changes.result == 'success' && needs.changes.outputs.release-only == 'true')
 
     steps:
@@ -105,10 +118,15 @@ jobs:
       # an AAR per library module that nothing here consumes.
       # processReleaseMainManifest is the shipped manifest the permission guard
       # reads -- a manifest merge, no dexing or signing.
-      - name: Unit tests, lint and assemble
+      #
+      # verifyRoborazziDebug because `test` alone renders the screenshots and
+      # compares nothing, so a drifted golden would pass. In the same
+      # invocation it runs testDebugUnitTest once, in verify mode, rather than
+      # a second time.
+      - name: Unit tests, screenshots, lint and assemble
         run: >-
           ./gradlew --stacktrace
-          test lint :app:assembleDebug :app:processReleaseMainManifest
+          test verifyRoborazziDebug lint :app:assembleDebug :app:processReleaseMainManifest
 
       # After the tests, which are what download the image.
       - name: Save the Robolectric SDK image
@@ -188,7 +206,7 @@ jobs:
     # branch pushes run nothing: a draft gets unit tests and lint on every push
     # and the emulator not at all, until `ready_for_review`.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && !inputs.record-screenshots) ||
       (github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.draft == false) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
@@ -344,3 +362,54 @@ jobs:
             **/build/reports/**
             **/build/outputs/androidTest-results/**
           retention-days: 14
+
+  # The goldens are recorded here, on the runner `checks` verifies them on.
+  # Roborazzi does not promise identical renders across machines, and a
+  # golden recorded on a dev machine has never been compared with one from
+  # here.
+  #
+  #   gh workflow run ci.yml --ref <branch> -f record-screenshots=true
+  #   gh run download <run-id> -n screenshots && tar xf screenshots.tar
+  #
+  # from the repository root, then commit the PNGs. Uploaded rather than
+  # pushed: this job keeps `contents: read`, and a push made with GITHUB_TOKEN
+  # would not start the PR's checks on the commit it adds.
+  record-screenshots:
+    name: Record the screenshot goldens
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.record-screenshots }}
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-android
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      # The same key as `checks`, so a recording renders against the image
+      # verification will. Restored only: `checks` on main saves it.
+      - name: Restore the Robolectric SDK image
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml', '**/robolectric.properties') }}
+          restore-keys: robolectric-
+
+      # The old goldens are deleted first, so one whose test was removed or
+      # renamed does not survive into the artifact. --no-build-cache because
+      # setup-gradle restores the build cache, and a test task taken from it
+      # renders nothing on this runner.
+      #
+      # A tar, because upload-artifact strips the matched files' common
+      # ancestor: with one module, the PNGs would arrive with no path at all.
+      - name: Record
+        run: |
+          find . -path '*/src/test/screenshots/*.png' -delete
+          ./gradlew --stacktrace --no-build-cache recordRoborazziDebug
+          find . -path '*/src/test/screenshots/*.png' -print0 | tar --null -cvf screenshots.tar -T -
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: screenshots
+          path: screenshots.tar
+          if-no-files-found: error
+          retention-days: 7

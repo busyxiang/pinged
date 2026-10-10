@@ -21,7 +21,7 @@ import my.pinged.ledger.sources.SourceRow
 import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesState
 import my.pinged.ledger.sources.SourcesViewModel
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

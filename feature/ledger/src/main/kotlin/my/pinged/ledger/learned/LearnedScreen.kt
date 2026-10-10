@@ -25,15 +25,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.ledger.settings.grouped
-import my.pinged.ledger.theme.Body
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ledger.theme.Display
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.Muted
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.Separator
-import my.pinged.ledger.theme.dottedRule
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.Separator
+import my.pinged.ui.theme.dottedRule
 
 /**
  * What the user has taught, and a way to forget it (#50). Read and delete

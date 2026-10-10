@@ -28,20 +28,20 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import my.pinged.ledger.learned.LEARNED_MERCHANTS
-import my.pinged.ledger.theme.Body
-import my.pinged.ledger.theme.Chevron
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ledger.theme.Display
-import my.pinged.ledger.theme.EXPORT_EVERYTHING
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.Muted
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.RESCUE
-import my.pinged.ledger.theme.ReceiptSheet
-import my.pinged.ledger.theme.Separator
-import my.pinged.ledger.theme.Stamp
-import my.pinged.ledger.theme.dottedRule
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.EXPORT_EVERYTHING
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.RESCUE
+import my.pinged.ui.theme.ReceiptSheet
+import my.pinged.ui.theme.Separator
+import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.dottedRule
 import my.pinged.ledger.transfer.SalvageReport
 import my.pinged.ledger.transfer.Unreadable
 
@@ -666,7 +666,7 @@ private fun SectionLabel(text: String) {
 
 /**
  * One settings row, on [Paper] with a [dottedRule] underneath rather than a
- * [my.pinged.ledger.theme.Card] fill.
+ * [my.pinged.ui.theme.Card] fill.
  *
  * `SourcesScreen` reserves `Card` for the ground *behind* its list -- the
  * gutter a lazy item cannot inherit -- and paints every row itself in

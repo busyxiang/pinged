@@ -3,6 +3,7 @@ package my.pinged.ledger.home
 import my.pinged.data.LocalDate
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.data.dao.CurrencyTotal
+import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import java.time.YearMonth
@@ -31,7 +32,10 @@ sealed interface LedgerItem {
         val txn: Txn,
         val identityKey: String? = txn.merchantKey,
         val displayName: String? = txn.merchantDisplay ?: txn.merchantRaw,
-    ) : LedgerItem
+    ) : LedgerItem {
+        /** The same row as the shared `LedgerRow` takes it. */
+        val feedRow: FeedRow get() = FeedRow(txn, identityKey, displayName)
+    }
 
     /**
      * A day heading, identified by the row it sits above as well as by its day.
@@ -79,8 +83,9 @@ internal fun dayHeaderBetween(before: LedgerItem?, after: LedgerItem?): LedgerIt
 /**
  * The pinned month summary (§9.1).
  *
- * [trustworthy] is false when the month holds days capture was not alive for
- * (§8), and the total is then greyed and labelled rather than hidden: hiding it
+ * [trustworthy] is false when the month is **untrusted**: `notCapturedDays`
+ * finds a past day on or after the history start with no capture evidence
+ * (§8, #81). The total is then greyed and labelled rather than hidden: hiding it
  * loses information, and showing it plainly asserts a number the app cannot
  * stand behind.
  *
@@ -162,6 +167,10 @@ data class LedgerRead(
      */
     val dictionaryFiling: (String?) -> Long? = NO_DICTIONARY,
 ) {
+    /** The chooser's half of this read, for `RowCategoryChooser`. */
+    val chooser: ChooserRead
+        get() = ChooserRead(categories, uncategorizedId, learnedRules, mergedIdentities, dictionaryFiling)
+
     companion object {
         /** The dictionary of a read that has not resolved one: it files nothing. */
         val NO_DICTIONARY: (String?) -> Long? = { null }

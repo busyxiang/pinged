@@ -133,8 +133,12 @@ dependencies {
     // WorkManager's Configuration.Provider because the manifest removes
     // WorkManagerInitializer, so this module uses the API directly.
     implementation(libs.androidx.work.runtime)
-    // The theme and the allow-list screen.
+    // The allow-list screen and the rest of the Ledger's screens.
     implementation(project(":feature:ledger"))
+    // The Charts tab (spec 9.3).
+    implementation(project(":feature:charts"))
+    // The theme, the fonts and the shared sheet chrome.
+    implementation(project(":core:ui"))
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)

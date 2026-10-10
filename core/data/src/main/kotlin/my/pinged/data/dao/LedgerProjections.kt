@@ -24,6 +24,17 @@ data class CurrencyTotal(
     val netSen: Long,
 )
 
+/**
+ * A period's counted money in one currency, split by direction: what went out
+ * and what came back. [spentSen] less [cameBackSen] is that period's
+ * [CurrencyTotal.netSen]. Both are unsigned.
+ */
+data class MonthSplit(
+    val currency: String,
+    val spentSen: Long,
+    val cameBackSen: Long,
+)
+
 /** A period total for one category, per currency, for the pinned summary's top three. */
 data class CategoryTotal(
     val categoryId: Long,
@@ -46,6 +57,18 @@ data class FeedRow(
     @ColumnInfo(name = "display_name") val displayName: String?,
 )
 
+/**
+ * One calendar month's net, in one currency, for the `Months` sheet (#75).
+ *
+ * @property month `yyyymm`: the packed `local_date` divided by 100, as
+ *   `TxnDao.MONTH_COUNT_SQL` groups it. `202609` is September 2026.
+ */
+data class MonthlyTotal(
+    val month: Int,
+    val currency: String,
+    val netSen: Long,
+)
+
 /** A period total for one merchant (section 8), per currency. */
 data class MerchantTotal(
     val identityKey: String,
@@ -53,4 +76,31 @@ data class MerchantTotal(
     val currency: String,
     val netSen: Long,
     val txnCount: Int,
+)
+
+/**
+ * Which line of the "not in the total" block a row falls on (#89). The SQL
+ * spells these constants as string literals and Room converts them by name, so
+ * a rename fails `NotInTotalTest` at the read rather than at compile time.
+ */
+enum class NotInTotalLine {
+    /** Committed, and excluded for a pack reason: transfer, card payment, ATM. */
+    TRANSFERS,
+
+    /** Committed, and excluded because the user said so. */
+    USER_EXCLUDED,
+
+    /** Awaiting review, whether or not it is also excluded. */
+    PENDING,
+}
+
+/**
+ * A period's money on one [line] of the "not in the total" block, in one
+ * currency. [netSen] is signed as every total is, so a refund subtracts.
+ */
+data class NotInTotal(
+    val line: NotInTotalLine,
+    val currency: String,
+    val txnCount: Int,
+    val netSen: Long,
 )

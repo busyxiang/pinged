@@ -39,20 +39,20 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
 import my.pinged.data.Databases
-import my.pinged.ledger.theme.Separator
-import my.pinged.ledger.theme.Body
-import my.pinged.ledger.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ledger.theme.Card
-import my.pinged.ledger.theme.Chevron
-import my.pinged.ledger.theme.Display
-import my.pinged.ledger.theme.Faint
-import my.pinged.ledger.theme.Ink
-import my.pinged.ledger.theme.Mono
-import my.pinged.ledger.theme.MonoLabel
-import my.pinged.ledger.theme.Muted
-import my.pinged.ledger.theme.Paper
-import my.pinged.ledger.theme.Stamp
-import my.pinged.ledger.theme.dottedRule
+import my.pinged.ui.theme.Separator
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.Card
+import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.Faint
+import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.Mono
+import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.dottedRule
 
 /**
  * Spec 9.6's allow-list, drawn from `design/Sources.dc.html`.

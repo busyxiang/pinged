@@ -45,11 +45,16 @@ interface CaptureDayDao {
     fun markSawNotification(localDate: LocalDate): Int
 
     /**
-     * Takes a value because [recordListenerBound] does. Both production
-     * writers, `onListenerConnected` and the foreground check
-     * (`ListenerStatus.onAppForeground`), pass `true` only. The table has no
-     * part-day state, so a `false` written mid-day would hatch a day that was
-     * partly watched.
+     * Takes a value because `listener_bound` is a state, not an accumulation.
+     *
+     * **No production caller passes `false`.** Both production writers go
+     * through [recordListenerBound] -- `onListenerConnected`, and the
+     * foreground check (`ListenerStatus.onAppForeground`) while the listener
+     * is bound -- and both pass `true`; no heartbeat writes this table (#63,
+     * spec 4). The table has no part-day state, so a `false` written mid-day
+     * would hatch a day that was partly watched. `listener_bound = 0` reaches
+     * a device only through an import, and [capturedDates] treats such a row
+     * as no evidence.
      */
     @Query("UPDATE capture_day SET listener_bound = :bound WHERE local_date = :localDate")
     fun setListenerBound(localDate: LocalDate, bound: Boolean): Int
@@ -163,40 +168,66 @@ interface CaptureDayDao {
     fun deleteAll(): Int
 
     /**
-     * How many days in `[from, to]` the listener was bound on.
+     * The **captured days** in `[from, to]` (#81, Capture evidence; #64,
+     * #75): every date with a row saying the listener was bound, and every
+     * date holding a transaction captured from a notification.
      *
-     * The caller compares this against the number of days the month has
-     * *elapsed*, and greys the total when they differ (§8). Two reasons the
-     * comparison is not in SQL: a day with no row at all is an uncaptured day,
-     * and SQLite has no calendar table to left-join against, so the absent days
-     * cannot be counted here; and "elapsed" depends on today, which a query
-     * would have to be told anyway.
+     * - **A capture-backed `txn` counts whatever its state**, pending,
+     *   excluded or refunded: each proves the listener was watching that day,
+     *   and a day drawn as spent must not also count as not captured.
+     * - **A hand-entered `txn` (null `raw_capture_id`) is not evidence.**
+     * - **`saw_any_notification` plays no part.** A quiet phone posts nothing
+     *   on a day it is still watching.
      *
-     * `listener_bound = 1` and not `saw_any_notification`: a genuinely quiet
-     * phone posts nothing for a day and is still being captured, so keying trust
-     * on notifications seen would grey out a correct total.
+     * Unordered, deduplicated by the `UNION`. `CaptureEvidence.capturedDates`
+     * is the calendar-day form `notCapturedDays` takes.
      *
-     * **An inverted range answers 0, which is indistinguishable from a month
-     * with no coverage at all.** `BETWEEN` is `from <= x AND x <= to` and
-     * matches nothing when `from > to`, so a caller that swapped its arguments
-     * would grey out every total and read as a total capture failure. The
-     * obligation is the caller's -- there is no answer this query could give
-     * that would be more honest than the wrong one -- and
-     * `LedgerViewModel.refresh` derives both ends from one `YearMonth`.
+     * **An inverted range answers empty**, the same answer as a range with no
+     * evidence: `BETWEEN` matches nothing when `from > to`.
      *
      * **Today's row is written by a notification, a bind, or a foreground
-     * that finds the listener bound.** A process bound since yesterday gets no
-     * bind today, so its row comes from the first notification or the first
-     * foreground, whichever is sooner. The foreground's write is launched,
-     * not awaited, and `LedgerViewModel.refresh` is a one-shot read on resume,
-     * so the first foreground of a day may still count today as a gap. That
-     * race is unmeasured (issue #72).
+     * that finds the listener bound** (#82), so a process bound since
+     * yesterday gets its row from the first notification or the first
+     * foreground, whichever is sooner. The foreground's write is launched, not
+     * awaited, and `LedgerViewModel.refresh` reads on resume, so the first
+     * read of a day can run before it lands; `notCapturedDays` never counts
+     * today, so that race cannot grey a month.
      */
-    @Query(
-        """
-        SELECT COUNT(*) FROM capture_day
-        WHERE local_date BETWEEN :from AND :to AND listener_bound = 1
-        """,
-    )
-    fun boundDayCount(from: LocalDate, to: LocalDate): Int
+    @Query(CAPTURED_DATES_SQL)
+    fun capturedDates(from: LocalDate, to: LocalDate): List<LocalDate>
+
+    /**
+     * The first day this table records, or null when it is empty: one half of
+     * the history start (`CaptureEvidence.historyStart`). `MIN` of the primary
+     * key, so one step down its B-tree.
+     */
+    @Query(EARLIEST_DATE_SQL)
+    fun earliestDate(): LocalDate?
+
+    companion object {
+        /**
+         * [capturedDates]'s query, hoisted so `QueryPlanTest` pins the plan of
+         * this string and not a copy.
+         *
+         * Measured on emulator-5554: a primary-key range on `capture_day`, and
+         * `index_txn_local_date_occurred_at`'s range on `txn`, merged for the
+         * `UNION`. The planner prefers that range to `IS NOT NULL` on
+         * `index_txn_raw_capture_id` (every captured transaction ever made)
+         * without a `+` hint, unlike `TxnDao.COUNTED`'s `state`. Measured
+         * there over 5,000 captured transactions and 740 rows: 0.30ms for a
+         * month, 1.9ms for two years.
+         */
+        const val CAPTURED_DATES_SQL =
+            """
+            SELECT local_date FROM capture_day
+            WHERE local_date BETWEEN :from AND :to AND listener_bound = 1
+            UNION
+            SELECT local_date FROM txn
+            WHERE local_date BETWEEN :from AND :to AND raw_capture_id IS NOT NULL
+            """
+
+        /** [earliestDate]'s query, hoisted for `QueryPlanTest`. */
+        const val EARLIEST_DATE_SQL = "SELECT MIN(local_date) FROM capture_day"
+    }
 }
+

@@ -26,7 +26,7 @@ import my.pinged.data.IntegrityStore
 import my.pinged.ledger.transfer.exportBytes
 import my.pinged.ledger.transfer.freshDatabase
 import my.pinged.ledger.transfer.seedOneOfEverything
-import my.pinged.ledger.theme.PingedTheme
+import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before

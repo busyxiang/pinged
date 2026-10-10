@@ -78,7 +78,11 @@ class BackStackRuleTest {
         settings: List<NavKey> = listOf(Settings),
         selected: Tab = Tab.Spending,
     ) = TabStacks(
-        mapOf(Tab.Spending to spending.toMutableList(), Tab.Settings to settings.toMutableList()),
+        mapOf(
+            Tab.Spending to spending.toMutableList(),
+            Tab.Charts to mutableListOf<NavKey>(Charts),
+            Tab.Settings to settings.toMutableList(),
+        ),
         mutableStateOf(selected),
     )
 
@@ -90,7 +94,7 @@ class BackStackRuleTest {
         assertEquals(
             "The SETTINGS tab did not put settings on top; the ledger's entries must stay " +
                 "in the list so its holder and scroll position survive the visit",
-            listOf(Ledger, Settings),
+            listOf(Ledger, Charts, Settings),
             tabs.entries,
         )
     }
@@ -103,7 +107,7 @@ class BackStackRuleTest {
 
         assertEquals(
             "Leaving settings over the allow-list and coming back did not return to the allow-list",
-            listOf(Ledger, Settings, Sources),
+            listOf(Ledger, Charts, Settings, Sources),
             tabs.entries,
         )
     }
@@ -122,7 +126,7 @@ class BackStackRuleTest {
         assertTrue(tabs.back())
 
         assertEquals(Tab.Settings, tabs.selected)
-        assertEquals(listOf(Ledger, Settings), tabs.entries)
+        assertEquals(listOf(Ledger, Charts, Settings), tabs.entries)
     }
 
     @Test fun backOnTheSpendingRootIsLeftToTheSystem() {
@@ -137,7 +141,7 @@ class BackStackRuleTest {
         assertEquals(Tab.Settings, tabs.selected)
         assertEquals(
             "The banner's button over the allow-list left the allow-list showing",
-            listOf(Ledger, Settings),
+            listOf(Ledger, Charts, Settings),
             tabs.entries,
         )
     }
