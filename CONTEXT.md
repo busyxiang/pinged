@@ -52,6 +52,14 @@ _Avoid_: hand-set, manual category, user-edited
 A transaction the user typed in for a payment Pinged did not see: cash, or a payment whose notification never arrived. The name says how it reached the ledger, not how it was paid. It is the only transaction whose amount or date the user can change, and the only one they can delete, since the user is its only witness.
 _Avoid_: cash entry, hand entry, manual transaction
 
+**Awaiting review**:
+A captured transaction Pinged is not sure of, kept out of every total until the user answers. Dismissing one keeps it as evidence of what the bank sent; it is never destroyed.
+_Avoid_: pending (the stored state), held, flagged, needs review
+
+**Review inbox**:
+The one place every transaction awaiting review is answered.
+_Avoid_: review queue, inbox (alone), corrections (that is the re-parse list)
+
 
 ### Capture
 
