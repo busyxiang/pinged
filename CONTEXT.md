@@ -46,14 +46,21 @@ A category the user set on a single transaction without teaching a rule. It is h
 _Avoid_: hand-set, manual category, user-edited
 
 
+### Transactions
+
+**Manual entry**:
+A transaction the user typed in for a payment Pinged did not see: cash, or a payment whose notification never arrived. The name says how it reached the ledger, not how it was paid. It is the only transaction whose amount or date the user can change, and the only one they can delete, since the user is its only witness.
+_Avoid_: cash entry, hand entry, manual transaction
+
+
 ### Capture
 
 **Captured day**:
-A past day on which Pinged has evidence it was watching: the listener was recorded bound at some moment that day, or the day has a transaction captured from a notification, whatever its status. A transaction the user entered by hand is not evidence. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
+A past day on which Pinged has evidence it was watching: the listener was recorded bound at some moment that day, or the day has a transaction captured from a notification, whatever its status. A manual entry is not evidence. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
 _Avoid_: watched day, covered day, live day
 
 **History start**:
-The first day Pinged has any capture evidence for, whether gathered on this device or on one whose backup was restored onto it. Days before it are outside the record, not missing from it. A restore carries it over, deleting everything resets it, and a transaction the user enters by hand never moves it.
+The first day Pinged has any capture evidence for, whether gathered on this device or on one whose backup was restored onto it. Days before it are outside the record, not missing from it. A restore carries it over, deleting everything resets it, and a manual entry never moves it.
 _Avoid_: install date, first install
 
 **Not captured**:
