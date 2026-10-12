@@ -812,6 +812,20 @@ values, and the user accepts or declines. Transactions with
 `user_edited = true` are excluded from the comparison entirely, because a
 human decision outranks any rule.
 
+**The comparison never moves a `COMMITTED` row back to awaiting review.** A
+committed row was either answered in the review inbox (section 9.2) or never
+held, so its re-read carries the stored `state` and `pending_reason` instead of
+the gate's result: amount, direction, merchant and confidence differences
+still show, a status difference never does. Without this, every accepted row
+would come back on the next pack, and every **Keep both** with it, because a
+capture's `duplicate_of_id` is kept forever. A row still awaiting review is
+re-read through the gate as before, and can move to a new reason or be
+released. The cost is that a new transfer rule does not reach rows committed
+before it, as no rule reaches history. Applying a correction is guarded on the
+`state` and `pending_reason` it was compared against: when an inbox answer has
+landed since, the write changes nothing and the capture is compared again on
+the next sweep.
+
 Section 5.9's dry run already computes this count; it is the same
 calculation, and treating a non-zero result as a reviewable diff rather than
 as a validation failure is what makes packs able to fix real damage.
@@ -1348,15 +1362,24 @@ Committing both double-counts the money; discarding one drops money
 automatically, which is exactly what this section forbids. There is no third
 option that skips the inbox.
 
-So every `DUPLICATE_SUSPECT` pair reaches the review inbox. What
-`is_authoritative` does is decide **which row is presented as the keeper**
-and which as the candidate to merge away, so the common case is one tap on a
-pre-selected correct answer rather than a decision from scratch. That is a
-real benefit and it costs no silent deletion.
+So every `DUPLICATE_SUSPECT` pair reaches the review inbox, and the card
+shows both rows side by side, each with its source, time and amount. **Merge
+rejects the row awaiting review and never touches its pair.** Only the
+later-arriving row of a pair is ever flagged, so Merge keeps the older one;
+and a manual entry, whose `occurred_at` can be later than its capture's, is
+never the one rejected. Merge writes nothing once the pair is itself
+`REJECTED`, which would leave neither counted. **Keep both** commits the row
+awaiting review.
 
-Note also that nothing in the capture milestone writes this column — there
-is no caller for it yet — so the ordering is specified and inert until the
-capture-source screen offers the toggle.
+The pair is found in this order: the transaction whose `raw_capture_id` is
+the capture's `duplicate_of_id` (layer 1's slot suspect, layer 2); else the
+closest-in-time manual entry with the same amount and direction within ten
+minutes, not `REJECTED`. A pair that is `REJECTED`, or none, makes the card a
+plain one (Accept, Not a payment).
+
+`is_authoritative` stays inert: nothing sets it, and neither which row is
+flagged nor what Merge keeps reads it. Ordering a pair by it waits for the
+capture-source screen to offer the toggle.
 
 ### 7.3 Transfers, reloads, card payments
 
@@ -1376,10 +1399,20 @@ storage at parse time because it is re-derivable from `matched_rule_id`.
 `is_excluded` and `exclusion_reason` are written only when the user answers,
 or when a persistent rule they created earlier answers for them.
 
-These land in the review inbox with a targeted prompt —
-"Reload Touch 'n Go RM100 — exclude from spending?" — offering **Exclude**,
-**Keep as expense**, or **Always exclude Touch 'n Go reloads**, the last of
-which writes a persistent rule.
+These land in the review inbox (section 9.2) with a targeted prompt --
+"Touch 'n Go eWallet RM100.00: leave out of spending?", the merchant when one
+was read, else the source -- offering **Leave out** (the default, drawn as the
+primary button), **Keep as expense** and **Not a payment**. None of them is
+offered by a swipe. Leave out writes `COMMITTED`, `is_excluded = true` and
+the suggested `exclusion_reason`, re-derived when the user answers: the
+loaded pack's rule `matched_rule_id` names, searched among the capture's
+package's rules and then the shared rules. A rule no longer in the pack, or
+one that suggests no reason, gives `TRANSFER`.
+
+**"Always exclude Touch 'n Go reloads" waits for a user-rules milestone with
+schema v3.** It needs a standing rule, and v2 can store none: `merchant_rule`
+has no kind or exclusion column, and `user_reject_rule` was never built. Until
+then every such capture is asked about.
 
 Excluded transactions are retained with `is_excluded = true`. They render
 greyed in the list and are absent from all totals and charts. They are not
@@ -1626,21 +1659,80 @@ fall mid-day; Paging's separator support inserts the day header, and the
 subtotal is joined in from the aggregate. Compact month summary
 pinned at top (total + top three categories). Each row shows merchant
 display name, category icon, source app, amount. Uncategorized rows carry a
-tappable chip. Excluded rows are greyed with an exclusion badge. Search and
+tappable chip. Excluded rows are greyed with an exclusion badge. A row
+awaiting review carries `AWAITING REVIEW · <reason>`, and tapping that badge
+opens the review inbox (section 9.2) scrolled to the row's own card. Search and
 filter by category, source, date range, amount range.
 
 ### 9.2 Review inbox
 
-Badge-counted entry point. One card per `PENDING` transaction showing:
+Badge-counted entry point. The ways in: a row pinned to the top of the
+Spending list, `N AWAITING REVIEW`, shown only when N > 0; the count on the
+Spending tab while another tab is selected; a held row's own badge (section
+9.1), which opens on that row's card; Charts' *N awaiting review* line; and
+the Day screen's heading, whose *M awaiting review* opens on that day's
+first held row. N counts every `PENDING` row, all currencies. The inbox is
+pushed on the current tab's stack, so back returns to wherever it was opened
+from.
 
-- the **raw notification text verbatim**, always
-- the app's interpretation (amount, merchant, category, source)
-- the specific reason it needs review
+One card per `PENDING` transaction showing:
+
+- the **raw notification text verbatim**, always: the capture's `title`, then
+  its `big_text` if present, else its `text`
+- the app's interpretation (amount, merchant, category, source, time)
+- the specific reason it needs review, as one sentence stating the fact
+  ("Over RM500.00.", "No merchant in the notification.")
 - two or three large actions appropriate to the reason
 
-Swipe to accept; "accept all" for batch clearing. Showing the raw text is a
-hard requirement — the user must always be able to see exactly what the app
-saw.
+The actions per reason:
+
+| Reason | Actions |
+|---|---|
+| `RULE_REVIEW`, `MERCHANT_MISSING`, `OVER_THRESHOLD` | **Accept**, **Not a payment** |
+| `TRANSFER_SUSPECT` | **Leave out** (the default), **Keep as expense**, **Not a payment** |
+| `DUPLICATE_SUSPECT` | **Merge**, **Keep both**; a card whose pair cannot be found is a plain card |
+
+Each answer is one targeted `UPDATE` of `state`, `pending_reason`,
+`is_excluded` and `exclusion_reason`, guarded on the row still being
+`PENDING` for the reason the card showed; an answer that writes nothing
+re-reads the card. Accept, Keep as expense and Keep both write `COMMITTED`;
+Not a payment and Merge write `REJECTED` on the row awaiting review (Merge
+never touches its pair); Leave out writes `COMMITTED`, excluded, with the
+rule's suggested exclusion reason (section 7.3). None of them touches
+`confidence`, `category_id`, `user_edited` or the merchant columns.
+A rejected capture is kept as evidence and stops appearing.
+
+**One answer settles a row.** Only the highest-precedence reason is stored
+(section 7.1), so a row that also tripped a lower gate -- an RM800 reload
+with no merchant -- is asked once, about the reason stored, and the lower
+ones are not asked separately.
+
+**Every answer can be undone.** After an answer a snackbar names it and
+offers **Undo**; it stays until it is used or the next answer replaces it, so
+it covers the last answer only (the whole of it, for a batch). An answer that
+writes nothing, because its row moved, is not a later answer and leaves the
+offer as it was. Undo puts each
+row the answer wrote back to `PENDING` with the reason it had, and
+`is_excluded = false`, `exclusion_reason = null`, guarded on the state the
+answer wrote. The rows return in one transaction, all or none: when another
+writer has changed any of them since, nothing is written and the cards re-read.
+A restore or a delete-everything withdraws the offer as it starts: Undo names
+rows by id, and a restore keeps ids while a delete restarts them, so an id
+afterwards may name another payment that the guard cannot tell apart.
+
+**Swipe to accept, and Accept all, on plain cards only** (rule review,
+merchant missing, over threshold, by the stored reason). A swipe right is
+Accept. **Accept N · RM<net>** accepts every plain card in one transaction,
+each row guarded as a single answer is (a row that moved is skipped), with no
+confirm dialog and one Undo for the whole batch. The net is payments less
+refunds; when any plain card is not in ringgit the label drops the sum and
+reads **Accept N**. Transfer and duplicate cards never swipe and are never in
+the batch, so a batch cannot count a reload as spending or a payment twice;
+the button is absent when no card is plain. Both are disabled with the
+answers while a restore or a delete-everything runs.
+
+Showing the raw text is a hard requirement — the user must always be able to
+see exactly what the app saw.
 
 ### 9.3 Charts
 
@@ -1709,7 +1801,8 @@ negative or not captured opens that day; a blank cell does nothing. (#69)
   arithmetic. When the day has any row on its "not in the total" aggregate
   (N + M > 0, whatever the lines net to, so an excluded purchase and a
   pending refund of one amount do not hide each other):
-  `RM… kept out of the total: N excluded, M pending`. A not-captured day
+  `RM… kept out of the total: N excluded, M awaiting review`, the last part
+  opening the review inbox (section 9.2) on the day's first held row. A not-captured day
   (past, on or after the history start, no evidence: the rule a month greys
   by) adds "Pinged was not watching on this day. These are only the
   transactions it has from elsewhere." With no rows that line stands alone,

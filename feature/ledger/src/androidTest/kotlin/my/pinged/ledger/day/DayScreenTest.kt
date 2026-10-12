@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
@@ -73,10 +74,10 @@ class DayScreenTest {
 
         screen()
 
-        waitFor("RM107.00 kept out of the total: 1 excluded, 1 pending", "The kept-out line is not drawn")
+        waitFor("RM107.00 kept out of the total: 1 excluded, 1 awaiting review", "The kept-out line is not drawn")
         assertEquals("The day's counted total is not the one counted row", 1, count("RM50.00"))
         assertEquals("The excluded row is not badged", 1, count("NOT SPENDING · TRANSFER"))
-        assertEquals("The pending row is not badged with its reason", 1, count("PENDING · RULE REVIEW"))
+        assertEquals("The pending row is not badged with its reason", 1, count("AWAITING REVIEW · RULE REVIEW"))
         assertEquals("Another day's row is on this day", 0, count("9.99"))
         assertEquals("A captured day said Pinged was not watching", 0, count(NOT_WATCHING))
         assertEquals(
@@ -85,6 +86,27 @@ class DayScreenTest {
             decorationOf("100.00"),
         )
         assertTrue("A counted amount is struck through", decorationOf("50.00") != TextDecoration.LineThrough)
+    }
+
+    @Test fun theAwaitingReviewPartOfTheHeadingOpensTheInboxOnTheDaysFirstHeldRow() {
+        val dao = seed(bindDay = true)
+        dao.insert(txn(5_000L))
+        dao.insert(txn(700L, hour = 9, state = TxnState.PENDING, pendingReason = PendingReason.RULE_REVIEW))
+        val latest = dao.insert(txn(800L, hour = 18, state = TxnState.PENDING, pendingReason = PendingReason.OVER_THRESHOLD))
+        val opened = mutableListOf<Long?>()
+
+        screen(onOpenReview = { opened += it })
+
+        val line = "RM15.00 kept out of the total: 0 excluded, 2 awaiting review"
+        waitFor(line, "The kept-out line is not drawn")
+        compose.onNodeWithText(line).performScrollTo().performFirstLinkClick()
+
+        assertEquals(
+            "The heading's '2 awaiting review' did not open the inbox on the day's first held row, " +
+                "the latest, which is the day's first card there too",
+            listOf(latest),
+            opened,
+        )
     }
 
     @Test fun theKeptOutLineIsAbsentWhenNothingIsKeptOut() {
@@ -185,6 +207,7 @@ class DayScreenTest {
     private fun txn(
         amountSen: Long,
         day: LocalDate = DAY,
+        hour: Int = 12,
         categoryId: Long = 1L,
         state: TxnState = TxnState.COMMITTED,
         pendingReason: PendingReason? = null,
@@ -192,7 +215,7 @@ class DayScreenTest {
         exclusionReason: ExclusionReason? = null,
     ) = ledgerTxn(
         amountSen = amountSen,
-        occurredAt = day.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+        occurredAt = day.atTime(hour, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
         categoryId = categoryId,
         state = state,
         pendingReason = pendingReason,
@@ -200,9 +223,9 @@ class DayScreenTest {
         exclusionReason = exclusionReason,
     )
 
-    private fun screen() {
+    private fun screen(onOpenReview: (focus: Long?) -> Unit = {}) {
         val viewModel = DayViewModel(context.applicationContext as Application, DAY)
-        compose.setContent { PingedTheme { DayScreen(viewModel, onBack = {}) } }
+        compose.setContent { PingedTheme { DayScreen(viewModel, onBack = {}, onOpenReview = onOpenReview) } }
     }
 
     private fun count(text: String): Int = compose.onAllNodes(hasText(text)).fetchSemanticsNodes().size

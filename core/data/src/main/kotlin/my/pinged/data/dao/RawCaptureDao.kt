@@ -521,15 +521,18 @@ interface RawCaptureDao : MerchantDecisions {
      * The parse-derived columns of one transaction, rewritten from a re-read.
      *
      * Targeted, naming its columns: category, note, exclusion and the dates
-     * are not the parse's to change. Guarded on `user_edited = 0`, so an edit
-     * that lands between the comparison and the write is never overwritten.
+     * are not the parse's to change. Guarded on `user_edited = 0` and on the
+     * [comparedState] and [comparedReason] the re-read was compared against,
+     * so neither an edit nor a review-inbox answer that lands between the
+     * comparison and the write is ever overwritten (spec 5.5).
      */
     @Query(
         "UPDATE txn SET amount_sen = :amountSen, direction = :direction, " +
             "merchant_raw = :merchantRaw, merchant_display = :merchantDisplay, " +
             "merchant_key = :merchantKey, confidence = :confidence, state = :state, " +
             "pending_reason = :pendingReason, updated_at = :updatedAt " +
-            "WHERE id = :id AND user_edited = 0"
+            "WHERE id = :id AND user_edited = 0 " +
+            "AND state = :comparedState AND pending_reason IS :comparedReason"
     )
     fun rewriteParsedFields(
         id: Long,
@@ -542,6 +545,8 @@ interface RawCaptureDao : MerchantDecisions {
         state: TxnState,
         pendingReason: PendingReason?,
         updatedAt: Long,
+        comparedState: TxnState,
+        comparedReason: PendingReason?,
     ): Int
 
     /**
@@ -550,9 +555,10 @@ interface RawCaptureDao : MerchantDecisions {
      * ([MerchantDecisions.carry]), and the capture marked compared, as one unit.
      *
      * Returns false, having written nothing, when the transaction has been
-     * edited. A capture another writer has answered since [fromPackVersion]
-     * was read throws [StaleCaptureException], which rolls the transaction's
-     * rewrite back with it -- so of two answers to one re-read, one lands.
+     * edited, or its state or reason is no longer [compared]'s. A capture
+     * another writer has answered since [fromPackVersion] was read throws
+     * [StaleCaptureException], which rolls the transaction's rewrite back with
+     * it -- so of two answers to one re-read, one lands.
      */
     @Transaction
     fun applyReread(
@@ -560,6 +566,7 @@ interface RawCaptureDao : MerchantDecisions {
         fromPackVersion: Int,
         toPackVersion: Int,
         ruleId: String,
+        compared: Txn,
         corrected: Txn,
     ): Boolean {
         corrected.requireStorable()
@@ -575,6 +582,8 @@ interface RawCaptureDao : MerchantDecisions {
             state = corrected.state,
             pendingReason = corrected.pendingReason,
             updatedAt = corrected.updatedAt,
+            comparedState = compared.state,
+            comparedReason = compared.pendingReason,
         )
         if (rewritten == 0) return false
         val key = corrected.merchantKey

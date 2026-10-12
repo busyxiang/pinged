@@ -20,8 +20,18 @@ import org.junit.Test
 class CorrectionsScreenTest {
     @get:Rule val compose = createComposeRule()
 
-    /** Issue #20's card bill, as pack 12 offers it. */
-    private val cardBill = ledgerTxn(amountSen = 226_276L, id = 7L).copy(merchantDisplay = "Maybank Master Card").let { before ->
+    /**
+     * Issue #20's card bill, as pack 12 offers it: held by pack 11 as a
+     * payment over RM500, and held by pack 12's card-bill rule as a transfer.
+     * Held both times, because a re-read carries a committed row's state and
+     * reason (§5.5), so only a row still awaiting review shows a STATUS change.
+     */
+    private val cardBill = ledgerTxn(
+        amountSen = 226_276L,
+        state = TxnState.PENDING,
+        pendingReason = PendingReason.OVER_THRESHOLD,
+        id = 7L,
+    ).copy(merchantDisplay = "Maybank Master Card").let { before ->
         Corrections.Correction(
             captureId = 70L,
             fromPackVersion = 11,
@@ -42,7 +52,7 @@ class CorrectionsScreenTest {
             )
         }
         compose.onNodeWithText("Maybank Master Card · RM2,262.76").assertIsDisplayed()
-        compose.onNodeWithText("COUNTED").assertIsDisplayed()
+        compose.onNodeWithText("PENDING · OVER THRESHOLD").assertIsDisplayed()
         compose.onNodeWithText("→ PENDING · TRANSFER SUSPECT").assertIsDisplayed()
         compose.onNodeWithText("AMOUNT").assertDoesNotExist()
     }

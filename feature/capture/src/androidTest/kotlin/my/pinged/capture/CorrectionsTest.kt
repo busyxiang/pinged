@@ -145,12 +145,13 @@ class CorrectionsTest {
     }
 
     /**
-     * Issue #20's card bill. Accepted, it lands in review as a transfer
-     * suspect (spec 7.3) and is **not** excluded: that is the user's answer
-     * to give, as it is on a first read.
+     * Issue #20's card bill, committed as spending before the card-bill rule
+     * existed. Spec 5.5: a committed row is not sent back to review, so the
+     * re-read offers the rule's confidence but not its transfer hold, and the
+     * row stays counted. A new rule reaches no committed history.
      */
     @Test
-    fun anAcceptedCardBillLandsInReviewAndIsNotExcluded() {
+    fun aCommittedCardBillIsOfferedItsConfidenceButStaysCommitted() {
         val id = readByAnOlderPack(
             text = "Successful payment of RM 2,262.76 to Maybank Master Card. REF:$marker",
             title = "Maybank2u: Payments",
@@ -161,14 +162,14 @@ class CorrectionsTest {
         )
         sweep()
         val correction = offered(id)
-        assertNotNull("The card bill read as spending was not offered", correction)
-        assertTrue("The re-read did not change the status", Corrections.Field.STATUS in correction!!.changed)
+        assertNotNull("The card bill's new confidence was not offered", correction)
+        assertEquals(setOf(Corrections.Field.CONFIDENCE), correction!!.changed)
 
         assertTrue(Corrections.accept(captures, correction))
         val after = txn(id)
-        assertEquals(TxnState.PENDING, after.state)
-        assertEquals(PendingReason.TRANSFER_SUSPECT, after.pendingReason)
-        assertFalse("Accepting excluded the row, which is spec 7.3's prompt to answer", after.isExcluded)
+        assertEquals(TxnState.COMMITTED, after.state)
+        assertNull(after.pendingReason)
+        assertFalse(after.isExcluded)
         assertEquals("mae-card-bill-v1", captures.byId(id).matchedRuleId)
     }
 
@@ -589,6 +590,128 @@ class CorrectionsTest {
         assertEquals("The second run re-read what the first had offered", 1, second.compared)
         assertFalse(second.more)
         assertEquals(ids.toSet(), pending()!!.map { it.captureId }.filter { it in ids }.toSet())
+    }
+
+    private fun sql(statement: String, vararg args: Any) =
+        Databases.shared(context).openHelper.writableDatabase.execSQL(statement, args)
+
+    /**
+     * A KEDAI payment of RM650.00: over spec 7.1's threshold, so the current
+     * pack's gate holds it as `OVER_THRESHOLD`. [olderRead] is how the
+     * transaction stood before this pack.
+     */
+    private fun overThreshold(n: Int, at: Long, olderRead: String): Long =
+        readByAnOlderPack(
+            text = "Payment of RM650.00 to KEDAI $n $marker successful",
+            title = "Touch 'n Go $marker",
+            at = at,
+            oldRule = "tng-payment-v1",
+            olderRead = olderRead,
+        )
+
+    /**
+     * Spec 5.5: a committed row is the user's answer (or nothing ever asked),
+     * and the re-read's gate saying `OVER_THRESHOLD` must not send it back.
+     */
+    @Test
+    fun aCommittedRowTheGateWouldHoldRaisesNoCorrection() {
+        val id = overThreshold(20, base - 900L, olderRead = "state = 'COMMITTED', pending_reason = NULL")
+
+        assertEquals("A committed row was offered back to review", 0, sweep().offered)
+        assertNull(offered(id))
+        assertEquals(TxnState.COMMITTED, txn(id).state)
+        assertEquals(packVersion, captures.byId(id).packVersion)
+    }
+
+    /**
+     * A **Keep both** row: its capture's `duplicate_of_id` stays set forever,
+     * and a new pack must not re-raise the duplicate on it.
+     */
+    @Test
+    fun aCommittedDuplicateRaisesNoStatusDifference() {
+        val (other, _) = warung(base - 850L)
+        val id = readByAnOlderPack(
+            text = "Payment of RM21.00 to KEDAI $marker successful",
+            title = "Touch 'n Go $marker",
+            at = base - 800L,
+            oldRule = "tng-payment-v1",
+            olderRead = "state = 'COMMITTED', pending_reason = NULL",
+        )
+        sql("UPDATE raw_capture SET duplicate_of_id = ? WHERE id = ?", other, id)
+
+        assertEquals("A kept duplicate was offered back to review", 0, sweep().offered)
+        assertNull(offered(id))
+        assertEquals(TxnState.COMMITTED, txn(id).state)
+        assertNull(txn(id).pendingReason)
+    }
+
+    /** Amount, merchant and confidence still reach a committed row; its status does not move. */
+    @Test
+    fun aCommittedRowsWrongAmountIsOfferedAndStaysCommitted() {
+        val id = overThreshold(21, base - 750L, olderRead = "state = 'COMMITTED', pending_reason = NULL, amount_sen = 650")
+
+        sweep()
+        val correction = offered(id)
+        assertNotNull("The wrong amount was not offered", correction)
+        assertEquals(setOf(Corrections.Field.AMOUNT), correction!!.changed)
+
+        assertTrue(Corrections.accept(captures, correction))
+        val after = txn(id)
+        assertEquals(65_000L, after.amountSen)
+        assertEquals("Accepting an amount sent a committed row back to review", TxnState.COMMITTED, after.state)
+        assertNull(after.pendingReason)
+    }
+
+    /** A row still awaiting review re-reads as before: to a new reason. */
+    @Test
+    fun aPendingRowStillMovesToANewReason() {
+        val id = overThreshold(22, base - 700L, olderRead = "state = 'PENDING', pending_reason = 'MERCHANT_MISSING'")
+
+        sweep()
+        val correction = offered(id)
+        assertNotNull("A pending row's new reason was not offered", correction)
+        assertEquals(setOf(Corrections.Field.STATUS), correction!!.changed)
+        assertTrue(Corrections.accept(captures, correction))
+        assertEquals(TxnState.PENDING, txn(id).state)
+        assertEquals(PendingReason.OVER_THRESHOLD, txn(id).pendingReason)
+    }
+
+    /** ...or released, when the current pack no longer holds it. */
+    @Test
+    fun aPendingRowStillReleases() {
+        val id = readByAnOlderPack(
+            text = "Payment of RM23.00 to KEDAI $marker successful",
+            title = "Touch 'n Go $marker",
+            at = base - 650L,
+            oldRule = "tng-payment-v1",
+            olderRead = "state = 'PENDING', pending_reason = 'RULE_REVIEW', confidence = 'REVIEW'",
+        )
+
+        sweep()
+        val correction = offered(id)
+        assertNotNull("A pending row's release was not offered", correction)
+        assertTrue("The release was not a STATUS difference", Corrections.Field.STATUS in correction!!.changed)
+        assertTrue(Corrections.accept(captures, correction))
+        assertEquals(TxnState.COMMITTED, txn(id).state)
+        assertNull(txn(id).pendingReason)
+    }
+
+    /**
+     * Compared while awaiting review, answered in the inbox before the
+     * correction is applied: the answer stands, and the capture is compared
+     * again on the next sweep.
+     */
+    @Test
+    fun aCorrectionComparedWhilePendingWritesNothingOnceTheRowIsAnswered() {
+        val id = overThreshold(23, base - 600L, olderRead = "state = 'PENDING', pending_reason = 'MERCHANT_MISSING'")
+        sweep()
+        val correction = offered(id)!!
+        sql("UPDATE txn SET state = 'COMMITTED', pending_reason = NULL WHERE id = ?", correction.before.id)
+
+        assertFalse("A correction was applied over an answer given after it was compared", Corrections.accept(captures, correction))
+        assertEquals(TxnState.COMMITTED, txn(id).state)
+        assertNull(txn(id).pendingReason)
+        assertEquals(packVersion - 1, captures.byId(id).packVersion)
     }
 
     /** Through the real worker, which is the only thing that runs the sweep in production. */

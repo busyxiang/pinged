@@ -104,3 +104,22 @@ data class NotInTotal(
     val txnCount: Int,
     val netSen: Long,
 )
+
+/**
+ * One card of §9.2's review inbox: the transaction awaiting review, what the
+ * list would call it, and the notification it was read from, verbatim.
+ *
+ * @property displayName spec 6.4's resolved name, as [FeedRow.displayName].
+ * @property categoryName the name of the row's `category_id`.
+ * @property captureTitle the capture's `title`; null for a manual entry,
+ *   which has no capture, and the capture fields with it.
+ */
+data class ReviewRow(
+    @Embedded val txn: Txn,
+    @ColumnInfo(name = "identity_key") val identityKey: String?,
+    @ColumnInfo(name = "display_name") val displayName: String?,
+    @ColumnInfo(name = "category_name") val categoryName: String?,
+    @ColumnInfo(name = "capture_title") val captureTitle: String?,
+    @ColumnInfo(name = "capture_text") val captureText: String?,
+    @ColumnInfo(name = "capture_big_text") val captureBigText: String?,
+)

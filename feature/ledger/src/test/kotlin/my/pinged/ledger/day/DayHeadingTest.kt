@@ -40,7 +40,8 @@ class DayHeadingTest {
             ),
             notWatching = false,
         )
-        assertEquals("RM17.50 kept out of the total: 3 excluded, 1 pending", heading.keptOut)
+        assertEquals("RM17.50 kept out of the total: 3 excluded, 1 awaiting review", heading.keptOut)
+        assertEquals("The part that opens the inbox is not the review count", "1 awaiting review", heading.awaitingReview)
     }
 
     @Test fun theKeptOutLineIsAbsentWhenNothingIsKeptOut() {
@@ -60,7 +61,7 @@ class DayHeadingTest {
         )
         assertEquals(
             "Two rows kept out of the total hid each other because their money cancels",
-            "RM0.00 kept out of the total: 1 excluded, 1 pending",
+            "RM0.00 kept out of the total: 1 excluded, 1 awaiting review",
             heading.keptOut,
         )
     }
@@ -72,7 +73,8 @@ class DayHeadingTest {
             listOf(NotInTotal(NotInTotalLine.TRANSFERS, MYR, txnCount = 1, netSen = -2_000L)),
             notWatching = false,
         )
-        assertEquals("\u2212RM20.00 kept out of the total: 1 excluded, 0 pending", heading.keptOut)
+        assertEquals("\u2212RM20.00 kept out of the total: 1 excluded, 0 awaiting review", heading.keptOut)
+        assertNull("A day with nothing awaiting review offers to open the inbox", heading.awaitingReview)
     }
 
     @Test fun aDayNotWatchedWithNoRowsSaysOnlyThat() {

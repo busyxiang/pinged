@@ -21,7 +21,7 @@ class NotInTotalTest {
             listOf(
                 KeptOut("Transfers, left out", "450.00"),
                 KeptOut("You excluded", "3,880.00"),
-                KeptOut("4 awaiting review", "212.40"),
+                KeptOut("4 awaiting review", "212.40", opensReview = true),
             ),
             lines,
         )
@@ -47,7 +47,7 @@ class NotInTotalTest {
         assertEquals(
             listOf(
                 KeptOut("You excluded", "40.00"),
-                KeptOut("2 awaiting review", "0.00"),
+                KeptOut("2 awaiting review", "0.00", opensReview = true),
             ),
             lines,
         )

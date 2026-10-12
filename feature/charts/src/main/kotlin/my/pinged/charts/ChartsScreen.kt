@@ -48,10 +48,17 @@ import java.time.LocalDate
  * ledger while the screen shows (`Databases.rewrites`), as the Ledger does.
  *
  * [onDayClick] is a grid square's tap (#69); `:app` routes it to `Day`, which
- * this module knows nothing of (#70).
+ * this module knows nothing of (#70). [onOpenReview] is the "not in the
+ * total" block's *N awaiting review* line, which `:app` routes to the review
+ * inbox the same way.
  */
 @Composable
-fun ChartsScreen(viewModel: ChartsViewModel, modifier: Modifier = Modifier, onDayClick: (LocalDate) -> Unit = {}) {
+fun ChartsScreen(
+    viewModel: ChartsViewModel,
+    modifier: Modifier = Modifier,
+    onDayClick: (LocalDate) -> Unit = {},
+    onOpenReview: () -> Unit = {},
+) {
     val rewrites by Databases.rewrites.collectAsState()
     LifecycleResumeEffect(viewModel, rewrites) {
         viewModel.refresh()
@@ -69,6 +76,7 @@ fun ChartsScreen(viewModel: ChartsViewModel, modifier: Modifier = Modifier, onDa
         modifier = modifier,
         onDayClick = onDayClick,
         onOpenMonths = { monthsOpen = true },
+        onOpenReview = onOpenReview,
     )
     if (monthsOpen) {
         MonthsSheetHost(
@@ -98,6 +106,7 @@ internal fun ChartsScreenContent(
     modifier: Modifier = Modifier,
     onDayClick: (LocalDate) -> Unit = {},
     onOpenMonths: () -> Unit = {},
+    onOpenReview: () -> Unit = {},
 ) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         when {
@@ -132,7 +141,7 @@ internal fun ChartsScreenContent(
                 if (view.collecting.open) CategoryBars(view.bars) else CollectingBlock(view.collecting)
                 // Top merchants (#92), behind the same gate.
                 if (view.collecting.open) TopMerchants(view.merchants)
-                NotInTotalBlock(view.notInTotal)
+                NotInTotalBlock(view.notInTotal, onOpenReview = onOpenReview)
             }
         }
     }

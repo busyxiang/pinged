@@ -1,6 +1,7 @@
 package my.pinged.capture
 
 import my.pinged.data.Databases
+import my.pinged.parse.ExclusionReason
 import my.pinged.parse.PackLoader
 import my.pinged.parse.ParsePack
 import my.pinged.parse.RuleMatcher
@@ -81,6 +82,24 @@ object Graph {
                     "UNMATCHED, which looks like a rule gap rather than a " +
                     "packaging failure.",
             )
+
+    /**
+     * The exclusion reason spec 7.3 suggests for a capture of
+     * [sourcePackage] matched by [matchedRuleId], from the pack loaded now:
+     * the review inbox's Leave out writes it.
+     *
+     * Re-derived because parsing does not store it (`ParsePass`'s KDoc).
+     * `TRANSFER` when the rule is no longer in the pack, suggests nothing, or
+     * there is no capture to ask about (#109): every rule that holds a row as
+     * a transfer suspect is one of the money-moving kinds, and `TRANSFER` is
+     * the general one.
+     */
+    fun suggestedExclusion(sourcePackage: String?, matchedRuleId: String?): ExclusionReason =
+        if (sourcePackage == null || matchedRuleId == null) {
+            ExclusionReason.TRANSFER
+        } else {
+            ruleMatcher().suggestedExclusion(sourcePackage, matchedRuleId) ?: ExclusionReason.TRANSFER
+        }
 
     /**
      * Tests only: drops everything memoized here and in [Databases].

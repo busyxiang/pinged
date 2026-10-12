@@ -115,6 +115,11 @@ class DedupTest {
             455L + 455L,
             firstTxn.amountSen + secondTxn.amountSen,
         )
+        assertEquals(
+            "The review inbox's duplicate card does not pair the slot suspect with the payment it repeats",
+            firstTxn.id,
+            Databases.txnDao(context).duplicatePair(secondTxn)?.id,
+        )
     }
 
     /**
@@ -370,6 +375,11 @@ class DedupTest {
         // "duplicates are never dropped automatically".
         assertEquals(ParseStatus.MATCHED, captures.byId(bank).parseStatus)
         assertEquals(wallet, captures.byId(bank).duplicateOfId)
+        assertEquals(
+            "The review inbox's duplicate card does not pair the layer-2 suspect with the other app's payment",
+            walletTxn.id,
+            Databases.txnDao(context).duplicatePair(bankTxn)?.id,
+        )
     }
 
     /**

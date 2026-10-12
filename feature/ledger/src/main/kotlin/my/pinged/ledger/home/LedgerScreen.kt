@@ -42,12 +42,14 @@ import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
+import my.pinged.ledger.review.awaitingReviewLabel
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
 import my.pinged.ui.monthName
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
+import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
@@ -87,6 +89,7 @@ fun LedgerScreen(
     viewModel: LedgerViewModel,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenReview: (focus: Long?) -> Unit = {},
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
     val read by viewModel.read.collectAsState()
@@ -123,6 +126,7 @@ fun LedgerScreen(
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
         onOpenSettings = onOpenSettings,
+        onOpenReview = onOpenReview,
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
             MerchantActions(
@@ -158,6 +162,7 @@ internal fun LedgerScreenContent(
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
+    onOpenReview: (focus: Long?) -> Unit = {},
 ) {
     // Which row is being categorized, hoisted to here rather than held in the
     // row: a `ModalBottomSheet` emitted from inside the `LazyColumn` scrolls
@@ -203,6 +208,8 @@ internal fun LedgerScreenContent(
                 hasChoices = choices.isNotEmpty(),
                 onCategorize = { txnId -> categorizing = txnId },
                 onOpenMerchant = merchantActions.open,
+                awaitingReview = read.awaitingReview,
+                onOpenReview = onOpenReview,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -367,7 +374,7 @@ private fun Empty(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-/** The pinned summary, then the rows. */
+/** The pinned summary, then the rows, under the awaiting-review row when there is one. */
 @Composable
 private fun Feed(
     items: LazyPagingItems<LedgerItem>,
@@ -378,6 +385,8 @@ private fun Feed(
     hasChoices: Boolean,
     onCategorize: (Long) -> Unit,
     onOpenMerchant: (ownKey: String) -> Unit,
+    awaitingReview: Int,
+    onOpenReview: (focus: Long?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
@@ -393,6 +402,14 @@ private fun Feed(
                 .background(Card)
                 .fillMaxWidth(),
         ) {
+            // A sticky header, so it stays at the top of the list as it
+            // scrolls, and inside the list's scroll so a test can reach it
+            // with `performScrollTo`. Absent at zero, so it is never noise.
+            if (awaitingReview > 0) {
+                stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
+                    AwaitingReviewRow(awaitingReview) { onOpenReview(null) }
+                }
+            }
             items(
                 count = items.itemCount,
                 // The header's key names the row it sits above as well as its
@@ -425,10 +442,31 @@ private fun Feed(
                         canCategorize = hasChoices,
                         onCategorize = onCategorize,
                         onOpenMerchant = onOpenMerchant,
+                        onOpenReview = onOpenReview,
                     )
                 }
             }
         }
+    }
+}
+
+/**
+ * §9.2's way in: `N AWAITING REVIEW`, in the accent, opening the inbox. The
+ * count is every currency's, so it can name payments no total here mentions.
+ */
+@Composable
+private fun AwaitingReviewRow(count: Int, onOpen: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Paper)
+            .clickable(role = Role.Button, onClick = onOpen)
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(awaitingReviewLabel(count), style = MonoLabel, color = Stamp, modifier = Modifier.weight(1f))
+        Chevron(pointsRight = true, size = 17.dp, strokeWidth = 1.7.dp, tint = Stamp)
     }
 }
 

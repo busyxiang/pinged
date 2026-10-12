@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.paging.LoadState
 import androidx.paging.LoadStates
 import androidx.paging.PagingData
@@ -411,7 +412,7 @@ class LedgerScreenTest {
         val now = System.currentTimeMillis()
         val food = categoryId(FOOD)
         dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = now, categoryId = food))
-        dao.insert(
+        val held = dao.insert(
             ledgerTxn(
                 amountSen = 7_000L,
                 occurredAt = now,
@@ -420,27 +421,26 @@ class LedgerScreenTest {
                 pendingReason = PendingReason.RULE_REVIEW,
             ),
         )
+        val opened = mutableListOf<Long?>()
 
-        screen()
+        screen(onOpenReview = { opened += it })
 
         compose.waitForText(
             "70.00",
-            "The PENDING row is not on screen at all, and there is no review " +
-                "inbox in this milestone for it to be anywhere else",
+            "The PENDING row is not on screen at all: the inbox answers it, but " +
+                "the list is where the user sees that the money moved",
         )
         assertEquals(
-            "The PENDING row is not on screen. There is no review inbox in this " +
-                "milestone, so a row this list hides is money in the database " +
-                "and nowhere at all",
+            "The PENDING row is not on screen. A row this list hides is money " +
+                "the user can only find by opening the inbox",
             1,
             compose.onAllNodesWithTextSafely("70.00"),
         )
         assertEquals(
             "The PENDING row is on screen without saying why it needs review, " +
-                "which is the only place the user can see which of 7.1's gates " +
-                "fired",
+                "so the list does not say which of 7.1's gates fired",
             1,
-            compose.onAllNodesWithTextSafely("PENDING · RULE REVIEW"),
+            compose.onAllNodesWithTextSafely("AWAITING REVIEW · RULE REVIEW"),
         )
         assertEquals(
             "The month total counted the PENDING row: 8's rule is that pending " +
@@ -448,6 +448,53 @@ class LedgerScreenTest {
                 "of what counts here",
             1,
             compose.onAllNodesWithTextSafely("RM50.00"),
+        )
+
+        compose.onNodeWithText("AWAITING REVIEW · RULE REVIEW").performScrollTo().performClick()
+        assertEquals(
+            "The held row's badge did not open the inbox on that row's card (9.1)",
+            listOf(held),
+            opened,
+        )
+    }
+
+    @Test fun thePinnedRowCountsWhatAwaitsReviewAndOpensTheInbox() {
+        val dao = freshLedger()
+        val now = System.currentTimeMillis()
+        dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = now))
+        dao.insert(ledgerTxn(amountSen = 7_000L, occurredAt = now, state = TxnState.PENDING, pendingReason = PendingReason.RULE_REVIEW))
+        // Not in this month and not in ringgit: the count is every currency's
+        // and every month's, so it can name money no total here mentions.
+        dao.insert(
+            ledgerTxn(amountSen = 9_000L, occurredAt = 1_000L, state = TxnState.PENDING, pendingReason = PendingReason.OVER_THRESHOLD)
+                .copy(currency = "USD"),
+        )
+        val opened = mutableListOf<Long?>()
+
+        screen(onOpenReview = { opened += it })
+
+        compose.waitForText(
+            "2 AWAITING REVIEW",
+            "Two payments await review and the list does not say so, so the " +
+                "month total is short with nothing saying why",
+        )
+        compose.onNodeWithText("2 AWAITING REVIEW").performScrollTo().performClick()
+        assertEquals("Tapping the pinned row did not open the inbox at its top", listOf<Long?>(null), opened)
+    }
+
+    @Test fun thePinnedRowIsAbsentWhenNothingAwaitsReview() {
+        val dao = freshLedger()
+        val now = System.currentTimeMillis()
+        dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = now))
+        dao.insert(ledgerTxn(amountSen = 7_000L, occurredAt = now, state = TxnState.REJECTED))
+
+        screen()
+
+        compose.waitForText("RM50.00", "The month total never landed, so the pinned row's absence proves nothing")
+        assertEquals(
+            "The pinned row is drawn with nothing awaiting review, which is noise",
+            emptyList<String>(),
+            compose.allText().filter { it.endsWith("AWAITING REVIEW") },
         )
     }
 
@@ -1374,10 +1421,10 @@ class LedgerScreenTest {
         LedgerViewModel(context.applicationContext as Application)
 
     /** The whole screen, reading the real database through its own holder. */
-    private fun screen() {
+    private fun screen(onOpenReview: (focus: Long?) -> Unit = {}) {
         val viewModel = ledgerViewModel()
         compose.setContent {
-            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
+            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}, onOpenReview = onOpenReview) }
         }
     }
 

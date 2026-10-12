@@ -5,8 +5,12 @@ import my.pinged.data.dao.NotInTotalLine
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.ringgitDigits
 
-/** One line of the "not in the total" block: its label and its signed amount. */
-data class KeptOut(val label: String, val amount: String)
+/**
+ * One line of the "not in the total" block: its label and its signed amount.
+ * [opensReview] marks the awaiting-review line, which opens the review inbox
+ * (§9.2's ways in).
+ */
+data class KeptOut(val label: String, val amount: String, val opensReview: Boolean = false)
 
 /**
  * The "not in the total" block (#89; #81, "Not in the total" block): the MYR
@@ -29,7 +33,7 @@ fun notInTotal(rows: List<NotInTotal>): List<KeptOut> {
             add(KeptOut("You excluded", ringgitDigits(it.netSen)))
         }
         ringgit[NotInTotalLine.PENDING]?.takeIf { it.txnCount != 0 }?.let {
-            add(KeptOut("${it.txnCount} awaiting review", ringgitDigits(it.netSen)))
+            add(KeptOut("${it.txnCount} awaiting review", ringgitDigits(it.netSen), opensReview = true))
         }
     }
 }

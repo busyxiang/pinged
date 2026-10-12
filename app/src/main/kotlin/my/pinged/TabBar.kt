@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,6 +24,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
@@ -40,9 +44,13 @@ import my.pinged.ui.theme.dottedRule
  *
  * Each tab is 62dp high as drawn, which is over the 48dp target and so needs no
  * padding to be tappable.
+ *
+ * [awaitingReview] is drawn on Spending as a count beside its label while
+ * another tab is selected and the count is above zero (§9.2's ways in). On
+ * Spending itself the list's pinned row says it already.
  */
 @Composable
-internal fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
+internal fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier, awaitingReview: Int = 0) {
     Row(
         modifier
             .fillMaxWidth()
@@ -73,7 +81,21 @@ internal fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier =
                         modifier = Modifier.size(20.dp),
                         colorFilter = ColorFilter.tint(colour),
                     )
-                    Text(tab.label, style = MonoLabel, color = colour)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(tab.label, style = MonoLabel, color = colour)
+                        if (tab == Tab.Spending && !on && awaitingReview > 0) {
+                            Text(
+                                awaitingReview.toString(),
+                                style = MonoLabel,
+                                color = Paper,
+                                modifier = Modifier
+                                    .padding(start = 5.dp)
+                                    .background(Stamp, RoundedCornerShape(2.dp))
+                                    .padding(horizontal = 4.dp)
+                                    .semantics { contentDescription = spendingBadgeDescription(awaitingReview) },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -111,3 +133,6 @@ private fun icon(path: String): ImageVector =
             strokeLineCap = StrokeCap.Round,
         )
         .build()
+
+/** What the Spending tab's count says to a screen reader, and what a test finds it by. */
+internal fun spendingBadgeDescription(count: Int): String = "$count awaiting review"
