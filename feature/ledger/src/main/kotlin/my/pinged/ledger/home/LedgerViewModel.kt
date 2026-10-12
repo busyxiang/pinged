@@ -314,6 +314,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 learnedRules = chooser.learnedRules,
                 mergedIdentities = chooser.mergedIdentities,
                 dictionaryFiling = chooser.dictionaryFiling,
+                awaitingReview = txns.awaitingReviewCount(),
             )
             _storageUnavailable.value = false
         }

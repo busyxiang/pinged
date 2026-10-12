@@ -7,6 +7,12 @@ import my.pinged.parse.Confidence
 import my.pinged.parse.Kind
 
 /**
+ * Spec 7.1's RM500, the one threshold there is (spec #109 keeps it fixed):
+ * public so the review inbox's "Over RM500" is this number and not a copy.
+ */
+const val REVIEW_THRESHOLD_SEN: Long = 50_000L
+
+/**
  * Spec 7.1's gate: five conditions, any of which sends a transaction to the
  * review inbox instead of the ledger.
  *
@@ -32,7 +38,7 @@ internal object ConfidenceGate {
      * parameter of [decide] rather than a literal inside it, so the store, when it
      * exists, has one call site to fill.
      */
-    const val DEFAULT_THRESHOLD_SEN: Long = 50_000L // RM500.00
+    const val DEFAULT_THRESHOLD_SEN: Long = REVIEW_THRESHOLD_SEN
 
     /** The gate's answer: a state, and the reason if that state is PENDING. */
     data class Decision(val state: TxnState, val reason: PendingReason?)

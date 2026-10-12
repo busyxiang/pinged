@@ -102,6 +102,26 @@ class RuleMatcher(pack: ParsePack) {
             )
         }
 
+    /** For [suggestedExclusion]: a capture of a package the pack no longer lists still meets these. */
+    private val sharedRules: List<TemplateRule> = pack.sharedRules
+
+    /**
+     * The `exclusion_reason` spec 7.3's rule [ruleId] suggests for a capture
+     * of [pkg], or null when the pack has no such rule or it suggests none.
+     *
+     * The review inbox's Leave out re-derives it here because parsing does
+     * not store it (spec 7.3). [pkg]'s own rules are asked first, because an
+     * id is unique within a package and not across packages; then the shared
+     * rules, which every package's captures meet.
+     *
+     * A lookup rather than the index: what the matcher prepared is its own.
+     */
+    fun suggestedExclusion(pkg: String, ruleId: String): ExclusionReason? {
+        val rule = byPackage[pkg]?.rules?.firstOrNull { it.rule.id == ruleId }?.rule
+            ?: sharedRules.firstOrNull { it.id == ruleId }
+        return rule?.exclusionReason
+    }
+
     fun match(pkg: String, title: String?, text: String?, bigText: String?): MatchOutcome {
         if (title == null && text == null && bigText == null) return MatchOutcome.NoExtras
         val pp = byPackage[pkg] ?: return MatchOutcome.Unmatched

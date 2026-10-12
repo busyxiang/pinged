@@ -73,6 +73,7 @@ internal fun LedgerRow(
     canCategorize: Boolean,
     onCategorize: (txnId: Long) -> Unit,
     onOpenMerchant: (ownKey: String) -> Unit,
+    onOpenReview: (txnId: Long) -> Unit,
 ) {
     val txn = row.txn
     TxnRow(
@@ -86,6 +87,7 @@ internal fun LedgerRow(
         } else {
             null
         },
+        onOpenReview = { onOpenReview(txn.id) },
     )
 }
 
@@ -188,6 +190,7 @@ private fun TxnRow(
     category: Category?,
     uncategorized: Boolean,
     onCategorize: (() -> Unit)?,
+    onOpenReview: () -> Unit,
 ) {
     val excluded = txn.isExcluded
     Row(
@@ -258,10 +261,10 @@ private fun TxnRow(
                 }
             }
             if (txn.state == TxnState.PENDING) {
-                // The reason, not just the state: §9.2 will offer actions per
-                // reason, and until it exists this is the only place the user
-                // can see which of §7.1's gates fired.
-                Badge("PENDING" + Separator + words(txn.pendingReason?.name), Stamp)
+                // The reason, not just the state, so the row says which of
+                // §7.1's gates fired before the inbox is opened. §9.1: the
+                // badge is a way into the inbox, on this row's card.
+                Badge(awaitingReviewBadge(txn.pendingReason?.name), Stamp, onClick = onOpenReview)
             }
             if (excluded) {
                 Badge("NOT SPENDING" + Separator + words(txn.exclusionReason?.name), Muted)
@@ -394,19 +397,40 @@ private fun RowIcon(excluded: Boolean, uncategorized: Boolean, iconKey: String?)
     }
 }
 
-/** A framed mono label, in the colour of whatever it is qualifying. */
+/**
+ * A framed mono label, in the colour of whatever it is qualifying.
+ *
+ * With [onClick] it is a button. The 6dp above and below is inside the click
+ * and outside the frame, as [CategoryChip]'s is: a bigger target, the same
+ * drawing. 24dp tall in all, WCAG 2.5.8's AA minimum.
+ */
 @Composable
-private fun Badge(text: String, color: Color) {
+private fun Badge(text: String, color: Color, onClick: (() -> Unit)? = null) {
     Text(
         text,
         style = MonoLabel,
         color = color,
         modifier = Modifier
-            .padding(top = 4.dp)
+            .then(
+                if (onClick == null) {
+                    Modifier.padding(top = 4.dp)
+                } else {
+                    Modifier
+                        .clip(RoundedCornerShape(2.dp))
+                        .clickable(role = Role.Button, onClickLabel = OPEN_REVIEW, onClick = onClick)
+                        .padding(vertical = 6.dp)
+                },
+            )
             .border(1.dp, color, RoundedCornerShape(2.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
+
+/** A held row's badge, §9.1: `AWAITING REVIEW · RULE REVIEW`. */
+internal fun awaitingReviewBadge(reason: String?): String = "AWAITING REVIEW" + Separator + words(reason)
+
+/** What a held row's badge says it does, to a screen reader. */
+internal const val OPEN_REVIEW = "Open the review inbox"
 
 /** `RULE_REVIEW` as "RULE REVIEW", and an absent reason as nothing. */
 internal fun words(name: String?): String = name?.replace('_', ' ') ?: "REASON NOT RECORDED"

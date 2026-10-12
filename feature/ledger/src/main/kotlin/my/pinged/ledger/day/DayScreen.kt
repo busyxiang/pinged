@@ -26,16 +26,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.Databases
 import my.pinged.data.dao.RetroPreview
+import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.MerchantSheetState
+import my.pinged.ledger.home.OPEN_REVIEW
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ui.theme.Body
@@ -60,9 +68,18 @@ import java.time.LocalDate
  *
  * Re-read on each foreground and when a delete or restore rewrites the ledger,
  * as the Ledger's aggregates are.
+ *
+ * [onOpenReview] is the review inbox (§9.2), from a row's badge with that
+ * row's id or from the heading's *M awaiting review* with the day's first
+ * held row's; `:app` routes it, as it does Charts' `onDayClick`.
  */
 @Composable
-fun DayScreen(viewModel: DayViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun DayScreen(
+    viewModel: DayViewModel,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenReview: (focus: Long?) -> Unit = {},
+) {
     val rewrites by Databases.rewrites.collectAsState()
     LifecycleResumeEffect(viewModel, rewrites) {
         viewModel.refresh()
@@ -76,6 +93,7 @@ fun DayScreen(viewModel: DayViewModel, onBack: () -> Unit, modifier: Modifier = 
         read = read,
         storageUnavailable = unavailable,
         onBack = onBack,
+        onOpenReview = onOpenReview,
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
         merchantSheet = merchantSheet,
@@ -101,6 +119,7 @@ internal fun DayScreenContent(
     onBack: () -> Unit,
     onAssign: (txnId: Long, categoryId: Long, teach: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenReview: (focus: Long?) -> Unit = {},
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
@@ -119,7 +138,11 @@ internal fun DayScreenContent(
             storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
             read == null -> item { Notice("READING", Muted) }
             else -> {
-                item { Heading(read.heading) }
+                // The day's first held row in the order drawn, which is
+                // the inbox's newest-first order too, so the inbox opens on
+                // the first of this day's cards.
+                val firstHeld = read.rows.firstOrNull { it.txn.state == TxnState.PENDING }?.txn?.id
+                item { Heading(read.heading) { onOpenReview(firstHeld) } }
                 items(read.rows, key = { "txn-" + it.txn.id }) { row ->
                     Box(Modifier.background(Card)) {
                         LedgerRow(
@@ -129,6 +152,7 @@ internal fun DayScreenContent(
                             canCategorize = choices.isNotEmpty(),
                             onCategorize = { categorizing = it },
                             onOpenMerchant = merchantActions.open,
+                            onOpenReview = onOpenReview,
                         )
                     }
                 }
@@ -182,13 +206,31 @@ private fun Header(date: LocalDate, onBack: () -> Unit) {
 /**
  * The total, the kept-out line and the not-watching line, each only when
  * [DayHeading] has it.
+ *
+ * The kept-out line's *M awaiting review* is a link, in the accent, that
+ * calls [onOpenReview] (§9.1); the rest of the line is not, so a tap on
+ * "excluded" opens nothing.
  */
 @Composable
-private fun Heading(heading: DayHeading) {
+private fun Heading(heading: DayHeading, onOpenReview: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 16.dp)) {
         heading.total?.let { Text(it, style = TotalStyle, color = Ink) }
-        heading.keptOut?.let {
-            Text(it, fontFamily = Body, fontSize = 14.sp, lineHeight = 20.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+        heading.keptOut?.let { line ->
+            val review = heading.awaitingReview
+            val text = buildAnnotatedString {
+                if (review == null) {
+                    append(line)
+                } else {
+                    append(line.removeSuffix(review))
+                    withLink(
+                        LinkAnnotation.Clickable(
+                            tag = OPEN_REVIEW,
+                            styles = TextLinkStyles(SpanStyle(color = Stamp, textDecoration = TextDecoration.Underline)),
+                        ) { onOpenReview() },
+                    ) { append(review) }
+                }
+            }
+            Text(text, fontFamily = Body, fontSize = 14.sp, lineHeight = 20.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
         }
         if (heading.notWatching) {
             Text(

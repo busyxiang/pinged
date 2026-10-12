@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -63,6 +64,8 @@ import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
 import my.pinged.ledger.learned.LearnedScreen
 import my.pinged.ledger.learned.LearnedViewModel
+import my.pinged.ledger.review.ReviewScreen
+import my.pinged.ledger.review.ReviewViewModel
 import my.pinged.ledger.settings.SettingsScreen
 import my.pinged.ledger.settings.SettingsState
 import my.pinged.ledger.settings.SettingsViewModel
@@ -108,6 +111,12 @@ class MainActivity : ComponentActivity() {
      */
     private val ledgerDamaged = MutableStateFlow(false)
 
+    /**
+     * Counts foregrounds, so the tab bar's count of what awaits review is read
+     * again on each; see where it is collected.
+     */
+    private val resumes = MutableStateFlow(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         watchTheBackup()
@@ -118,6 +127,7 @@ class MainActivity : ComponentActivity() {
         val settingsFactory = AppViewModelFactory(application, ::SettingsViewModel)
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
+        val reviewFactory = AppViewModelFactory(application, ::ReviewViewModel)
         setContent {
             PingedTheme {
                 // One saved stack per tab and the tab showing, kept in saved
@@ -209,7 +219,19 @@ class MainActivity : ComponentActivity() {
                                     // allow-list is a row inside settings
                                     // (spec 9.5).
                                     onOpenSettings = tabs::showSettings,
+                                    // The pinned row passes null, a row's
+                                    // badge its own id.
+                                    onOpenReview = { focus -> tabs.push(Review(focus)) },
                                     modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            entry<Review> { key ->
+                                val review: ReviewViewModel = viewModel(factory = reviewFactory)
+                                ReviewScreen(
+                                    viewModel = review,
+                                    onBack = tabs::pop,
+                                    modifier = Modifier.fillMaxSize(),
+                                    focus = key.focus,
                                 )
                             }
                             entry<Charts> {
@@ -224,6 +246,7 @@ class MainActivity : ComponentActivity() {
                                     viewModel = charts,
                                     modifier = Modifier.fillMaxSize(),
                                     onDayClick = { date -> tabs.push(Day(date.toString())) },
+                                    onOpenReview = { tabs.push(Review()) },
                                 )
                             }
                             entry<Day> { key ->
@@ -238,6 +261,7 @@ class MainActivity : ComponentActivity() {
                                     // is given; see `pop`.
                                     onBack = tabs::pop,
                                     modifier = Modifier.fillMaxSize(),
+                                    onOpenReview = { focus -> tabs.push(Review(focus)) },
                                 )
                             }
                             entry<Settings> {
@@ -351,7 +375,19 @@ class MainActivity : ComponentActivity() {
                         },
                         modifier = Modifier.weight(1f),
                     )
-                    if (tabs.showsBar) TabBar(selected = tabs.selected, onSelect = tabs::select)
+                    // Read again whenever the bar may be about to show it: a
+                    // tab change, a return to a tab's root (the inbox pushed
+                    // over Charts answers cards), a foreground and a ledger
+                    // rewrite. A capture landing while Charts shows is not
+                    // counted until one of those; nothing here watches `txn`.
+                    val resumed by resumes.collectAsState()
+                    val rewrites by Databases.rewrites.collectAsState()
+                    val awaitingReview by produceState(0, tabs.selected, tabs.showsBar, resumed, rewrites) {
+                        value = readAwaitingReview(applicationContext)
+                    }
+                    if (tabs.showsBar) {
+                        TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = awaitingReview)
+                    }
                 }
             }
         }
@@ -359,6 +395,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        resumes.value++
         // Spec 10.1's third rebind path is installed process-wide by
         // ForegroundRebinder; this is the screen catching up with whatever the
         // user did in Settings while it was away.
@@ -763,6 +800,25 @@ internal suspend fun readExportOverdue(
 } catch (thrown: IOException) {
     Log.w(TAG, "Could not read the last export for the backup nudge", thrown)
     false
+}
+
+/**
+ * How many transactions await review, for the Spending tab's count (§9.2's
+ * ways in), or 0 when the ledger cannot be read: a count the bar cannot back
+ * is not drawn, and the storage banner already says why. Never throws, for
+ * the reason [readExportOverdue] gives.
+ */
+internal suspend fun readAwaitingReview(context: Context): Int = try {
+    CaptureStorage.guarded(
+        context,
+        what = "The ledger cannot be read",
+        unavailable = { 0 },
+        damageStopsCapture = false,
+    ) { Databases.txnDao(context).awaitingReviewCount() }
+} catch (thrown: SQLException) {
+    // As [readExportOverdue]'s: a count past a reset's lease wait.
+    Log.w(TAG, "Could not count what awaits review", thrown)
+    0
 }
 
 /** The backup nudge's second button; see [NUDGE_DISMISSED_FOR_MILLIS]. */

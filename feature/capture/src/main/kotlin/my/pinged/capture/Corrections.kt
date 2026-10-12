@@ -24,7 +24,7 @@ import my.pinged.parse.RuleMatcher
  *
  * [Reparse] only ever creates transactions, so without this a pack that fixes
  * a wrong read fixes the next capture and none of the ones already counted: a
- * RM2,262.76 card bill read as spending stays in every total.
+ * RM32.00 payment stored as RM0.32 stays wrong in every total.
  *
  * **Nothing the user can see changes without their answer.** A re-read that
  * differs in [Field] is left for [pending] to offer, and lands only through
@@ -120,12 +120,13 @@ object Corrections {
     /**
      * What the current pack would write for [capture], against [txn].
      *
-     * Spec 7.1's gate runs again on the new outcome, so a row re-read as a
-     * card bill lands `PENDING` with `TRANSFER_SUSPECT` and is not excluded:
-     * the exclusion is spec 7.3's prompt to answer, as it is on first read.
-     * The duplicate condition is not re-derived -- layer two is a judgement
-     * against the ledger as it stood -- but carried: a row that was a suspect
-     * stays one.
+     * Spec 7.1's gate runs again on the new outcome for a row still `PENDING`,
+     * which can move to a new reason or be released. A `COMMITTED` row keeps
+     * its state and reason (spec 5.5), so STATUS is never its difference; a
+     * card bill read as spending before the rule existed stays counted, as any
+     * rule does not reach history. The duplicate condition is not re-derived
+     * -- layer two is a judgement against the ledger as it stood -- but
+     * carried: a pending row that was a suspect stays one.
      */
     internal fun reread(capture: RawCapture, txn: Txn, matcher: RuleMatcher, now: Long): Reread {
         // A REJECTED transaction is somebody's decision that it is not money.
@@ -149,6 +150,11 @@ object Corrections {
             duplicateSuspect = capture.duplicateOfId != null ||
                 txn.pendingReason == PendingReason.DUPLICATE_SUSPECT,
         )
+        // Spec 5.5: a COMMITTED row is never sent back to awaiting review. It
+        // was answered in the inbox, or never held, and either way the gate's
+        // verdict on it is settled; a Keep both row's `duplicate_of_id` stays
+        // set forever and would otherwise re-raise the duplicate every pack.
+        val committed = txn.state == TxnState.COMMITTED
         val after = txn.copy(
             amountSen = outcome.amountSen,
             direction = outcome.direction,
@@ -156,8 +162,8 @@ object Corrections {
             merchantDisplay = merchant.display,
             merchantKey = merchant.key,
             confidence = outcome.confidence,
-            state = decision.state,
-            pendingReason = decision.reason,
+            state = if (committed) txn.state else decision.state,
+            pendingReason = if (committed) txn.pendingReason else decision.reason,
             updatedAt = now,
         )
         val changed = buildSet {
@@ -268,6 +274,7 @@ object Corrections {
                         fromPackVersion = capture.packVersion,
                         toPackVersion = matcher.packVersion,
                         ruleId = reread.ruleId,
+                        compared = txn,
                         corrected = reread.after,
                     )
                 } catch (_: StaleCaptureException) {
@@ -305,7 +312,8 @@ object Corrections {
 
     /**
      * Writes [correction]'s new values. False, having written nothing, when
-     * the transaction has been edited or the capture answered since it was read.
+     * the transaction has been edited, answered in the review inbox, or the
+     * capture answered, since it was read.
      */
     fun accept(captures: RawCaptureDao, correction: Correction, now: Long = System.currentTimeMillis()): Boolean =
         try {
@@ -314,6 +322,7 @@ object Corrections {
                 fromPackVersion = correction.fromPackVersion,
                 toPackVersion = correction.toPackVersion,
                 ruleId = correction.ruleId,
+                compared = correction.before,
                 corrected = correction.after.copy(updatedAt = now),
             )
         } catch (_: StaleCaptureException) {

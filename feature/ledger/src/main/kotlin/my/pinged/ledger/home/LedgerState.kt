@@ -166,6 +166,11 @@ data class LedgerRead(
      * instance and `LedgerRead`'s equality does not churn.
      */
     val dictionaryFiling: (String?) -> Long? = NO_DICTIONARY,
+    /**
+     * How many transactions are awaiting review, every currency: the pinned
+     * `N AWAITING REVIEW` row, drawn only above zero (§9.2).
+     */
+    val awaitingReview: Int = 0,
 ) {
     /** The chooser's half of this read, for `RowCategoryChooser`. */
     val chooser: ChooserRead

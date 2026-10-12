@@ -99,6 +99,20 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
 @Serializable data class Day(val date: String) : NavKey
 
 /**
+ * Spec 9.2's review inbox (#109), pushed on the **current** tab's stack, so
+ * back returns to wherever the user came from, and drawn by
+ * `:feature:ledger`'s `ReviewScreen`.
+ *
+ * [focus] is the `txn.id` whose card to scroll to, or null to open at the
+ * top. A held row's badge passes its own id and the Day heading the day's
+ * first held row's; the Spending list's pinned `N AWAITING REVIEW` row and
+ * Charts' *N awaiting review* line pass null.
+ *
+ * See [Ledger] for why it is registered nowhere.
+ */
+@Serializable data class Review(val focus: Long? = null) : NavKey
+
+/**
  * The bottom bar's tabs, in the bar's order, each with the destination its
  * stack starts on.
  */

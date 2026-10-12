@@ -52,11 +52,12 @@ import my.pinged.parse.RuleMatcher
  * inbox instead.
  *
  * **`exclusion_reason`.** A matched rule can carry one (spec 7.3), and it is
- * deliberately not written onto the transaction: spec 7.3 offers Exclude / Keep
- * as expense / Always exclude, so the exclusion is the user's answer, and
+ * deliberately not written onto the transaction: spec 7.3 asks Leave out /
+ * Keep as expense / Not a payment, so the exclusion is the user's answer, and
  * `is_excluded` with a reason means "already excluded" -- money out of every
  * total with nobody asked. The proposal survives on
- * `raw_capture.matched_rule_id`, which the prompt needs anyway.
+ * `raw_capture.matched_rule_id`, from which `Graph.suggestedExclusion`
+ * re-derives it when the user leaves the row out.
  */
 internal class ParsePass(
     private val captures: RawCaptureDao,

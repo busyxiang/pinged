@@ -21,6 +21,11 @@ tested from `:feature:capture`.
 A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
 screen is shorter than a dev one, and a new Settings row once pushed "Delete
 everything" off it, so the click missed and two tests failed on CI only.
+`performScrollTo()` cannot reach a row of a lazy list that was never
+composed: scroll the list itself first, with `performScrollToKey` or
+`performScrollToNode`. Before calling an instrumented test done, run it at
+CI's size too: `adb shell wm size 320x640 && adb shell wm density 160`, then
+`wm size reset` and `wm density reset` afterwards.
 `./gradlew test` needs no worktrees under `.claude/worktrees/`, or
 `RawDatabaseAccessTest` scans their copies and fails.
 

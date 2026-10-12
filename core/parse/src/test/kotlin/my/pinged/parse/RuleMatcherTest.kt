@@ -552,6 +552,52 @@ class RuleMatcherTest {
         assertEquals(88000L, (b as MatchOutcome.Matched).amountSen)
     }
 
+    /**
+     * The review inbox's Leave out re-derives the suggested exclusion reason
+     * from the capture's package and `matched_rule_id` (spec 7.3: it is not
+     * stored at parse time), so the lookup must find the rule the capture
+     * was actually matched by.
+     */
+    @Test fun `the suggested exclusion is the bundled rule's own`() {
+        assertEquals(ExclusionReason.TRANSFER, matcher.suggestedExclusion(tng, "tng-reload-v1"))
+        assertEquals(ExclusionReason.CARD_PAYMENT, matcher.suggestedExclusion(mae, "mae-card-bill-v1"))
+        assertNull("a rule with no exclusion suggested one", matcher.suggestedExclusion(tng, "tng-payment-v1"))
+    }
+
+    /** A rule gone from the pack suggests nothing; the caller picks the fallback. */
+    @Test fun `a rule id the pack no longer has suggests no exclusion`() {
+        assertNull(matcher.suggestedExclusion(tng, "tng-reload-v0"))
+        assertNull(matcher.suggestedExclusion(probe, "tng-reload-v1"))
+    }
+
+    /** Ids are unique within a package, not across them: the capture's own package is asked. */
+    @Test fun `the suggested exclusion is looked up in the capture's own package`() {
+        val card = paidRule("bill-v1", 10).copy(kind = Kind.TRANSFER_SUSPECT, exclusionReason = ExclusionReason.CARD_PAYMENT)
+        val atm = paidRule("bill-v1", 10).copy(kind = Kind.TRANSFER_SUSPECT, exclusionReason = ExclusionReason.ATM_WITHDRAWAL)
+        val twoBanks = RuleMatcher(
+            ParsePack(
+                packVersion = 2,
+                packages = listOf(
+                    PackagePack(pkg = "bank.a", label = "A", rules = listOf(card)),
+                    PackagePack(pkg = "bank.b", label = "B", rules = listOf(atm)),
+                ),
+            ),
+        )
+        assertEquals(ExclusionReason.CARD_PAYMENT, twoBanks.suggestedExclusion("bank.a", "bill-v1"))
+        assertEquals(ExclusionReason.ATM_WITHDRAWAL, twoBanks.suggestedExclusion("bank.b", "bill-v1"))
+    }
+
+    /**
+     * A shared rule matches every package's captures, so a capture of any
+     * package -- one the pack lists or one it has since dropped -- finds it.
+     */
+    @Test fun `a shared rule suggests its exclusion for any package`() {
+        val toSelf = paidRule("rail-self-v1", 10).copy(kind = Kind.TRANSFER_SUSPECT, exclusionReason = ExclusionReason.TRANSFER)
+        val rail = directPack(paidRule("own-v1", 50), shared = listOf(toSelf))
+        assertEquals(ExclusionReason.TRANSFER, rail.suggestedExclusion(probe, "rail-self-v1"))
+        assertEquals(ExclusionReason.TRANSFER, rail.suggestedExclusion("bank.gone", "rail-self-v1"))
+    }
+
     // Every outcome has to be traceable to the version of the pack that made it.
     @Test fun `the pack version reaches the matcher`() {
         // 13, not 12: the first pack with a dictionary. 12 added FPX, Alipay+

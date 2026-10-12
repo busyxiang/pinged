@@ -483,17 +483,28 @@ class QueryPlanTest {
 
     /**
      * Here the equality on `state` is the right driver -- `PENDING` is the
-     * minority -- and `(state, occurred_at)` supplies the order too.
+     * minority -- and `(state, occurred_at)` supplies the order too, `id`
+     * included: it is the rowid every index entry ends in. The card's joins
+     * are each a primary-key lookup.
      */
     @Test fun reviewInboxDoesNotScanAndDoesNotSort() {
-        val p = plan("SELECT * FROM txn WHERE state = ? ORDER BY occurred_at DESC", "PENDING")
+        val p = plan(TxnDao.AWAITING_REVIEW_SQL)
         assertUsesIndex("index_txn_state_occurred_at", p)
         assertNoSort(p)
+        listOf("category", "raw_capture").forEach { table ->
+            assertTrue("The card's $table join scans its table:\n$p", !p.contains("SCAN $table"))
+        }
+        assertLooksUpByKey(p)
     }
 
     @Test fun theReviewInboxBadgeCountUsesTheSameIndex() {
-        val p = plan("SELECT COUNT(*) FROM txn WHERE state = ?", "PENDING")
-        assertUsesIndex("index_txn_state_occurred_at", p)
+        val p = plan(TxnDao.AWAITING_REVIEW_COUNT_SQL)
+        // A seek on `state`, not a walk of the whole index: a `+state` would
+        // still name the index and still be covering, and read every row.
+        assertTrue(
+            "The awaiting-review count does not seek PENDING in its covering index:\n$p",
+            p.contains("SEARCH txn USING COVERING INDEX index_txn_state_occurred_at (state=?)"),
+        )
     }
 
     // ---- duplicate layer 2, TxnDao.findDuplicateSuspects ---------------
@@ -507,6 +518,28 @@ class QueryPlanTest {
             1200, 0, Long.MAX_VALUE, "EXPENSE", "com.example", "REJECTED",
         )
         assertUsesIndex("index_txn_amount_sen_occurred_at", p)
+    }
+
+    // ---- the review inbox's duplicate pair, TxnDao.duplicatePair ------
+
+    /** Two primary-key lookups: the held row, then its capture. */
+    @Test fun theRecordedPairIsReadByPrimaryKey() {
+        val p = plan(bindable(TxnDao.DUPLICATE_OF_CAPTURE_SQL), 1L)
+        listOf("txn", "raw_capture").forEach { table ->
+            assertTrue("The recorded pair's lookup scans $table:\n$p", !p.contains("SCAN $table"))
+        }
+    }
+
+    /**
+     * Layer 2's own seek, so the sort `ORDER BY ABS(...)` needs is over one
+     * amount's rows inside twenty minutes, not over the table.
+     */
+    @Test fun theManualEntryPairSeeksTheAmountWindow() {
+        val p = plan(bindable(TxnDao.CLOSEST_MANUAL_ENTRY_SQL), 1200, 0, Long.MAX_VALUE, "EXPENSE", 1L, 0L)
+        assertTrue(
+            "The manual-entry pair does not seek amount and window:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_amount_sen_occurred_at (amount_sen=? AND occurred_at>? AND occurred_at<?)"),
+        )
     }
 
     // ---- the category foreign keys, spec 4's delete sheet --------------

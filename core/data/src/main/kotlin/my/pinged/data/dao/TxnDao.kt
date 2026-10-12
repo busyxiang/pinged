@@ -4,11 +4,15 @@ import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
+import my.pinged.data.DuplicateWindows
 import my.pinged.data.LocalDate
+import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.data.entity.requireStorable
 import my.pinged.parse.Direction
+import my.pinged.parse.ExclusionReason
 
 /**
  * Before adding a query that filters `local_date` or `state`, read
@@ -366,6 +370,218 @@ interface TxnDao {
     fun setCategory(id: Long, categoryId: Long, updatedAt: Long): Int
 
     /**
+     * How many transactions are awaiting review (§9.2): the Spending list's
+     * pinned `N AWAITING REVIEW` row, every currency.
+     *
+     * Answered from `index_txn_state_occurred_at` as a covering index, which
+     * `QueryPlanTest.theReviewInboxBadgeCountUsesTheSameIndex` pins.
+     */
+    @Query(AWAITING_REVIEW_COUNT_SQL)
+    fun awaitingReviewCount(): Int
+
+    /**
+     * Every transaction awaiting review, newest first, with what its card
+     * shows beside it: spec 6.4's resolved merchant name, its category's name
+     * and the notification it was read from.
+     *
+     * **Newest by `occurred_at`, not by the feed's `local_date`.** The two
+     * orders differ only for a row whose day was written in another zone (an
+     * import), and this one is the whole of `index_txn_state_occurred_at`
+     * after the `state` seek, with `id` -- the rowid every index entry ends
+     * in -- as the tiebreak, so it needs no sort.
+     * `QueryPlanTest.reviewInboxDoesNotScanAndDoesNotSort` pins it.
+     *
+     * A list, not paged: it is the minority §7.1 holds back.
+     */
+    @Query(AWAITING_REVIEW_SQL)
+    fun awaitingReview(): List<ReviewRow>
+
+    /**
+     * The transaction a duplicate card (§7.2, §9.2) shows beside [held], or
+     * null when it has none and the card is a plain one.
+     *
+     * 1. When [held]'s capture has a `duplicate_of_id` -- layer 1's slot
+     *    suspect, or layer 2 against another capture -- the pair is that
+     *    capture's transaction, and only it.
+     * 2. Otherwise the closest-in-time manual entry with [held]'s amount and
+     *    direction within `DuplicateWindows.LAYER_TWO_MILLIS`, not
+     *    `REJECTED`: layer 2 matching a manual entry has no capture to record.
+     *
+     * A pair that is itself `REJECTED` is no pair: Merge would then leave
+     * neither row counted. Read in one transaction so the two steps see one
+     * ledger.
+     */
+    @Transaction
+    fun duplicatePair(held: Txn): Txn? {
+        val recorded = duplicateOfCapture(held.id)
+        val pair = if (recorded != null) {
+            byCapture(recorded)
+        } else {
+            closestManualEntry(
+                heldId = held.id,
+                amountSen = held.amountSen,
+                direction = held.direction,
+                at = held.occurredAt,
+                from = held.occurredAt - DuplicateWindows.LAYER_TWO_MILLIS,
+                to = held.occurredAt + DuplicateWindows.LAYER_TWO_MILLIS,
+            )
+        }
+        return pair?.takeIf { it.state != TxnState.REJECTED && it.id != held.id }
+    }
+
+    /** [duplicatePair]'s first step: the capture [heldId]'s capture repeats, if any. */
+    @Query(DUPLICATE_OF_CAPTURE_SQL)
+    fun duplicateOfCapture(heldId: Long): Long?
+
+    /** The transaction read from capture [captureId], if it made one. */
+    @Query("SELECT * FROM txn WHERE raw_capture_id = :captureId")
+    fun byCapture(captureId: Long): Txn?
+
+    /** [duplicatePair]'s second step; see there. */
+    @Query(CLOSEST_MANUAL_ENTRY_SQL)
+    fun closestManualEntry(heldId: Long, amountSen: Long, direction: Direction, at: Long, from: Long, to: Long): Txn?
+
+    /**
+     * Settle one transaction awaiting review (§9.2): [to] with no reason,
+     * **only if it still is the row the card showed** -- `PENDING`, for
+     * [reason]. Returns the rows written; 0 means the row moved underneath
+     * (a Corrections re-read, another answer) and nothing was written.
+     *
+     * One targeted `UPDATE` naming its own columns, for the reason
+     * [setCategory] gives. `confidence`, `category_id`, `user_edited`, the
+     * merchant columns and the exclusion columns are left as they are, so an
+     * accepted row filed by a rule stays eligible for learned rules.
+     *
+     * `pending_reason IS :reason`, not `=`, so a row stored with no reason --
+     * which [requireStorable] refuses, but an older build's write might hold
+     * -- can still be answered from the card that drew it.
+     */
+    fun settle(id: Long, reason: PendingReason?, to: TxnState, updatedAt: Long): Int {
+        require(to != TxnState.PENDING) { "settling a row leaves it PENDING" }
+        return settleRow(id, reason, to, updatedAt)
+    }
+
+    /** [settle]'s statement, unchecked. */
+    @Query(
+        """
+        UPDATE txn SET state = :to, pending_reason = NULL, updated_at = :updatedAt
+        WHERE id = :id AND state = 'PENDING' AND pending_reason IS :reason
+        """,
+    )
+    fun settleRow(id: Long, reason: PendingReason?, to: TxnState, updatedAt: Long): Int
+
+    /**
+     * Accept all (§9.2): [settle] each of [answers] -- its row to its
+     * `state`, guarded on its `reason` -- **in one transaction**, and return
+     * the ones that wrote, which is what the batch's Undo takes back.
+     *
+     * A row that moved underneath is skipped, as a single answer to it would
+     * write nothing, rather than refusing the batch: the rest are still the
+     * cards the user saw. A statement that throws rolls back every row before
+     * it, which `SettleAllTest.aBatchThatFailsPartWayWritesNothing` pins. The
+     * exclusion columns are not written, so each [Answered] carries the
+     * row's own.
+     */
+    @Transaction
+    fun settleAll(answers: List<Answered>, updatedAt: Long): List<Answered> =
+        answers.filter { settle(it.id, it.reason, it.state, updatedAt) == 1 }
+
+    /**
+     * Merge (§7.2, §9.2): [settle] to `REJECTED`, and **only while [pairId]
+     * is not `REJECTED` itself** -- a pair dismissed after the card was drawn
+     * would otherwise leave neither row counted. The pair is never written:
+     * Merge dismisses the row awaiting review, which is the later-arriving one
+     * of a pair, and keeps the other. `is_authoritative` plays no part.
+     * Returns the rows written, 0 or 1.
+     */
+    @Query(
+        """
+        UPDATE txn SET state = 'REJECTED', pending_reason = NULL, updated_at = :updatedAt
+        WHERE id = :id AND state = 'PENDING' AND pending_reason IS :reason
+          AND EXISTS (SELECT 1 FROM txn AS pair WHERE pair.id = :pairId AND pair.state != 'REJECTED')
+        """,
+    )
+    fun merge(id: Long, reason: PendingReason?, pairId: Long, updatedAt: Long): Int
+
+    /**
+     * Leave out (§7.3, §9.2): count a transfer the user says moved their own
+     * money as no spending -- `COMMITTED`, no reason, `is_excluded = 1` with
+     * [exclusion] -- **only if it still is the row the card showed**, as
+     * [settle] guards. Returns the rows written; 0 means nothing was.
+     *
+     * Its own statement rather than [settle] with two more columns: [settle]
+     * leaves the exclusion columns as they are, and that is what Accept, Keep
+     * as expense and Not a payment rely on.
+     */
+    @Query(
+        """
+        UPDATE txn SET state = 'COMMITTED', pending_reason = NULL, is_excluded = 1,
+                       exclusion_reason = :exclusion, updated_at = :updatedAt
+        WHERE id = :id AND state = 'PENDING' AND pending_reason IS :reason
+        """,
+    )
+    fun leaveOut(id: Long, reason: PendingReason?, exclusion: ExclusionReason, updatedAt: Long): Int
+
+    /**
+     * Undo (§9.2): put every one of [rows] back to awaiting review for its
+     * own reason, with `is_excluded = 0` and no exclusion reason, **all or
+     * none**. Returns false, having written nothing, when any row is no longer
+     * in the state its answer wrote -- another writer has changed it since,
+     * and putting the rest back would leave a set the user never had.
+     *
+     * Each row is one targeted `UPDATE` guarded on what [Answered] records,
+     * so any answer's written state -- `COMMITTED`, `REJECTED`, or
+     * `COMMITTED` and excluded -- is taken back by the same statement, and
+     * Accept all's batch is taken back in this one transaction. `updated_at`
+     * becomes [updatedAt] rather than the value before the answer: an undo is
+     * a write, and a category changed between the answer and the undo would
+     * otherwise be dated before it happened.
+     */
+    fun unsettle(rows: List<Answered>, updatedAt: Long): Boolean = try {
+        unsettleOrThrow(rows, updatedAt)
+        true
+    } catch (_: StaleAnswerException) {
+        false
+    }
+
+    /**
+     * [unsettle]'s transaction. Throws on the first row that has moved, which
+     * rolls back every row already put back; call [unsettle].
+     */
+    @Transaction
+    fun unsettleOrThrow(rows: List<Answered>, updatedAt: Long) {
+        for (row in rows) {
+            val written = unsettleRow(
+                id = row.id,
+                reason = row.reason,
+                updatedAt = updatedAt,
+                wroteState = row.state,
+                wroteExcluded = row.exclusionReason != null,
+                wroteExclusion = row.exclusionReason,
+            )
+            if (written != 1) throw StaleAnswerException()
+        }
+    }
+
+    /** One row of [unsettle], unchecked. */
+    @Query(
+        """
+        UPDATE txn SET state = 'PENDING', pending_reason = :reason, is_excluded = 0,
+                       exclusion_reason = NULL, updated_at = :updatedAt
+        WHERE id = :id AND state = :wroteState AND pending_reason IS NULL
+          AND is_excluded = :wroteExcluded AND exclusion_reason IS :wroteExclusion
+        """,
+    )
+    fun unsettleRow(
+        id: Long,
+        reason: PendingReason?,
+        updatedAt: Long,
+        wroteState: TxnState,
+        wroteExcluded: Boolean,
+        wroteExclusion: ExclusionReason?,
+    ): Int
+
+    /**
      * The home list (§9.1), newest day first and newest within a day.
      *
      * A `PagingSource` and not a `Flow<List<Txn>>` (§15.4): the flow re-emits
@@ -395,8 +611,8 @@ interface TxnDao {
      *
      * `REJECTED` is excluded because a rejected capture is not a transaction.
      * `PENDING` and excluded rows are **included** -- they are kept out of every
-     * total (§8) and still drawn, because until §9.2's review inbox exists a
-     * hidden `PENDING` row is money on disk and nowhere on screen.
+     * total (§8) and still drawn: a row awaiting review is answered in §9.2's
+     * inbox, but the list is where the user sees that the money moved.
      *
      * Served by `index_txn_local_date_occurred_at`, which supplies the whole
      * `ORDER BY` as a reverse scan with no temp b-tree -- measured at 0.443ms
@@ -526,6 +742,60 @@ interface TxnDao {
          * `QueryPlanTest` pins by reading both strings from here.
          */
         const val UNREJECTED_COUNT_SQL = "SELECT COUNT(*) FROM txn WHERE state != 'REJECTED'"
+
+        /** [awaitingReviewCount]'s query. */
+        const val AWAITING_REVIEW_COUNT_SQL = "SELECT COUNT(*) FROM txn WHERE state = 'PENDING'"
+
+        /**
+         * [awaitingReview]'s query. Every join is by primary key; a manual
+         * entry has no capture and draws no notification text.
+         */
+        const val AWAITING_REVIEW_SQL =
+            """
+            SELECT txn.*,
+                   """ + MerchantSql.IDENTITY + """ AS identity_key,
+                   """ + MerchantSql.NAME + """ AS display_name,
+                   category.name AS category_name,
+                   raw_capture.title AS capture_title,
+                   raw_capture.text AS capture_text,
+                   raw_capture.big_text AS capture_big_text
+            FROM txn """ + MerchantSql.JOINS + """
+            LEFT JOIN category ON category.id = txn.category_id
+            LEFT JOIN raw_capture ON raw_capture.id = txn.raw_capture_id
+            WHERE txn.state = 'PENDING'
+            ORDER BY txn.occurred_at DESC, txn.id DESC
+            """
+
+        /** [duplicateOfCapture]'s query: two primary-key lookups. */
+        const val DUPLICATE_OF_CAPTURE_SQL =
+            """
+            SELECT raw_capture.duplicate_of_id FROM txn
+            JOIN raw_capture ON raw_capture.id = txn.raw_capture_id
+            WHERE txn.id = :heldId
+            """
+
+        /**
+         * [closestManualEntry]'s query. A seek on `txn(amount_sen,
+         * occurred_at)`, as layer 2's own search is; the `ORDER BY` sorts only
+         * the window's rows of one amount, which
+         * `QueryPlanTest.theManualEntryPairSeeksTheAmountWindow` pins.
+         * `id` breaks a tie in distance, so the same pair is drawn every read.
+         *
+         * `+raw_capture_id`: without the hint SQLite seeks `IS NULL` in the
+         * unique `raw_capture_id` index instead -- every manual entry ever
+         * typed, then sorted (`SEARCH txn USING INDEX index_txn_raw_capture_id
+         * (raw_capture_id=?)` plus a temp b-tree, measured on emulator-5554
+         * over `QueryPlanTest`'s fixture).
+         */
+        const val CLOSEST_MANUAL_ENTRY_SQL =
+            """
+            SELECT * FROM txn
+            WHERE amount_sen = :amountSen AND occurred_at BETWEEN :from AND :to
+              AND +raw_capture_id IS NULL AND direction = :direction
+              AND state != 'REJECTED' AND id != :heldId
+            ORDER BY ABS(occurred_at - :at), id
+            LIMIT 1
+            """
 
         const val DAY_TOTALS_SQL =
             """

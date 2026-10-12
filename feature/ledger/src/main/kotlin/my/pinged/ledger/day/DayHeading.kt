@@ -12,8 +12,17 @@ import my.pinged.ui.ringgit
  * [total] is the day's counted ringgit, or null when nothing may be said about
  * it. [keptOut] is the "kept out of the total" line, or null when nothing is.
  * [notWatching] is whether the "Pinged was not watching" line is drawn.
+ * [awaitingReview] is the *M awaiting review* that ends [keptOut] and opens
+ * the review inbox (§9.1), or null when M is zero and there is nothing to open.
+ * [keptOut] ends with it whenever it is non-null; the screen relies on that to
+ * make only that part tappable.
  */
-internal data class DayHeading(val total: String?, val keptOut: String?, val notWatching: Boolean)
+internal data class DayHeading(
+    val total: String?,
+    val keptOut: String?,
+    val notWatching: Boolean,
+    val awaitingReview: String? = null,
+)
 
 /**
  * [DayHeading] from the day's reads: [counted] is `dayTotals` over the day,
@@ -48,10 +57,11 @@ internal fun dayHeading(
     val keptOutSen = myr.sumOf { it.netSen }
     val excluded = myr.filter { it.line != NotInTotalLine.PENDING }.sumOf { it.txnCount }
     val pending = myr.filter { it.line == NotInTotalLine.PENDING }.sumOf { it.txnCount }
+    val awaitingReview = "$pending awaiting review"
     val keptOut = if (excluded + pending == 0) {
         null
     } else {
-        ringgit(keptOutSen) + " kept out of the total: $excluded excluded, $pending pending"
+        ringgit(keptOutSen) + " kept out of the total: $excluded excluded, " + awaitingReview
     }
-    return DayHeading(total, keptOut, notWatching)
+    return DayHeading(total, keptOut, notWatching, awaitingReview.takeIf { pending > 0 })
 }
