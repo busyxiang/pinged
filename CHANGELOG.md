@@ -5,6 +5,19 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.7.0](https://github.com/busyxiang/pinged/compare/v0.6.0...v0.7.0) (2026-10-13)
+
+
+### Features
+
+* add payments by hand (manual entry) ([#120](https://github.com/busyxiang/pinged/issues/120)) ([7423920](https://github.com/busyxiang/pinged/commit/7423920286a8eee913b5edd7d011a50c5e9e9ee0))
+* answer every payment awaiting review in a review inbox ([#118](https://github.com/busyxiang/pinged/issues/118)) ([689741e](https://github.com/busyxiang/pinged/commit/689741eb0c312d4b11cebaba3be37f4cbc601dba))
+
+
+### Bug Fixes
+
+* raise no storage banner when a delete or restore refuses a screen's call ([#122](https://github.com/busyxiang/pinged/issues/122)) ([6c7a801](https://github.com/busyxiang/pinged/commit/6c7a801021d1d228b952d76c7ba5ccfad0473b08)), closes [#119](https://github.com/busyxiang/pinged/issues/119)
+
 ## [0.6.0](https://github.com/busyxiang/pinged/compare/v0.5.0...v0.6.0) (2026-10-10)
 
 
