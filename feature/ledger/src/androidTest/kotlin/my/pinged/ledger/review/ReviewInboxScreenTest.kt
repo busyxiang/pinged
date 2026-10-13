@@ -22,6 +22,8 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.MERCHANT
 import my.pinged.ledger.SOURCE_LABEL
+import my.pinged.ledger.Withheld
+import my.pinged.ledger.busyLine
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ledger.settings.Operation
 import my.pinged.ui.theme.PingedTheme
@@ -168,7 +170,7 @@ class ReviewInboxScreenTest {
 
         listOf(Operation.RESTORE, Operation.DELETE).forEach { operation ->
             busy.value = operation
-            compose.onNodeWithText(busyLine(operation)).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(busyLine(operation, Withheld.ANSWERED)).performScrollTo().assertIsDisplayed()
             rent.kind.answers.forEach { answer ->
                 compose.onNodeWithText(answer.label).performScrollTo().assertIsNotEnabled().performClick()
             }
@@ -184,7 +186,7 @@ class ReviewInboxScreenTest {
         assertEquals(
             "The busy line stayed up after the operation ended",
             0,
-            compose.onAllNodesWithText(busyLine(Operation.RESTORE)).fetchSemanticsNodes().size,
+            compose.onAllNodesWithText(busyLine(Operation.RESTORE, Withheld.ANSWERED)).fetchSemanticsNodes().size,
         )
     }
 

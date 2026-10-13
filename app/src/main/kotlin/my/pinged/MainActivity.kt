@@ -50,6 +50,9 @@ import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
 import my.pinged.ledger.day.DayScreen
 import my.pinged.ledger.day.DayViewModel
+import my.pinged.ledger.entry.EditTarget
+import my.pinged.ledger.entry.ManualEntryScreen
+import my.pinged.ledger.entry.ManualEntryViewModel
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.ListenerStatus
 import my.pinged.data.Databases
@@ -128,6 +131,10 @@ class MainActivity : ComponentActivity() {
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
         val reviewFactory = AppViewModelFactory(application, ::ReviewViewModel)
+        // Only a first creation's stack: a recreate or a process death hands
+        // back the same intent, and `rememberNavBackStack` then restores the
+        // saved stack and ignores this, so the entry is not routed twice.
+        val spendingStart = spendingStackFor(addPayment = AddPaymentShortcut.opens(intent))
         setContent {
             PingedTheme {
                 // One saved stack per tab and the tab showing, kept in saved
@@ -135,7 +142,7 @@ class MainActivity : ComponentActivity() {
                 // rules; see it for why `NavDisplay` is handed every tab's
                 // entries and not the shown tab's.
                 val selection = rememberSaveable { mutableStateOf(Tab.Spending) }
-                val spendingStack = rememberNavBackStack(Tab.Spending.root)
+                val spendingStack = rememberNavBackStack(*spendingStart)
                 val chartsStack = rememberNavBackStack(Tab.Charts.root)
                 val settingsStack = rememberNavBackStack(Tab.Settings.root)
                 val tabs = remember(selection, spendingStack, chartsStack, settingsStack) {
@@ -222,7 +229,30 @@ class MainActivity : ComponentActivity() {
                                     // The pinned row passes null, a row's
                                     // badge its own id.
                                     onOpenReview = { focus -> tabs.push(Review(focus)) },
+                                    onAddPayment = { tabs.push(ManualEntry()) },
+                                    onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
                                     modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            entry<ManualEntry> { key ->
+                                // The entry's own `createSavedStateHandle`, as
+                                // Charts': the draft survives a process death
+                                // there (#108). A new entry starts from an
+                                // empty draft, a correction (#105) from the
+                                // row `txnId` and `createdAt` name.
+                                val target = key.txnId?.let { id -> key.createdAt?.let { EditTarget(id, it) } }
+                                val entry: ManualEntryViewModel = viewModel {
+                                    ManualEntryViewModel(application, createSavedStateHandle(), target)
+                                }
+                                ManualEntryScreen(
+                                    viewModel = entry,
+                                    // The same expression NavDisplay's onBack
+                                    // is given; see `pop`.
+                                    onBack = tabs::pop,
+                                    onSaved = tabs::pop,
+                                    modifier = Modifier.fillMaxSize(),
+                                    // Back to the list the deleted row was on (#106).
+                                    onDeleted = tabs::pop,
                                 )
                             }
                             entry<Review> { key ->
@@ -262,6 +292,9 @@ class MainActivity : ComponentActivity() {
                                     onBack = tabs::pop,
                                     modifier = Modifier.fillMaxSize(),
                                     onOpenReview = { focus -> tabs.push(Review(focus)) },
+                                    // Onto the current stack, Charts', as
+                                    // Review is: back returns to this day.
+                                    onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
                                 )
                             }
                             entry<Settings> {

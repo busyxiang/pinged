@@ -7,6 +7,10 @@ import my.pinged.parse.MerchantNormalization
  * The three merchant columns a parse writes onto `txn`, from the string a rule
  * captured. Stage two and spec 5.5's re-read both derive them here, so a
  * re-read cannot report a difference that is only two spellings of one rule.
+ * A manual entry's typed merchant (spec 9.4, `:feature:ledger`'s
+ * `ManualEntries`) is derived here too, with the pack's normalization, so a
+ * typed `Kopitiam` and a captured `KOPITIAM` are one merchant key with no
+ * merge needed. Public for that caller; not to be copied into it.
  *
  * **[raw]**: blank collapses to null, so the stored column is exactly the
  * predicate spec 7.1's `MERCHANT_MISSING` is recomputable from. Otherwise the
@@ -30,7 +34,7 @@ import my.pinged.parse.MerchantNormalization
  * which holds because [raw] is already filtered to strings that clean to
  * something.
  */
-internal data class MerchantColumns(val raw: String?, val display: String?, val key: String?) {
+data class MerchantColumns(val raw: String?, val display: String?, val key: String?) {
     companion object {
         fun of(captured: String?, normalization: MerchantNormalization): MerchantColumns {
             val raw = captured

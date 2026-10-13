@@ -31,6 +31,9 @@ import java.time.YearMonth
 @RunWith(AndroidJUnit4::class)
 class MerchantsReadTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+    /** Unique per row, as the column's index requires. */
+    private var captureIds = 1L
     private val app = context.applicationContext as Application
 
     private val september = YearMonth.of(2026, 9)
@@ -73,7 +76,9 @@ class MerchantsReadTest {
     }
 
     private fun txn(amountSen: Long, categoryId: Long, day: my.pinged.data.LocalDate, key: String) = Txn(
-        rawCaptureId = null,
+        // Captured, as its source says: a null id is a manual entry (spec 4).
+        // The id names no capture row; the column has no foreign key.
+        rawCaptureId = captureIds++,
         amountSen = amountSen,
         direction = Direction.EXPENSE,
         occurredAt = 1_000L,

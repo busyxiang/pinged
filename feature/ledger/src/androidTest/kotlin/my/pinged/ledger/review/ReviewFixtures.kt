@@ -46,7 +46,7 @@ internal fun pending(
 
 /** An entry typed by hand: no capture, no package. */
 internal fun manual(amountSen: Long, occurredAt: Long): Txn =
-    ledgerTxn(amountSen = amountSen, occurredAt = occurredAt, categoryId = uncategorized())
+    ledgerTxn(amountSen = amountSen, occurredAt = occurredAt, categoryId = uncategorized(), rawCaptureId = null)
         .copy(sourcePackage = null, sourceLabel = null)
 
 internal fun uncategorized(): Long = Databases.categoryDao(context).requireUncategorizedId()

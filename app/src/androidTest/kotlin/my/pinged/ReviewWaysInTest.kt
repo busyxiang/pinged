@@ -55,6 +55,9 @@ class ReviewWaysInTest {
 
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
 
+    /** Unique per row, as the column's index requires. */
+    private var captureIds = 1L
+
     private val today: LocalDate = LocalDate.now()
 
     @Before fun fresh() {
@@ -188,7 +191,9 @@ class ReviewWaysInTest {
     private fun insert(txn: Txn): Long = Databases.shared(context).txnDao().insert(txn)
 
     private fun held(amountSen: Long, at: Long, reason: PendingReason) = Txn(
-        rawCaptureId = null,
+        // Captured, as its source says: a null id is a manual entry (spec 4).
+        // The id names no capture row; the column has no foreign key.
+        rawCaptureId = captureIds++,
         amountSen = amountSen,
         direction = Direction.EXPENSE,
         occurredAt = at,

@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import my.pinged.data.DuplicateWindows
 import my.pinged.data.LocalDate
+import my.pinged.data.LocalDates
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
@@ -370,6 +371,80 @@ interface TxnDao {
     fun setCategory(id: Long, categoryId: Long, updatedAt: Long): Int
 
     /**
+     * Correct manual entry [id] (#105, spec 9.4): write each column group
+     * [edit] names, then `updated_at`, and answer whether the row was
+     * written. False for a captured row, a row that is gone, a row
+     * [id] names that was not created at [createdAt], and an [edit] that
+     * names nothing.
+     *
+     * **[createdAt] tells the entry from a later row given its id.** A
+     * delete-everything restarts ids, and a restore brings in another
+     * ledger's, so an edit screen opened before either can hold an id that
+     * now names a different payment. `created_at` is written once and kept
+     * by a restore, so the same payment brought back by one still matches.
+     * Checked in this transaction, so nothing moves between the check and
+     * the write.
+     *
+     * **One targeted `UPDATE` per group, naming only its own columns**, for
+     * the reason [setCategory] gives: a column the user did not change is
+     * not in any statement, so it cannot be reverted by a write built from a
+     * stale read. **Every statement's `WHERE` says `raw_capture_id IS
+     * NULL`**, and that is the only guard: a captured row is the bank's word
+     * (spec 9.4, story 45), and no id handed in can reach one. In one
+     * transaction, so the row is never seen half corrected.
+     */
+    @Transaction
+    fun editManualEntry(id: Long, createdAt: Long, edit: ManualEdit, updatedAt: Long): Boolean {
+        if (edit == ManualEdit() || byId(id)?.createdAt != createdAt) return false
+        edit.amountSen?.let { setManualAmount(id, it) }
+        edit.occurredAt?.let { setManualDate(id, it, LocalDates.of(it)) }
+        edit.merchant?.let { setManualMerchant(id, it.raw, it.display, it.key) }
+        edit.note?.let { setManualNote(id, it.text) }
+        edit.filing?.let { setManualFiling(id, it.categoryId, it.userEdited) }
+        return touchManualEntry(id, updatedAt) == 1
+    }
+
+    /** [editManualEntry]'s amount; call that. */
+    @Query("UPDATE txn SET amount_sen = :amountSen WHERE id = :id AND raw_capture_id IS NULL")
+    fun setManualAmount(id: Long, amountSen: Long): Int
+
+    /** [editManualEntry]'s date: `occurred_at`, and the `local_date` derived from it as every writer derives it. */
+    @Query("UPDATE txn SET occurred_at = :occurredAt, local_date = :localDate WHERE id = :id AND raw_capture_id IS NULL")
+    fun setManualDate(id: Long, occurredAt: Long, localDate: LocalDate): Int
+
+    /** [editManualEntry]'s merchant columns; call that. */
+    @Query(
+        """
+        UPDATE txn SET merchant_raw = :raw, merchant_display = :display, merchant_key = :key
+        WHERE id = :id AND raw_capture_id IS NULL
+        """,
+    )
+    fun setManualMerchant(id: Long, raw: String?, display: String?, key: String?): Int
+
+    /** [editManualEntry]'s note; call that. */
+    @Query("UPDATE txn SET note = :note WHERE id = :id AND raw_capture_id IS NULL")
+    fun setManualNote(id: Long, note: String?): Int
+
+    /** [editManualEntry]'s category and how it was filed; call that. */
+    @Query("UPDATE txn SET category_id = :categoryId, user_edited = :userEdited WHERE id = :id AND raw_capture_id IS NULL")
+    fun setManualFiling(id: Long, categoryId: Long, userEdited: Boolean): Int
+
+    /** [editManualEntry]'s last statement, whose count is its answer; call that. */
+    @Query("UPDATE txn SET updated_at = :updatedAt WHERE id = :id AND raw_capture_id IS NULL")
+    fun touchManualEntry(id: Long, updatedAt: Long): Int
+
+    /**
+     * Delete manual entry [id] (#106, spec 9.4), answering the rows deleted:
+     * 1, or 0 for a captured row, a row that is gone, and a row [id] names
+     * that was not created at [createdAt] ([editManualEntry] says why).
+     * `raw_capture_id IS NULL` keeps a captured row out, as in
+     * [editManualEntry]: it is the bank's word. No table references
+     * `txn.id`, so nothing is left dangling.
+     */
+    @Query("DELETE FROM txn WHERE id = :id AND created_at = :createdAt AND raw_capture_id IS NULL")
+    fun deleteManualEntry(id: Long, createdAt: Long): Int
+
+    /**
      * How many transactions are awaiting review (§9.2): the Spending list's
      * pinned `N AWAITING REVIEW` row, every currency.
      *
@@ -417,17 +492,48 @@ interface TxnDao {
         val pair = if (recorded != null) {
             byCapture(recorded)
         } else {
-            closestManualEntry(
-                heldId = held.id,
-                amountSen = held.amountSen,
-                direction = held.direction,
-                at = held.occurredAt,
-                from = held.occurredAt - DuplicateWindows.LAYER_TWO_MILLIS,
-                to = held.occurredAt + DuplicateWindows.LAYER_TWO_MILLIS,
-            )
+            closestInLayerTwo(selfId = held.id, amountSen = held.amountSen, direction = held.direction, captured = false, at = held.occurredAt)
         }
         return pair?.takeIf { it.state != TxnState.REJECTED && it.id != held.id }
     }
+
+    /**
+     * A captured payment the manual entry about to be saved may repeat
+     * (#104, spec 9.4), or null: a row with a capture, of [amountSen], an
+     * `EXPENSE`, not `REJECTED`, and not [selfId] (the entry being edited;
+     * null for a new one), closest to [at].
+     *
+     * The mirror of [duplicatePair]'s search from the other side, through
+     * the same query and window: within layer 2's ten minutes of [at], or
+     * anywhere on [at]'s `local_date` when [wholeDay] -- a backdated entry,
+     * whose time of day is made up. By `local_date`, not a range of millis,
+     * because the day a row is filed under is the day the user sees it on.
+     */
+    fun nearbyCapture(selfId: Long?, amountSen: Long, at: Long, wholeDay: Boolean): Txn? =
+        if (wholeDay) {
+            closestCaptureOnDay(selfId, amountSen, Direction.EXPENSE, LocalDates.of(at), at)
+        } else {
+            closestInLayerTwo(selfId, amountSen, Direction.EXPENSE, captured = true, at = at)
+        }
+
+    /**
+     * The row closest to [at] within layer 2's window
+     * (`DuplicateWindows.layerTwo`) with [amountSen] and [direction], not
+     * `REJECTED` and not [selfId]: a capture when [captured], else a manual
+     * entry. Each side of a capture/manual-entry pair finds the other here.
+     */
+    fun closestInLayerTwo(selfId: Long?, amountSen: Long, direction: Direction, captured: Boolean, at: Long): Txn? =
+        DuplicateWindows.layerTwo(at).let { window ->
+            closestBetween(selfId, amountSen, direction, captured, at, window.first, window.last)
+        }
+
+    /** [closestInLayerTwo]'s query; call that, which owns the window. */
+    @Query(CLOSEST_IN_WINDOW_SQL)
+    fun closestBetween(selfId: Long?, amountSen: Long, direction: Direction, captured: Boolean, at: Long, from: Long, to: Long): Txn?
+
+    /** [nearbyCapture]'s whole-day search; see there. */
+    @Query(CLOSEST_CAPTURE_ON_DAY_SQL)
+    fun closestCaptureOnDay(selfId: Long?, amountSen: Long, direction: Direction, date: LocalDate, at: Long): Txn?
 
     /** [duplicatePair]'s first step: the capture [heldId]'s capture repeats, if any. */
     @Query(DUPLICATE_OF_CAPTURE_SQL)
@@ -436,10 +542,6 @@ interface TxnDao {
     /** The transaction read from capture [captureId], if it made one. */
     @Query("SELECT * FROM txn WHERE raw_capture_id = :captureId")
     fun byCapture(captureId: Long): Txn?
-
-    /** [duplicatePair]'s second step; see there. */
-    @Query(CLOSEST_MANUAL_ENTRY_SQL)
-    fun closestManualEntry(heldId: Long, amountSen: Long, direction: Direction, at: Long, from: Long, to: Long): Txn?
 
     /**
      * Settle one transaction awaiting review (§9.2): [to] with no reason,
@@ -775,24 +877,45 @@ interface TxnDao {
             """
 
         /**
-         * [closestManualEntry]'s query. A seek on `txn(amount_sen,
+         * [closestBetween]'s query. A seek on `txn(amount_sen,
          * occurred_at)`, as layer 2's own search is; the `ORDER BY` sorts only
          * the window's rows of one amount, which
-         * `QueryPlanTest.theManualEntryPairSeeksTheAmountWindow` pins.
+         * `QueryPlanTest.theLayerTwoPairSeeksTheAmountWindow` pins.
          * `id` breaks a tie in distance, so the same pair is drawn every read.
          *
          * `+raw_capture_id`: without the hint SQLite seeks `IS NULL` in the
          * unique `raw_capture_id` index instead -- every manual entry ever
          * typed, then sorted (`SEARCH txn USING INDEX index_txn_raw_capture_id
          * (raw_capture_id=?)` plus a temp b-tree, measured on emulator-5554
-         * over `QueryPlanTest`'s fixture).
+         * over `QueryPlanTest`'s fixture). `:captured` binds as 0 or 1, which
+         * is what `IS NOT NULL` yields. `id IS NOT :selfId`, not `!=`: a null
+         * self -- a new manual entry -- excludes nothing, where `!=` would
+         * exclude every row.
          */
-        const val CLOSEST_MANUAL_ENTRY_SQL =
+        const val CLOSEST_IN_WINDOW_SQL =
             """
             SELECT * FROM txn
             WHERE amount_sen = :amountSen AND occurred_at BETWEEN :from AND :to
-              AND +raw_capture_id IS NULL AND direction = :direction
-              AND state != 'REJECTED' AND id != :heldId
+              AND (+raw_capture_id IS NOT NULL) = :captured AND direction = :direction
+              AND state != 'REJECTED' AND id IS NOT :selfId
+            ORDER BY ABS(occurred_at - :at), id
+            LIMIT 1
+            """
+
+        /**
+         * [closestCaptureOnDay]'s query: [CLOSEST_IN_WINDOW_SQL] with the
+         * window a `local_date`, sought in `txn(local_date, occurred_at)`.
+         * `+amount_sen`: without it SQLite seeks `amount_sen = ?` alone, every
+         * row of that amount ever (measured on emulator-5554 over
+         * `QueryPlanTest`'s fixture), where one day's rows stay a day's.
+         * Pinned by `QueryPlanTest.theNearbyCaptureOnADaySeeksTheDay`.
+         */
+        const val CLOSEST_CAPTURE_ON_DAY_SQL =
+            """
+            SELECT * FROM txn
+            WHERE +amount_sen = :amountSen AND local_date = :date
+              AND +raw_capture_id IS NOT NULL AND direction = :direction
+              AND state != 'REJECTED' AND id IS NOT :selfId
             ORDER BY ABS(occurred_at - :at), id
             LIMIT 1
             """

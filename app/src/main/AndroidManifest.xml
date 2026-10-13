@@ -93,16 +93,26 @@
              launcher activity wants; singleTask here would silently change
              how a future deep link into a transaction behaves.
 
-             windowSoftInputMode is deliberately absent, because nothing on
-             this screen takes text. -->
+             windowSoftInputMode="adjustResize" for spec 9.4's entry screen,
+             which opens with the number keyboard up: it is what makes the
+             window report the keyboard as an inset, and MainActivity pads
+             every screen by WindowInsets.safeDrawing, which includes it, so
+             Save is above the keyboard rather than under it. -->
         <activity
             android:name="my.pinged.MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.Pinged">
+            android:theme="@style/Theme.Pinged"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Spec 9.4's Add payment launcher shortcut. A static shortcut
+                 must hang off the launcher activity; MainActivity reads its
+                 extra through AddPaymentShortcut. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- Stage one. The class name is frozen: the notification-access

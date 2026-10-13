@@ -49,6 +49,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.entity.Txn
+import my.pinged.ledger.Withheld
+import my.pinged.ledger.busyLine
 import my.pinged.ledger.settings.Operation
 import my.pinged.parse.Direction
 import my.pinged.ui.dayMonthYear
@@ -176,7 +178,7 @@ private fun Cards(
 ) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = bottom)) {
         item { Header(cards?.size, onBack) }
-        if (busy != null) item { Notice(busyLine(busy), Stamp) }
+        if (busy != null) item { Notice(busyLine(busy, Withheld.ANSWERED), Stamp) }
         when {
             // First, for the reason `DayScreenContent` gives: stale cards
             // under a ledger that cannot be read would be answers to nothing.
@@ -418,13 +420,6 @@ const val DEFAULT_ANSWER = "Default answer"
 
 /** `3 AWAITING REVIEW`: the Spending list's pinned row and this screen's count. */
 fun awaitingReviewLabel(count: Int): String = "$count AWAITING REVIEW"
-
-/** The line a [busy] operation draws over the cards. */
-internal fun busyLine(busy: Operation): String = when (busy) {
-    Operation.RESTORE -> "RESTORING A BACKUP · NOTHING CAN BE ANSWERED UNTIL IT FINISHES"
-    Operation.DELETE -> "DELETING EVERYTHING · NOTHING CAN BE ANSWERED UNTIL IT FINISHES"
-    else -> busy.doing.uppercase(Locale.ROOT) + " · NOTHING CAN BE ANSWERED UNTIL IT FINISHES"
-}
 
 /** An inbox with nothing in it, which stays open. */
 const val NOTHING_AWAITING_REVIEW = "NOTHING AWAITING REVIEW"

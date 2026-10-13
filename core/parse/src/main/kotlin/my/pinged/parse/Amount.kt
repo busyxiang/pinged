@@ -4,7 +4,12 @@ import java.math.BigDecimal
 import java.util.Locale
 
 object Amount {
-    private const val CEILING_SEN: Long = 100_000_000L // RM1,000,000.00
+    /**
+     * The largest amount Pinged records, RM1,000,000.00, and accepted itself.
+     * The entry screen's keypad stops here too (#99), so a figure typed by
+     * hand can never be one a notification could not have carried.
+     */
+    const val CEILING_SEN: Long = 100_000_000L
 
     /**
      * `[0-9]`, never `\d`, and the difference is money.

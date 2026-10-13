@@ -50,6 +50,9 @@ class DayRouteTest {
 
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
 
+    /** Unique per row, as the column's index requires. */
+    private var captureIds = 1L
+
     private val today = LocalDate.now()
     private val now = YearMonth.from(today)
     private val previous = now.minusMonths(1)
@@ -127,7 +130,9 @@ class DayRouteTest {
     }
 
     private fun txn(amountSen: Long, on: LocalDate) = Txn(
-        rawCaptureId = null,
+        // Captured, as its source says: a null id is a manual entry (spec 4).
+        // The id names no capture row; the column has no foreign key.
+        rawCaptureId = captureIds++,
         amountSen = amountSen,
         direction = Direction.EXPENSE,
         occurredAt = 1_000L,

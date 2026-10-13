@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,7 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -36,12 +40,14 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import my.pinged.ledger.entry.EditTarget
 import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
+import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.review.awaitingReviewLabel
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
@@ -68,7 +74,8 @@ import java.time.format.TextStyle as JavaTextStyle
  *
  * **The artboard's bottom navigation is not drawn here**: `MainActivity` hosts
  * it, because it is shared with settings and a tab switch is not this screen's
- * to decide. Its charts tab and its cash button have no screen to lead to.
+ * to decide. Its cash button is [onAddPayment], spec 9.4's **Add payment**,
+ * which `:app` routes to the entry screen.
  *
  * The category is spelled out in the line beneath the merchant as well as drawn
  * as an icon ([RowIcon]), so a reader who cannot tell two 18dp glyphs apart has
@@ -90,6 +97,8 @@ fun LedgerScreen(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenReview: (focus: Long?) -> Unit = {},
+    onAddPayment: (() -> Unit)? = null,
+    onOpenEntry: ((EditTarget) -> Unit)? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
     val read by viewModel.read.collectAsState()
@@ -127,6 +136,8 @@ fun LedgerScreen(
         retroPreview = viewModel::retroPreview,
         onOpenSettings = onOpenSettings,
         onOpenReview = onOpenReview,
+        onAddPayment = onAddPayment,
+        onOpenEntry = onOpenEntry,
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
             MerchantActions(
@@ -163,6 +174,8 @@ internal fun LedgerScreenContent(
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
     onOpenReview: (focus: Long?) -> Unit = {},
+    onAddPayment: (() -> Unit)? = null,
+    onOpenEntry: ((EditTarget) -> Unit)? = null,
 ) {
     // Which row is being categorized, hoisted to here rather than held in the
     // row: a `ModalBottomSheet` emitted from inside the `LazyColumn` scrolls
@@ -176,42 +189,53 @@ internal fun LedgerScreenContent(
     val chooser = remember(read) { read.chooser }
     val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
 
-    Column(modifier.fillMaxSize().background(Paper)) {
-        // Above the branch: the month being summarised is true in every state,
-        // including the two with nothing to show.
-        TopBar(month = read.summary?.month ?: YearMonth.now())
+    Box(modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(Paper)) {
+            // Above the branch: the month being summarised is true in every state,
+            // including the two with nothing to show.
+            TopBar(month = read.summary?.month ?: YearMonth.now())
 
-        when {
-            // First, because it is the only state where the ledger is certainly
-            // unreadable rather than empty. An empty list here would assert
-            // "you spent nothing" when the truth is "this cannot be read"
-            // (§11.1). Either read may be the one that found out: `refresh`
-            // reports it through `CaptureStorage.guarded`, the feed as a
-            // refresh error (see `ReopeningFeed`). Any refresh error, not only
-            // §11.1's: a page that would not load is a list that could not be
-            // read either way.
-            storageUnavailable || items.loadState.refresh is LoadState.Error ->
-                Unreadable(Modifier.weight(1f))
+            when {
+                // First, because it is the only state where the ledger is certainly
+                // unreadable rather than empty. An empty list here would assert
+                // "you spent nothing" when the truth is "this cannot be read"
+                // (§11.1). Either read may be the one that found out: `refresh`
+                // reports it through `CaptureStorage.guarded`, the feed as a
+                // refresh error (see `ReopeningFeed`). Any refresh error, not only
+                // §11.1's: a page that would not load is a list that could not be
+                // read either way.
+                storageUnavailable || items.loadState.refresh is LoadState.Error ->
+                    Unreadable(Modifier.weight(1f))
 
-            // Not empty until the first load has actually returned. `loadState`
-            // distinguishes them; a bare `itemCount == 0` does not.
-            items.loadState.refresh is LoadState.Loading -> Reading(Modifier.weight(1f))
+                // Not empty until the first load has actually returned. `loadState`
+                // distinguishes them; a bare `itemCount == 0` does not.
+                items.loadState.refresh is LoadState.Loading -> Reading(Modifier.weight(1f))
 
-            items.itemCount == 0 -> Empty(onOpenSettings, Modifier.weight(1f))
+                items.itemCount == 0 -> Empty(onOpenSettings, Modifier.weight(1f))
 
-            else -> Feed(
-                items = items,
-                subtotals = read.daySubtotals,
-                summary = read.summary,
-                categoriesById = categoriesById,
-                uncategorizedId = read.uncategorizedId,
-                hasChoices = choices.isNotEmpty(),
-                onCategorize = { txnId -> categorizing = txnId },
-                onOpenMerchant = merchantActions.open,
-                awaitingReview = read.awaitingReview,
-                onOpenReview = onOpenReview,
-                modifier = Modifier.weight(1f),
-            )
+                else -> Feed(
+                    items = items,
+                    subtotals = read.daySubtotals,
+                    summary = read.summary,
+                    categoriesById = categoriesById,
+                    uncategorizedId = read.uncategorizedId,
+                    hasChoices = choices.isNotEmpty(),
+                    onCategorize = { txnId -> categorizing = txnId },
+                    onOpenMerchant = merchantActions.open,
+                    awaitingReview = read.awaitingReview,
+                    onOpenReview = onOpenReview,
+                    onOpenEntry = onOpenEntry,
+                    // Room under the last row for the button, so it never covers
+                    // the row's amount.
+                    bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        // In every state, an unreadable ledger included: the entry screen says
+        // for itself when it cannot save.
+        if (onAddPayment != null) {
+            AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(20.dp))
         }
     }
 
@@ -387,7 +411,9 @@ private fun Feed(
     onOpenMerchant: (ownKey: String) -> Unit,
     awaitingReview: Int,
     onOpenReview: (focus: Long?) -> Unit,
+    onOpenEntry: ((EditTarget) -> Unit)?,
     modifier: Modifier = Modifier,
+    bottomRoom: Dp = 0.dp,
 ) {
     Column(modifier) {
         MonthSummaryBlock(summary, categoriesById)
@@ -401,6 +427,7 @@ private fun Feed(
                 .weight(1f)
                 .background(Card)
                 .fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = bottomRoom),
         ) {
             // A sticky header, so it stays at the top of the list as it
             // scrolls, and inside the list's scroll so a test can reach it
@@ -443,6 +470,7 @@ private fun Feed(
                         onCategorize = onCategorize,
                         onOpenMerchant = onOpenMerchant,
                         onOpenReview = onOpenReview,
+                        onOpenEntry = onOpenEntry,
                     )
                 }
             }
@@ -624,3 +652,26 @@ private val DayLabelStyle = MonoLabel.copy(letterSpacing = 1.4.sp)
  * [dottedRule]'s other uses.
  */
 private val LEADER_INSET = 6.dp
+
+/**
+ * Spec 9.4's **Add payment**, the artboard's cash button: a + at the bottom
+ * right of the Spending tab, over the list. Named [ADD_PAYMENT] to TalkBack,
+ * since the + alone says nothing.
+ */
+@Composable
+private fun AddPaymentButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(56.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Ink)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = ADD_PAYMENT },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("+", fontFamily = Body, fontSize = 28.sp, color = Paper)
+    }
+}
+
+/** The button's 56dp and its 20dp margin, plus a little air. */
+private val ADD_PAYMENT_ROOM = 88.dp

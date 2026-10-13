@@ -113,6 +113,33 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
 @Serializable data class Review(val focus: Long? = null) : NavKey
 
 /**
+ * Spec 9.4's entry screen (#99), pushed on the Spending stack by the list's
+ * **Add payment** button, and drawn by `:feature:ledger`'s
+ * `ManualEntryScreen`. Off the stack's root, so the tab bar is hidden.
+ *
+ * [txnId] is the manual entry to open filled in, or null to add a new one;
+ * [createdAt] is its `created_at`, which tells it from a later row a
+ * delete-everything or a restore gives the same id (`EditTarget`).
+ *
+ * See [Ledger] for why it is registered nowhere.
+ */
+@Serializable data class ManualEntry(val txnId: Long? = null, val createdAt: Long? = null) : NavKey
+
+/**
+ * The Spending stack a first creation starts on: its root, with spec 9.4's
+ * entry screen above it when [addPayment] (the launcher shortcut, #107).
+ *
+ * Built as the stack's initial contents rather than pushed afterwards, so the
+ * Ledger is beneath the entry from the first frame and back from it lands
+ * there, never outside the app. The Spending tab is the one selected on a
+ * first creation, so nothing else needs to change. A launcher fires a static
+ * shortcut with `FLAG_ACTIVITY_CLEAR_TASK`, so a running app gets a new
+ * Activity here too rather than an `onNewIntent`.
+ */
+internal fun spendingStackFor(addPayment: Boolean): Array<NavKey> =
+    if (addPayment) arrayOf(Tab.Spending.root, ManualEntry()) else arrayOf(Tab.Spending.root)
+
+/**
  * The bottom bar's tabs, in the bar's order, each with the destination its
  * stack starts on.
  */

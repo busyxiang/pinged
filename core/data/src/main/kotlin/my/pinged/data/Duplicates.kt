@@ -31,6 +31,14 @@ object DuplicateWindows {
      * ten minutes for rule 1 precisely so the design carries two windows.
      */
     const val LAYER_TWO_MILLIS = SLOT_REFRESH_MILLIS
+
+    /**
+     * Layer 2's window around [at], both ends inclusive. Read by both searches
+     * that pair a capture with a manual entry -- the inbox's from a capture
+     * (`TxnDao.duplicatePair`), Save's warning from an entry (#104) -- so the
+     * two cannot disagree about what "near" is.
+     */
+    fun layerTwo(at: Long): LongRange = (at - LAYER_TWO_MILLIS)..(at + LAYER_TWO_MILLIS)
 }
 
 /**

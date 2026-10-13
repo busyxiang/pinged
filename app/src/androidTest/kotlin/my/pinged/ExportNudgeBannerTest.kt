@@ -269,7 +269,11 @@ class ExportNudgeBannerTest {
         val now = System.currentTimeMillis()
         Databases.txnDao(context).insert(
             Txn(
-                rawCaptureId = null,
+                // Captured, as its source says: a null id is a manual entry (spec 4).
+                // The id names no capture row; the column has no foreign key.
+                // The clock, because the file outlives each test here and the
+                // column is unique.
+                rawCaptureId = now,
                 amountSen = 1_250L,
                 direction = Direction.EXPENSE,
                 occurredAt = now,

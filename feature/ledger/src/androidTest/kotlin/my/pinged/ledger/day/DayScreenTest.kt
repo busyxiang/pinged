@@ -138,9 +138,9 @@ class DayScreenTest {
 
     @Test fun aDayPingedWasNotWatchingStillListsWhatItHas() {
         val dao = seed(bindDay = false)
-        // A row with no capture behind it, as an import or a hand entry is:
-        // it does not make the day captured.
-        dao.insert(txn(1_200L))
+        // A row with no capture behind it, as a hand entry is: it does not
+        // make the day captured.
+        dao.insert(txn(1_200L).copy(rawCaptureId = null))
 
         screen()
 

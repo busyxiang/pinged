@@ -23,12 +23,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import my.pinged.ledger.entry.EditTarget
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
@@ -64,6 +66,11 @@ import my.pinged.ui.theme.dashedOutline
  * gate could not file. A null [uncategorizedId] -- the seed row is gone --
  * equals no row's `category_id`, which is the honest answer there: nothing
  * knows which rows are uncategorized, so no row is claimed to be.
+ *
+ * [onOpenEntry] is spec 9.4's edit screen (#105), offered on a manual
+ * entry's body alone: a captured row's body has no tap action, because it
+ * is the bank's word and has nothing to correct. Null where the screen
+ * routes nowhere.
  */
 @Composable
 internal fun LedgerRow(
@@ -74,11 +81,13 @@ internal fun LedgerRow(
     onCategorize: (txnId: Long) -> Unit,
     onOpenMerchant: (ownKey: String) -> Unit,
     onOpenReview: (txnId: Long) -> Unit,
+    onOpenEntry: ((EditTarget) -> Unit)? = null,
 ) {
     val txn = row.txn
     TxnRow(
         txn = txn,
         name = row.displayName,
+        onOpen = onOpenEntry?.takeIf { txn.rawCaptureId == null }?.let { open -> { open(EditTarget(txn.id, txn.createdAt)) } },
         onOpenMerchant = txn.merchantKey?.let { key -> { onOpenMerchant(key) } },
         category = categoriesById[txn.categoryId],
         uncategorized = txn.categoryId == uncategorizedId,
@@ -168,7 +177,8 @@ internal fun RowCategoryChooser(
  * who sees no colour still reads it (WCAG 1.4.1).
  *
  * The small print under the merchant is the artboard's "Groceries · Touch 'n
- * Go": the category the money is filed under, then the app it was read from.
+ * Go": the category the money is filed under, then the app it was read from,
+ * or [ENTERED_BY_HAND] for a manual entry.
  * On an [uncategorized] row the name is dropped -- "Uncategorized" is where the
  * row is filed, not what it is about, and the row's own mark already says so --
  * and the chip stands in its place when there is one. On an excluded row the
@@ -186,6 +196,7 @@ internal fun RowCategoryChooser(
 private fun TxnRow(
     txn: Txn,
     name: String?,
+    onOpen: (() -> Unit)?,
     onOpenMerchant: (() -> Unit)?,
     category: Category?,
     uncategorized: Boolean,
@@ -196,7 +207,7 @@ private fun TxnRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .merchantLongPress(onOpenMerchant)
+            .rowGestures(onOpen, onOpenMerchant)
             .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -217,7 +228,10 @@ private fun TxnRow(
                 // thing §7.3 says does not count, and striking both reads as
                 // deleted, which is exactly what an excluded row is not.
             )
-            val source = txn.sourceLabel ?: txn.sourcePackage
+            // Spec 9.1: a manual entry says how it reached the ledger, never
+            // how it was paid. `raw_capture_id IS NULL` is what a manual
+            // entry is (spec 4), whatever its source columns hold.
+            val source = if (txn.rawCaptureId == null) ENTERED_BY_HAND else txn.sourceLabel ?: txn.sourcePackage
             // One `Text`, so the line reads as one line to a screen reader
             // rather than as fragments. The leading separator belongs only to
             // the chip: in front of a source with no category before it, "·"
@@ -283,25 +297,43 @@ private fun TxnRow(
     }
 }
 
+/** A manual entry's source in its small print (spec 9.1): `Food · Entered by hand`. */
+const val ENTERED_BY_HAND = "Entered by hand"
+
 /** The chip's label, named so the screen and its test cannot spell it differently. */
 internal const val CATEGORY_CHIP = "+ CATEGORY"
 
 /** The accessibility action a row offers for spec 6.4's sheet. */
 internal const val EDIT_MERCHANT = "Edit merchant"
 
+/** The accessibility action a manual entry's row offers for its edit screen (#105). */
+internal const val EDIT_ENTRY = "Edit payment"
+
 /**
- * Spec 6.4's long press, which opens the merchant sheet.
+ * The row body's gestures: a tap is [onOpen], a manual entry's edit screen
+ * (#105); a long press is [onOpenMerchant], spec 6.4's merchant sheet.
  *
- * A long press, not a tap, so that it cannot be mistaken for the
- * uncategorized chip inside the same row; and through `pointerInput` rather
- * than `combinedClickable`, which would make the whole row a tap target that
- * does nothing. The semantics action is what a screen reader offers instead,
- * since a long press is a gesture TalkBack does not pass through as one.
+ * The sheet is a long press, not a tap, so that it cannot be mistaken for
+ * the uncategorized chip inside the same row. Both go through one
+ * `pointerInput` rather than `combinedClickable`, which would make every
+ * row a tap target, a captured row's included, where a tap does nothing.
+ * The chip, the small print and the badge are clickables of their own: they
+ * consume their tap, so it never reaches [onOpen]. The semantics actions are
+ * what a screen reader offers instead, since a long press is a gesture
+ * TalkBack does not pass through as one.
  */
-private fun Modifier.merchantLongPress(onOpen: (() -> Unit)?): Modifier =
-    if (onOpen == null) this else this
-        .pointerInput(onOpen) { detectTapGestures(onLongPress = { onOpen() }) }
-        .semantics { onLongClick(label = EDIT_MERCHANT) { onOpen(); true } }
+private fun Modifier.rowGestures(onOpen: (() -> Unit)?, onOpenMerchant: (() -> Unit)?): Modifier =
+    if (onOpen == null && onOpenMerchant == null) this else this
+        .pointerInput(onOpen, onOpenMerchant) {
+            detectTapGestures(
+                onTap = onOpen?.let { open -> { open() } },
+                onLongPress = onOpenMerchant?.let { open -> { open() } },
+            )
+        }
+        .semantics {
+            if (onOpen != null) onClick(label = EDIT_ENTRY) { onOpen(); true }
+            if (onOpenMerchant != null) onLongClick(label = EDIT_MERCHANT) { onOpenMerchant(); true }
+        }
 
 /**
  * The artboard's "+ CATEGORY": the one control on a row, and the only thing on

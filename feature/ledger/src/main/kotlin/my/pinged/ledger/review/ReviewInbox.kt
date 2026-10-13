@@ -4,19 +4,16 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import my.pinged.capture.CaptureStorage
 import my.pinged.capture.Graph
 import my.pinged.data.Databases
 import my.pinged.data.dao.Answered
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.LedgerWrites
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
@@ -67,14 +64,13 @@ class ReviewInbox(
     private val _cards = MutableStateFlow<List<ReviewCard>?>(null)
     val cards: StateFlow<List<ReviewCard>?> = _cards.asStateFlow()
 
+    private val writes = LedgerWrites(context, scope, transfers)
+
     /** The database would not open on the last read or write. */
-    private val _storageUnavailable = MutableStateFlow(false)
-    val storageUnavailable: StateFlow<Boolean> = _storageUnavailable.asStateFlow()
+    val storageUnavailable: StateFlow<Boolean> = writes.storageUnavailable
 
     /** The restore or delete-everything running, while one is; see the class KDoc. */
-    val busy: StateFlow<Operation?> = transfers
-        .map { blocking(it) }
-        .stateIn(scope, SharingStarted.Eagerly, blocking(transfers.value))
+    val busy: StateFlow<Operation?> = writes.busy
 
     /** The last answer, while it can still be undone; see the class KDoc. */
     private val _undoable = MutableStateFlow<Undoable?>(null)
@@ -82,7 +78,7 @@ class ReviewInbox(
 
     init {
         scope.launch {
-            transfers.collect { if (blocking(it) != null) _undoable.value = null }
+            transfers.collect { if (it.replacingLedger != null) _undoable.value = null }
         }
         // Read here, not on the collector's first value: a collector started
         // a dispatch later would take a ledger replaced meanwhile as its own.
@@ -99,12 +95,12 @@ class ReviewInbox(
 
     /** Read every card again. */
     fun refresh(): Job = scope.launch {
-        guarded("The review inbox cannot be read", unavailable = Unit) {
+        writes.guarded("The review inbox cannot be read", unavailable = Unit) {
             val txns = Databases.txnDao(context())
             _cards.value = txns.awaitingReview().map { row ->
                 ReviewCard(row, pair = row.txn.takeIf { it.pendingReason == PendingReason.DUPLICATE_SUSPECT }?.let(txns::duplicatePair))
             }
-            _storageUnavailable.value = false
+            writes.opened()
         }
     }
 
@@ -232,29 +228,9 @@ class ReviewInbox(
      * KDoc), and [unavailable] when the database will not open.
      */
     private suspend fun <T : Any> written(what: String, unavailable: T, write: TxnDao.(now: Long) -> T): T? {
-        // Read now, not off [busy]: that is a collector's copy and can lag the
-        // operation's claim by a dispatch.
-        if (blocking(transfers.value) != null) return null
-        return guarded(what, unavailable) { Databases.txnDao(context()).write(System.currentTimeMillis()) }
+        if (writes.replacing) return null
+        return writes.guarded(what, unavailable) { Databases.txnDao(context()).write(System.currentTimeMillis()) }
     }
-
-    /**
-     * [block] under `CaptureStorage.guarded`, which leases the instance; a
-     * database that will not open sets [storageUnavailable] and answers
-     * [unavailable]. Damage never stops capture from here: a tap on the
-     * inbox is not stage one.
-     */
-    private suspend fun <T> guarded(what: String, unavailable: T, block: suspend () -> T): T =
-        CaptureStorage.guarded(
-            context(),
-            what = what,
-            unavailable = {
-                _storageUnavailable.value = true
-                unavailable
-            },
-            damageStopsCapture = false,
-            block = block,
-        )
 
     /**
      * Offer [answer] for Undo in place of the last; null, an answer that
@@ -264,11 +240,5 @@ class ReviewInbox(
      */
     private fun answered(answer: Undoable?) {
         if (answer != null) _undoable.value = answer
-    }
-
-    private companion object {
-        /** The two operations that replace the ledger; an export or a check does not. */
-        fun blocking(state: TransferState): Operation? =
-            state.running?.operation?.takeIf { it == Operation.RESTORE || it == Operation.DELETE }
     }
 }

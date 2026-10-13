@@ -48,6 +48,9 @@ import kotlin.concurrent.thread
 @RunWith(AndroidJUnit4::class)
 class ChartsReadTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+    /** Unique per row, as the column's index requires. */
+    private var captureIds = 1L
     private val app = context.applicationContext as Application
 
     private val september = YearMonth.of(2026, 9)
@@ -218,7 +221,9 @@ class ChartsReadTest {
     }
 
     private fun txn(amountSen: Long, direction: Direction, day: my.pinged.data.LocalDate) = Txn(
-        rawCaptureId = null,
+        // Captured, as its source says: a null id is a manual entry (spec 4).
+        // The id names no capture row; the column has no foreign key.
+        rawCaptureId = captureIds++,
         amountSen = amountSen,
         direction = direction,
         occurredAt = 1_000L,

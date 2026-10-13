@@ -87,7 +87,9 @@ class DeleteReachesTheLedgerTest {
         val now = System.currentTimeMillis()
         Databases.txnDao(context).insert(
             Txn(
-                rawCaptureId = null,
+                // Captured, as its source says: a null id is a manual entry (spec 4).
+                // The id names no capture row; the column has no foreign key.
+                rawCaptureId = 1L,
                 amountSen = 4_200L,
                 direction = Direction.EXPENSE,
                 occurredAt = now,
