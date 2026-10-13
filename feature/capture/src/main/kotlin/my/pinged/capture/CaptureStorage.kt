@@ -7,6 +7,7 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import my.pinged.data.DatabaseBeingDeletedException
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
@@ -106,7 +107,11 @@ object CaptureStorage {
      * again -- and not for the screens' reads or stage two, whose damage is
      * recorded as damage: a damaged index under the backup nudge's count
      * would otherwise put "nothing new is being recorded" up on every
-     * foreground while capture works.
+     * foreground while capture works. The same holds for a delete's or a
+     * restore's gate (`DatabaseBeingDeletedException`): it raises the flag
+     * for a capture, which it drops, and not for the rest, which lose nothing
+     * by it. Every other [DatabaseUnavailableException] raises it for every
+     * caller, since none of them clears on its own. `GateRefusalTest`.
      *
      * Memoized by [Databases], so after the first call this is a volatile read.
      */
@@ -188,7 +193,12 @@ object CaptureStorage {
             // A retry's open can meet a gate, or a file that will not open,
             // after an attempt met damage; that damage is still news.
             if (damaged) IntegrityStore.recordDamage(context)
-            CaptureHealth.recordStorageUnavailable(context)
+            // A gate is a delete or a restore, not damage: a screen refused
+            // by one has lost nothing, and the banner would stay up until the
+            // next guarded call succeeds. A capture refused by one is lost.
+            if (damageStopsCapture || thrown !is DatabaseBeingDeletedException) {
+                CaptureHealth.recordStorageUnavailable(context)
+            }
             unavailable()
         } finally {
             // After the retry, so it runs on the new instance before the
