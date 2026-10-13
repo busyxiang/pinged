@@ -1084,6 +1084,36 @@ class LedgerScreenTest {
     }
 
     /**
+     * Spec 9.1: a manual entry's small print names how it reached the ledger,
+     * `Groceries · Entered by hand`, and a captured row's still names its
+     * source. `raw_capture_id IS NULL` is what decides it (spec 4), so the
+     * manual row here keeps a source label it should never print.
+     */
+    @Test fun aManualEntryReadsEnteredByHandAndACaptureReadsItsSource() {
+        val groceries = TWO_CATEGORIES[1]
+        val captured = ledgerTxn(amountSen = 1_234L, localDate = SEP_7, categoryId = groceries.id, id = 71L)
+        val manual = ledgerTxn(amountSen = 5_678L, localDate = SEP_7, categoryId = groceries.id, id = 72L, rawCaptureId = null)
+        content(
+            items = listOf(LedgerItem.DayHeader(SEP_7, captured.id), LedgerItem.Row(captured), LedgerItem.Row(manual)),
+            refresh = LoadState.NotLoading(true),
+            categories = TWO_CATEGORIES,
+            uncategorizedId = UNCATEGORIZED_ID,
+        )
+        compose.waitForText("56.78", "The manual row was never drawn")
+
+        assertEquals(
+            "The manual entry does not read `Groceries · Entered by hand`",
+            1,
+            compose.onAllNodesWithTextSafely("Groceries · Entered by hand"),
+        )
+        assertEquals(
+            "The captured row does not read its source, or the manual one printed its stale label",
+            1,
+            compose.onAllNodesWithTextSafely("Groceries · Touch 'n Go eWallet"),
+        )
+    }
+
+    /**
      * A tap on a database that has stopped opening (§11.1), which is reachable:
      * the chip is drawn from a refresh that succeeded, and the key can go away
      * after it.

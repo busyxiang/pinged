@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
+import my.pinged.data.LocalDate
 import my.pinged.data.Seed
 import my.pinged.data.entity.Category
 
@@ -69,6 +70,19 @@ interface CategoryDao {
 
     @Query("SELECT * FROM category ORDER BY sort_order ASC")
     fun all(): List<Category>
+
+    /**
+     * Spec 9.4's category chips, most used first (#100): every category but
+     * [uncategorized], ordered by how many **counted** transactions ([TxnDao.COUNTED]:
+     * committed, not excluded) fall on a `local_date` in `[from, to]`, then by
+     * `sort_order`, so a category with no uses keeps its place and a fresh
+     * install reads in `sort_order`. Captured and manual rows count alike.
+     *
+     * Uncategorized is left out by name, as [uncategorizedIdOrNull] finds it:
+     * leaving the category empty is how the entry screen says "later".
+     */
+    @Query(RANKED_BY_USE_SQL)
+    fun rankedByUse(from: LocalDate, to: LocalDate, uncategorized: String = Seed.UNCATEGORIZED): List<Category>
 
     /**
      * **Import only, and named so it cannot be reached for by accident.**
@@ -141,6 +155,14 @@ interface CategoryDao {
      */
     @Query("SELECT is_protected FROM category WHERE id = :categoryId")
     fun isProtected(categoryId: Long): Boolean?
+
+    /**
+     * Whether [categoryId] names a category: a writer handed an id from
+     * before a restore or a delete-everything asks before writing it, since
+     * `txn.category_id`'s foreign key otherwise throws on the write.
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM category WHERE id = :categoryId)")
+    fun exists(categoryId: Long): Boolean
 
     // ---- primitives ----------------------------------------------------
     // Deliberately not part of the intended API surface: they are the pieces
@@ -223,5 +245,27 @@ interface CategoryDao {
         val protected = isProtected(categoryId)
             ?: throw IllegalArgumentException("No such category: $categoryId")
         require(!protected) { "Category $categoryId is protected and cannot be deleted" }
+    }
+
+    companion object {
+        /**
+         * [rankedByUse]'s query. The count is a sub-select over the period's
+         * rows, so `txn` is reached by its `local_date` range
+         * (`QueryPlanTest.theCategoryRankingTakesTheDayRange`) and only the
+         * fourteen categories are sorted. `id` breaks the last tie so the row
+         * never reorders between reads.
+         */
+        const val RANKED_BY_USE_SQL =
+            """
+            SELECT category.* FROM category
+            LEFT JOIN (
+                SELECT category_id, COUNT(*) AS uses FROM txn
+                WHERE """ + TxnDao.COUNTED + """
+                  AND local_date BETWEEN :from AND :to
+                GROUP BY category_id
+            ) AS used ON used.category_id = category.id
+            WHERE category.name != :uncategorized
+            ORDER BY COALESCE(used.uses, 0) DESC, category.sort_order, category.id
+            """
     }
 }

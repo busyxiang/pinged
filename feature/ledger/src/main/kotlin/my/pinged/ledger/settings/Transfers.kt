@@ -68,7 +68,19 @@ data class TransferState(
      * deleted" is false once one that was not a restore has run.
      */
     val lastWipe: Outcome? = null,
-)
+) {
+    /**
+     * The restore or delete-everything running, while one is: the two
+     * operations that replace the ledger. An export, a check or a salvage
+     * reads it and leaves it, so a write beside one is a write that lasts.
+     *
+     * The one rule for every screen that refuses a write while the ledger is
+     * being replaced (the review inbox, manual entry), so they cannot
+     * disagree about which operations do.
+     */
+    val replacingLedger: Operation?
+        get() = running?.operation?.takeIf { it == Operation.RESTORE || it == Operation.DELETE }
+}
 
 /**
  * The one owner, for the whole process, of the settings screen's five

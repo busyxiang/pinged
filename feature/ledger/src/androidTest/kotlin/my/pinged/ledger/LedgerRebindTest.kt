@@ -218,7 +218,9 @@ class LedgerRebindTest {
             "UPDATE category SET name = ? WHERE id = ?",
             arrayOf<Any>(categoryName, category),
         )
-        insertNow(merchant, amountSen, category)
+        // Entered by hand: a captured row's capture would have to be in the
+        // file too, or the import refuses it.
+        insertNow(merchant, amountSen, category, rawCaptureId = null)
         return exportBytes(Databases.shared(context))
     }
 
@@ -255,12 +257,18 @@ class LedgerRebindTest {
         return categories.all().first { it.id != uncategorized }.id
     }
 
-    private fun insertNow(merchant: String, amountSen: Long, category: Long = aNamedCategory()) {
+    private fun insertNow(
+        merchant: String,
+        amountSen: Long,
+        category: Long = aNamedCategory(),
+        rawCaptureId: Long? = nextCaptureId(),
+    ) {
         Databases.txnDao(context).insert(
             ledgerTxn(
                 amountSen = amountSen,
                 occurredAt = System.currentTimeMillis(),
                 categoryId = category,
+                rawCaptureId = rawCaptureId,
             ).copy(merchantDisplay = merchant),
         )
     }

@@ -3,6 +3,7 @@ package my.pinged.data
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.dao.CaptureDayDao
+import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
@@ -532,13 +533,26 @@ class QueryPlanTest {
 
     /**
      * Layer 2's own seek, so the sort `ORDER BY ABS(...)` needs is over one
-     * amount's rows inside twenty minutes, not over the table.
+     * amount's rows inside twenty minutes, not over the table. Both sides of
+     * a capture/manual-entry pair search with this one query: the inbox for a
+     * manual entry (captured 0), Save's warning for a capture (captured 1).
      */
-    @Test fun theManualEntryPairSeeksTheAmountWindow() {
-        val p = plan(bindable(TxnDao.CLOSEST_MANUAL_ENTRY_SQL), 1200, 0, Long.MAX_VALUE, "EXPENSE", 1L, 0L)
+    @Test fun theLayerTwoPairSeeksTheAmountWindow() {
+        for (captured in listOf(0, 1)) {
+            val p = plan(bindable(TxnDao.CLOSEST_IN_WINDOW_SQL), 1200, 0, Long.MAX_VALUE, captured, "EXPENSE", 1L, 0L)
+            assertTrue(
+                "The layer-2 pair (captured = $captured) does not seek amount and window:\n$p",
+                p.contains("SEARCH txn USING INDEX index_txn_amount_sen_occurred_at (amount_sen=? AND occurred_at>? AND occurred_at<?)"),
+            )
+        }
+    }
+
+    /** Save's warning for a backdated entry (#104): one day's rows of one amount, never the table. */
+    @Test fun theNearbyCaptureOnADaySeeksTheDay() {
+        val p = plan(bindable(TxnDao.CLOSEST_CAPTURE_ON_DAY_SQL), 1200, 20260815, "EXPENSE", 1L, 0L)
         assertTrue(
-            "The manual-entry pair does not seek amount and window:\n$p",
-            p.contains("SEARCH txn USING INDEX index_txn_amount_sen_occurred_at (amount_sen=? AND occurred_at>? AND occurred_at<?)"),
+            "The nearby capture on a day does not seek the day:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at (local_date=?)"),
         )
     }
 
@@ -647,6 +661,20 @@ class QueryPlanTest {
             p.contains("SEARCH t USING INDEX index_txn_raw_capture_id (raw_capture_id=?)"),
         )
         assertNoSort(p)
+    }
+
+    /**
+     * The entry screen's category chips (#100) count the last 90 days' rows,
+     * reached by their `local_date` range, not by every counted row ever
+     * written. `SEARCH`, not only the index name, as
+     * [theHeroSplitTakesTheMonthRange] says.
+     */
+    @Test fun theCategoryRankingTakesTheDayRange() {
+        val p = plan(bindable(CategoryDao.RANKED_BY_USE_SQL), *MONTH, Seed.UNCATEGORIZED)
+        assertTrue(
+            "The ranking does not read txn by a local_date range:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
+        )
     }
 
     // ---- lookups -------------------------------------------------------

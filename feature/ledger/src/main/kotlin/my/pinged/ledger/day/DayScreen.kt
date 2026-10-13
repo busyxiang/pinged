@@ -36,6 +36,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import my.pinged.ledger.entry.EditTarget
 import my.pinged.data.Databases
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.TxnState
@@ -72,6 +73,7 @@ import java.time.LocalDate
  * [onOpenReview] is the review inbox (§9.2), from a row's badge with that
  * row's id or from the heading's *M awaiting review* with the day's first
  * held row's; `:app` routes it, as it does Charts' `onDayClick`.
+ * [onOpenEntry] is a manual entry's edit screen (#105), from its row's body.
  */
 @Composable
 fun DayScreen(
@@ -79,6 +81,7 @@ fun DayScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenReview: (focus: Long?) -> Unit = {},
+    onOpenEntry: ((EditTarget) -> Unit)? = null,
 ) {
     val rewrites by Databases.rewrites.collectAsState()
     LifecycleResumeEffect(viewModel, rewrites) {
@@ -94,6 +97,7 @@ fun DayScreen(
         storageUnavailable = unavailable,
         onBack = onBack,
         onOpenReview = onOpenReview,
+        onOpenEntry = onOpenEntry,
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
         merchantSheet = merchantSheet,
@@ -123,6 +127,7 @@ internal fun DayScreenContent(
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
+    onOpenEntry: ((EditTarget) -> Unit)? = null,
 ) {
     // Hoisted out of the list for the reason `LedgerScreenContent` gives.
     var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -153,6 +158,7 @@ internal fun DayScreenContent(
                             onCategorize = { categorizing = it },
                             onOpenMerchant = merchantActions.open,
                             onOpenReview = onOpenReview,
+                            onOpenEntry = onOpenEntry,
                         )
                     }
                 }

@@ -82,6 +82,8 @@ class BarsReadTest {
     }
 
     private fun txn(amountSen: Long, categoryId: Long, day: my.pinged.data.LocalDate) = Txn(
+        // Entered by hand, so the 2nd stays out of the captured days the
+        // collecting count is asserted on: a capture there would be evidence.
         rawCaptureId = null,
         amountSen = amountSen,
         direction = Direction.EXPENSE,
@@ -91,7 +93,7 @@ class BarsReadTest {
         merchantDisplay = "Warung Pak Ali",
         merchantKey = "WARUNG PAK ALI",
         categoryId = categoryId,
-        sourcePackage = "my.com.tngdigital.ewallet",
+        sourcePackage = null,
         sourceLabel = null,
         confidence = Confidence.HIGH,
         state = TxnState.COMMITTED,

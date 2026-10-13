@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's only string resources. Screen text is Kotlin constants beside
+     each composable; these are here because the platform reads them from
+     XML: a static shortcut's label must be a @string reference.
+
+     Sentence case and the same words as the Spending list's + button
+     (ADD_PAYMENT in :feature:ledger), which spec 9.4 names alike. -->
+<resources>
+    <string name="shortcut_add_payment">Add payment</string>
+</resources>

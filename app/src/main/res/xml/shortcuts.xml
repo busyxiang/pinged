@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spec 9.4's launcher shortcut, on a long-press of the app icon. Static, so
+     it exists from install with nothing to publish at runtime; not a Quick
+     Settings tile, which 9.4 rejects.
+
+     The extra's name and value are AddPaymentShortcut's constants, which this
+     file cannot reference; AddPaymentShortcutTest launches the intent the
+     system parsed from here, so the two cannot drift apart unseen.
+
+     targetPackage is the applicationId, not the namespace: they are equal
+     today, and a build-type suffix would have to be reflected here. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="add_payment"
+        android:enabled="true"
+        android:icon="@mipmap/ic_shortcut_add_payment"
+        android:shortcutShortLabel="@string/shortcut_add_payment">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="my.pinged.tracker"
+            android:targetClass="my.pinged.MainActivity">
+            <extra
+                android:name="my.pinged.extra.OPEN"
+                android:value="add_payment" />
+        </intent>
+    </shortcut>
+</shortcuts>

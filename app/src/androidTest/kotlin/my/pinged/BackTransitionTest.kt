@@ -144,7 +144,9 @@ class BackTransitionTest {
         Databases.txnDao(compose.activity).insertAll(
             (1..ROWS).map { n ->
                 Txn(
-                    rawCaptureId = null,
+                    // Captured, as its source says: a null id is a manual entry (spec 4).
+                    // The id names no capture row; the column has no foreign key.
+                    rawCaptureId = n.toLong(),
                     amountSen = n * 1_000L,
                     direction = Direction.EXPENSE,
                     occurredAt = n * 1_000L,

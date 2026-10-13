@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Add payment shortcut's icon: the launcher icon's ink ground with a
+     paper plus, the same mark as the Spending list's + button. Adaptive, so
+     the launcher masks it like the app icon it sits beside. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_shortcut_add_payment_foreground" />
+</adaptive-icon>

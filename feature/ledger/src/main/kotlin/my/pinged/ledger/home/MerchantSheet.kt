@@ -343,9 +343,12 @@ private fun SheetButton(label: String, enabled: Boolean, onClick: () -> Unit, mo
 /**
  * `WipeSheet`'s field: a `BasicTextField` over a [Faint] underline, drawn on a
  * wrapper for the reason that file gives, with the placeholder in [Faint] too.
+ * The entry screen's merchant and note are this field as well, so the app has
+ * one idiom for a line of text. [tag] is on the wrapper; the editable node is
+ * its child.
  */
 @Composable
-private fun UnderlinedField(
+internal fun UnderlinedField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,

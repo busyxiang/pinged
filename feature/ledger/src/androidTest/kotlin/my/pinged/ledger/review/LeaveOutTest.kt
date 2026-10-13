@@ -88,7 +88,7 @@ class LeaveOutTest {
 
     @Test fun aLeftOutRowIsOutOfEveryTotalAndOnTheTransfersLineAndKeepAsExpenseCountsIt() = runBlocking {
         val dao = context.freshLedger()
-        dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = NOON))
+        val committed = dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = NOON))
         val leftOut = dao.insert(transfer(capturedBy(TNG, "tng-reload-v1", "r1"), at = NOON + 1, amountSen = 10_000L))
         val kept = dao.insert(transfer(capturedBy(TNG, "tng-reload-v1", "r2"), at = NOON + 2, amountSen = 2_000L))
         val inbox = inbox()
@@ -124,7 +124,7 @@ class LeaveOutTest {
         assertEquals(
             "The left-out row is not drawn in the day's feed, greyed",
             listOf(kept to false, leftOut to true),
-            dao.dayRows(DAY).filter { it.txn.rawCaptureId != null }
+            dao.dayRows(DAY).filter { it.txn.id != committed }
                 .map { it.txn.id to it.txn.isExcluded },
         )
     }

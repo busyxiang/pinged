@@ -43,6 +43,9 @@ class ReviewRouteTest {
 
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
 
+    /** Unique per row, as the column's index requires. */
+    private var captureIds = 1L
+
     @Before fun seed() {
         discard()
         Databases.shared(context).txnDao().insert(held())
@@ -94,7 +97,9 @@ class ReviewRouteTest {
     }
 
     private fun held() = Txn(
-        rawCaptureId = null,
+        // Captured, as its source says: a null id is a manual entry (spec 4).
+        // The id names no capture row; the column has no foreign key.
+        rawCaptureId = captureIds++,
         amountSen = 65_000L,
         direction = Direction.EXPENSE,
         occurredAt = System.currentTimeMillis(),

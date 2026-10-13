@@ -13,6 +13,7 @@ import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import my.pinged.parse.ExclusionReason
 import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicLong
 
 // What the ledger's instrumented classes need of a database and of a
 // transaction, in one place. They are several classes in one package and one
@@ -81,9 +82,23 @@ internal fun Context.corruptTheDatabase() {
 }
 
 /**
- * A transaction of the shape the ledger draws. Not `core:data`'s `sampleTxn`,
- * which lives in that module's own androidTest source set and is not on this
- * one's compile path.
+ * A `raw_capture_id` no other row in the process holds: the column is unique,
+ * and these ids name no capture, so they start far above any a test inserts.
+ */
+private val captureIds = AtomicLong(1_000_000_000L)
+
+/** The next of those ids, for a fixture that builds its own captured row. */
+internal fun nextCaptureId(): Long = captureIds.getAndIncrement()
+
+/**
+ * A captured transaction of the shape the ledger draws. Not `core:data`'s
+ * `sampleTxn`, which lives in that module's own androidTest source set and is
+ * not on this one's compile path.
+ *
+ * Captured, because it carries a source: a row with a null `raw_capture_id`
+ * is a manual entry (spec 4) and draws as one. Its capture id names no
+ * `raw_capture` row -- the column has no foreign key -- so an export of it is
+ * one `ImportJson` refuses; `review`'s `manual` is the manual-entry fixture.
  */
 internal fun ledgerTxn(
     amountSen: Long,
@@ -101,9 +116,10 @@ internal fun ledgerTxn(
      * agree with a screen that reported nothing at all.
      */
     id: Long = 0L,
+    rawCaptureId: Long? = nextCaptureId(),
 ) = Txn(
     id = id,
-    rawCaptureId = null,
+    rawCaptureId = rawCaptureId,
     amountSen = amountSen,
     direction = Direction.EXPENSE,
     occurredAt = occurredAt,

@@ -4,7 +4,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayInputStream
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -21,6 +20,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
+import my.pinged.ledger.holdWhile
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.Transfers
@@ -276,8 +276,17 @@ class ReviewInboxTest {
 
     @Test fun answersSurviveAnExportAndAnImport() = runBlocking {
         val dao = context.freshLedger()
-        val accepted = dao.insert(pending(PendingReason.OVER_THRESHOLD, at = NOON))
-        val rejected = dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON + 1))
+        // Real captures: the import refuses a transaction whose capture is
+        // not in the file.
+        val captures = Databases.rawCaptureDao(context)
+        val accepted = dao.insert(
+            pending(PendingReason.OVER_THRESHOLD, at = NOON)
+                .copy(rawCaptureId = captures.insert(capture("a", title = "MAE", text = "RM650.00 paid", bigText = null))),
+        )
+        val rejected = dao.insert(
+            pending(PendingReason.RULE_REVIEW, at = NOON + 1)
+                .copy(rawCaptureId = captures.insert(capture("b", title = "MAE", text = "RM650.00 paid", bigText = null))),
+        )
         val inbox = inbox()
         inbox.accept(card(inbox, accepted)).join()
         inbox.reject(card(inbox, rejected)).join()
@@ -422,40 +431,13 @@ class ReviewInboxTest {
 
     // ---- fixtures ------------------------------------------------------
 
-    /**
-     * Starts an operation held at its turn, waits for the inbox to say it is
-     * running, and hands back a release that lets it finish and waits for it.
-     */
+    /** [my.pinged.ledger.holdWhile] on the inbox's own busy flow. */
     private suspend fun holdWhile(
         operation: Operation,
         inbox: ReviewInbox,
         requester: Job = Job(),
         start: (Job, suspend () -> Unit) -> Unit,
-    ): AutoCloseable {
-        val held = CountDownLatch(1)
-        val release = CountDownLatch(1).also(releases::add)
-        start(requester) {
-            held.countDown()
-            release.await(TIMEOUT, TimeUnit.MILLISECONDS)
-        }
-        assertTrue("precondition: the $operation never took its turn", held.await(TIMEOUT, TimeUnit.MILLISECONDS))
-        assertEquals(
-            "The inbox does not say a $operation is running",
-            operation,
-            withTimeout(TIMEOUT) { inbox.busy.first { it != null } },
-        )
-        return AutoCloseable {
-            release.countDown()
-            runBlocking {
-                withTimeout(TIMEOUT) { Transfers.state.first { it.running == null } }
-                // [ReviewInbox.busy] is a main-thread collector's copy of that
-                // state, a dispatch behind it; failed twice in two full
-                // :feature:ledger runs without this wait. A busy that never
-                // clears still fails the caller's assertion, on its message.
-                withTimeoutOrNull(TIMEOUT) { inbox.busy.first { it == null } }
-            }
-        }
-    }
+    ): AutoCloseable = holdWhile(operation, inbox.busy, releases, requester, start)
 
     private fun categoryId(name: String): Long = Databases.categoryDao(context).all().single { it.name == name }.id
 

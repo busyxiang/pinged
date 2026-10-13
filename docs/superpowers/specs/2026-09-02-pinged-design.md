@@ -330,7 +330,7 @@ we failed to extract recoverable later by re-parsing. A user-initiated
 | Column | Type | Notes |
 |---|---|---|
 | id | Long PK | |
-| raw_capture_id | Long? | null for manual entries |
+| raw_capture_id | Long? | null exactly for a manual entry (section 9.4), and that is what a manual entry is: no other column marks one. A manual entry is the only row whose amount, date, merchant or note can change, and the only row that can be deleted |
 | amount_sen | Long | always positive |
 | currency | Text | `MYR` default |
 | direction | Enum | `EXPENSE`, `REFUND` |
@@ -339,7 +339,7 @@ we failed to extract recoverable later by re-parsing. A user-initiated
 | merchant_raw | Text? | exactly as parsed |
 | merchant_display | Text? | after cleanup, user-editable |
 | category_id | Long, indexed | FK to `category.id`, `ON DELETE RESTRICT`. Falls back to Uncategorized, but that is **applied by the writer**, not a column default: SQLite `DEFAULT` takes a constant and the Uncategorized id is a seeded row, i.e. data. There is no DDL default and there cannot be one. With the FK live, an insert that forgets to resolve it fails with SQLite error 787 instead of landing somewhere plausible |
-| source_package | Text? | null for manual |
+| source_package | Text? | null for a manual entry, as `source_label` is |
 | source_label | Text? | e.g. `Touch 'n Go eWallet` |
 | confidence | Enum | `HIGH`, `REVIEW` |
 | state | Enum | `COMMITTED`, `PENDING`, `REJECTED` |
@@ -1661,8 +1661,10 @@ pinned at top (total + top three categories). Each row shows merchant
 display name, category icon, source app, amount. Uncategorized rows carry a
 tappable chip. Excluded rows are greyed with an exclusion badge. A row
 awaiting review carries `AWAITING REVIEW · <reason>`, and tapping that badge
-opens the review inbox (section 9.2) scrolled to the row's own card. Search and
-filter by category, source, date range, amount range.
+opens the review inbox (section 9.2) scrolled to the row's own card. A manual
+entry (section 9.4) names how it reached the ledger in place of the source:
+its small print reads `<category> · Entered by hand`, on every screen that
+draws the row. Search and filter by category, source, date range, amount range.
 
 ### 9.2 Review inbox
 
@@ -1813,9 +1815,42 @@ negative or not captured opens that day; a blank cell does nothing. (#69)
 
 ### 9.4 Manual entry
 
-For cash. Amount keypad open and focused on launch, category as a chip row
-of most-used-first, merchant optional, note optional. Target three taps to
-save. Reachable from the cash button on the list, and from a launcher shortcut
+For any payment Pinged did not see: cash, and a digital payment whose
+notification never arrived. The row is labelled for how it reached the
+ledger (*Entered by hand*, section 9.1), never for how it was paid. It is a
+`txn` row with `raw_capture_id`, `source_package` and `source_label` null,
+`EXPENSE`, `HIGH`, `COMMITTED`, never asked of section 7.1's gate, and
+counted in every total and chart from the moment it is saved. It is never
+evidence of a captured day and never moves the history start.
+
+One screen, pushed over the list with the tab bar hidden:
+
+- **The amount** at the top, the number keyboard open and focused. Digits
+  fill in from the right as sen, so `1`,`2`,`5`,`0` reads RM12.50; backspace
+  drops the last digit. The amount is a `Long` of sen throughout: each digit
+  is `sen * 10 + d`, backspace `sen / 10`, the field takes digits only so a
+  keyboard's decimal separator never reaches it, and a digit that would pass
+  `Amount`'s ceiling (RM1,000,000.00) is ignored.
+- **A date chip** beside the amount, reading `Today`, moving the entry to any
+  past day, the history start's before included, at the current time of day.
+  Never a future day.
+- **A row of category chips**, most used in the last 90 days first, then
+  `sort_order`. Uncategorized is never a chip: no chip saves as
+  Uncategorized. A merchant Pinged already files pre-selects its category; a
+  tapped chip is never replaced.
+- **Merchant** and **Note**, optional, one line each.
+- **Save**, enabled above RM0.00. Amount, category, Save: three taps.
+
+A capture of the same amount near that time (section 7.2's ten minutes, or
+the whole day for a backdated entry) is named above Save, with **Add anyway**
+and **Cancel**. Tapping a manual entry's row reopens the screen filled in;
+every field can change, and **Delete** removes it after one confirmation.
+Captured rows have no edit and no delete: they are the bank's word. While a
+restore or a delete-everything runs, the screen keeps its draft and Save is
+off; nothing is queued behind the operation.
+
+Reachable from the **Add payment** button (+) at the bottom right of the
+Spending list, and from a launcher shortcut of the same name
 (`ShortcutManager`, a long-press on the app icon). Not a Quick Settings
 tile: those are `TileService`, they live in the notification shade rather
 than the home screen, the user has to add them by hand, and on API 34
@@ -2349,9 +2384,12 @@ Stated here so that it gets scheduled rather than assumed.
 5. Dedup layers and transfer handling.
 6. The three visualizations: the daily rhythm grid, category bars and the
    merchant ranking (section 9.3).
-7. Manual entry, capture health, OEM onboarding, and the rebinding
-   receivers from section 10.1 — which in practice want doing on day one,
-   because without them capture dies on every build installed.
+7. Manual entry (section 9.4), after step 3's review inbox (section 9.2),
+   which is the only place a duplicate suspect raised against a manual entry
+   can be resolved. OEM onboarding (section 10.4) is its own milestone.
+   Capture health and the rebinding receivers from section 10.1 are already
+   built: in practice they wanted doing on day one, because without them
+   capture dies on every build installed.
 
 Rule coverage for additional banks and wallets is continuous from step 1
 onward, driven by the authoring loop in section 5.6.
