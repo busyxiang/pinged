@@ -23,9 +23,9 @@ worktrees share the one emulator and install the same applicationId, so an
 unleased run lands in the middle of theirs. `emu` holds a lock for the
 command, boots the emulator if it is down, and stops one it booted after 15
 idle minutes (it holds 5G). A PreToolUse hook refuses `adb` and connected,
-install or uninstall tasks outside it. A wait or a full suite can outlast the
-Bash timeout, so run those with `run_in_background`; `emu --status` names the
-holder.
+install or uninstall tasks outside it. A lease waits up to 30 minutes for
+the one before it, longer than the Bash timeout, so run every `emu` command
+with `run_in_background`; `emu --status` names the holder.
 
 A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
 screen is shorter than a dev one, and a new Settings row once pushed "Delete

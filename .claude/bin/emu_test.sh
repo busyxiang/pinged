@@ -276,6 +276,15 @@ else
     fail "a lease that times out names the holder and its command: status $status, <$err>"
 fi
 
+# Long enough to queue behind a full suite (~10 min) instead of giving up.
+fresh
+"$script" -- sh -c "echo A-start >>$log; sleep 3" &
+until_in "$log" A-start
+"$script" -- true 2>"$work/$case_n/b.err" &
+until_in "$work/$case_n/b.err" "waiting up to"
+wait
+if grep -qF 'waiting up to 1800s' "$work/$case_n/b.err"; then pass "a lease waits 30 minutes by default"; else fail "a lease waits 30 minutes by default: $(cat "$work/$case_n/b.err")"; fi
+
 fresh
 export EMU_POOL="emulator-5554 emulator-5556"
 "$script" -- sh -c "echo \"A-start \$ANDROID_SERIAL\" >>$log; sleep 2; echo A-end >>$log" &
