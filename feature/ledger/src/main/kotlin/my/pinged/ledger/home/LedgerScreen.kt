@@ -578,7 +578,9 @@ private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, 
                 Text(
                     money(category.netSen, category.currency, symbol = false),
                     style = MonoNumerals.copy(fontSize = 13.sp),
-                    color = Ink,
+                    // Greyed with the total above it: the breakdown of a
+                    // number §8 says not to trust is not itself trustworthy.
+                    color = if (summary.trustworthy) Ink else Muted,
                 )
             }
         }
