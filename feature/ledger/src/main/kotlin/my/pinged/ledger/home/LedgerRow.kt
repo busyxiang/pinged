@@ -71,6 +71,10 @@ import my.pinged.ui.theme.dashedOutline
  * entry's body alone: a captured row's body has no tap action, because it
  * is the bank's word and has nothing to correct. Null where the screen
  * routes nowhere.
+ *
+ * [onRemove] is #132's Not a payment, offered on the body of a captured row
+ * that is `COMMITTED`: a held row has its badge and the inbox, and a manual
+ * entry has its edit screen. The tap only asks; the screen's sheet confirms.
  */
 @Composable
 internal fun LedgerRow(
@@ -82,12 +86,16 @@ internal fun LedgerRow(
     onOpenMerchant: (ownKey: String) -> Unit,
     onOpenReview: (txnId: Long) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
+    onRemove: ((txnId: Long) -> Unit)? = null,
 ) {
     val txn = row.txn
+    val remove = onRemove?.takeIf { txn.rawCaptureId != null && txn.state == TxnState.COMMITTED }
     TxnRow(
         txn = txn,
         name = row.displayName,
-        onOpen = onOpenEntry?.takeIf { txn.rawCaptureId == null }?.let { open -> { open(EditTarget(txn.id, txn.createdAt)) } },
+        onOpen = onOpenEntry?.takeIf { txn.rawCaptureId == null }?.let { open -> { open(EditTarget(txn.id, txn.createdAt)) } }
+            ?: remove?.let { ask -> { ask(txn.id) } },
+        openLabel = if (txn.rawCaptureId == null) EDIT_ENTRY else REMOVE_PAYMENT,
         onOpenMerchant = txn.merchantKey?.let { key -> { onOpenMerchant(key) } },
         category = categoriesById[txn.categoryId],
         uncategorized = txn.categoryId == uncategorizedId,
@@ -197,6 +205,7 @@ private fun TxnRow(
     txn: Txn,
     name: String?,
     onOpen: (() -> Unit)?,
+    openLabel: String,
     onOpenMerchant: (() -> Unit)?,
     category: Category?,
     uncategorized: Boolean,
@@ -207,7 +216,7 @@ private fun TxnRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .rowGestures(onOpen, onOpenMerchant)
+            .rowGestures(onOpen, openLabel, onOpenMerchant)
             .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -309,9 +318,13 @@ internal const val EDIT_MERCHANT = "Edit merchant"
 /** The accessibility action a manual entry's row offers for its edit screen (#105). */
 internal const val EDIT_ENTRY = "Edit payment"
 
+/** The accessibility action a captured row offers for Not a payment (#132). */
+internal const val REMOVE_PAYMENT = "Remove payment"
+
 /**
  * The row body's gestures: a tap is [onOpen], a manual entry's edit screen
- * (#105); a long press is [onOpenMerchant], spec 6.4's merchant sheet.
+ * (#105) or a captured row's removal (#132), named [openLabel]; a long press
+ * is [onOpenMerchant], spec 6.4's merchant sheet.
  *
  * The sheet is a long press, not a tap, so that it cannot be mistaken for
  * the uncategorized chip inside the same row. Both go through one
@@ -322,7 +335,7 @@ internal const val EDIT_ENTRY = "Edit payment"
  * what a screen reader offers instead, since a long press is a gesture
  * TalkBack does not pass through as one.
  */
-private fun Modifier.rowGestures(onOpen: (() -> Unit)?, onOpenMerchant: (() -> Unit)?): Modifier =
+private fun Modifier.rowGestures(onOpen: (() -> Unit)?, openLabel: String, onOpenMerchant: (() -> Unit)?): Modifier =
     if (onOpen == null && onOpenMerchant == null) this else this
         .pointerInput(onOpen, onOpenMerchant) {
             detectTapGestures(
@@ -331,7 +344,7 @@ private fun Modifier.rowGestures(onOpen: (() -> Unit)?, onOpenMerchant: (() -> U
             )
         }
         .semantics {
-            if (onOpen != null) onClick(label = EDIT_ENTRY) { onOpen(); true }
+            if (onOpen != null) onClick(label = openLabel) { onOpen(); true }
             if (onOpenMerchant != null) onLongClick(label = EDIT_MERCHANT) { onOpenMerchant(); true }
         }
 

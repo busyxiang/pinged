@@ -45,6 +45,7 @@ import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.OPEN_REVIEW
+import my.pinged.ledger.home.RemoveSheet
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ui.theme.Body
@@ -98,6 +99,7 @@ fun DayScreen(
         onBack = onBack,
         onOpenReview = onOpenReview,
         onOpenEntry = onOpenEntry,
+        onRemove = { viewModel.removeCaptured(it) },
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
         merchantSheet = merchantSheet,
@@ -128,7 +130,10 @@ internal fun DayScreenContent(
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
+    onRemove: ((txnId: Long) -> Unit)? = null,
 ) {
+    // Which row is being removed (#132).
+    var removing by rememberSaveable { mutableStateOf<Long?>(null) }
     // Hoisted out of the list for the reason `LedgerScreenContent` gives.
     var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
     val chooser = read?.chooser
@@ -159,6 +164,7 @@ internal fun DayScreenContent(
                             onOpenMerchant = merchantActions.open,
                             onOpenReview = onOpenReview,
                             onOpenEntry = onOpenEntry,
+                            onRemove = if (onRemove != null) { id -> removing = id } else null,
                         )
                     }
                 }
@@ -180,6 +186,18 @@ internal fun DayScreenContent(
                 onAssign(chosen, categoryId, teach)
             },
             onDismiss = { categorizing = null },
+        )
+    }
+    val removed = removing
+    val removedRow = removed?.let { id -> read?.rows?.firstOrNull { it.txn.id == id } }
+    if (removed != null && removedRow != null && onRemove != null) {
+        RemoveSheet(
+            row = removedRow,
+            onConfirm = {
+                removing = null
+                onRemove(removed)
+            },
+            onDismiss = { removing = null },
         )
     }
     if (merchantSheet != null) MerchantSheet(merchantSheet, merchantActions)

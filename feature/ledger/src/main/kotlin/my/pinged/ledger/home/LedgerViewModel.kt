@@ -340,6 +340,10 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         now: YearMonth = YearMonth.now(),
     ): Job = rows.assignCategory(txnId, categoryId, teach) { refresh(now).join() }
 
+    /** See [RowActions.removeCaptured]; the month is re-read after. */
+    fun removeCaptured(txnId: Long, now: YearMonth = YearMonth.now()): Job =
+        rows.removeCaptured(txnId) { refresh(now).join() }
+
     /** See [RowActions.retroPreview]. */
     suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
 
