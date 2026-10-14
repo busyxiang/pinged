@@ -5,6 +5,26 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.8.0](https://github.com/busyxiang/pinged/compare/v0.7.0...v0.8.0) (2026-10-14)
+
+
+### Features
+
+* prompt once when a suggested bank app posts while it is switched off ([#145](https://github.com/busyxiang/pinged/issues/145)) ([4e1ee56](https://github.com/busyxiang/pinged/commit/4e1ee569959caa64e2174fd15117f2d5cbef379b))
+* remove a captured payment from the ledger as not a payment ([#137](https://github.com/busyxiang/pinged/issues/137)) ([2043fee](https://github.com/busyxiang/pinged/commit/2043feeff57a49309d8ab42fd8e0589117c0c534))
+* seed Loans & financing and Insurance & takaful categories ([#134](https://github.com/busyxiang/pinged/issues/134)) ([#149](https://github.com/busyxiang/pinged/issues/149)) ([a5a62d1](https://github.com/busyxiang/pinged/commit/a5a62d128eb8b50f17abe2eaf05f5d8dffeb9328))
+* show the export's row count, a Cancel while it runs, and where the file went ([#146](https://github.com/busyxiang/pinged/issues/146)) ([0dcce30](https://github.com/busyxiang/pinged/commit/0dcce30cd289ec3ca14a9a9da5f2545546a15a6a)), closes [#127](https://github.com/busyxiang/pinged/issues/127)
+
+
+### Bug Fixes
+
+* delete under the gate in test fixtures, and move Today at midnight between clock reads ([#147](https://github.com/busyxiang/pinged/issues/147)) ([a8863ca](https://github.com/busyxiang/pinged/commit/a8863cab1f7a868fe72f8b90eb6545d9b672ea5c))
+* drop untouched sources from Seen recently 30 days after first seen ([#144](https://github.com/busyxiang/pinged/issues/144)) ([5752add](https://github.com/busyxiang/pinged/commit/5752add7d33b04f61ac963aa9fee837b3e164f6f))
+* grey the top three's amounts in a month whose history has gaps ([#135](https://github.com/busyxiang/pinged/issues/135)) ([816674b](https://github.com/busyxiang/pinged/commit/816674b73ae4b6c3b40b5aa46ecbb0a37eeb278c))
+* show a subtotal on day headers from earlier months ([#142](https://github.com/busyxiang/pinged/issues/142)) ([5c7638d](https://github.com/busyxiang/pinged/commit/5c7638d58d2b2771d16c7968a89a941a5487038c))
+* show the build and parser pack version in Settings' footer ([#136](https://github.com/busyxiang/pinged/issues/136)) ([4d04263](https://github.com/busyxiang/pinged/commit/4d0426359b99f7e1ab5cddfe07195741d4777368))
+* update the ledger's total and awaiting-review count when a capture lands while it is open ([#139](https://github.com/busyxiang/pinged/issues/139)) ([45feea9](https://github.com/busyxiang/pinged/commit/45feea95bc8a329a5492d36a0d51d8e4d59963a4))
+
 ## [0.7.0](https://github.com/busyxiang/pinged/compare/v0.6.0...v0.7.0) (2026-10-13)
 
 
