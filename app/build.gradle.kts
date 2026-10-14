@@ -62,7 +62,7 @@ android {
         targetSdk = 37
         versionCode = pingedVersion.code
         versionName = pingedVersion.name
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "my.pinged.PingedTestRunner"
     }
 
     // The signing config from docs/release.md. The workflow passes the

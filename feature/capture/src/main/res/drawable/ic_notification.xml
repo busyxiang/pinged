@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The status-bar icon: the launcher's receipt silhouette, which spans 32..76
+     by 29..78 of a 108 viewport, cropped to a 56 square around it. The path is
+     copied rather than shared through @string because this module cannot see
+     :app's resources. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <group android:translateX="-26" android:translateY="-25.5">
+        <path
+            android:pathData="M32,29 H76 V71 L70.5,78 L65,71 L59.5,78 L54,71 L48.5,78 L43,71 L37.5,78 L32,71 Z"
+            android:fillColor="#FFFFFF" />
+    </group>
+</vector>

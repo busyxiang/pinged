@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="capture_channel_name">Capture</string>
+    <string name="capture_channel_description">When a bank or e-wallet is posting but Pinged is not capturing it</string>
+    <string name="source_prompt_title">Capture %1$s?</string>
+    <string name="source_prompt_text">%1$s just posted a notification, and Pinged is ignoring it because it is switched off. Tap to choose which apps Pinged reads.</string>
+</resources>

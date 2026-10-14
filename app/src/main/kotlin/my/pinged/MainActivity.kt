@@ -1,8 +1,11 @@
 package my.pinged
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.SQLException
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -55,6 +58,7 @@ import my.pinged.ledger.entry.ManualEntryScreen
 import my.pinged.ledger.entry.ManualEntryViewModel
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.ListenerStatus
+import my.pinged.capture.SourcePrompt
 import my.pinged.capture.Graph
 import my.pinged.tracker.BuildConfig
 import my.pinged.data.Databases
@@ -137,16 +141,20 @@ class MainActivity : ComponentActivity() {
         // back the same intent, and `rememberNavBackStack` then restores the
         // saved stack and ignores this, so the entry is not routed twice.
         val spendingStart = spendingStackFor(addPayment = AddPaymentShortcut.opens(intent))
+        val openSources = SourcePrompt.opensSources(intent)
+        val settingsStart = settingsStackFor(openSources)
         setContent {
             PingedTheme {
                 // One saved stack per tab and the tab showing, kept in saved
                 // state for the reason `Ledger` gives. `TabStacks` holds the
                 // rules; see it for why `NavDisplay` is handed every tab's
                 // entries and not the shown tab's.
-                val selection = rememberSaveable { mutableStateOf(Tab.Spending) }
+                val selection = rememberSaveable {
+                    mutableStateOf(if (openSources) Tab.Settings else Tab.Spending)
+                }
                 val spendingStack = rememberNavBackStack(*spendingStart)
                 val chartsStack = rememberNavBackStack(Tab.Charts.root)
-                val settingsStack = rememberNavBackStack(Tab.Settings.root)
+                val settingsStack = rememberNavBackStack(*settingsStart)
                 val tabs = remember(selection, spendingStack, chartsStack, settingsStack) {
                     TabStacks(
                         mapOf(
@@ -402,6 +410,7 @@ class MainActivity : ComponentActivity() {
                             entry<Sources> {
                                 val sources: SourcesViewModel =
                                     viewModel(factory = sourcesFactory)
+                                AskForNotifications()
                                 SourcesScreen(
                                     viewModel = sources,
                                     // The same expression NavDisplay's onBack
@@ -695,6 +704,28 @@ class MainActivity : ComponentActivity() {
         // Both refused. The banner stays up, and the log names the reason
         // rather than leaving a button that silently does nothing.
         Log.w(TAG, "Neither notification-access screen would open on this device")
+    }
+
+    /**
+     * Spec 9.6's just-in-time prompt is a notification, so from API 33 it needs
+     * `POST_NOTIFICATIONS`. Asked here, on the list of sources, where what it is
+     * for is on screen, and once per visit: saved, so a rotation does not ask
+     * again. After two refusals the system answers for the user without a
+     * dialog, which is the only limit on asking -- and what keeps this from
+     * nagging.
+     */
+    @Composable
+    private fun AskForNotifications() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+        var asked by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            if (asked) return@LaunchedEffect
+            asked = true
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                ask.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
     }
 
     private fun start(intent: Intent): Boolean =
