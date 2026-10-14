@@ -219,7 +219,6 @@ internal fun LedgerScreenContent(
 
                 else -> Feed(
                     items = items,
-                    subtotals = read.daySubtotals,
                     summary = read.summary,
                     categoriesById = categoriesById,
                     uncategorizedId = read.uncategorizedId,
@@ -423,7 +422,6 @@ private fun Empty(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
 @Composable
 private fun Feed(
     items: LazyPagingItems<LedgerItem>,
-    subtotals: Map<LocalDate, List<CurrencyTotal>>,
     summary: MonthSummary?,
     categoriesById: Map<Long, Category>,
     uncategorizedId: Long?,
@@ -483,7 +481,7 @@ private fun Feed(
                     // shrinks under the composition. Nothing is the honest draw
                     // for a row that is no longer there.
                     null -> Unit
-                    is LedgerItem.DayHeader -> DayHeader(item.date, subtotals[item.date])
+                    is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal)
                     is LedgerItem.Row -> LedgerRow(
                         row = item.feedRow,
                         categoriesById = categoriesById,

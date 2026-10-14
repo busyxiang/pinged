@@ -18,6 +18,7 @@ import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RuleOrigin
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
+import my.pinged.ledger.home.MERCHANT_HEADING
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.SEPARATE_NO_RULE
@@ -85,8 +86,10 @@ class MerchantSheetRulesTest {
                 )
             }
         }
-        // The sheet's own list is up once its heading is.
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Mr D.I.Y.").fetchSemanticsNodes().isNotEmpty() }
+        // The sheet's own list is up once its heading is. Not a choice row: the
+        // list is lazy, and on CI's 320x640 screen the rows below the members
+        // are never composed.
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(MERCHANT_HEADING).fetchSemanticsNodes().isNotEmpty() }
     }
 
     private fun count(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().size

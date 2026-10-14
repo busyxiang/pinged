@@ -784,8 +784,8 @@ class LedgerScreenTest {
             compose.onAllNodesWithTextSafely("44.00"),
         )
         assertEquals(
-            "The 7th was drawn under two headings. Each of them looks " +
-                "subtotals[SEP_7] up, so the day's whole total is printed twice " +
+            "The 7th was drawn under two headings. Each of them carries " +
+                "the day's whole total, so it is printed twice " +
                 "with nothing on screen summing to either copy",
             1,
             compose.onAllNodesWithTextSafely("MON 7 SEP"),
@@ -794,6 +794,38 @@ class LedgerScreenTest {
             "The interrupting day is not drawn exactly once",
             1,
             compose.onAllNodesWithTextSafely("SUN 6 SEP"),
+        )
+    }
+
+    /**
+     * **A day header from an earlier month carries its subtotal** (§9.1, #124).
+     *
+     * The pinned summary and the aggregates are read for the month on screen,
+     * but the list pages through all of history: a day above the 1st has to
+     * draw the number its own rows add to. Two rows on one August day, 44.00 and 22.00,
+     * and one in the September the screen is refreshed for: 66.00 is on no row,
+     * so only a subtotal can put it on screen.
+     */
+    @Test fun aDayFromAnEarlierMonthIsDrawnWithItsSubtotal() {
+        val dao = freshLedger()
+        val food = categoryId(FOOD)
+        dao.insert(
+            ledgerTxn(amountSen = 1_100L, occurredAt = SEP_7_NOON, localDate = SEP_7, categoryId = food),
+        )
+        val aug18Noon = SEP_7_NOON - 20 * 24 * 60 * 60 * 1_000L
+        dao.insert(ledgerTxn(amountSen = 4_400L, occurredAt = aug18Noon, localDate = AUG_18, categoryId = food))
+        dao.insert(
+            ledgerTxn(amountSen = 2_200L, occurredAt = aug18Noon - 60 * 60 * 1_000L, localDate = AUG_18, categoryId = food),
+        )
+
+        screenFor(FIXED_MONTH)
+
+        compose.waitForText("TUE 18 AUG", "The August day's header was never drawn")
+        compose.waitForText("22.00", "The August day's second row was never drawn")
+        compose.waitForText(
+            "66.00",
+            "The August day has no subtotal: the aggregate is read for the month " +
+                "on screen only, so every header above the 1st is bare",
         )
     }
 
@@ -1258,7 +1290,7 @@ class LedgerScreenTest {
      * at the assignment itself, which is what records every intermediate.
      *
      * Falsified on emulator-5554 by publishing the same four fields one at a
-     * time -- `_read.value = _read.value.copy(daySubtotals = ...)` and so on,
+     * time -- `_read.value = _read.value.copy(summary = ...)` and so on,
      * which is the identical defect inside the collapsed type. The first
      * assertion fails naming two partial snapshots, the first of them
      * `categories=14 uncategorizedId=null summary=absent`: the pair the
@@ -1560,7 +1592,6 @@ class LedgerScreenTest {
     private fun content(
         items: List<LedgerItem>,
         refresh: LoadState,
-        subtotals: Map<LocalDate, List<CurrencyTotal>> = emptyMap(),
         summary: MonthSummary? = null,
         storageUnavailable: Boolean = false,
         categories: List<Category> = emptyList(),
@@ -1572,7 +1603,6 @@ class LedgerScreenTest {
         // the last moment: each state below is named by the one field it is
         // about, and a `LedgerRead(...)` per call site would bury that.
         val read = LedgerRead(
-            daySubtotals = subtotals,
             summary = summary,
             categories = categories,
             uncategorizedId = uncategorizedId,
@@ -1673,6 +1703,9 @@ class LedgerScreenTest {
 
         /** The day before [SEP_7], "SUN 6 SEP", for fixtures that need two days. */
         val SEP_6 = LocalDate(20_260_906)
+
+        /** A day in the month before [SEP_7]'s, "TUE 18 AUG". */
+        val AUG_18 = LocalDate(20_260_818)
 
         /** The month [SEP_7] falls in, which the dated fixtures are refreshed for. */
         val FIXED_MONTH: YearMonth = YearMonth.of(2026, 9)
