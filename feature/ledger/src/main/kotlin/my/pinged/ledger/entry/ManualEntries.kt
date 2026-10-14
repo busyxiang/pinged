@@ -95,9 +95,13 @@ class ManualEntries(
      */
     val today: StateFlow<LocalDate> = flow {
         while (true) {
-            emit(today())
-            val midnight = today().plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            delay((midnight - clock()).coerceIn(1L, TODAY_RECHECK_MS))
+            // One read. A day from one and a midnight from a later one skip
+            // the midnight that passed between them, until the recheck.
+            val now = clock()
+            val day = dayOf(now)
+            emit(day)
+            val midnight = day.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            delay((midnight - now).coerceIn(1L, TODAY_RECHECK_MS))
         }
     }.stateIn(scope, SharingStarted.Eagerly, today())
 
