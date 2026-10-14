@@ -36,13 +36,13 @@ class DaoTest {
 
     // ---- seed ----------------------------------------------------------
 
-    @Test fun seedsFourteenCategoriesWithUncategorizedProtected() {
+    @Test fun seedsSixteenCategoriesWithUncategorizedProtected() {
         val all = db.categoryDao().all()
         assertEquals(Seed.categories().size, all.size)
         val uncategorized = all.single { it.name == "Uncategorized" }
         assertTrue(uncategorized.isProtected)
         // Ordered by sort_order, and only Uncategorized is protected.
-        assertEquals((0..13).toList(), all.map { it.sortOrder })
+        assertEquals((0..15).toList(), all.map { it.sortOrder })
         assertEquals(listOf("Uncategorized"), all.filter { it.isProtected }.map { it.name })
         // sort_order 0 was renamed from "Makan" to "Food & Drinks"; the icon
         // key and the position did not move with it.

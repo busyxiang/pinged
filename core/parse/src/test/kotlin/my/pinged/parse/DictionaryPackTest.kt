@@ -132,7 +132,7 @@ class DictionaryPackTest {
         Observed("MR DIY", "tng-deducted-mr-diy.txt", "Shopping"),
         Observed("KK MART", "tng-duitnow-paid-kk-mart.txt", "Groceries"),
         Observed("GRAB", "mae-card-spend-grab.txt", "Transport"),
-        Observed("PTPTN", "mae-fpx-ptptn.txt", "Education"),
+        Observed("PTPTN", "mae-fpx-ptptn.txt", "Loans & financing"),
         Observed("RKL", "tng-duitnow-paid-rkl.txt", "Transport"),
     )
 

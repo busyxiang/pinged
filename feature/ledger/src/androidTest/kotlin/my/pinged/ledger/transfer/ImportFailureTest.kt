@@ -21,9 +21,9 @@ import org.junit.runner.RunWith
  * module's own exceptions with a message a person can act on, and -- the part
  * that matters -- that the database is exactly as it was.
  *
- * "Exactly as it was" is checked as *fourteen categories and nothing else*,
+ * "Exactly as it was" is checked as *sixteen categories and nothing else*,
  * which is what `DatabaseFactory.build` leaves behind. That is deliberately
- * awkward to satisfy: the import deletes those fourteen before writing the
+ * awkward to satisfy: the import deletes those sixteen before writing the
  * file's, and inserts every capture before it reaches the first transaction, so
  * any trace shows up as a missing category or a surviving capture.
  */
@@ -65,7 +65,7 @@ class ImportFailureTest {
         assertEquals("a merchant's name survived", 0, target.merchantIdentityDao().countNames())
         assertEquals(
             "the seeded categories were deleted and not put back",
-            14,
+            16,
             target.categoryDao().all().size,
         )
     }
@@ -122,7 +122,7 @@ class ImportFailureTest {
 
     /**
      * Cut in the middle of the transactions, which is the interesting place:
-     * by then the fourteen seeded categories have been deleted and fifteen
+     * by then the sixteen seeded categories have been deleted and seventeen
      * written in their place, and every source, day, learned rule and capture
      * in the file is in the database. An importer that committed per chunk
      * would leave all of it behind, and the user would be looking at a ledger
@@ -238,8 +238,8 @@ class ImportFailureTest {
      *
      * `txn.category_id` is an `ON DELETE RESTRICT` foreign key, so a transaction
      * naming an absent category fails with SQLite 787 -- and transactions are the
-     * *last* section, so by then the import has deleted fourteen categories and
-     * written fifteen, two sources, two days, two rules and four captures.
+     * *last* section, so by then the import has deleted sixteen categories and
+     * written seventeen, two sources, two days, two rules and four captures.
      */
     @Test fun aTransactionNamingAMissingCategoryRollsTheWholeImportBack() {
         val document = goodExport().editingOnly(Backup.TXNS) {
@@ -380,7 +380,7 @@ class ImportFailureTest {
         assertEquals(4, target.rawCaptureDao().countAll())
         assertEquals(2, target.txnDao().countAll())
         assertEquals(2, target.merchantRuleDao().countAll())
-        assertEquals(15, target.categoryDao().all().size)
+        assertEquals(17, target.categoryDao().all().size)
     }
 
     /**

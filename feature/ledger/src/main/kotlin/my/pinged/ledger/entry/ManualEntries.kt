@@ -167,7 +167,7 @@ class ManualEntries(
      * the memo carries the `Databases.generation` it was read under and is
      * read again when that has moved. Null means not read yet; `@Volatile`
      * because two lookups can overlap, and the worst a race costs is one more
-     * read of fourteen rows.
+     * read of sixteen rows.
      */
     @Volatile private var dictionary: DictionaryFiling? = null
 

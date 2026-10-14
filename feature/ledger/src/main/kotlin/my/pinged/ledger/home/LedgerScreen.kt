@@ -187,7 +187,7 @@ internal fun LedgerScreenContent(
     var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
 
     // Keyed on the list, because a `LazyColumn` recomposes as it scrolls and
-    // rebuilding a fourteen-entry map per frame is work for nothing.
+    // rebuilding a sixteen-entry map per frame is work for nothing.
     val categoriesById = remember(read.categories) { read.categories.associateBy { it.id } }
 
     val chooser = remember(read) { read.chooser }

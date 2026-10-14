@@ -25,7 +25,7 @@ import org.junit.runner.RunWith
  * seeding a category**.
  *
  * Every other class in this APK calls [ParseFixtures.prepare], which used to
- * put the fourteen categories in if they were missing. That one line is why
+ * put the seeded categories in if they were missing. That one line is why
  * ~350 tests were green against an app that could not write a single
  * transaction: `Seed.categories()` had no production caller, so on a real
  * install `ParseWorker` threw on its first run, returned `Result.retry()`, and

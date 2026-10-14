@@ -8,7 +8,7 @@ import my.pinged.ledger.R
  *
  * **Null is a real answer, not a failure.** Spec 9.6 asks for icons "where
  * they can be resolved", and §4 says only bundled icons can be offered:
- * `icon_key` is a Lucide name, the app ships fourteen of them, and §4's
+ * `icon_key` is a Lucide name, the app ships sixteen of them, and §4's
  * category editor -- which is what would let a row hold any other name -- is
  * out of this milestone. A row that somehow holds an unbundled key draws its
  * name alone rather than a stand-in glyph, because a wrong picture beside a
@@ -41,6 +41,8 @@ internal fun categoryIcon(iconKey: String): Int? = when (iconKey) {
     "hand-heart" -> R.drawable.ic_category_hand_heart
     "landmark" -> R.drawable.ic_category_landmark
     "ticket" -> R.drawable.ic_category_ticket
+    "hand-coins" -> R.drawable.ic_category_hand_coins
+    "shield" -> R.drawable.ic_category_shield
     "circle-dashed" -> R.drawable.ic_category_circle_dashed
     else -> null
 }

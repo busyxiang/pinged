@@ -56,7 +56,7 @@ class RowActions(
      *
      * **Safe only while nothing writes the table**: §4's editor is out and the
      * one write a row makes is `txn.category_id`. Read per refresh these are
-     * two of the six statements a chip tap issues, re-reading fourteen rows to
+     * two of the six statements a chip tap issues, re-reading sixteen rows to
      * move one row between them. A restore does replace the table, with the
      * backup's rows, which is why [Catalogue] carries the generation it was
      * read under and [readCatalogueOnce] reads again when that has moved.
@@ -69,7 +69,7 @@ class RowActions(
      *
      * `@Volatile` because two reads can overlap -- a resume and a chip tap both
      * launch on the holder's scope and both suspend into `Dispatchers.IO`. The
-     * worst a stale read costs is one extra pass over fourteen rows, never a
+     * worst a stale read costs is one extra pass over sixteen rows, never a
      * wrong answer.
      */
     @Volatile private var catalogue: Catalogue? = null
@@ -102,7 +102,7 @@ class RowActions(
     /**
      * [catalogue], filled in on the first read that gets to the database.
      *
-     * All fourteen categories, not a lookup per line: the table is seeded and
+     * All sixteen categories, not a lookup per line: the table is seeded and
      * tiny, so three point lookups cost more than one walk.
      * `uncategorizedIdOrNull` beside it is one indexed point lookup, measured
      * at under a millisecond next to the ledger's four aggregate reads -- so

@@ -1307,7 +1307,7 @@ class LedgerScreenTest {
      * three aggregates on every refresh.
      *
      * `assignCategory` refreshes, so "once per refresh" was once per chip tap:
-     * fourteen rows re-read to answer a control whose whole purpose is to move
+     * sixteen rows re-read to answer a control whose whole purpose is to move
      * a row between them.
      *
      * **The staleness is the assertion, and that is deliberate.** Nothing in
@@ -1322,7 +1322,7 @@ class LedgerScreenTest {
      *
      * Falsified on emulator-5554 by dropping the memo and reading the table on
      * every refresh: the first assertion fails naming its own reason, with the
-     * expected fourteen categories against a list the deleted row is gone
+     * expected sixteen categories against a list the deleted row is gone
      * from.
      */
     @Test fun theCategoryTableIsReadOnceAndTheAggregatesEveryTime() {
@@ -1632,8 +1632,8 @@ class LedgerScreenTest {
 
         /**
          * An id no seed row can have, for the fixtures that never see a
-         * database: `category.id` is `autoGenerate`, so the seeded fourteen are
-         * 1..14 and nothing the screen reads can collide with this by accident.
+         * database: `category.id` is `autoGenerate`, so the seeded sixteen are
+         * 1..16 and nothing the screen reads can collide with this by accident.
          */
         const val UNCATEGORIZED_ID = 900L
 
@@ -1657,7 +1657,7 @@ class LedgerScreenTest {
             id = UNCATEGORIZED_ID,
             name = UNCATEGORIZED,
             iconKey = "circle-dashed",
-            sortOrder = 13,
+            sortOrder = 15,
             isProtected = true,
         )
 

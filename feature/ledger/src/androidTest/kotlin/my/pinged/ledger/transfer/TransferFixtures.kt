@@ -97,7 +97,7 @@ class SeededLedger(
 fun seedOneOfEverything(db: PingedDatabase): SeededLedger {
     val uncategorized = db.categoryDao().requireUncategorizedId()
 
-    // A category the user added. The seeded fourteen would survive an import
+    // A category the user added. The seeded sixteen would survive an import
     // that simply left the seed alone, so they prove nothing about the
     // category section; this one only exists in the file.
     db.categoryDao().insertAll(listOf(Category(name = "Kopi", iconKey = "coffee", sortOrder = 99)))

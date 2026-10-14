@@ -86,7 +86,7 @@ class StreamingTest {
             observed += rows to stream.bytes
         })
 
-        assertEquals(captureCount + 14, total)
+        assertEquals(captureCount + 16, total)
         assertTrue(
             "Only ${observed.size} progress reports for $captureCount captures; the " +
                 "export is not reporting per page.",
