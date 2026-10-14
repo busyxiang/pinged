@@ -4,8 +4,11 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import my.pinged.capture.Graph
+import my.pinged.tracker.BuildConfig
 import org.junit.Rule
 import org.junit.Test
 
@@ -69,5 +72,17 @@ class SettingsNavigationTest {
 
         compose.onNodeWithText("SPENDING").assertIsSelected()
         compose.onNodeWithText("Capture sources").assertDoesNotExist()
+    }
+
+    /**
+     * #128: the footer in the real activity carries this build's version and the
+     * pack the matcher actually loaded. `FooterVersionTest` cannot see the
+     * wiring in `MainActivity`; a swapped or hard-coded argument fails here.
+     */
+    @Test fun theFooterNamesTheRunningBuildAndPack() {
+        compose.onNodeWithText("SETTINGS").performClick()
+
+        compose.onNodeWithText("BUILD ${BuildConfig.VERSION_NAME}", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("PACK ${Graph.parsePack().packVersion}", substring = true).performScrollTo().assertIsDisplayed()
     }
 }
