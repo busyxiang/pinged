@@ -44,6 +44,9 @@ class FirstCaptureTest {
         // install, so the clear comes first and the grant after it.
         shell("pm clear $APP")
         shell("pm grant ${bank.packageName} android.permission.POST_NOTIFICATIONS")
+        // Capture sources asks for this (spec 9.6's prompt), and the system
+        // dialog would sit over the row this test taps.
+        shell("pm grant $APP android.permission.POST_NOTIFICATIONS")
         shell("cmd notification allow_listener $APP/my.pinged.capture.PingedNotificationListener")
         bank.getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, "Payments", NotificationManager.IMPORTANCE_DEFAULT),
