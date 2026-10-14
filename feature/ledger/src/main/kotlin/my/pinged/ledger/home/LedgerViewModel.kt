@@ -30,6 +30,7 @@ import my.pinged.capture.CaptureStorage
 import my.pinged.data.CaptureEvidence
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
+import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.data.notCapturedDays
@@ -191,9 +192,31 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             .flow
             .map { paging -> paging.map { LedgerItem.Row(it.txn, it.identityKey, it.displayName) as LedgerItem } }
             .map { paging ->
-                paging.insertSeparators { before, after -> dayHeaderBetween(before, after) }
+                paging.insertSeparators { before, after ->
+                    dayHeaderBetween(before, after)?.let { it.copy(subtotal = subtotalOf(it.date)) }
+                }
             }
             .cachedIn(viewModelScope)
+
+    /**
+     * One day's subtotal for its heading, from SQL (§15.3), or null.
+     *
+     * Per heading, because the feed pages through all of history and any
+     * month-wide read would miss the days outside it. It runs when the
+     * separator is made, so a write that invalidates the feed re-reads it with
+     * the rows, and no refresh has to remember it.
+     *
+     * Under [Databases.leasing] for the reason [LeasedFeed] records, and on IO
+     * because the separator runs on the collector's dispatcher. A failure --
+     * a database being deleted, or damaged -- draws no number: the rows' own
+     * load reports it, and a subtotal is not worth taking the list down for.
+     */
+    private suspend fun subtotalOf(date: LocalDate): List<CurrencyTotal>? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                Databases.leasing { Databases.txnDao(context).dayTotals(date, date) }
+            }.getOrNull()
+        }?.map { CurrencyTotal(it.currency, it.netSen) }?.ifEmpty { null }
 
     init {
         // `dropWhile` rather than `drop(1)`: the value read here is what this
@@ -277,9 +300,6 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             damageStopsCapture = false,
         ) {
             val txns = Databases.txnDao(context)
-            val daySubtotals = txns.dayTotals(month.start, month.endInclusive)
-                .groupBy({ it.localDate }, { CurrencyTotal(it.currency, it.netSen) })
-
             // The one month-trust rule Charts and `Months` grey on too (#81),
             // so the three cannot disagree. It never counts today: the first
             // foreground of a day writes today's row launched, not awaited,
@@ -307,7 +327,6 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             // One assignment, at the end, built from locals: see [LedgerRead]
             // for what a snapshot mixing two reads costs.
             _read.value = LedgerRead(
-                daySubtotals = daySubtotals,
                 summary = summary,
                 categories = chooser.categories,
                 uncategorizedId = chooser.uncategorizedId,

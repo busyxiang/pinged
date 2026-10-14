@@ -48,8 +48,20 @@ sealed interface LedgerItem {
      * already used`, thrown out of measure rather than out of a coroutine and
      * taking the home screen down. A `Long` per heading is the cheaper side of
      * that trade. `DayHeaderRuleTest` reaches this field directly.
+     *
+     * @property subtotal the day's `TxnDao.dayTotals`, read for this day alone
+     *   when the heading is made, so a day from any month carries its own
+     *   (§9.1, #124). **Null draws no number, and never a zero.** It is null in
+     *   three cases the screen cannot tell apart: the read has not been made,
+     *   it failed, and the day holds nothing that counts (§8's excluded and
+     *   pending rows). A zero would be a false claim in the first two and
+     *   contradict the rows in the third; no number is true in all three.
      */
-    data class DayHeader(val date: LocalDate, val firstRowId: Long) : LedgerItem
+    data class DayHeader(
+        val date: LocalDate,
+        val firstRowId: Long,
+        val subtotal: List<CurrencyTotal>? = null,
+    ) : LedgerItem
 }
 
 /**
@@ -116,8 +128,6 @@ data class MonthSummary(
  * which §5.5 excludes from the re-parse comparison for good.
  */
 data class LedgerRead(
-    /** Keyed by the day the feed sections on, so a header can look its own up. */
-    val daySubtotals: Map<LocalDate, List<CurrencyTotal>> = emptyMap(),
     /** Null until the first read lands, which is not the same as an empty month. */
     val summary: MonthSummary? = null,
     /**
