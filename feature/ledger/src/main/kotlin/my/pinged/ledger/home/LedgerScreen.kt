@@ -229,7 +229,7 @@ internal fun LedgerScreenContent(
                     awaitingReview = read.awaitingReview,
                     onOpenReview = onOpenReview,
                     onOpenEntry = onOpenEntry,
-                    onRemove = onRemove?.let { _ -> { removing = it } },
+                    onRemove = if (onRemove != null) { id -> removing = id } else null,
                     // Room under the last row for the button, so it never covers
                     // the row's amount.
                     bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,

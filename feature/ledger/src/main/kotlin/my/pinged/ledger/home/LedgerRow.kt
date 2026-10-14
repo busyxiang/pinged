@@ -323,7 +323,8 @@ internal const val REMOVE_PAYMENT = "Remove payment"
 
 /**
  * The row body's gestures: a tap is [onOpen], a manual entry's edit screen
- * (#105) or a captured row's removal (#132), named [openLabel]; a long press is [onOpenMerchant], spec 6.4's merchant sheet.
+ * (#105) or a captured row's removal (#132), named [openLabel]; a long press
+ * is [onOpenMerchant], spec 6.4's merchant sheet.
  *
  * The sheet is a long press, not a tap, so that it cannot be mistaken for
  * the uncategorized chip inside the same row. Both go through one

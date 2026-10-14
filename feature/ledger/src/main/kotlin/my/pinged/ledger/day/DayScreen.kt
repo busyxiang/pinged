@@ -164,7 +164,7 @@ internal fun DayScreenContent(
                             onOpenMerchant = merchantActions.open,
                             onOpenReview = onOpenReview,
                             onOpenEntry = onOpenEntry,
-                            onRemove = onRemove?.let { _ -> { removing = it } },
+                            onRemove = if (onRemove != null) { id -> removing = id } else null,
                         )
                     }
                 }

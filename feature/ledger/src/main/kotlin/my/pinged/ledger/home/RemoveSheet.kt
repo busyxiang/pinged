@@ -27,9 +27,8 @@ internal const val REMOVE_NOTE =
 
 /**
  * Not a payment, asked of a captured row already counted (#132). A sheet and
- * not an immediate write: a captured row has no edit screen "so that the
- * bank's record of a payment can't be changed by a stray tap" (#97), and
- * nothing here can put the row back.
+ * not an immediate write: a captured row is the bank's word, and nothing here
+ * can put the row back, so a stray tap must not remove it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
