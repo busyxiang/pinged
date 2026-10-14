@@ -66,6 +66,8 @@ fun SettingsScreen(
     onOpenCorrections: () -> Unit,
     onOpenLearned: () -> Unit,
     onRescue: () -> Unit,
+    buildVersion: String,
+    packVersion: Int,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
@@ -98,7 +100,7 @@ fun SettingsScreen(
             onCheck = viewModel::check,
             onDelete = { confirmingWipe = true },
         )
-        Footer()
+        Footer(buildVersion, packVersion)
     }
 
     // Named before the picker is ever shown: spec 11.2 discards the device's
@@ -738,13 +740,24 @@ private fun Header() {
     )
 }
 
-/** The artboard's footer. Both halves are true, and worth saying. */
+/**
+ * The artboard's footer (design 9.2): both halves of the first line are true,
+ * and the build and parser pack versions sit beneath it, so a report of a bad
+ * parse can say which pack read it.
+ */
 @Composable
-private fun Footer() {
-    Text(
-        "NO INTERNET PERMISSION" + Separator + "NOTHING LEAVES THIS PHONE",
-        style = MonoLabel,
-        color = Muted,
-        modifier = Modifier.padding(20.dp),
-    )
+internal fun Footer(buildVersion: String, packVersion: Int) {
+    Column(Modifier.padding(20.dp)) {
+        Text(
+            "NO INTERNET PERMISSION" + Separator + "NOTHING LEAVES THIS PHONE",
+            style = MonoLabel,
+            color = Muted,
+        )
+        Text(
+            "BUILD $buildVersion" + Separator + "PACK $packVersion",
+            style = MonoLabel,
+            color = Muted,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
 }

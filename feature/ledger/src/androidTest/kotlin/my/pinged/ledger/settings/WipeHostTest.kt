@@ -77,6 +77,8 @@ class WipeHostTest {
                     onExport = onExport,
                     onRestore = {},
                     onRescue = onRescue,
+                    buildVersion = "0.0.0-test",
+                    packVersion = 0,
                 )
             }
         }

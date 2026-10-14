@@ -55,6 +55,8 @@ import my.pinged.ledger.entry.ManualEntryScreen
 import my.pinged.ledger.entry.ManualEntryViewModel
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.ListenerStatus
+import my.pinged.capture.Graph
+import my.pinged.tracker.BuildConfig
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
 import my.pinged.ledger.AppViewModelFactory
@@ -358,6 +360,8 @@ class MainActivity : ComponentActivity() {
                                     // user knowing what a restore costs.
                                     onRestore = { restoreLauncher.launch(arrayOf("*/*")) },
                                     onRescue = { rescueLauncher.launch(RESCUE_FILE_NAME) },
+                                    buildVersion = BuildConfig.VERSION_NAME,
+                                    packVersion = remember { Graph.parsePack().packVersion },
                                     modifier = Modifier.fillMaxSize(),
                                 )
                                 if (exportOpen) {

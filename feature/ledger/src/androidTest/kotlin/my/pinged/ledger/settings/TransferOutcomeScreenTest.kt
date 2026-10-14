@@ -238,6 +238,8 @@ class TransferOutcomeScreenTest {
                     onExport = {},
                     onRestore = {},
                     onRescue = {},
+                    buildVersion = "0.0.0-test",
+                    packVersion = 0,
                 )
             }
         }
@@ -259,6 +261,8 @@ class TransferOutcomeScreenTest {
                     onExport = {},
                     onRestore = {},
                     onRescue = {},
+                    buildVersion = "0.0.0-test",
+                    packVersion = 0,
                 )
             }
         }
