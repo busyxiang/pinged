@@ -156,7 +156,7 @@ internal fun CategoryPicker(
     }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        // `skipPartiallyExpanded`: the thirteen rows the seed leaves after the
+        // `skipPartiallyExpanded`: the fifteen rows the seed leaves after the
         // row's own category is dropped do not fit in a half sheet, and a
         // chooser that opens showing four of its options and has to be dragged
         // is a chooser that hides most of itself.

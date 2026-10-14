@@ -150,7 +150,7 @@ class CategoryDeleteTest {
 
     @Test fun deleteIfUnusedRemovesACategoryNothingPointsAt() {
         db.categoryDao().deleteIfUnused(food)
-        assertEquals(13, db.categoryDao().countAll())
+        assertEquals(15, db.categoryDao().countAll())
         assertNull(db.categoryDao().isProtected(food))
     }
 
@@ -212,7 +212,7 @@ class CategoryDeleteTest {
             listOf(groceries, groceries),
             db.merchantRuleCategoryIds(),
         )
-        assertEquals("The source category survived the merge", 13, db.categoryDao().countAll())
+        assertEquals("The source category survived the merge", 15, db.categoryDao().countAll())
         assertNull(db.categoryDao().isProtected(food))
         assertEquals(2, db.categoryDao().countTransactions(groceries))
         assertEquals(2, db.categoryDao().countRules(groceries))
@@ -222,7 +222,7 @@ class CategoryDeleteTest {
         db.insertMerchantRule("MCD KLCC", food)
         db.categoryDao().mergeInto(fromId = food, toId = groceries)
         assertEquals(listOf(groceries), db.merchantRuleCategoryIds())
-        assertEquals(13, db.categoryDao().countAll())
+        assertEquals(15, db.categoryDao().countAll())
     }
 
     @Test fun mergeIntoRefusesMergingACategoryIntoItself() {
@@ -268,7 +268,7 @@ class CategoryDeleteTest {
 
         db.categoryDao().mergeInto(fromId = food, toId = uncategorized)
 
-        assertEquals("The source category survived", 13, db.categoryDao().countAll())
+        assertEquals("The source category survived", 15, db.categoryDao().countAll())
         assertNull(db.categoryDao().isProtected(food))
         // Uncategorized itself is untouched, and still protected.
         assertEquals(true, db.categoryDao().isProtected(uncategorized))

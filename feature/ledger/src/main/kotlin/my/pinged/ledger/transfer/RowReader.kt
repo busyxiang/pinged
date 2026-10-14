@@ -184,7 +184,7 @@ class RowReader<D : Any>(
      * One of the three small tables `ExportJson` reads in one query, or
      * null if that query met damage: read whole, so lost whole, and
      * nothing is counted. They are small enough that a walk around their
-     * damage would rescue a few rows of fourteen categories or of one
+     * damage would rescue a few rows of sixteen categories or of one
      * row a day. The connection the damage poisoned is discarded, as
      * [page] discards one.
      */

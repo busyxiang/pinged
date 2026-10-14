@@ -111,7 +111,7 @@ class ChartsViewModel(app: Application, private val handle: SavedStateHandle) : 
             month.atEndOfMonth(),
         )
 
-        // The bars (#91): every category, since there are at most fourteen
+        // The bars (#91): every category, since there are at most sixteen
         // seeded ones and the mapping layer folds the remainder itself.
         val byCategory = txns.monthByCategory(range.start, range.endInclusive, limit = EVERY_CATEGORY)
         val categories = db.categoryDao()

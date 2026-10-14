@@ -170,14 +170,15 @@ object DatabaseFactory {
      * with a migration, which seeding rows must not force on `schemas/1.json`.
      *
      * The DAOs are also unusable inside it: mid-creation, `onCreate` gets a raw
-     * [SupportSQLiteDatabase], so the fourteen rows and their column mapping would
+     * [SupportSQLiteDatabase], so the sixteen rows and their column mapping would
      * live in a second place `Seed.categories()` cannot keep in step.
      *
      * ## What the guard costs
      *
-     * One `SELECT COUNT(*)` over a fourteen-row table per `build`, and `build` runs
-     * once per process, plus once after each delete or restore replaces the
-     * database. It does make the open eager, where Room would defer it to
+     * One `SELECT COUNT(*)` over a sixteen-row table per `build`, and one read of
+     * Uncategorized's `sort_order` for [my.pinged.data.dao.CategoryDao.topUp]
+     * through `category.name`'s unique index. `build` runs once per process,
+     * plus once after each delete or restore replaces the database. It does make the open eager, where Room would defer it to
      * the first query -- on the listener's cold-start path that query is the
      * allow-list lookup microseconds later, so the open is moved, not added.
      * `OpenTest.rawKeyModeMakesOpeningFast` holds the whole of `build` plus a query
@@ -205,6 +206,7 @@ object DatabaseFactory {
         return try {
             val seeded = database.categoryDao().seedIfEmpty()
             if (seeded > 0) Log.i(TAG, "Seeded $seeded categories into a new database")
+            topUp(database)
             database
         } catch (unreadable: SQLiteException) {
             runCatching { database.close() }
@@ -218,13 +220,35 @@ object DatabaseFactory {
     }
 
     /**
+     * [my.pinged.data.dao.CategoryDao.topUp], which **may fail without failing
+     * the open**. A database the seed read opens is one the app can run on, and
+     * the top-up only adds two categories; a failure here throws nothing, and
+     * the next open tries again.
+     *
+     * Its gate reads a page the seed's `COUNT(*)` does not. Measured on
+     * emulator-5554 by `PeriodicIntegrityTest.theDefaultCheckIsTheRealPragma`:
+     * a byte flipped mid-file, which the open used to survive for the weekly
+     * integrity check to report, made that read throw code 11. Thrown from
+     * [build], it was [DatabaseUnreadableException] -- an intact key reported
+     * as a lost ledger.
+     */
+    private fun topUp(database: PingedDatabase) {
+        try {
+            val added = database.categoryDao().topUp()
+            if (added > 0) Log.i(TAG, "Added $added seeded categories to an existing database")
+        } catch (failed: SQLiteException) {
+            Log.w(TAG, "Could not add the newer seeded categories; the next open tries again", failed)
+        }
+    }
+
+    /**
      * `pinged.db` opened as [build] opens it, for `Databases.aside` alone:
      * under [key], which that reads with [DatabaseKey.existingRawKeyPassphrase]
      * and never mints, and **not seeded** -- a second instance writes nothing
      * its caller did not ask for.
      *
      * Opened here rather than at its caller's first statement, by one read of
-     * the fourteen-row `category` table, so that a file that will not open --
+     * the sixteen-row `category` table, so that a file that will not open --
      * code 26 on a fresh connection, a damaged first page or a wrong key --
      * arrives as [DatabaseUnreadableException], as it does from [build], and
      * not as the poison a statement on an open connection throws.

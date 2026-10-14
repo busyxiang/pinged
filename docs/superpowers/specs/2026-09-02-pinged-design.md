@@ -417,7 +417,23 @@ separating the merge gives the merchant its name back.
 
 Flat, no hierarchy. Seeded: Food & Drinks, Groceries, Transport, Petrol & tolls,
 Bills & utilities, Telco & internet, Shopping, Health, Education, Family,
-Religious & zakat, Government & fees, Entertainment, Uncategorized.
+Religious & zakat, Government & fees, Entertainment, Loans & financing,
+Insurance & takaful, Uncategorized.
+
+Loans & financing takes PTPTN, hire purchase, housing and personal loans;
+"financing" is what an Islamic bank calls a loan. Insurance & takaful takes
+every premium, medical and takaful included, and Health keeps treatment:
+clinics, pharmacies, hospitals. There is no Investment category: money into
+ASNB, Tabung Haji or a robo-adviser is the user moving their own money, which
+§7.3 shows but keeps out of totals, and a category would count it as spending.
+
+**A category added to the seed reaches an existing install by a top-up**, not
+a migration: the rows are data, so the schema and its version do not move.
+On every open, and at the end of every restore, a table whose Uncategorized
+sits below the current seed's place for it is given the added names it lacks,
+and Uncategorized moves to that place. Only the added names: a missing
+seeded name is as likely to be one the user deleted, and the top-up runs
+once per table, so a category deleted after it stays deleted.
 
 Columns: `id`, `name`, `icon_key`, `sort_order`, `is_protected`.
 
@@ -435,6 +451,7 @@ tokens. The seeded mapping is fixed:
 | Bills & utilities | `zap` | Uncategorized | `circle-dashed` |
 | Telco & internet | `wifi` | Shopping | `shopping-bag` |
 | Health | `heart-pulse` | Education | `graduation-cap` |
+| Loans & financing | `hand-coins` | Insurance & takaful | `shield` |
 
 Religious & zakat deliberately uses a giving gesture rather than a place of
 worship. The category covers zakat, church tithes, temple donations and
@@ -498,7 +515,7 @@ all, which is why the two are edited from the same sheet.
 
 **The picker set.** Because icons ship as bundled vector drawables rather
 than a library, only bundled icons can be offered. Seeding just the
-fourteen defaults would make "add a category" impossible to complete, so the
+sixteen defaults would make "add a category" impossible to complete, so the
 app bundles a picker set of roughly forty-eight icons, grouped so the sheet
 is scannable:
 
@@ -508,7 +525,7 @@ is scannable:
 | Shops | `shopping-basket` `shopping-bag` `shopping-cart` `store` `gift` `shirt` |
 | Getting around | `car` `bus` `train-front` `plane` `bike` `fuel` `ship` |
 | Home and bills | `zap` `wifi` `droplet` `flame` `house` `wrench` `trash-2` |
-| Money and admin | `banknote` `wallet` `credit-card` `piggy-bank` `receipt` `landmark` `hand-coins` |
+| Money and admin | `banknote` `wallet` `credit-card` `piggy-bank` `receipt` `landmark` `hand-coins` `shield` |
 | People and health | `users` `baby` `heart-pulse` `stethoscope` `pill` `dog` |
 | Learning and work | `graduation-cap` `briefcase` `book-open` `smartphone` |
 | Enjoying yourself | `ticket` `gamepad-2` `music` `film` `dumbbell` `palette` |
@@ -518,7 +535,7 @@ At roughly 1 KB per drawable this costs about 50 KB, so bundling the set
 rather than the minimum is not a size decision worth agonising over.
 
 Icon names must be checked against the pinned Lucide release when they are
-imported. The grouping above is the design decision; an individual name that
+imported; `docs/licenses/lucide.md` names it. The grouping above is the design decision; an individual name that
 has been renamed upstream is a cheap correction, not a redesign.
 
 **No places of worship in the picker, deliberately.** Bundling a mosque
@@ -1012,8 +1029,8 @@ Caltex, BHPetrol, Setel), transport (Grab, Touch 'n Go tolls, MyRapid,
 Rapid KL), food delivery (foodpanda, GrabFood, ShopeeFood), telco and
 utilities (Maxis, Celcom, Digi, U Mobile, Unifi, Time, Astro, TNB, Air
 Selangor, Syabas, IWK), retail (Shopee, Lazada, Watsons, Guardian, Uniqlo,
-Mr DIY), and government and statutory (LHDN, KWSP/EPF, PERKESO/SOCSO, JPJ,
-MyEG, PTPTN, zakat bodies).
+Mr DIY), government and statutory (LHDN, KWSP/EPF, PERKESO/SOCSO, JPJ,
+MyEG, zakat bodies), and loans (PTPTN).
 
 ### 6.1 Learned rules match the exact string
 

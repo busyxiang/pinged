@@ -273,6 +273,20 @@ object ImportJson {
 
         verifyReferences(db)
         requeueCapturesWithoutTheirTxn(db)
+        // The `category` section replaced the table `DatabaseFactory.build`
+        // topped up with the file's own rows, so a backup seeded before
+        // `Seed.TOPPED_UP` existed is topped up here. After `verifyReferences`,
+        // which refuses a file with no Uncategorized: the top-up keys off it.
+        try {
+            db.categoryDao().topUp()
+        } catch (e: SQLiteException) {
+            throw ImportIntegrityException(
+                "This backup could not be written to the database: ${e.message}. That " +
+                    "is a storage problem on this device rather than a problem with " +
+                    "the file. Nothing was imported.",
+                e,
+            )
+        }
 
         val report = ImportReport(
             formatVersion = format,

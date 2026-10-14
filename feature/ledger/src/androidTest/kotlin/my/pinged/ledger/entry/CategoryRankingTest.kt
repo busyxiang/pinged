@@ -180,7 +180,8 @@ class CategoryRankingTest {
         val SEED_ORDER = listOf(
             "Food & Drinks", "Groceries", "Transport", "Petrol & tolls", "Bills & utilities",
             "Telco & internet", "Shopping", "Health", "Education", "Family",
-            "Religious & zakat", "Government & fees", "Entertainment",
+            "Religious & zakat", "Government & fees", "Entertainment", "Loans & financing",
+            "Insurance & takaful",
         )
     }
 }

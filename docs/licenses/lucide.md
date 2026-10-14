@@ -1,6 +1,6 @@
 # Lucide icons
 
-`feature/ledger/src/main/res/drawable/ic_category_*.xml` are the fourteen
+`feature/ledger/src/main/res/drawable/ic_category_*.xml` are the sixteen
 category icons spec section 4 names, converted from the upstream Lucide SVGs.
 `ic_row_not_counted.xml` (`circle-slash`) and `ic_row_uncategorized.xml`
 (`circle-plus`) are the two marks a transaction row draws instead of a
@@ -21,6 +21,12 @@ dependency: the icon is resolved from the category row at render time, and
 only bundled icons can be offered.
 
 Upstream: https://github.com/lucide-icons/lucide
+
+Pinned release: `lucide-static@1.50.0`, as published on npm. Every drawable
+listed above is the conversion of that release's `icons/<name>.svg`, checked
+file for file. Elements are emitted paths first, then circles, then lines,
+whatever order upstream lists them in, so a file that only reorders its
+elements upstream converts to the same drawable.
 
 ## Which licence covers which file
 

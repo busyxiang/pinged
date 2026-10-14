@@ -343,7 +343,7 @@ private object CashRegister : VisualTransformation {
  * and a rare one needs no other screen. A tap reports the chip; whether that
  * selects or deselects is the draft's ([ManualDraft.tapped]).
  *
- * A `Row` with its own scroll rather than a `LazyRow`: thirteen chips are
+ * A `Row` with its own scroll rather than a `LazyRow`: fifteen chips are
  * cheap to compose, and a composed chip is one `performScrollTo` reaches.
  */
 @Composable

@@ -1,7 +1,7 @@
 package my.pinged.parse
 
 /**
- * The names of the fourteen categories the app seeds, which a dictionary entry
+ * The names of the sixteen categories the app seeds, which a dictionary entry
  * may name (spec #45: an entry names its category by seeded name).
  *
  * Restated here because `Seed.categories()` is in `:core:data`, which depends
@@ -25,6 +25,8 @@ object SeededCategories {
         "Religious & zakat",
         "Government & fees",
         "Entertainment",
+        "Loans & financing",
+        "Insurance & takaful",
         "Uncategorized",
     )
 }

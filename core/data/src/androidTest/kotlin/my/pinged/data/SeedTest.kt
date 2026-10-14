@@ -55,6 +55,10 @@ class SeedTest {
         DatabaseFactory.build(context).useDb { db ->
             val rows = db.categoryDao().all()
             val expected = Seed.categories()
+            // Literals, not the seed's own size: spec 4's table is sixteen rows
+            // and Uncategorized is the last of them.
+            assertEquals(16, rows.size)
+            assertEquals(Seed.UNCATEGORIZED, rows.last().name)
             assertEquals(expected.size, rows.size)
             assertEquals(expected.map { it.name }, rows.map { it.name })
             assertEquals(expected.map { it.iconKey }, rows.map { it.iconKey })
@@ -95,7 +99,7 @@ class SeedTest {
      * Spec 4 lets the user rename, add and delete categories. If the guard were
      * "is `Uncategorized` present" rather than "is the table empty", a rename
      * of some other category would be indistinguishable from an unseeded
-     * database on the next open -- and the app would resurrect the thirteen
+     * database on the next open -- and the app would resurrect the fifteen
      * rows the user had curated away and fail on the ones they kept.
      */
     @Test fun anEditedCategoryTableIsNotReseeded() {
@@ -116,7 +120,7 @@ class SeedTest {
     }
 
     /**
-     * A half-seeded table must not be reachable, so the fourteen rows go in as
+     * A half-seeded table must not be reachable, so the sixteen rows go in as
      * one transaction. Asserted the only way it can be from outside: the table
      * is either empty or complete, never partial, and the count is stable
      * across the open that created it.
@@ -126,7 +130,7 @@ class SeedTest {
             assertEquals(Seed.categories().size, db.categoryDao().countAll())
         }
         // Read back through a second, independent handle: the first one's
-        // transaction has to have committed all fourteen or none.
+        // transaction has to have committed all sixteen or none.
         DatabaseFactory.build(context).useDb { db ->
             assertEquals(Seed.categories().size, db.categoryDao().countAll())
         }

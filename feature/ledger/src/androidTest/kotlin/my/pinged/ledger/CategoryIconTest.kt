@@ -13,7 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The fourteen category icons, and the two things a generated file can get
+ * The sixteen category icons, and the two things a generated file can get
  * wrong that nothing else would notice.
  *
  * These drawables are converted from Lucide's SVGs by a script (see
@@ -30,7 +30,7 @@ class CategoryIconTest {
 
     @Test fun everySeededIconKeyResolvesToADrawableThatInflates() {
         val keys = Seed.categories().map { it.iconKey }
-        assertEquals("The seed no longer holds fourteen categories", 14, keys.size)
+        assertEquals("The seed no longer holds sixteen categories", 16, keys.size)
 
         for (key in keys) {
             val id = categoryIcon(key)
@@ -72,7 +72,7 @@ class CategoryIconTest {
      * drawable resolves and inflates, and the only symptom is Groceries wearing
      * Transport's picture.
      */
-    @Test fun thefourteenKeysResolveToFourteenDifferentDrawables() {
+    @Test fun theSixteenKeysResolveToSixteenDifferentDrawables() {
         val ids = Seed.categories().map { it.iconKey }.mapNotNull(::categoryIcon)
 
         assertEquals(

@@ -46,27 +46,66 @@ interface CategoryDao {
      * Emptiness is the one state no user action can produce, because
      * `Uncategorized` is `is_protected` and [deleteIfUnused] refuses it.
      *
-     * **`@Transaction` does two jobs.** *Atomicity*: `insertAll` is fourteen
+     * **`@Transaction` does two jobs.** *Atomicity*: `insertAll` is sixteen
      * statements, and a process death partway leaves a table that is not empty, so
      * this guard never fills it in and `Uncategorized` may be one of the rows that
      * never landed. *Serialization*: the check and the insert are otherwise
      * check-then-act, and the loser of a race would die on `category.name`'s unique
      * index, taking `DatabaseFactory.build` -- the app's every entry point -- with
      * it. Room's write transactions are `BEGIN IMMEDIATE`, so the second opener
-     * blocks here, then reads fourteen and returns.
+     * blocks here, then reads sixteen and returns.
      *
      * @return the number of rows written, so a caller can log a first run.
      */
     @Transaction
     fun seedIfEmpty(): Int {
         // The count first, then the list. As a default argument the list was
-        // built at the call site on every process start -- 14 Category objects
+        // built at the call site on every process start -- 16 Category objects
         // allocated and thrown away each time the answer was "already seeded".
         if (countAll() != 0) return 0
         val categories = Seed.categories()
         insertAll(categories)
         return categories.size
     }
+
+    /**
+     * Gives a table seeded before [Seed.TOPPED_UP] existed the categories in
+     * it, then moves Uncategorized to [Seed.UNCATEGORIZED_SORT_ORDER].
+     * Called from [my.pinged.data.DatabaseFactory.build] after [seedIfEmpty],
+     * and by `ImportJson` at the end of a restore, which replaces the table
+     * with the backup's.
+     *
+     * **Runs only while Uncategorized sits below
+     * [Seed.UNCATEGORIZED_SORT_ORDER]**, which is true of no table this build
+     * seeded or topped up. So it runs once per database and once per old
+     * backup, and a category deleted after it -- a new one included -- stays
+     * deleted. A name already present is the user's and is left as it is;
+     * inserting it would die on `category.name`'s unique index. No
+     * Uncategorized at all is not this method's to repair: `ImportJson`
+     * refuses that file, and [requireUncategorizedId] names it.
+     *
+     * Row data, not schema: no migration and no version bump. `@Transaction`
+     * for the same two reasons as [seedIfEmpty].
+     *
+     * @return the number of rows written.
+     */
+    @Transaction
+    fun topUp(): Int {
+        val order = sortOrderOf(Seed.UNCATEGORIZED) ?: return 0
+        if (order >= Seed.UNCATEGORIZED_SORT_ORDER) return 0
+        val present = all().mapTo(HashSet()) { it.name }
+        val missing = Seed.categories().filter { it.name in Seed.TOPPED_UP && it.name !in present }
+        insertAll(missing)
+        moveUncategorized(Seed.UNCATEGORIZED_SORT_ORDER)
+        return missing.size
+    }
+
+    @Query("SELECT sort_order FROM category WHERE name = :name")
+    fun sortOrderOf(name: String): Int?
+
+    /** A targeted UPDATE of the one column, never a whole-row write. */
+    @Query("UPDATE category SET sort_order = :sortOrder WHERE name = :name")
+    fun moveUncategorized(sortOrder: Int, name: String = Seed.UNCATEGORIZED): Int
 
     @Query("SELECT * FROM category ORDER BY sort_order ASC")
     fun all(): List<Category>
@@ -90,7 +129,7 @@ interface CategoryDao {
      * A restore has to put the user's categories back under their own ids, because
      * `txn.category_id` and `merchant_rule.category_id` in the same file refer to
      * them -- and the target is never empty, since `DatabaseFactory.build` seeds
-     * fourteen rows before anything can read it. Inserting on top collides on the
+     * sixteen rows before anything can read it. Inserting on top collides on the
      * primary key and on `category.name`, and re-keying would mean rewriting every
      * id in the file.
      *
@@ -252,7 +291,7 @@ interface CategoryDao {
          * [rankedByUse]'s query. The count is a sub-select over the period's
          * rows, so `txn` is reached by its `local_date` range
          * (`QueryPlanTest.theCategoryRankingTakesTheDayRange`) and only the
-         * fourteen categories are sorted. `id` breaks the last tie so the row
+         * sixteen categories are sorted. `id` breaks the last tie so the row
          * never reorders between reads.
          */
         const val RANKED_BY_USE_SQL =

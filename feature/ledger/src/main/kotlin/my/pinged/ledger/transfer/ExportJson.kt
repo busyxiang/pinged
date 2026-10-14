@@ -178,10 +178,10 @@ object ExportJson {
 
     /**
      * A section read in one query, for the small tables only. `category` is
-     * bounded by spec 4's fourteen plus what the user adds, `capture_source` by the
+     * bounded by spec 4's sixteen plus what the user adds, `capture_source` by the
      * number of apps on the phone, `capture_day` gains one row a day, and spec
      * 6.4's two gain a row per merchant the user merges or renames by hand. Paging
-     * machinery on a fourteen-row table is code never exercised at its interesting
+     * machinery on a sixteen-row table is code never exercised at its interesting
      * boundary.
      */
     private fun <T> writeWhole(

@@ -112,7 +112,7 @@ class RoundTripTest {
         val restored = fresh()
         val report = ImportJson.read(restored, ByteArrayInputStream(bytes))
 
-        assertEquals(15, report.categories)
+        assertEquals(17, report.categories)
         assertEquals(2, report.captureSources)
         assertEquals(2, report.captureDays)
         assertEquals(2, report.merchantRules)
@@ -120,7 +120,7 @@ class RoundTripTest {
         assertEquals(2, report.txns)
         assertEquals(1, report.merchantAliases)
         assertEquals(1, report.merchantNames)
-        assertEquals(29, report.rows)
+        assertEquals(31, report.rows)
         assertEquals(Backup.FORMAT_VERSION, report.formatVersion)
         assertNotNull("The export stamps its own time and the report carries it", report.exportedAt)
 
@@ -164,7 +164,7 @@ class RoundTripTest {
      * A user-added category comes back, and comes back with the id its
      * transactions and its learned rules name.
      *
-     * The seeded fourteen would survive an import that never touched the
+     * The seeded sixteen would survive an import that never touched the
      * `category` table at all, so on their own they say nothing about whether
      * the section works.
      */
@@ -225,11 +225,11 @@ class RoundTripTest {
         val restored = fresh()
         val report = ImportJson.read(restored, ByteArrayInputStream(bytes))
 
-        assertEquals(14, report.categories)
+        assertEquals(16, report.categories)
         assertEquals(0, report.rawCaptures)
         assertEquals(0, report.txns)
         assertEquals(0, restored.rawCaptureDao().countAll())
-        assertEquals(14, restored.categoryDao().all().size)
+        assertEquals(16, restored.categoryDao().all().size)
         assertNotNull(restored.categoryDao().uncategorizedIdOrNull())
     }
 
