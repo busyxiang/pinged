@@ -50,8 +50,7 @@ class BackTransitionTest {
 
     /** The rows [leavingADayPlaysTheSameTransitionEitherWay] wrote are not the next class's. */
     @After fun leaveAnOpenableDatabase() {
-        Databases.reset()
-        compose.activity.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { compose.activity.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     /** The frame [SAMPLE_MS] into a pop that [pop] starts from the screen [open] opens. */

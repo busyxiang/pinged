@@ -39,8 +39,7 @@ class ExportCleanupTest {
 
     @Before fun startClean() {
         Transfers.forgetOutcome()
-        Databases.reset()
-        app.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { app.deleteDatabase(DatabaseFactory.NAME) }
         DatabaseFactory.build(app).useDb { }
     }
 

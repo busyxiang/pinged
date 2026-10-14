@@ -28,7 +28,7 @@ class GateRefusalTest {
 
     @Before fun healthyStorage() {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         CaptureHealth.forgetProcessMemo()
         runBlocking { CaptureHealth.clearStorageUnavailable(context) }
     }

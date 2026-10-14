@@ -54,13 +54,11 @@ class SalvageTest {
 
     @Before fun startClean() {
         Transfers.forgetOutcome()
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @After fun leaveAnOpenableDatabase() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         Transfers.forgetOutcome()
     }
 

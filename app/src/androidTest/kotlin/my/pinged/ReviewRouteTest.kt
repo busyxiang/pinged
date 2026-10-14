@@ -118,8 +118,7 @@ class ReviewRouteTest {
     )
 
     private fun discard() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =

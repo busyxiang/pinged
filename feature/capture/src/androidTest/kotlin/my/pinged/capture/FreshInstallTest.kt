@@ -54,7 +54,7 @@ class FreshInstallTest {
         CaptureFixtures.cancelStageTwo(context)
         Databases.shared(context).close()
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     /**

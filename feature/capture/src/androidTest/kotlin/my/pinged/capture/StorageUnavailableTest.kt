@@ -37,7 +37,7 @@ class StorageUnavailableTest {
 
     @Before fun freshDatabaseAndKey() {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         keyFile.delete()
         // Create both, then take only the key away: a key alone missing is the
         // state that must not be mistaken for a first run.
@@ -47,7 +47,7 @@ class StorageUnavailableTest {
 
     @After fun leaveItOpenable() {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         keyFile.delete()
         runBlocking { CaptureHealth.clearStorageUnavailable(context) }
     }

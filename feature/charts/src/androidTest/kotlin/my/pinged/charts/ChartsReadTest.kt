@@ -251,8 +251,7 @@ class ChartsReadTest {
     }
 
     private fun Context.discardTheDatabase() {
-        Databases.reset()
-        deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { deleteDatabase(DatabaseFactory.NAME) }
     }
 
     private fun assertWritable() {

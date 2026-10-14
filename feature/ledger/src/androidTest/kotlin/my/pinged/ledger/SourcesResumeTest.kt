@@ -139,8 +139,7 @@ class SourcesResumeTest {
      * switched ON that nothing is capturing from.
      */
     @Test fun aDeleteWhileTheScreenIsShowingIsReadWithoutAResume() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         Databases.captureSourceDao(context).insertForImport(
             CaptureSource(pkg = pkg, label = "Probe", enabled = true, firstSeenAt = 1L),
         )

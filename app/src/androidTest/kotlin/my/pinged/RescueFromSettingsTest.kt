@@ -72,8 +72,7 @@ class RescueFromSettingsTest {
     @Before fun aDamagedLedger() = runBlocking<Unit> {
         picked.delete()
         instrumentation.addMonitor(picker)
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         val leaf = Databases.shared(context).let { db ->
             db.runInTransaction { db.rawCaptureDao().insertAll(List(CAPTURES) { capture(it) }) }
             db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
@@ -98,8 +97,7 @@ class RescueFromSettingsTest {
         instrumentation.removeMonitor(picker)
         picked.delete()
         IntegrityStore.forget(context)
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @Test fun aDamagedLedgerIsRescuedFromSettingsIntoAFileItReports() {
@@ -160,9 +158,7 @@ class RescueFromSettingsTest {
         contentHash = "rescue-$index",
         // Not NEW, nor any status a re-parse revisits: every resume's
         // `ListenerStatus.report` enqueues stage two, which would work through
-        // NEW captures on the damaged file past this class's teardown and
-        // reopen the shared instance on it between the reset and the delete --
-        // a damaged ledger the next class is then served.
+        // NEW captures on the damaged file past this class's teardown.
         parseStatus = ParseStatus.UPDATE_OF,
     )
 

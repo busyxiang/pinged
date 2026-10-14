@@ -38,8 +38,7 @@ class SettingsStoreGuardTest {
 
     @Before fun startClean() = runBlocking {
         Transfers.forgetOutcome()
-        Databases.reset()
-        app.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { app.deleteDatabase(DatabaseFactory.NAME) }
         TransferStore.forget(app)
         IntegrityStore.forget(app)
         DatabaseFactory.build(app).useDb { it.rawCaptureDao().insert(bulkCapture(0)) }

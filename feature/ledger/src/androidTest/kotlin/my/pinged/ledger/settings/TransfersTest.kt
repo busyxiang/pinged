@@ -55,8 +55,7 @@ class TransfersTest {
 
     @Before fun startClean() = runBlocking {
         Transfers.forgetOutcome()
-        Databases.reset()
-        app.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { app.deleteDatabase(DatabaseFactory.NAME) }
         TransferStore.forget(app)
         IntegrityStore.forget(app)
     }

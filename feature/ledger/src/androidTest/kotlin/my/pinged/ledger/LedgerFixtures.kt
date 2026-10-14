@@ -41,10 +41,15 @@ internal const val SOURCE_LABEL = "Touch 'n Go eWallet"
  * unrelated test. And the delete is what leaves the file **openable** after
  * [corruptTheDatabase] has overwritten its first page, which every class in
  * this APK that opens the database afterwards depends on.
+ *
+ * **Under the delete's gate**, as spec 11.3's delete is. A view model an
+ * earlier test left reading opens the database whenever it next reads; without
+ * the gate an open between the reset and the delete builds on the file about
+ * to be unlinked, and that instance is the one served after it (#140,
+ * `LedgerFixturesTest`).
  */
 internal fun Context.discardTheDatabase() {
-    Databases.reset()
-    deleteDatabase(DatabaseFactory.NAME)
+    Databases.whileDeleting { deleteDatabase(DatabaseFactory.NAME) }
 }
 
 /**
