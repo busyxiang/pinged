@@ -138,9 +138,8 @@ fun SourcesScreenContent(
 
     Column(modifier.fillMaxSize().background(Paper)) {
         // `LazyColumn`, not a `Column` with `verticalScroll`. The lower list holds one
-        // row per app that has posted in the last 30 days (spec 9.6), which on a busy
-        // phone is still dozens, and an eager column composes every one of them on
-        // every read. Each item carries its own background and horizontal padding,
+        // row per app first seen in the last 30 days (spec 9.6), with no upper bound,
+        // and an eager column composes every one of them on every read. Each item carries its own background and horizontal padding,
         // because a lazy item has no enclosing Column to inherit them from.
         LazyColumn(
             Modifier

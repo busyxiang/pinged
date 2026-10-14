@@ -28,7 +28,7 @@ import my.pinged.data.entity.Arrival
  * `raw_capture` in full, a count is strictly less than what is already kept.
  */
 object SourceCounters {
-    private const val PREFIX = "seen:"
+    private const val SEEN_PREFIX = "seen:"
 
     /**
      * The post time of the newest notification any package has been counted for.
@@ -60,7 +60,7 @@ object SourceCounters {
      */
     private val NEWEST_COUNTED = longPreferencesKey("newest_counted_post_time")
 
-    private fun key(pkg: String) = intPreferencesKey("$PREFIX$pkg")
+    private fun key(pkg: String) = intPreferencesKey("$SEEN_PREFIX$pkg")
 
     private const val FIRST_PREFIX = "first:"
 
@@ -138,8 +138,8 @@ object SourceCounters {
         context.captureStore.edit { prefs ->
             val counted = prefs.asMap().keys
                 .map { it.name }
-                .filter { it.startsWith(PREFIX) }
-                .map { it.removePrefix(PREFIX) }
+                .filter { it.startsWith(SEEN_PREFIX) }
+                .map { it.removePrefix(SEEN_PREFIX) }
             for (pkg in counted) {
                 if (pkg in keep) continue
                 val first = prefs[firstSeen(pkg)]
@@ -183,10 +183,10 @@ object SourceCounters {
     suspend fun allSeenCounts(context: Context): Map<String, Int> =
         context.captureStore.data.first().asMap()
             .asSequence()
-            .filter { it.key.name.startsWith(PREFIX) }
+            .filter { it.key.name.startsWith(SEEN_PREFIX) }
             .mapNotNull { entry ->
                 val count = entry.value as? Int ?: return@mapNotNull null
-                entry.key.name.removePrefix(PREFIX) to count
+                entry.key.name.removePrefix(SEEN_PREFIX) to count
             }
             .toMap()
 }
