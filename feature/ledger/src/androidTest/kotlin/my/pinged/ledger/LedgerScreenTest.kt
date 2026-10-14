@@ -348,7 +348,7 @@ class LedgerScreenTest {
             categories = TWO_CATEGORIES,
         )
         val expected = if (trustworthy) Ink else Muted
-        for (amount in listOf("987.65", "432.10", "11.11")) {
+        for (amount in listOf("987.65", "432.10", "SGD 11.11")) {
             compose.waitForText(amount, "The top-three amount $amount was not drawn")
             val node = compose.onNodeWithText(amount, useUnmergedTree = true)
                 .fetchSemanticsNode()
