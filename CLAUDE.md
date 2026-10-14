@@ -10,13 +10,22 @@ numbers in comments and commit messages refer to it.
 ## Commands
 
     ./gradlew test                        # 321 JVM tests
-    ./gradlew connectedDebugAndroidTest   # 792, needs a device
-    ./gradlew :smoke:connectedMinifiedAndroidTest   # 1, the R8 build
+    .claude/bin/emu -- ./gradlew connectedDebugAndroidTest   # 792, needs a device
+    .claude/bin/emu -- ./gradlew :smoke:connectedMinifiedAndroidTest   # 1, the R8 build
     ./gradlew test lint :app:assembleDebug   # what CI runs
 
 Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
 JVM module and has no instrumented source set, so anything device-specific is
 tested from `:feature:capture`.
+
+**Every device command runs under `.claude/bin/emu`.** Sessions in other
+worktrees share the one emulator and install the same applicationId, so an
+unleased run lands in the middle of theirs. `emu` holds a lock for the
+command, boots the emulator if it is down, and stops one it booted after 15
+idle minutes (it holds 5G). A PreToolUse hook refuses `adb` and connected,
+install or uninstall tasks outside it. A wait or a full suite can outlast the
+Bash timeout, so run those with `run_in_background`; `emu --status` names the
+holder.
 
 A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
 screen is shorter than a dev one, and a new Settings row once pushed "Delete
@@ -24,8 +33,8 @@ everything" off it, so the click missed and two tests failed on CI only.
 `performScrollTo()` cannot reach a row of a lazy list that was never
 composed: scroll the list itself first, with `performScrollToKey` or
 `performScrollToNode`. Before calling an instrumented test done, run it at
-CI's size too: `adb shell wm size 320x640 && adb shell wm density 160`, then
-`wm size reset` and `wm density reset` afterwards.
+CI's size too, with `emu --ci-size`: it sets 320x640 at density 160 and
+resets both when the command ends, fails or is killed.
 `./gradlew test` needs no worktrees under `.claude/worktrees/`, or
 `RawDatabaseAccessTest` scans their copies and fails.
 
