@@ -145,6 +145,14 @@ jobs:
       - name: The release notes are built from the tag they claim
         run: bash .github/scripts/release_notes_test.sh
 
+      # Local tooling, but sessions trust it with each other's runs: a lease
+      # that leaks lands one worktree's install in another's suite. The tests
+      # fake adb and the emulator, so they need no device.
+      - name: The emulator lease serialises sessions
+        run: |
+          bash .claude/bin/emu_test.sh
+          python3 .claude/hooks/emu_guard_test.py
+
       # A suite this selects wrongly is skipped with a green run, so the rules
       # are tested here, against this repository's own module graph.
       - name: The emulator job chooses the suites a change can reach

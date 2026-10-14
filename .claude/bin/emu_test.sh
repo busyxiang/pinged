@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+#
+# Tests for emu, against a fake adb that logs its arguments and keeps the
+# `wm` override in a file, so this runs without a device and on CI.
+#
+# Each guard has a mutation test: take a copy of the script, revert the
+# guard with a `sed`, assert the result fails in that guard's own way. A
+# mutation that changes nothing is itself a failure, so a reworded line
+# cannot leave its test passing against nothing.
+
+set -euo pipefail
+
+script=$(cd "$(dirname "$0")" && pwd)/emu
+work=$(mktemp -d)
+trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$work"' EXIT
+
+failures=0
+
+fail() {
+    printf 'FAIL %s\n' "$1"
+    failures=$((failures + 1))
+}
+
+pass() {
+    printf 'ok   %s\n' "$1"
+}
+
+mkdir -p "$work/bin"
+cat >"$work/bin/adb" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$ADB_LOG"
+up=$ADB_STATE/online-$2
+case "$*" in
+    *get-state) [ -e "$up" ] && echo device || exit 1 ;;
+    *"getprop sys.boot_completed") [ -e "$up" ] && echo 1 || exit 1 ;;
+    *"emu kill") rm -f "$up" ;;
+    *"wm size reset") rm -f "$ADB_STATE/size" ;;
+    *"wm size "*) touch "$ADB_STATE/size" ;;
+    *"wm size") echo "Physical size: 1080x2400"
+        if [ -f "$ADB_STATE/size" ]; then echo "Override size: 320x640"; fi ;;
+    *"wm density reset") rm -f "$ADB_STATE/density" ;;
+    *"wm density "*) touch "$ADB_STATE/density" ;;
+    *"wm density") echo "Physical density: 420"
+        if [ -f "$ADB_STATE/density" ]; then echo "Override density: 160"; fi ;;
+esac
+EOF
+# Comes up half a second after launch, as `-port N`'s emulator-N, unless
+# EMULATOR_FAILS. Logs its arguments and whether it was handed the lock.
+cat >"$work/bin/emulator" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$ADB_STATE/emulator.log"
+if [ -e /proc/$$/fd/9 ]; then echo "inherited fd 9" >>"$ADB_STATE/emulator.log"; fi
+[ -z "${EMULATOR_FAILS:-}" ] || exit 1
+while [ $# -gt 0 ]; do [ "$1" = -port ] && port=$2; shift; done
+sleep 0.5
+touch "$ADB_STATE/online-emulator-$port"
+EOF
+chmod +x "$work/bin/emulator"
+export EMU_EMULATOR=$work/bin/emulator
+chmod +x "$work/bin/adb"
+export PATH=$work/bin:$PATH
+
+# A fresh lock directory, device state and log for each case.
+case_n=0
+fresh() {
+    case_n=$((case_n + 1))
+    export EMU_LOCK_DIR=$work/$case_n/locks
+    export ADB_STATE=$work/$case_n/state
+    export ADB_LOG=$work/$case_n/adb.log
+    unset EMU_POOL EMU_IDLE EMU_BOOT_WAIT EMULATOR_FAILS
+    mkdir -p "$ADB_STATE"
+    touch "$ADB_STATE/online-emulator-5554" "$ADB_STATE/online-emulator-5556"
+    : >"$ADB_LOG"
+    log=$work/$case_n/order.log
+    : >"$log"
+}
+
+# A copy of emu with one guard reverted; fails the run if the sed missed.
+mutant() {
+    local name=$1 expr=$2
+    local copy=$work/emu-$name
+    sed "$expr" "$script" >"$copy"
+    chmod +x "$copy"
+    if cmp -s "$script" "$copy"; then
+        fail "mutation $name changed nothing; the guard's line was reworded"
+    fi
+    printf '%s' "$copy"
+}
+
+until_in() {
+    local file=$1 needle=$2 i
+    for i in $(seq 100); do
+        grep -qF -- "$needle" "$file" 2>/dev/null && return 0
+        sleep 0.05
+    done
+    return 1
+}
+
+# A holds the emulator for 2s; B asks during it. B must start after A ends.
+serialises() {
+    local emu=$1
+    "$emu" -- sh -c "echo A-start >>$log; sleep 2; echo A-end >>$log" &
+    until_in "$log" A-start
+    "$emu" -- sh -c "echo B-start >>$log" 2>/dev/null
+    wait
+    [ "$(tr '\n' ' ' <"$log")" = "A-start A-end B-start " ]
+}
+
+# A leaves a process running that outlives it; B must not wait for that.
+releases_on_return() {
+    local emu=$1
+    "$emu" -- sh -c "sleep 5 & echo A-done >>$log"
+    "$emu" --wait 1 -- sh -c "echo B-start >>$log" 2>/dev/null
+}
+
+resets_after_failure() {
+    local emu=$1
+    "$emu" --ci-size -- false && return 1
+    [ ! -e "$ADB_STATE/size" ] && [ ! -e "$ADB_STATE/density" ]
+}
+
+# The command must die with the lease: left running, it would use the
+# emulator while the next holder does.
+stops_on_term() {
+    local emu=$1 pid child
+    "$emu" --ci-size -- sh -c "echo \$\$ >>$log; exec sleep 30" &
+    pid=$!
+    until [ -s "$log" ]; do sleep 0.05; done
+    child=$(cat "$log")
+    [ -e "$ADB_STATE/size" ] || return 1
+    kill -TERM "$pid"
+    wait "$pid" || true
+    sleep 0.2
+    if kill -0 "$child" 2>/dev/null; then kill "$child"; return 1; fi
+    [ ! -e "$ADB_STATE/size" ] && [ ! -e "$ADB_STATE/density" ]
+}
+
+fresh
+if serialises "$script"; then pass "a second lease waits for the first"; else fail "a second lease waits for the first: $(cat "$log")"; fi
+
+fresh
+if serialises "$(mutant no-flock 's/if flock -n 9; then/if true; then/')"; then
+    fail "mutation no-flock: leases still serialised"
+else
+    pass "mutation no-flock: leases overlap"
+fi
+
+fresh
+if releases_on_return "$script"; then pass "a process the command leaves behind does not hold the lease"; else fail "a process the command leaves behind does not hold the lease"; fi
+
+fresh
+if releases_on_return "$(mutant fd-leak 's/"\$@" <&3 9>&- &/"$@" <\&3 \&/')"; then
+    fail "mutation fd-leak: the lease was still released"
+else
+    pass "mutation fd-leak: the leftover process holds the lease"
+fi
+
+fresh
+if resets_after_failure "$script"; then pass "--ci-size resets after a failing command"; else fail "--ci-size resets after a failing command"; fi
+
+fresh
+if resets_after_failure "$(mutant no-reset '/if \[ "\$ci_size" = 1 \]; then reset_size; fi/d')"; then
+    fail "mutation no-reset: the size was still reset"
+else
+    pass "mutation no-reset: the size stays overridden"
+fi
+
+fresh
+if stops_on_term "$script"; then pass "TERM stops the command and resets the size"; else fail "TERM stops the command and resets the size"; fi
+
+fresh
+if stops_on_term "$(mutant term-orphans '/^trap .*exit 143/d')"; then
+    fail "mutation term-orphans: the command still stopped"
+else
+    pass "mutation term-orphans: the command outlives the lease"
+fi
+
+fresh
+"$script" -- false && status=0 || status=$?
+if [ "$status" = 1 ]; then pass "the command's exit status is emu's"; else fail "the command's exit status is emu's: got $status"; fi
+
+fresh
+out=$("$script" -- sh -c 'printf %s "$ANDROID_SERIAL"')
+if [ "$out" = emulator-5554 ]; then pass "ANDROID_SERIAL names the leased emulator"; else fail "ANDROID_SERIAL names the leased emulator: got <$out>"; fi
+
+fresh
+out=$(printf 'from-stdin' | "$script" -- cat)
+if [ "$out" = from-stdin ]; then pass "the command reads emu's stdin"; else fail "the command reads emu's stdin: got <$out>"; fi
+
+# A dead holder's override, found by the next lease, which did not ask for one.
+fresh
+touch "$ADB_STATE/size" "$ADB_STATE/density"
+"$script" -- true 2>/dev/null
+if [ ! -e "$ADB_STATE/size" ] && [ ! -e "$ADB_STATE/density" ]; then pass "a dead holder's override is reset"; else fail "a dead holder's override is reset"; fi
+
+fresh
+touch "$ADB_STATE/size" "$ADB_STATE/density"
+"$(mutant no-stale-reset '/^    reset_size$/d')" -- true 2>/dev/null
+if [ -e "$ADB_STATE/size" ]; then pass "mutation no-stale-reset: the override survives"; else fail "mutation no-stale-reset: the override was still reset"; fi
+
+fresh
+rm "$ADB_STATE/online-emulator-5554"
+"$script" -- sh -c "echo ran >>$log" 2>/dev/null
+if grep -q -- '-avd Pixel_10a -port 5554 ' "$ADB_STATE/emulator.log" && [ -s "$log" ]; then
+    pass "a lease boots an emulator that is not running"
+else
+    fail "a lease boots an emulator that is not running"
+fi
+if ! grep -q 'inherited fd 9' "$ADB_STATE/emulator.log"; then pass "the emulator it boots does not hold the lease"; else fail "the emulator it boots does not hold the lease"; fi
+
+fresh
+rm "$ADB_STATE/online-emulator-5554"
+"$(mutant emulator-fd-leak 's/2>&1 9>&- &$/2>\&1 \&/')" -- true 2>/dev/null
+if grep -q 'inherited fd 9' "$ADB_STATE/emulator.log"; then pass "mutation emulator-fd-leak: the emulator holds the lease"; else fail "mutation emulator-fd-leak: the emulator does not hold the lease"; fi
+
+fresh
+rm "$ADB_STATE/online-emulator-5554"
+export EMULATOR_FAILS=1 EMU_BOOT_WAIT=2
+"$script" -- sh -c "echo ran >>$log" 2>/dev/null && status=0 || status=$?
+if [ "$status" = 69 ] && [ ! -s "$log" ]; then pass "an emulator that never boots refuses the command"; else fail "an emulator that never boots refuses the command: status $status"; fi
+
+# Idle reaping: only what emu booted, only once idle, never under a lease.
+fresh
+rm "$ADB_STATE/online-emulator-5554"
+export EMU_IDLE=1
+"$script" -- true 2>/dev/null
+sleep 2.5
+if [ ! -e "$ADB_STATE/online-emulator-5554" ]; then pass "an emulator a lease booted stops when idle"; else fail "an emulator a lease booted stops when idle"; fi
+
+fresh
+export EMU_IDLE=1
+"$script" -- true
+sleep 2.5
+if [ -e "$ADB_STATE/online-emulator-5554" ]; then pass "an emulator started by hand is never stopped"; else fail "an emulator started by hand is never stopped"; fi
+
+no_reap_under_lease() {
+    local emu=$1
+    rm "$ADB_STATE/online-emulator-5554"
+    EMU_IDLE=1 "$emu" -- true 2>/dev/null
+    EMU_IDLE=0 "$emu" -- sh -c "sleep 2.5; [ -e $ADB_STATE/online-emulator-5554 ] && echo up >>$log"
+    [ -s "$log" ]
+}
+fresh
+if no_reap_under_lease "$script"; then pass "an idle stop waits for the lease another session took"; else fail "an idle stop waits for the lease another session took"; fi
+fresh
+if no_reap_under_lease "$(mutant reap-unleased 's/    flock -n 9 || exit 0/    true/')"; then
+    fail "mutation reap-unleased: the emulator survived anyway"
+else
+    pass "mutation reap-unleased: the emulator is stopped mid-lease"
+fi
+
+# Two leases in a row: the first's reaper must not count from the first.
+fresh
+rm "$ADB_STATE/online-emulator-5554"
+export EMU_IDLE=2
+"$script" -- true 2>/dev/null
+sleep 1.2
+"$script" -- true
+sleep 1.3
+if [ -e "$ADB_STATE/online-emulator-5554" ]; then pass "the idle clock restarts at each lease"; else fail "the idle clock restarts at each lease"; fi
+sleep 1.5
+if [ ! -e "$ADB_STATE/online-emulator-5554" ]; then pass "and stops idle after the last"; else fail "and stops idle after the last"; fi
+
+fresh
+"$script" --stop
+if [ ! -e "$ADB_STATE/online-emulator-5554" ]; then pass "--stop stops the emulator"; else fail "--stop stops the emulator"; fi
+
+fresh
+"$script" -- sh -c "echo A-start >>$log; sleep 3" &
+until_in "$log" A-start
+err=$("$script" --wait 1 -- true 2>&1) && status=0 || status=$?
+wait
+if [ "$status" = 75 ] && grep -qF 'sleep 3' <<<"$err" && grep -qF "$(basename "$(git -C "$(dirname "$script")" rev-parse --show-toplevel)")" <<<"$err"; then
+    pass "a lease that times out names the holder and its command"
+else
+    fail "a lease that times out names the holder and its command: status $status, <$err>"
+fi
+
+fresh
+export EMU_POOL="emulator-5554 emulator-5556"
+"$script" -- sh -c "echo \"A-start \$ANDROID_SERIAL\" >>$log; sleep 2; echo A-end >>$log" &
+until_in "$log" A-start
+"$script" --wait 1 -- sh -c "echo \"B-start \$ANDROID_SERIAL\" >>$log"
+wait
+if [ "$(tr '\n' ' ' <"$log")" = "A-start emulator-5554 B-start emulator-5556 A-end " ]; then
+    pass "a pool of two serves two leases at once"
+else
+    fail "a pool of two serves two leases at once: $(tr '\n' ' ' <"$log")"
+fi
+
+fresh
+"$script" -- sh -c "echo A-start >>$log; sleep 2" &
+until_in "$log" A-start
+out=$("$script" --status)
+wait
+if grep -q 'emulator-5554: held by' <<<"$out"; then pass "--status shows the holder"; else fail "--status shows the holder: <$out>"; fi
+out=$("$script" --status)
+if grep -q 'emulator-5554: free' <<<"$out"; then pass "--status shows a released emulator free"; else fail "--status shows a released emulator free: <$out>"; fi
+
+if [ "$failures" -gt 0 ]; then
+    printf '%s failed\n' "$failures"
+    exit 1
+fi

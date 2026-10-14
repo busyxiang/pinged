@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+#
+# Leases the emulator for one command, so sessions in different worktrees
+# take turns on it instead of interleaving. Every worktree installs the same
+# applicationId, so a second session's install replaces the first's APK
+# mid-run, and `wm size`, the listener grant and :smoke's Touch 'n Go package
+# are global to the device. CLAUDE.md's "Commands" says when to use it, and
+# .claude/hooks/emu_guard.py refuses device commands that do not.
+#
+#   emu [--ci-size] [--wait SECONDS] [--] COMMAND...
+#   emu --status | --stop
+#
+# The lock is flock(2) on a file under ~/.cache, outside every worktree, so a
+# worktree on an older branch with its own copy of this script still takes
+# the same lock. The kernel drops it when the holder dies, so there is no
+# stale lock to clear by hand.
+#
+# A lease boots the emulator if it is not running, and an emulator a lease
+# booted is stopped after EMU_IDLE seconds with no lease: it held 5.0G of host
+# memory whatever the GPU mode, because the emulator raises this image's RAM
+# to 4096MB over the AVD's hw.ramSize=2048. One started by hand is left alone.
+#
+# EMU_POOL lists the serials to lease from, first free wins. One emulator by
+# default: a second guest on this 12-core host starves rendering, which is
+# how CI's render-timeout flakes were reproduced (see ci.yml's emulator job).
+
+set -euo pipefail
+
+lock_dir=${EMU_LOCK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/pinged-emu}
+pool=${EMU_POOL:-emulator-5554}
+# Under the Bash tool's 600s ceiling, so a session that waits is told who it
+# waited for instead of being killed silently.
+wait_s=${EMU_WAIT:-540}
+idle_s=${EMU_IDLE:-900}
+boot_wait_s=${EMU_BOOT_WAIT:-300}
+avd=${EMU_AVD:-Pixel_10a}
+emulator=${EMU_EMULATOR:-${ANDROID_HOME:-$HOME/Android/Sdk}/emulator/emulator}
+# CI's flags (ci.yml's EMULATOR_OPTIONS), so a render timing seen here is the
+# one CI sees. -no-snapshot: on this host a cold boot took 12s and stopped in
+# 2s; a quickboot took 3s but its save made the stop 11s and kept ~4G on disk.
+flags=${EMU_FLAGS:--no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none -no-snapshot}
+ci_size=0
+
+usage() {
+    sed -n '10,11p' "$0" | sed 's/^# *//'
+}
+
+# Prints each serial's holder, or that it is free. The holder file is only a
+# label: whether a serial is held is the lock's answer, not the file's.
+describe() {
+    local s lock holder since where pid cmd
+    for s in $pool; do
+        lock=$lock_dir/$s.lock
+        if [ ! -e "$lock" ] || flock -n "$lock" true; then
+            printf '  %s: free\n' "$s"
+            continue
+        fi
+        holder=$lock_dir/$s.holder
+        if [ -s "$holder" ]; then
+            IFS=$'\t' read -r since where pid cmd <"$holder"
+            printf '  %s: held by %s for %ss, pid %s: %s\n' \
+                "$s" "$where" "$(($(date +%s) - since))" "$pid" "$cmd"
+        else
+            printf '  %s: held\n' "$s"
+        fi
+    done
+}
+
+online() {
+    adb -s "$1" get-state >/dev/null 2>&1 &&
+        [ "$(adb -s "$1" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]
+}
+
+# Kills the emulator and waits for its process to go, so a boot that follows
+# does not meet the old instance's lock on the AVD. Caller holds the lease.
+stop() {
+    local serial=$1 i
+    adb -s "$serial" emu kill >/dev/null 2>&1 || true
+    for i in $(seq 60); do
+        adb -s "$serial" get-state >/dev/null 2>&1 || break
+        sleep 1
+    done
+    rm -f "$lock_dir/$serial.booted"
+}
+
+# Run detached after a lease that found a booted emulator. Every such lease
+# starts one, and only the last survives the timestamp check: an earlier
+# reaper finds a newer release and leaves it to that lease's reaper.
+reap() {
+    local serial=$1 released
+    released=$(cat "$lock_dir/$serial.released" 2>/dev/null) || exit 0
+    sleep "$idle_s"
+    exec 9>>"$lock_dir/$serial.lock"
+    flock -n 9 || exit 0
+    [ -e "$lock_dir/$serial.booted" ] || exit 0
+    [ "$(cat "$lock_dir/$serial.released" 2>/dev/null)" = "$released" ] || exit 0
+    printf '%s\treaper\t%s\tstopping after %ss idle\n' "$(date +%s)" "$$" "$idle_s" >"$lock_dir/$serial.holder"
+    stop "$serial"
+    rm -f "$lock_dir/$serial.holder"
+}
+
+mkdir -p "$lock_dir"
+stop_now=0
+while [ $# -gt 0 ]; do
+    case $1 in
+        --ci-size) ci_size=1; shift ;;
+        --wait) wait_s=$2; shift 2 ;;
+        --status) describe; exit 0 ;;
+        --stop) stop_now=1; shift ;;
+        --reap) reap "$2"; exit 0 ;;
+        -h | --help) usage; exit 0 ;;
+        --) shift; break ;;
+        -*) printf 'emu: unknown option %s\n' "$1" >&2; usage >&2; exit 64 ;;
+        *) break ;;
+    esac
+done
+[ $# -gt 0 ] || [ "$stop_now" = 1 ] || { usage >&2; exit 64; }
+
+where=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+where=${where##*/}
+
+serial=
+deadline=$((SECONDS + wait_s))
+told=0
+while :; do
+    for s in $pool; do
+        exec 9>>"$lock_dir/$s.lock"
+        if flock -n 9; then
+            serial=$s
+            break 2
+        fi
+        exec 9>&-
+    done
+    if [ "$SECONDS" -ge "$deadline" ]; then
+        printf 'emu: no emulator free after %ss. Rerun with run_in_background, or --wait longer.\n' "$wait_s" >&2
+        describe >&2
+        exit 75
+    fi
+    if [ "$told" = 0 ]; then
+        printf 'emu: waiting up to %ss for\n' "$wait_s" >&2
+        describe >&2
+        told=1
+    fi
+    sleep 1
+done
+
+holder=$lock_dir/$serial.holder
+printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$where" "$$" "${*:-stop}" >"$holder"
+
+if [ "$stop_now" = 1 ]; then
+    stop "$serial"
+    rm -f "$holder"
+    exit 0
+fi
+
+reset_size() {
+    adb -s "$serial" shell wm size reset >/dev/null 2>&1 || true
+    adb -s "$serial" shell wm density reset >/dev/null 2>&1 || true
+}
+
+# Runs while fd 9 is still open, so the next holder's label is never removed.
+on_exit() {
+    if [ "$ci_size" = 1 ]; then reset_size; fi
+    rm -f "$holder"
+    if [ -e "$lock_dir/$serial.booted" ] && [ "$idle_s" -gt 0 ]; then
+        date +%s%N >"$lock_dir/$serial.released"
+        setsid "$0" --reap "$serial" </dev/null >/dev/null 2>&1 9>&- &
+    fi
+}
+trap on_exit EXIT
+
+if ! online "$serial"; then
+    # Several instances of one AVD run only if every one is -read-only.
+    read_only=
+    if [ "$(wc -w <<<"$pool")" -gt 1 ]; then read_only=-read-only; fi
+    printf 'emu: booting %s on %s\n' "$avd" "$serial" >&2
+    # shellcheck disable=SC2086 # flags is a word list
+    setsid "$emulator" -avd "$avd" -port "${serial#emulator-}" $read_only $flags \
+        </dev/null >"$lock_dir/$serial.emulator.log" 2>&1 9>&- &
+    touch "$lock_dir/$serial.booted"
+    boot_deadline=$((SECONDS + boot_wait_s))
+    until online "$serial"; do
+        if [ "$SECONDS" -ge "$boot_deadline" ]; then
+            printf 'emu: %s did not boot in %ss; the emulator said:\n' "$serial" "$boot_wait_s" >&2
+            tail -5 "$lock_dir/$serial.emulator.log" >&2
+            stop "$serial"
+            exit 69
+        fi
+        sleep 1
+    done
+fi
+
+# A holder killed with SIGKILL never ran its reset, and every later test
+# would run at 320x640 without asking for it.
+if adb -s "$serial" shell wm size 2>/dev/null | grep -q Override ||
+    adb -s "$serial" shell wm density 2>/dev/null | grep -q Override; then
+    printf 'emu: %s had a size or density override left by a dead holder; reset it\n' "$serial" >&2
+    reset_size
+fi
+
+if [ "$ci_size" = 1 ]; then
+    adb -s "$serial" shell wm size 320x640
+    adb -s "$serial" shell wm density 160
+fi
+
+export ANDROID_SERIAL=$serial
+
+# In the background, so a TERM reaches the reset now rather than after the
+# command finishes. Without job control bash gives a background job
+# /dev/null for stdin, hence fd 3. `9>&-` keeps the lock out of anything the
+# command leaves running after it returns: a process that inherited fd 9
+# would hold the emulator for every session until it died.
+exec 3<&0
+"$@" <&3 9>&- &
+child=$!
+trap 'kill -TERM "$child" 2>/dev/null; wait "$child"; exit 143' TERM
+trap 'kill -INT "$child" 2>/dev/null; wait "$child"; exit 130' INT
+status=0
+wait "$child" || status=$?
+exit "$status"
