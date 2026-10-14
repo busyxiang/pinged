@@ -5,6 +5,7 @@ import my.pinged.data.Databases
 import android.app.Notification
 import android.content.Context
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import my.pinged.data.LocalDates
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.RawCapture
@@ -24,6 +25,8 @@ import my.pinged.data.entity.RawCapture
  * listener's callback thread is an ANR risk that grows with the ledger.
  */
 internal object CaptureIngest {
+    private const val TAG = "PingedIngest"
+
     /**
      * The only *mutable* test seam in this module. The app skips its own package
      * (spec 10.2), which is also the only package an instrumented test can post
@@ -121,11 +124,36 @@ internal object CaptureIngest {
         // handler -- one log line, the capture gone, the flag clear. See
         // `CaptureStorage.guarded` for what it does instead. In order, on the
         // listener's thread, where the insert runs.
-        return CaptureStorage.guardedInOrder(
+        val stored = CaptureStorage.guardedInOrder(
             context,
             what = "Capture cannot store a notification",
-            unavailable = { null },
+            unavailable = { Stored.Unavailable },
         ) { storeIfEnabled(context, sbn, arrival, now) }
+
+        // Spec 9.6's just-in-time prompt, after the guard rather than inside it so
+        // no database lease is held across a DataStore write and a binder call.
+        // The identifier alone crosses: the notification itself is not passed.
+        //
+        // Caught here: a prompt that fails costs only the prompt, and nothing was
+        // stored for this notification, so there is nothing for the handler's log
+        // line to stand in for.
+        if (stored == Stored.SwitchedOff) {
+            runCatching { SourcePrompt.offer(context, sbn.packageName) }
+                .onFailure { Log.w(TAG, "Could not offer to capture a suggested source", it) }
+        }
+
+        return (stored as? Stored.Row)?.id
+    }
+
+    /** What the allow-list gate and the insert came to. */
+    private sealed interface Stored {
+        data class Row(val id: Long) : Stored
+
+        /** The gate said no: no `capture_source` row, or one with `enabled = false`. */
+        data object SwitchedOff : Stored
+
+        /** Enabled, but nothing readable to store, or the store would not open. */
+        data object Unavailable : Stored
     }
 
     /**
@@ -135,7 +163,7 @@ internal object CaptureIngest {
      * connection: a lookup, an update of [SourceLiveness]'s timestamp to the
      * same value, and an insert that did not commit.
      */
-    private fun storeIfEnabled(context: Context, sbn: StatusBarNotification, arrival: Arrival, now: Long): Long? {
+    private fun storeIfEnabled(context: Context, sbn: StatusBarNotification, arrival: Arrival, now: Long): Stored {
         val sources = Databases.captureSourceDao(context)
         val source = sources.byPackage(sbn.packageName)
         if (source?.enabled != true) {
@@ -143,7 +171,7 @@ internal object CaptureIngest {
             // metadata only, and the discard happens before anything
             // content-bearing is written (spec 9.6, spec 11.1). A missing row
             // and a row with `enabled = false` are the same answer -- no.
-            return null
+            return Stored.SwitchedOff
         }
 
         // Per-source liveness (spec 10.3), and it must be here rather than a line
@@ -156,12 +184,12 @@ internal object CaptureIngest {
         // been heard from, not about whether anything in the notification was readable.
         SourceLiveness.record(sources, source, sbn.postTime)
 
-        val fields = NotificationFields.from(sbn) ?: return null
+        val fields = NotificationFields.from(sbn) ?: return Stored.Unavailable
 
         // The durable boundary. One insert, and then stage one is done: a row
         // still at `parse_status = NEW` is unfinished work, so process death
         // here loses nothing (spec 3).
-        return Databases.rawCaptureDao(context).insert(
+        val id = Databases.rawCaptureDao(context).insert(
             RawCapture(
                 sourcePackage = fields.sourcePackage,
                 postedAt = fields.postedAt,
@@ -188,5 +216,6 @@ internal object CaptureIngest {
                 ),
             ),
         )
+        return Stored.Row(id)
     }
 }

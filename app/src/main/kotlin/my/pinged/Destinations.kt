@@ -140,6 +140,16 @@ internal fun spendingStackFor(addPayment: Boolean): Array<NavKey> =
     if (addPayment) arrayOf(Tab.Spending.root, ManualEntry()) else arrayOf(Tab.Spending.root)
 
 /**
+ * The Settings stack a first creation starts on: its root, with [Sources] above
+ * it when [openSources] (a tap on spec 9.6's just-in-time prompt). Settings is
+ * beneath because the allow-list is a row inside it (spec 9.5), so back lands
+ * where the user would have found it. The prompt fires with
+ * `FLAG_ACTIVITY_CLEAR_TASK`, for the shortcut's reason above.
+ */
+internal fun settingsStackFor(openSources: Boolean): Array<NavKey> =
+    if (openSources) arrayOf(Tab.Settings.root, Sources) else arrayOf(Tab.Settings.root)
+
+/**
  * The bottom bar's tabs, in the bar's order, each with the destination its
  * stack starts on.
  */
