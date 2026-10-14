@@ -27,6 +27,21 @@ install or uninstall tasks outside it. A lease waits up to 30 minutes for
 the one before it, longer than the Bash timeout, so run every `emu` command
 with `run_in_background`; `emu --status` names the holder.
 
+Every minute a session holds the emulator, the others wait, so run the
+least that answers the question. While iterating, run the one class:
+`-Pandroid.testInstrumentationRunnerArguments.class=<fully qualified name>`.
+Before calling work done, run the suites the change can reach, which is
+what CI's emulator job runs on a PR:
+
+    .claude/bin/emu -- ./gradlew $({ git diff --name-only $(git merge-base main HEAD); git ls-files --others --exclude-standard; } | python3 .github/scripts/affected_suites.py)
+
+The diff includes uncommitted and untracked files: a branch with no commits
+yet has an empty committed diff, and an empty diff selects every suite.
+An empty selection is the opposite: no suite can be reached, and the bare
+`./gradlew` only prints help.
+The whole `connectedDebugAndroidTest` is for when the selection rules
+themselves are in doubt; main's push runs every suite regardless.
+
 A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
 screen is shorter than a dev one, and a new Settings row once pushed "Delete
 everything" off it, so the click missed and two tests failed on CI only.
