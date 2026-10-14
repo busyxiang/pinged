@@ -28,9 +28,10 @@ set -euo pipefail
 
 lock_dir=${EMU_LOCK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/pinged-emu}
 pool=${EMU_POOL:-emulator-5554}
-# Under the Bash tool's 600s ceiling, so a session that waits is told who it
-# waited for instead of being killed silently.
-wait_s=${EMU_WAIT:-540}
+# Longer than one full connectedDebugAndroidTest (~10 min of device time on
+# CI), so a lease queued behind one does not give up and retry. Longer than
+# the Bash tool's 600s ceiling too, which is why leases run in the background.
+wait_s=${EMU_WAIT:-1800}
 idle_s=${EMU_IDLE:-900}
 boot_wait_s=${EMU_BOOT_WAIT:-300}
 avd=${EMU_AVD:-Pixel_10a}
@@ -132,7 +133,7 @@ while :; do
         exec 9>&-
     done
     if [ "$SECONDS" -ge "$deadline" ]; then
-        printf 'emu: no emulator free after %ss. Rerun with run_in_background, or --wait longer.\n' "$wait_s" >&2
+        printf 'emu: no emulator free after %ss. Rerun, or --wait longer.\n' "$wait_s" >&2
         describe >&2
         exit 75
     fi

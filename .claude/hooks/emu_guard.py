@@ -133,8 +133,8 @@ def main():
         f"{found} uses the shared emulator. Run it under the lease instead:\n"
         f"  .claude/bin/emu [--ci-size] -- <command>\n"
         f"Other sessions' tests run on the same device; `.claude/bin/emu --status` "
-        f"shows who holds it. A suite can outlast the Bash timeout, so run long "
-        f"ones with run_in_background.",
+        f"shows who holds it. A lease can wait up to 30 minutes, longer than "
+        f"the Bash timeout, so run it with run_in_background.",
         file=sys.stderr,
     )
     return 2
