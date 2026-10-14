@@ -44,13 +44,11 @@ class DeleteReachesTheLedgerTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @After fun leaveAnOpenableDatabase() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @Test fun theLedgerDrawsNothingAfterDeleteEverything() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         insertOneRow()
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

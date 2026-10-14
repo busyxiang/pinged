@@ -59,13 +59,11 @@ class WipeHostTest {
 
     @Before fun startClean() {
         Transfers.forgetOutcome()
-        Databases.reset()
-        app.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { app.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @After fun leaveAnOpenableDatabase() {
-        Databases.reset()
-        app.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { app.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     private fun screen(viewModel: SettingsViewModel, onExport: () -> Unit = {}, onRescue: () -> Unit = {}) {

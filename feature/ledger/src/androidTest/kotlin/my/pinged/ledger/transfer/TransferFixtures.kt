@@ -7,6 +7,7 @@ import java.lang.reflect.Field
 import java.lang.reflect.Modifier
 import my.pinged.capture.Graph
 import my.pinged.data.DatabaseFactory
+import my.pinged.data.Databases
 import my.pinged.data.PingedDatabase
 import my.pinged.data.Seed
 import my.pinged.data.entity.Arrival
@@ -67,7 +68,7 @@ fun exportBytes(from: PingedDatabase): ByteArray =
  */
 fun freshDatabase(context: Context): PingedDatabase {
     Graph.reset()
-    context.deleteDatabase(DatabaseFactory.NAME)
+    Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     return DatabaseFactory.build(context)
 }
 

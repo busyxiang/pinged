@@ -99,7 +99,6 @@ class MerchantsReadTest {
     )
 
     private fun discardTheDatabase() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 }

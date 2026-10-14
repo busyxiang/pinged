@@ -55,8 +55,7 @@ class RecoveryNoticeTruthTest {
 
     @Before fun startClean() = runBlocking {
         Transfers.forgetOutcome()
-        Databases.reset()
-        app.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { app.deleteDatabase(DatabaseFactory.NAME) }
         IntegrityStore.forget(app)
     }
 
@@ -64,8 +63,7 @@ class RecoveryNoticeTruthTest {
         released.complete(Unit)
         withTimeout(TIMEOUT) { Transfers.reading { } }
         Transfers.forgetOutcome()
-        Databases.reset()
-        app.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { app.deleteDatabase(DatabaseFactory.NAME) }
         Unit
     }
 

@@ -55,7 +55,7 @@ class DamagedConnectionTest {
 
     @Before fun startClean() = runBlocking<Unit> {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         CaptureCaches.clear(context)
         IntegrityStore.forget(context)
         CaptureFixtures.cancelStageTwo(context)
@@ -68,7 +68,7 @@ class DamagedConnectionTest {
     @After fun leaveAnOpenableDatabase() = runBlocking<Unit> {
         CaptureFixtures.cancelStageTwo(context)
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         CaptureCaches.clear(context)
         IntegrityStore.forget(context)
     }

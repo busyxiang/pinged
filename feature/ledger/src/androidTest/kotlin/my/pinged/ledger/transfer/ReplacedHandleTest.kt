@@ -26,13 +26,11 @@ class ReplacedHandleTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Before fun startClean() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @After fun cleanUp() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @Test fun anExportThroughAReplacedHandleDoesNotReopenTheFile() {

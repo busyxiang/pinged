@@ -25,8 +25,7 @@ class RestoreStateTest {
 
     @Before fun startClean() {
         Transfers.forgetOutcome()
-        Databases.reset()
-        app.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { app.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @Test fun aFileThatIsNotABackupChangesNothing() = runBlocking {

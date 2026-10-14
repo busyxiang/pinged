@@ -26,7 +26,7 @@ class PeriodicIntegrityTest {
 
     @Before fun startClean() = runBlocking {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         CaptureCaches.clear(context)
         IntegrityStore.forget(context)
     }
@@ -183,7 +183,7 @@ class PeriodicIntegrityTest {
         } finally {
             runCatching { db?.close() }
             Graph.reset()
-            context.deleteDatabase(DatabaseFactory.NAME)
+            Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
             IntegrityStore.forget(context)
         }
     }

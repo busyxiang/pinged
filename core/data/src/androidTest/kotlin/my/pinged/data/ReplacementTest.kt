@@ -26,15 +26,13 @@ class ReplacementTest {
     private val day = LocalDate(19_950_618)
 
     @Before fun startFromAnEmptyDatabase() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         CaptureDays.forgetProcessMemo()
     }
 
     @After fun leaveAnOpenableDatabase() {
         CaptureDays.forgetProcessMemo()
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @Test fun aResetIsAnnouncedOnce() {

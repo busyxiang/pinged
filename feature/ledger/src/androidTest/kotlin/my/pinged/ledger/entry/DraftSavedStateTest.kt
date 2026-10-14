@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.Parcel
 import androidx.core.os.bundleOf
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.time.LocalDate
@@ -54,12 +55,15 @@ class DraftSavedStateTest {
     private val app = context.applicationContext as Application
     private val releases = mutableListOf<CountDownLatch>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val viewModels = mutableListOf<ManualEntryViewModel>()
 
     @Before fun openTheLedger() {
         context.freshLedger()
     }
 
     @After fun leaveNothingBehind() {
+        // So no view model of this test reads on into the next one's.
+        viewModels.forEach { it.viewModelScope.cancel() }
         releases.forEach { it.countDown() }
         runBlocking { withTimeout(TIMEOUT) { Transfers.state.first { it.running == null } } }
         Transfers.forgetOutcome()
@@ -70,7 +74,7 @@ class DraftSavedStateTest {
     @Test fun aPreselectedDraftComesBackWhole() = runBlocking {
         val handle = SavedStateHandle()
         val day = LocalDate.now().minusDays(3)
-        val vm = ManualEntryViewModel(app, handle, target = null) { CompletableDeferred(FOOD) }
+        val vm = ManualEntryViewModel(app, handle, target = null) { CompletableDeferred(FOOD) }.also(viewModels::add)
         vm.amount(1_250L)
         vm.day(day)
         vm.merchant("Kopitiam")
@@ -82,19 +86,19 @@ class DraftSavedStateTest {
             typed,
         )
 
-        val restored = ManualEntryViewModel(app, afterProcessDeath(handle), target = null, preselection = never)
+        val restored = ManualEntryViewModel(app, afterProcessDeath(handle), target = null, preselection = never).also(viewModels::add)
 
         assertEquals("The draft did not survive the process death", typed, restoredDraft(restored))
     }
 
     @Test fun aTappedChipComesBackTapped() = runBlocking {
         val handle = SavedStateHandle()
-        val vm = ManualEntryViewModel(app, handle, target = null, preselection = never)
+        val vm = ManualEntryViewModel(app, handle, target = null, preselection = never).also(viewModels::add)
         vm.amount(500L)
         vm.tapCategory(FOOD)
         withTimeout(TIMEOUT) { vm.state.first { it.draft.category != null } }
 
-        val restored = ManualEntryViewModel(app, afterProcessDeath(handle), target = null, preselection = never)
+        val restored = ManualEntryViewModel(app, afterProcessDeath(handle), target = null, preselection = never).also(viewModels::add)
 
         assertEquals(
             "A tapped chip did not come back as tapped, so it would save as rule-filed",
@@ -107,13 +111,13 @@ class DraftSavedStateTest {
     @Test fun aRestoredCorrectionIsNotReadOverByTheStoredRow() = runBlocking {
         val id = Databases.txnDao(context).insert(manual(amountSen = 500L, occurredAt = NOON))
         val handle = SavedStateHandle()
-        val vm = ManualEntryViewModel(app, handle, target = target(id), preselection = never)
+        val vm = ManualEntryViewModel(app, handle, target = target(id), preselection = never).also(viewModels::add)
         withTimeout(TIMEOUT) { vm.state.first { it.draft.amountSen == 500L } }
         vm.amount(900L)
         withTimeout(TIMEOUT) { vm.state.first { it.draft.amountSen == 900L } }
 
         // No id from the key: the one corrected is what the saved state kept.
-        val restored = ManualEntryViewModel(app, afterProcessDeath(handle), target = null, preselection = never)
+        val restored = ManualEntryViewModel(app, afterProcessDeath(handle), target = null, preselection = never).also(viewModels::add)
 
         assertEquals("The corrected amount did not survive the process death", 900L, restoredDraft(restored)?.amountSen)
         assertNull(
@@ -132,12 +136,12 @@ class DraftSavedStateTest {
         val killed = holdWhile(Operation.RESTORE, busy, releases) { requester, beforeStart ->
             Transfers.restoreFrom(context, open = { null }, requester = requester, beforeStart = beforeStart)
         }.use {
-            val vm = ManualEntryViewModel(app, handle, target = target(id), preselection = never)
+            val vm = ManualEntryViewModel(app, handle, target = target(id), preselection = never).also(viewModels::add)
             withTimeout(TIMEOUT) { vm.state.first { it.busy != null } }
             afterProcessDeath(handle)
         }
 
-        val restored = ManualEntryViewModel(app, killed, target = null, preselection = never)
+        val restored = ManualEntryViewModel(app, killed, target = null, preselection = never).also(viewModels::add)
 
         assertEquals(
             "A correction killed before its row was read reopened blank instead of with the row",

@@ -16,8 +16,7 @@ class IntegrityTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Before fun startFromAnEmptyDatabase() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @Test fun aHealthyDatabaseIsOk() {

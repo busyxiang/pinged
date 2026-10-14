@@ -22,7 +22,7 @@ class CaptureCachesTest {
 
     @Before fun startFromAnEmptyDatabase() {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @Test fun clearingMakesTheNextSweepRunAgain() = runBlocking {

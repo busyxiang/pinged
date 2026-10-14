@@ -26,8 +26,7 @@ class WipeTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Before fun startWithSomethingToDelete() {
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         DatabaseFactory.build(context).useDb { it.rawCaptureDao().insert(sampleCapture(hash = "doomed")) }
     }
 

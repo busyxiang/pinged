@@ -54,14 +54,12 @@ class RestorePickTest {
     @Before fun anEmptyLedger() {
         gone.delete()
         instrumentation.addMonitor(picker)
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @After fun removeThePicker() {
         instrumentation.removeMonitor(picker)
-        Databases.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     @Test fun aPickedDocumentThatWillNotOpenIsReportedAndChangesNothing() {

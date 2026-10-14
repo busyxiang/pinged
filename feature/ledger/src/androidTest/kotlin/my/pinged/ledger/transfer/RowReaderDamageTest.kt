@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import my.pinged.capture.Graph
 import my.pinged.data.DatabaseFactory
+import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.PingedDatabase
 import my.pinged.data.entity.RawCapture
@@ -54,7 +55,7 @@ class RowReaderDamageTest {
 
     @After fun tearDown() {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
     }
 
     /** One B-tree page, from `dbstat`; [lo]..[hi] are its ids when it is a table leaf of dense ids. */

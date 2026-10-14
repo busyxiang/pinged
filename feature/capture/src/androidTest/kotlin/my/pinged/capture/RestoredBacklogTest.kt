@@ -43,12 +43,12 @@ class RestoredBacklogTest {
 
         // This device has already swept, so the mark says there is nothing to do.
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         DatabaseFactory.build(context).close()
         Reparse.sweep(context, Databases.rawCaptureDao(context), packVersion)
 
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         val source = DatabaseFactory.build(context)
         source.rawCaptureDao().insert(
             RawCapture(

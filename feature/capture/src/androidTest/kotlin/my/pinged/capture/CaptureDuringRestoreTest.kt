@@ -42,7 +42,7 @@ class CaptureDuringRestoreTest {
      */
     @Test fun aCaptureDuringARestoreIsRefusedAndTheRefusalIsKept() = runBlocking {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         val bytes = DatabaseFactory.build(context).let { source ->
             ByteArrayOutputStream().also { ExportJson.write(source, it) }.toByteArray()
                 .also { source.close() }

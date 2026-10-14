@@ -6,7 +6,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -50,6 +57,38 @@ class EntryTodayTest {
             DAY.plusDays(1),
             withTimeoutOrNull(MIDNIGHT_BUDGET) { vm.state.first { it.today == DAY.plusDays(1) } }?.today,
         )
+    }
+
+    /**
+     * Midnight passing between two of the holder's own reads of the clock: a
+     * today worked out from one read and its next midnight from another
+     * waited for the midnight after, and `Today` stayed on yesterday until the
+     * recheck a minute later. The test above failed this way in 2 runs of 10,
+     * its clock moved from the test thread while the holder read it on Main.
+     */
+    @Test fun midnightPassingWhileTheHolderReadsTheClockIsNotSkipped() = runBlocking {
+        val executor = Executors.newSingleThreadExecutor()
+        val scope = CoroutineScope(SupervisorJob() + executor.asCoroutineDispatcher())
+        try {
+            // Held, so the holder's first read after this test arms the clock is its own.
+            val held = CountDownLatch(1)
+            executor.execute { held.await() }
+            val passOnRead = AtomicBoolean(false)
+            val entries = ManualEntries(context = { context }, scope = scope, clock = {
+                now.also { if (passOnRead.getAndSet(false)) now = AFTER_MIDNIGHT }
+            })
+            passOnRead.set(true)
+            held.countDown()
+
+            assertEquals(
+                "Today skipped the midnight that passed while the holder read the clock",
+                DAY.plusDays(1),
+                withTimeoutOrNull(MIDNIGHT_BUDGET) { entries.today.first { it == DAY.plusDays(1) } },
+            )
+        } finally {
+            scope.cancel()
+            executor.shutdown()
+        }
     }
 
     @Test fun pickingTheClocksTodayIsToday() = runBlocking {

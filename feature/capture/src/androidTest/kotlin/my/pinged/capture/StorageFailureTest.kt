@@ -10,6 +10,7 @@ import java.io.File
 import java.io.RandomAccessFile
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.DatabaseFactory
+import my.pinged.data.Databases
 import my.pinged.data.entity.Arrival
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -34,7 +35,7 @@ class StorageFailureTest {
 
     @Before fun freshDatabaseAndKey() {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         keyFile.delete()
         DatabaseFactory.build(context).close()
         runBlocking {
@@ -45,7 +46,7 @@ class StorageFailureTest {
 
     @After fun leaveItOpenable() {
         Graph.reset()
-        context.deleteDatabase(DatabaseFactory.NAME)
+        Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         keyFile.delete()
         runBlocking {
             CaptureHealth.forgetProcessMemo()
