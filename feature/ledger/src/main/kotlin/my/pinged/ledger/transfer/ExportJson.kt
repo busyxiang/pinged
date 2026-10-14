@@ -85,6 +85,22 @@ object ExportJson {
         )
     }
 
+    /**
+     * The rows [write] would write from [db] now: one per row of every table
+     * it reads, which is what [everyRowOf] hands it. The export sheet's idle
+     * count (transfer design 10). Kept beside [everyRowOf] so a section added
+     * there is added here; `ExportSheetStatesTest` holds the two equal.
+     */
+    fun rowCount(db: PingedDatabase): Int =
+        db.categoryDao().countAll() +
+            db.captureSourceDao().countAll() +
+            db.captureDayDao().countAll() +
+            db.merchantRuleDao().countAll() +
+            db.rawCaptureDao().countAll() +
+            db.txnDao().countAll() +
+            db.merchantIdentityDao().countAliases() +
+            db.merchantIdentityDao().countNames()
+
     /** The healthy path's rows: every one, read through [db]'s transaction. */
     private fun everyRowOf(db: PingedDatabase) = DocumentSource(
         categories = { db.categoryDao().all() },

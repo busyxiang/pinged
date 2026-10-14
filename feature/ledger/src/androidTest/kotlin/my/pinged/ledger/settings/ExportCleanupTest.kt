@@ -12,10 +12,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.ledger.AppViewModelFactory
 import my.pinged.ledger.transfer.ExportJson
+import my.pinged.ledger.transfer.TransferStore
 import my.pinged.ledger.transfer.bulkCapture
 import my.pinged.ledger.transfer.exportBytes
 import my.pinged.ledger.transfer.useDb
@@ -64,9 +66,9 @@ class ExportCleanupTest {
     /**
      * The other way a write does not finish: nobody threw, the screen that
      * asked for this just went away. [Transfers.export] wires
-     * `ExportJson.write`'s `isCancelled` to the operation's own liveness
-     * rather than offering a cancel button (the export is sub-second at
-     * realistic sizes), so cancelling the `Job` this returns has to reach the
+     * `ExportJson.write`'s `isCancelled` to the operation's own liveness,
+     * which the export sheet's Cancel and the requester going away both
+     * end, so cancelling the `Job` this returns has to reach the
      * same cleanup [aFailedExportLeavesNoFileBehind] exercises via a thrown
      * exception.
      *
@@ -195,6 +197,64 @@ class ExportCleanupTest {
             Transfers.state.value.outcome,
         )
         assertEquals(TransferJob.Idle, SettingsViewModel(app).state.value.jobOf(Operation.EXPORT))
+    }
+
+    /**
+     * **The sheet's Cancel stops the write and deletes the document** (design
+     * 10 and 11), from a holder other than the one that asked for it: an
+     * export outlives its screen's holder only as far as the next settings
+     * screen, and that screen's sheet draws it running too. Bytes at
+     * deletion, for the reason [cancellingMidExportDeletesThePartialDocument]
+     * gives.
+     */
+    @Test fun cancelStopsTheExportAndDeletesItsDocument() = runBlocking {
+        val fullSize = aLedgerOfTenPages()
+        val target = File(app.cacheDir, "cancelled-from-the-sheet.json")
+        val sink = RecordingFileSink(target)
+        val job = SettingsViewModel(app).exportTo(sink)
+
+        withTimeout(TIMEOUT) { Transfers.state.first { (it.running?.rows ?: 0) > 0 } }
+        SettingsViewModel(app).cancelExport()
+        withTimeout(TIMEOUT) { job.join() }
+
+        assertFalse("a cancelled export left its document on disk", target.exists())
+        assertTrue(
+            "the export ran on after Cancel: ${sink.bytesAtDeletion} of $fullSize bytes when deleted",
+            (sink.bytesAtDeletion ?: Long.MAX_VALUE) < fullSize / 2,
+        )
+        assertEquals("a cancelled export left an outcome to report", null, Transfers.state.value.outcome)
+        assertEquals(null, Transfers.state.value.running)
+    }
+
+    /**
+     * **A Cancel that lands once the file is whole keeps it.** The sheet
+     * still draws the export running, and so offers Cancel, while its time
+     * is recorded; a cancel there that reached the export's cleanup deleted
+     * a complete backup. The record is where this test cancels, so its
+     * suspension is the one a cancelled job would throw from.
+     */
+    @Test fun aCancelAfterTheFileIsWholeKeepsIt() = runBlocking {
+        val target = File(app.cacheDir, "whole-then-cancelled.json").apply { delete() }
+        val sink = RecordingFileSink(target)
+        Transfers.recordExport = { context, at ->
+            Transfers.cancelExport()
+            yield()
+            TransferStore.recordExport(context, at)
+        }
+        val job = try {
+            val job = SettingsViewModel(app).exportTo(sink)
+            withTimeout(TIMEOUT) { job.join() }
+            Transfers.state.value.outcome?.job
+        } finally {
+            Transfers.recordExport = TransferStore::recordExport
+        }
+
+        try {
+            assertEquals("a complete backup was deleted by a late Cancel", null, sink.bytesAtDeletion)
+            assertTrue("the complete backup was not reported saved: $job", job is TransferJob.Exported)
+        } finally {
+            target.delete()
+        }
     }
 
     /**

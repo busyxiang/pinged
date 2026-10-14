@@ -163,8 +163,14 @@ object Transfers {
     /** The operation asked for and not yet finished; see the class KDoc. */
     private val claimed = AtomicReference<Claim?>(null)
 
-    /** Identity, not the [Operation]: two checks in a row are two claims. */
-    private class Claim(val operation: Operation)
+    /**
+     * Identity, not the [Operation]: two checks in a row are two claims.
+     * [work] is set before the claim is drawn running, so whatever a screen
+     * can see running, [cancelExport] can reach.
+     */
+    private class Claim(val operation: Operation) {
+        @Volatile var work: Job? = null
+    }
 
     private val serials = AtomicLong(0)
 
@@ -253,14 +259,14 @@ object Transfers {
      * Writes the backup, and removes the document if it does not finish.
      *
      * Capture stalls for the write: measured at 334ms for 10,000 captures and
-     * 1,243ms for 50,000. Sub-second at every size this is measured against,
-     * which is why there is deliberately no cancel control -- a button for a
-     * third of a second is ceremony, and also why there is no "capture is
+     * 1,243ms for 50,000 -- a SAF provider's own IO on top. Sub-second at the
+     * sizes this is measured against, which is why there is no "capture is
      * paused" warning: that reads as alarm, not information, at this length.
      *
-     * `isCancelled` is wired to this operation's own liveness instead, which
-     * is its requester's: a screen that goes away cancels it, and the next
-     * page boundary [ExportJson.write] checks turns that into
+     * `isCancelled` is wired to this operation's own liveness, which
+     * [cancelExport] and its requester both end: the export sheet's Cancel,
+     * or a screen that goes away. The next page boundary
+     * [ExportJson.write] checks turns that into
      * `TransferCancelledException`, a plain `RuntimeException`. **Anything
      * caught once this job is no longer active is an abandoned export, not a
      * failed one**: the document is deleted and the export ends as
@@ -302,17 +308,23 @@ object Transfers {
                     isCancelled = { !self.isActive },
                 )
             }
-            // The file is whole from here; nothing below may delete it.
-            val unrecorded = try {
-                recordExport(context, System.currentTimeMillis())
-                null
-            } catch (thrown: CancellationException) {
-                throw thrown
-            } catch (thrown: Exception) {
-                Log.w(TAG, "A complete export's time could not be recorded", thrown)
-                thrown.message ?: thrown.javaClass.simpleName
+            // The file is whole from here; nothing below may delete it. So
+            // NonCancellable: the sheet draws this as running, with Cancel,
+            // until it is published, and a cancel thrown out of the record
+            // would reach the catch below and delete a complete backup. A
+            // [CancellationException] from inside is the record failing, not
+            // this export being stopped, and is reported as one.
+            withContext(NonCancellable) {
+                val savedAs = runCatching { sink.name() }.getOrNull()
+                val unrecorded = try {
+                    recordExport(context, System.currentTimeMillis())
+                    null
+                } catch (thrown: Exception) {
+                    Log.w(TAG, "A complete export's time could not be recorded", thrown)
+                    thrown.message ?: thrown.javaClass.simpleName
+                }
+                TransferJob.Exported(rows, unrecorded, savedAs)
             }
-            TransferJob.Exported(rows, unrecorded)
         } catch (thrown: CancellationException) {
             // NonCancellable because this job is already cancelled -- an
             // unguarded suspend call here would be cancelled before it ran.
@@ -383,6 +395,17 @@ object Transfers {
             }
         }
         return db
+    }
+
+    /**
+     * Stops the export running, whichever screen asked for it, exactly as its
+     * screen going away would: the document is deleted and the export ends
+     * as [Answer.Abandoned]. Nothing when no export is running -- in
+     * particular not another operation, of which only an export is safe to
+     * stop part way.
+     */
+    fun cancelExport() {
+        claimed.get()?.takeIf { it.operation == Operation.EXPORT }?.work?.cancel(CancellationException("Cancelled from the export sheet"))
     }
 
     /** Tests only: where [export] records a finished export. */
@@ -641,7 +664,6 @@ object Transfers {
             releasing(release) { refused.complete(Answer.Refused(busy)) }
             return refused
         }
-        _state.update { it.copy(running = TransferJob.Running(operation, 0)) }
         val progress: (Int) -> Unit = { rows ->
             _state.update {
                 if (claimed.get() === claim) it.copy(running = TransferJob.Running(operation, rows)) else it
@@ -700,6 +722,9 @@ object Transfers {
                 settled = outcome
             }
         }
+
+        claim.work = work
+        _state.update { it.copy(running = TransferJob.Running(operation, 0)) }
 
         val answer = CompletableDeferred<Answer>()
         val link = Job(requester)
