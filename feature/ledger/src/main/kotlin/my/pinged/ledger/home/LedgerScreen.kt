@@ -138,6 +138,7 @@ fun LedgerScreen(
         onOpenReview = onOpenReview,
         onAddPayment = onAddPayment,
         onOpenEntry = onOpenEntry,
+        onRemove = { viewModel.removeCaptured(it) },
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
             MerchantActions(
@@ -176,7 +177,10 @@ internal fun LedgerScreenContent(
     onOpenReview: (focus: Long?) -> Unit = {},
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
+    onRemove: ((txnId: Long) -> Unit)? = null,
 ) {
+    // Which row is being removed (#132), hoisted for the reason `categorizing` is.
+    var removing by rememberSaveable { mutableStateOf<Long?>(null) }
     // Which row is being categorized, hoisted to here rather than held in the
     // row: a `ModalBottomSheet` emitted from inside the `LazyColumn` scrolls
     // out of the viewport and is disposed with the item that owns it.
@@ -225,6 +229,7 @@ internal fun LedgerScreenContent(
                     awaitingReview = read.awaitingReview,
                     onOpenReview = onOpenReview,
                     onOpenEntry = onOpenEntry,
+                    onRemove = onRemove?.let { _ -> { removing = it } },
                     // Room under the last row for the button, so it never covers
                     // the row's amount.
                     bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,
@@ -265,6 +270,22 @@ internal fun LedgerScreenContent(
                 onAssign(chosen, categoryId, teach)
             },
             onDismiss = { categorizing = null },
+        )
+    }
+
+    // Found among the rows loaded, as the chooser's row is.
+    val removed = removing
+    val removedRow = removed?.let { id ->
+        items.itemSnapshotList.firstOrNull { it is LedgerItem.Row && it.txn.id == id } as LedgerItem.Row?
+    }
+    if (removed != null && removedRow != null && onRemove != null) {
+        RemoveSheet(
+            row = removedRow.feedRow,
+            onConfirm = {
+                removing = null
+                onRemove(removed)
+            },
+            onDismiss = { removing = null },
         )
     }
 
@@ -412,6 +433,7 @@ private fun Feed(
     awaitingReview: Int,
     onOpenReview: (focus: Long?) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)?,
+    onRemove: ((txnId: Long) -> Unit)?,
     modifier: Modifier = Modifier,
     bottomRoom: Dp = 0.dp,
 ) {
@@ -471,6 +493,7 @@ private fun Feed(
                         onOpenMerchant = onOpenMerchant,
                         onOpenReview = onOpenReview,
                         onOpenEntry = onOpenEntry,
+                        onRemove = onRemove,
                     )
                 }
             }

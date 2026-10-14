@@ -589,6 +589,26 @@ interface TxnDao {
         answers.filter { settle(it.id, it.reason, it.state, updatedAt) == 1 }
 
     /**
+     * Not a payment, on a captured row already counted (#132): `COMMITTED` to
+     * `REJECTED`, the answer the review inbox gives a held one. Returns the
+     * rows written, 0 for a manual entry (deleted instead, `deleteManualEntry`),
+     * a row still awaiting review (the inbox's, guarded on its reason) or one
+     * already rejected.
+     *
+     * Never a `DELETE`: the row's `raw_capture` stays as evidence, and the row
+     * itself is what keeps Corrections (`Reread.NotComparable`) and a re-parse
+     * from putting the payment back. The exclusion columns are left as they
+     * are, as [settle] leaves them.
+     */
+    @Query(
+        """
+        UPDATE txn SET state = 'REJECTED', pending_reason = NULL, updated_at = :updatedAt
+        WHERE id = :id AND state = 'COMMITTED' AND raw_capture_id IS NOT NULL
+        """,
+    )
+    fun removeCaptured(id: Long, updatedAt: Long): Int
+
+    /**
      * Merge (§7.2, §9.2): [settle] to `REJECTED`, and **only while [pairId]
      * is not `REJECTED` itself** -- a pair dismissed after the card was drawn
      * would otherwise leave neither row counted. The pair is never written:
