@@ -52,6 +52,8 @@ class RestoreCancellationTest {
                     // choosing anything -- which never calls `settings.restoreFrom`.
                     onRestore = {},
                     onRescue = {},
+                    buildVersion = "0.0.0-test",
+                    packVersion = 0,
                 )
             }
         }

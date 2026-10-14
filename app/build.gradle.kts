@@ -114,7 +114,11 @@ android {
         }
     }
 
-    buildFeatures { compose = true }
+    // `BuildConfig.VERSION_NAME` is what Settings' footer prints (design 9.2).
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     // Kept at 17 to match :core:parse, whose bytecode must stay at class-file
     // major 61 for D8.
