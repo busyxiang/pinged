@@ -28,7 +28,7 @@ import my.pinged.data.entity.Arrival
  * `raw_capture` in full, a count is strictly less than what is already kept.
  */
 object SourceCounters {
-    private const val PREFIX = "seen:"
+    private const val SEEN_PREFIX = "seen:"
 
     /**
      * The post time of the newest notification any package has been counted for.
@@ -60,7 +60,22 @@ object SourceCounters {
      */
     private val NEWEST_COUNTED = longPreferencesKey("newest_counted_post_time")
 
-    private fun key(pkg: String) = intPreferencesKey("$PREFIX$pkg")
+    private fun key(pkg: String) = intPreferencesKey("$SEEN_PREFIX$pkg")
+
+    private const val FIRST_PREFIX = "first:"
+
+    /**
+     * When [pkg] was first counted: spec 9.6's `first_seen_at`, kept here because a
+     * package nobody has touched has no `capture_source` row to hold it.
+     *
+     * Written once and never moved, which is what separates it from the last-seen
+     * timestamp spec 9.6 forbids: one datum per package says the app is installed,
+     * not when it speaks.
+     */
+    private fun firstSeen(pkg: String) = longPreferencesKey("$FIRST_PREFIX$pkg")
+
+    /** Spec 9.6: how long an untouched package stays in the discovery list. */
+    const val DROP_AFTER_MILLIS = 30L * 24 * 60 * 60 * 1000
 
     /**
      * Counts one notification from [pkg], unless it is a re-delivery of one already
@@ -81,6 +96,9 @@ object SourceCounters {
      * the newest notification in it will advance the mark past the rest.
      * [CaptureIngest.catchUpOrder] is that ordering.
      *
+     * [now] and not [postTime] stamps first-seen: a catch-up can hand over a post
+     * from days ago, and dating the discovery by it would drop the package early.
+     *
      * @return true if the count moved.
      */
     suspend fun countOne(
@@ -88,6 +106,7 @@ object SourceCounters {
         pkg: String,
         arrival: Arrival,
         postTime: Long,
+        now: Long,
     ): Boolean {
         var counted = false
         context.captureStore.edit { prefs ->
@@ -97,10 +116,42 @@ object SourceCounters {
             // same expression two lines apart.
             val isNewer = newest == null || postTime > newest
             counted = arrival == Arrival.POSTED || isNewer
-            if (counted) prefs[key(pkg)] = (prefs[key(pkg)] ?: 0) + 1
+            if (counted) {
+                prefs[key(pkg)] = (prefs[key(pkg)] ?: 0) + 1
+                if (prefs[firstSeen(pkg)] == null) prefs[firstSeen(pkg)] = now
+            }
             if (isNewer) prefs[NEWEST_COUNTED] = postTime
         }
         return counted
+    }
+
+    /**
+     * Spec 9.6's drop: forget every package first seen more than
+     * [DROP_AFTER_MILLIS] before [now], unless it is in [keep] -- the caller's
+     * packages the user has touched, which this store cannot see.
+     *
+     * A count from before first-seen was recorded has no age. It is stamped [now]
+     * rather than dropped, so an upgrade gives it the full 30 days instead of
+     * emptying the list at once.
+     */
+    suspend fun dropExpired(context: Context, now: Long, keep: Set<String>) {
+        context.captureStore.edit { prefs ->
+            val counted = prefs.asMap().keys
+                .map { it.name }
+                .filter { it.startsWith(SEEN_PREFIX) }
+                .map { it.removePrefix(SEEN_PREFIX) }
+            for (pkg in counted) {
+                if (pkg in keep) continue
+                val first = prefs[firstSeen(pkg)]
+                when {
+                    first == null -> prefs[firstSeen(pkg)] = now
+                    now - first > DROP_AFTER_MILLIS -> {
+                        prefs.remove(key(pkg))
+                        prefs.remove(firstSeen(pkg))
+                    }
+                }
+            }
+        }
     }
 
     suspend fun seenCount(context: Context, pkg: String): Int =
@@ -132,10 +183,10 @@ object SourceCounters {
     suspend fun allSeenCounts(context: Context): Map<String, Int> =
         context.captureStore.data.first().asMap()
             .asSequence()
-            .filter { it.key.name.startsWith(PREFIX) }
+            .filter { it.key.name.startsWith(SEEN_PREFIX) }
             .mapNotNull { entry ->
                 val count = entry.value as? Int ?: return@mapNotNull null
-                entry.key.name.removePrefix(PREFIX) to count
+                entry.key.name.removePrefix(SEEN_PREFIX) to count
             }
             .toMap()
 }

@@ -171,7 +171,7 @@ class RestoreTest {
         aLiveLedgerOfOneCapture()
         IntegrityStore.record(context, at = 1L, ok = false)
         val counted = "com.example.counted"
-        SourceCounters.countOne(context, counted, Arrival.POSTED, postTime = 1L)
+        SourceCounters.countOne(context, counted, Arrival.POSTED, postTime = 1L, now = System.currentTimeMillis())
 
         val caller = Job()
         val hostile = HostileApp(context.applicationContext as Application).apply {
@@ -432,7 +432,7 @@ class RestoreTest {
         source.close()
 
         val counted = "com.example.counted"
-        SourceCounters.countOne(context, counted, Arrival.POSTED, postTime = 1L)
+        SourceCounters.countOne(context, counted, Arrival.POSTED, postTime = 1L, now = System.currentTimeMillis())
         val scratch = File(context.filesDir, "datastore/capture_health.preferences_pb.tmp")
         assertTrue("the scratch path was already taken", scratch.mkdirs())
         val (outcome, survivingCount) = try {

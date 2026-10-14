@@ -75,7 +75,7 @@ class SourcesAllowListTest {
         // Stage 1, spec 9.6: a package that has posted something and is not
         // enabled leaves a count in DataStore and nothing at all in Room.
         runBlocking {
-            SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis())
+            SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis(), System.currentTimeMillis())
         }
         assertNull(
             "Stage one wrote a capture_source row for a package the user has " +
@@ -132,7 +132,7 @@ class SourcesAllowListTest {
     @Test fun anEnabledSourceLeavesTheNotCapturedSection() {
         dao.setEnabled(pkg, false)
         runBlocking {
-            SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis())
+            SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis(), System.currentTimeMillis())
         }
         val viewModel = sourcesViewModel()
 
@@ -182,7 +182,7 @@ class SourcesAllowListTest {
         // the two taps resolve -- the state assertion below has to be able to
         // find it in the losing case as well as the winning one.
         runBlocking {
-            SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis())
+            SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis(), System.currentTimeMillis())
         }
         val viewModel = sourcesViewModel()
 
@@ -356,7 +356,7 @@ class SourcesAllowListTest {
             ),
         )
         dao.setLastNotificationAt(pkg, System.currentTimeMillis())
-        runBlocking { SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis()) }
+        runBlocking { SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis(), System.currentTimeMillis()) }
 
         val viewModel = sourcesViewModel()
         viewModel.refresh()
@@ -367,6 +367,41 @@ class SourcesAllowListTest {
             "The row says nothing was stored while capture_source records that it was",
             row.textStored,
         )
+    }
+
+    /**
+     * Spec 9.6's 30-day drop, through the read the screen makes. Three packages
+     * first seen at the same old time, and two of them survive for different
+     * reasons: one was touched in the picker, one is in the pack.
+     */
+    @Test fun anUntouchedPackageFirstSeenOverThirtyDaysAgoIsDropped() {
+        val stamp = System.nanoTime()
+        val old = "my.pinged.probe.old.p$stamp"
+        val touched = "my.pinged.probe.touched.p$stamp"
+        val young = "my.pinged.probe.young.p$stamp"
+        val packPkg = Graph.parsePack().packages.first().pkg
+        val now = System.currentTimeMillis()
+        val longAgo = now - 31L * 24 * 60 * 60 * 1000
+        runBlocking {
+            for (p in listOf(old, touched)) SourceCounters.countOne(context, p, Arrival.POSTED, longAgo, now = longAgo)
+            SourceCounters.countOne(context, young, Arrival.POSTED, now, now = now)
+        }
+        // A pack package's count may predate this test, so its own first-seen is
+        // unknown; it is enough that it is counted and must still be counted after.
+        runBlocking { SourceCounters.countOne(context, packPkg, Arrival.POSTED, now, now = longAgo) }
+        dao.insertIfNew(CaptureSource(pkg = touched, label = touched, enabled = false, firstSeenAt = longAgo))
+
+        val viewModel = sourcesViewModel()
+        runBlocking { viewModel.refresh().join() }
+
+        val listed = viewModel.state.value.let { it.suggested + it.seenNotCaptured }.map { it.pkg }
+        assertTrue("A package first seen today was dropped", young in listed)
+        assertTrue("A package the user touched in the picker was dropped", touched in listed)
+        assertFalse("An untouched package first seen 31 days ago is still listed", old in listed)
+        runBlocking {
+            assertEquals("The dropped package's count is still on disk", 0, SourceCounters.seenCount(context, old))
+            assertTrue("A pack package's count was dropped", SourceCounters.seenCount(context, packPkg) > 0)
+        }
     }
 
     private fun awaitRow(viewModel: SourcesViewModel, pkg: String): SourceRow {

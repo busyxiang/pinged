@@ -137,10 +137,9 @@ fun SourcesScreenContent(
     val enabledCount = suggested.count { it.enabled } + seenNotCaptured.count { it.enabled }
 
     Column(modifier.fillMaxSize().background(Paper)) {
-        // `LazyColumn`, not a `Column` with `verticalScroll`. `SourceCounters` never
-        // prunes, so the lower list grows for the life of the install -- one row per
-        // app that has ever posted -- and an eager column composes every one of them on
-        // every read. Each item carries its own background and horizontal padding,
+        // `LazyColumn`, not a `Column` with `verticalScroll`. The lower list holds one
+        // row per app first seen in the last 30 days (spec 9.6), with no upper bound,
+        // and an eager column composes every one of them on every read. Each item carries its own background and horizontal padding,
         // because a lazy item has no enclosing Column to inherit them from.
         LazyColumn(
             Modifier
