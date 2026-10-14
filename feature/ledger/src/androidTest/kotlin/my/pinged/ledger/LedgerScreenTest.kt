@@ -331,30 +331,36 @@ class LedgerScreenTest {
     @Test fun theTopThreeAmountsAreInkInATrustworthyMonth() = assertTopThreeColour(trustworthy = true)
 
     private fun assertTopThreeColour(trustworthy: Boolean) {
-        run {
-            val row = LedgerItem.Row(ledgerTxn(amountSen = 1_234L, localDate = SEP_7))
-            content(
-                items = listOf(LedgerItem.DayHeader(SEP_7, row.txn.id), row),
-                refresh = LoadState.NotLoading(true),
-                summary = MonthSummary(
-                    month = FIXED_MONTH,
-                    totals = listOf(CurrencyTotal("MYR", 120_450L)),
-                    top = listOf(CategoryTotal(41L, "MYR", 98_765L)),
-                    trustworthy = trustworthy,
+        val row = LedgerItem.Row(ledgerTxn(amountSen = 1_234L, localDate = SEP_7))
+        content(
+            items = listOf(LedgerItem.DayHeader(SEP_7, row.txn.id), row),
+            refresh = LoadState.NotLoading(true),
+            summary = MonthSummary(
+                month = FIXED_MONTH,
+                totals = listOf(CurrencyTotal("MYR", 120_450L)),
+                top = listOf(
+                    CategoryTotal(41L, "MYR", 98_765L),
+                    CategoryTotal(42L, "MYR", 43_210L),
+                    CategoryTotal(41L, "SGD", 1_111L),
                 ),
-                categories = TWO_CATEGORIES,
-            )
-            compose.waitForText("987.65", "The top-three amount was not drawn")
-
-            val expected = if (trustworthy) Ink else Muted
-            val node = compose.onNodeWithText("987.65", useUnmergedTree = true)
+                trustworthy = trustworthy,
+            ),
+            categories = TWO_CATEGORIES,
+        )
+        val expected = if (trustworthy) Ink else Muted
+        for (amount in listOf("987.65", "432.10", "11.11")) {
+            compose.waitForText(amount, "The top-three amount $amount was not drawn")
+            val node = compose.onNodeWithText(amount, useUnmergedTree = true)
                 .fetchSemanticsNode()
             val layouts = mutableListOf<TextLayoutResult>()
-            node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+            val action = requireNotNull(node.config[SemanticsActions.GetTextLayoutResult].action) {
+                "The amount $amount exposes no text-layout action to read its colour from"
+            }
+            action(layouts)
             assertEquals(
-                "The top-three amount is not drawn in the total's colour for a " +
-                    "month with trustworthy = $trustworthy: the header greys its " +
-                    "total while presenting the breakdown of it as trustworthy",
+                "The top-three amount $amount is not drawn in the total's colour " +
+                    "for a month with trustworthy = $trustworthy: the header greys " +
+                    "its total while presenting the breakdown of it as trustworthy",
                 expected,
                 layouts.single().layoutInput.style.color,
             )
