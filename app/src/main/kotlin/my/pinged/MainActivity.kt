@@ -369,6 +369,7 @@ class MainActivity : ComponentActivity() {
                                     ExportSheetHost(
                                         state = state,
                                         onExport = { uri -> settings.exportTo(DocumentSink(contentResolver, uri)) },
+                                        onCancel = settings::cancelExport,
                                         // Dismissing the sheet is having seen
                                         // what it said about the last export,
                                         // so the next one opens on its button.
@@ -952,6 +953,7 @@ internal fun bannerFor(report: CaptureReport, exportOverdue: Boolean): BannerKin
 private fun ExportSheetHost(
     state: SettingsState,
     onExport: (android.net.Uri) -> Unit,
+    onCancel: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val launcher = rememberLauncherForActivityResult(
@@ -961,6 +963,7 @@ private fun ExportSheetHost(
         ExportSheet(
             state = state,
             onPick = { launcher.launch(EXPORT_FILE_NAME) },
+            onCancel = onCancel,
             onDismiss = onDismiss,
         )
     }

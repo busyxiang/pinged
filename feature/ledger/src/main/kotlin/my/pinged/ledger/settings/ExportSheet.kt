@@ -26,6 +26,12 @@ import my.pinged.ui.theme.Separator
  * The idle state's "Export" is a tap target, not a caption: [onPick] runs
  * only when the user asks for it, so backing out of the system document
  * picker leaves this sheet with something to tap again, not nothing at all.
+ * Above it, the count of what will be written; nothing where the screen has
+ * no count it can stand behind ([SettingsState.exportRows]).
+ *
+ * Running offers Cancel ([onCancel]), which deletes the partial document;
+ * dismissing the sheet only hides it. Done names the document as its
+ * provider does, which is the name the user typed.
  *
  * **Assumes it is already inside a vertical container with its own
  * padding** -- `MainActivity`'s `ExportSheetHost` supplies that by calling
@@ -35,7 +41,7 @@ import my.pinged.ui.theme.Separator
  * `ReceiptSheet`'s.
  */
 @Composable
-fun ExportSheet(state: SettingsState, onPick: () -> Unit, onDismiss: () -> Unit) {
+fun ExportSheet(state: SettingsState, onPick: () -> Unit, onCancel: () -> Unit, onDismiss: () -> Unit) {
     Text("Everything", fontFamily = Body, fontSize = 20.sp, color = Ink)
     Text(
         "Transactions, the original notifications, your learned merchants and " +
@@ -48,24 +54,27 @@ fun ExportSheet(state: SettingsState, onPick: () -> Unit, onDismiss: () -> Unit)
     // The export's own job only: an outcome `Transfers` keeps for another
     // operation is not this sheet's to report, and would hide its button.
     when (val job = state.jobOf(Operation.EXPORT)) {
-        is TransferJob.Running ->
+        is TransferJob.Running -> {
             Text("${job.operation.doing}${Separator}${grouped(job.rows)} ROWS", style = MonoLabel, color = Muted)
+            TapTarget("Cancel", onCancel)
+        }
         is TransferJob.Exported -> {
             Text("SAVED${Separator}${grouped(job.rows)} ROWS", style = MonoLabel, color = Muted)
+            job.savedAs?.let { name ->
+                Text("Saved as $name", fontFamily = Body, fontSize = 14.sp, color = Ink)
+            }
             job.unrecorded?.let { reason ->
                 Text(unrecordedExport(reason), fontFamily = Body, fontSize = 14.sp, color = Ink)
             }
         }
         is TransferJob.Failed ->
             Text(job.message, fontFamily = Body, fontSize = 14.sp, color = Ink)
-        else -> Text(
-            "Export",
-            style = MonoLabel,
-            color = Ink,
-            modifier = Modifier
-                .padding(top = 16.dp)
-                .clickable(role = Role.Button, onClick = onPick),
-        )
+        else -> {
+            state.exportRows?.let { rows ->
+                Text("${grouped(rows)} ROWS TO WRITE", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 16.dp))
+            }
+            TapTarget("Export", onPick)
+        }
     }
     Text(
         "YOU CHOOSE WHERE IT GOES" + Separator + "PINGED CANNOT UPLOAD IT ANYWHERE",
@@ -74,6 +83,17 @@ fun ExportSheet(state: SettingsState, onPick: () -> Unit, onDismiss: () -> Unit)
         modifier = Modifier.padding(top = 24.dp),
     )
 }
+
+/** The sheet's one action in each state that has one. */
+@Composable
+private fun TapTarget(label: String, onClick: () -> Unit) = Text(
+    label,
+    style = MonoLabel,
+    color = Ink,
+    modifier = Modifier
+        .padding(top = 16.dp)
+        .clickable(role = Role.Button, onClick = onClick),
+)
 
 /**
  * What [TransferJob.Exported.unrecorded] says to the user: the file is whole,

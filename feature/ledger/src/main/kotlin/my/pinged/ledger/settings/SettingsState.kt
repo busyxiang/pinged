@@ -51,9 +51,10 @@ sealed interface TransferJob {
     /**
      * A backup written whole. [unrecorded] is why its time could not be
      * recorded for the backup nudge, or null when it was: the file is
-     * complete either way, and is kept.
+     * complete either way, and is kept. [savedAs] is the document's name as
+     * its provider gives it, null when it would not say.
      */
-    data class Exported(val rows: Int, val unrecorded: String? = null) : TransferJob
+    data class Exported(val rows: Int, val unrecorded: String? = null, val savedAs: String? = null) : TransferJob
 
     data class Restored(val report: ImportReport) : TransferJob
 
@@ -131,6 +132,12 @@ data class SettingsState(
      * when it is left null. Only the delete sheet reads it.
      */
     val wipeCounts: WipeCounts? = null,
+    /**
+     * The export sheet's idle count: the rows an export would write, as of
+     * this screen's last read. Null on any [Storage] but HEALTHY, and when
+     * the count did not finish, for [wipeCounts]' reason.
+     */
+    val exportRows: Int? = null,
     /**
      * `0` for never, and null when the store could not be read -- the row
      * then draws no value, as [sourcesOn]'s does. "NEVER" would be a claim

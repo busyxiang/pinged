@@ -213,7 +213,7 @@ class TransferOutcomeScreenTest {
             assertTrue("the export did not say its time went unrecorded: $job", (job as? TransferJob.Exported)?.unrecorded != null)
             val viewModel = SettingsViewModel(app)
             compose.setContent {
-                PingedTheme { Column { ExportSheet(viewModel.state.collectAsState().value, onPick = {}, onDismiss = {}) } }
+                PingedTheme { Column { ExportSheet(viewModel.state.collectAsState().value, onPick = {}, onCancel = {}, onDismiss = {}) } }
             }
             assertTrue("the sheet did not say the file was saved", appears("SAVED", substring = true))
             assertTrue("the sheet did not say the file is complete", appears("The file is complete", substring = true))
