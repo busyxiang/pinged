@@ -170,8 +170,10 @@ jobs:
           fi
           cp "$apk" "out/pinged-$version.apk"
           mapping=$(find app/build/outputs/mapping/release -name 'mapping.txt' 2>/dev/null | head -1)
+          # Gzipped: 0.7.0's map is 43.9 MB as text and 3.2 MB at -9. `-n`
+          # leaves out the build's file name and time.
           if [ -n "$mapping" ]; then
-            cp "$mapping" "out/pinged-$version-mapping.txt"
+            gzip -9 -n -c "$mapping" > "out/pinged-$version-mapping.txt.gz"
           fi
           {
             echo "version=$version"
