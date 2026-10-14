@@ -7,6 +7,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.Databases
+import my.pinged.data.entity.PendingReason
+import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -81,6 +83,59 @@ class LedgerResumeTest {
                 "arithmetic bug rather than a read that never happened",
             true,
             counted,
+        )
+    }
+
+    /**
+     * Spec 15.4: "a new capture updates the total without re-reading the
+     * list" (#125). No lifecycle transition at all: stage two commits while
+     * the ledger is on screen, as it does when the user is looking at it.
+     * Without a trigger the row arrives (the feed is invalidated by the
+     * insert) above a month total and an `N AWAITING REVIEW` count that stay
+     * at their first read until the next resume.
+     */
+    @Test fun aPaymentCommittedWhileTheScreenIsOpenIsCountedWithoutAResume() {
+        val dao = context.freshLedger()
+        val category = Databases.categoryDao(context).all().first().id
+
+        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        compose.setContent {
+            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
+        }
+        compose.waitUntil(TIMEOUT) {
+            compose.onAllNodesWithTextSafely("NOTHING CAPTURED YET") > 0
+        }
+
+        val now = System.currentTimeMillis()
+        dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = now, categoryId = category))
+        val counted = runCatching {
+            compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
+        }.isSuccess
+        assertEquals(
+            "The payment is in the database and the month total does not " +
+                "count it: nothing re-read the aggregates on this screen " +
+                "while it stayed resumed",
+            true,
+            counted,
+        )
+
+        dao.insert(
+            ledgerTxn(
+                amountSen = 700L,
+                occurredAt = now,
+                categoryId = category,
+                state = TxnState.PENDING,
+                pendingReason = PendingReason.RULE_REVIEW,
+            ),
+        )
+        val awaiting = runCatching {
+            compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("1 AWAITING REVIEW") > 0 }
+        }.isSuccess
+        assertEquals(
+            "A payment awaiting review committed while the ledger is open " +
+                "does not raise the pinned count",
+            true,
+            awaiting,
         )
     }
 
