@@ -89,7 +89,7 @@ class SourcesResumeTest {
         // has never heard of posts something, which leaves a count in DataStore
         // and nothing at all in Room.
         runBlocking {
-            SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis())
+            SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis(), System.currentTimeMillis())
         }
         assertTrue(
             "precondition: the count was not recorded while the screen was " +

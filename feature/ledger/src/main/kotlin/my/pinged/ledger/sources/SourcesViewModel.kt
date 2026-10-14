@@ -269,6 +269,17 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         // notifications this listener has been handed from that package. Counting
         // only the discarded side draws `0 SEEN` beside a bank that is visibly
         // capturing, which reads as broken rather than as restraint.
+        //
+        // Spec 9.6's 30-day drop first. A `capture_source` row is what "touched in
+        // the picker" means: `setEnabled` writes one on the first toggle, and nothing
+        // else writes one for a package the user never enabled. Pack packages are
+        // kept too: Suggested draws them whatever the counter says, so dropping one
+        // would only reset its count.
+        SourceCounters.dropExpired(
+            context,
+            now = System.currentTimeMillis(),
+            keep = known.keys + packLabels.keys,
+        )
         val counts = SourceCounters.allSeenCounts(context)
         val apps = InstalledApps(context.packageManager)
 

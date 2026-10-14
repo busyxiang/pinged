@@ -1912,8 +1912,15 @@ patterns and absences read off directly. That is what must never exist, and
 a count cannot reconstruct it.
 
 So the rule is: a package that has never been enabled, and that the user has
-never touched in the picker, is dropped once `first_seen_at` is more than 30
-days old. Two consequences, neither a bug: a rediscovered package returns
+never touched in the picker, is dropped once it was first seen more than 30
+days ago. An untouched package has no `capture_source` row -- one is written on
+the first toggle -- so its first-seen time is kept beside its count in
+`DataStore`, written once by the first count and never moved. "Touched" is
+exactly "has a `capture_source` row". Packages in the parser pack are never
+dropped: Suggested lists them whatever the counter says, so dropping one would
+only reset its count. The drop runs when the screen reads the list; a count
+from before first-seen was recorded is dated by the first drop pass that finds
+it. Two consequences, neither a bug: a rediscovered package returns
 with a fresh `first_seen_at` and a count of 1, losing its old count; and an
 app that posts rarely can cycle in and out of the list, which is the
 discovery list working rather than failing.

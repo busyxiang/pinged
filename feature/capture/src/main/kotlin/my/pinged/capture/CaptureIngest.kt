@@ -113,7 +113,7 @@ internal object CaptureIngest {
         //
         // `countOne` and not a bare increment, because the listener is handed the same
         // still-posted notification on every rebind.
-        SourceCounters.countOne(context, sbn.packageName, arrival, sbn.postTime)
+        SourceCounters.countOne(context, sbn.packageName, arrival, sbn.postTime, now)
 
         // Guarded as well, and not only for the open the block above already
         // made: a connection that has met damage answers the lookup or the
