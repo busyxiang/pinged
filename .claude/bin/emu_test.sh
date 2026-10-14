@@ -285,6 +285,72 @@ until_in "$work/$case_n/b.err" "waiting up to"
 wait
 if grep -qF 'waiting up to 1800s' "$work/$case_n/b.err"; then pass "a lease waits 30 minutes by default"; else fail "a lease waits 30 minutes by default: $(cat "$work/$case_n/b.err")"; fi
 
+# The queue. A fake waiter is a ticket naming a live process: queued
+# earlier, it must hold back a newcomer even with the emulator free.
+started() { sed 's/.*) //' "/proc/$1/stat" | cut -d' ' -f20; }
+older_ticket() {
+    local pid=$1 start=$2
+    mkdir -p "$EMU_LOCK_DIR/queue"
+    printf '%s\tfake-worktree\tfake command\n' "$(date +%s)" \
+        >"$EMU_LOCK_DIR/queue/$(($(date +%s%N) - 1000000000))-$pid-$start"
+}
+newcomer_waits() {
+    local emu=$1 status
+    "$emu" --wait 2 -- sh -c "echo ran >>$log" 2>/dev/null && status=0 || status=$?
+    [ "$status" = 75 ] && [ ! -s "$log" ]
+}
+
+fresh
+sleep 30 & waiter=$!
+older_ticket "$waiter" "$(started "$waiter")"
+if newcomer_waits "$script"; then pass "a newcomer waits behind an older live waiter"; else fail "a newcomer waits behind an older live waiter"; fi
+if [ "$(ls "$EMU_LOCK_DIR/queue" | wc -l)" = 1 ]; then pass "a waiter that gives up leaves the queue"; else fail "a waiter that gives up leaves the queue: $(ls "$EMU_LOCK_DIR/queue")"; fi
+out=$("$script" --status)
+if grep -q 'queued 1: fake-worktree' <<<"$out"; then pass "--status lists the queue"; else fail "--status lists the queue: <$out>"; fi
+kill "$waiter"; wait "$waiter" 2>/dev/null || true
+
+fresh
+sleep 30 & waiter=$!
+older_ticket "$waiter" "$(started "$waiter")"
+if newcomer_waits "$(mutant no-queue 's/    if \[ "$(ahead)" -lt "$slots" \]; then/    if true; then/')"; then
+    fail "mutation no-queue: the newcomer still waited"
+else
+    pass "mutation no-queue: the newcomer jumps the queue"
+fi
+kill "$waiter"; wait "$waiter" 2>/dev/null || true
+
+dead_ticket_passes() {
+    local emu=$1
+    sh -c 'exit 0' & local gone=$!
+    wait "$gone"
+    older_ticket "$gone" 12345
+    sleep 30 & reused=$!
+    older_ticket "$reused" 1
+    "$emu" --wait 2 -- sh -c "echo ran >>$log" 2>/dev/null
+    local status=$?
+    kill "$reused"; wait "$reused" 2>/dev/null || true
+    [ "$status" = 0 ] && [ -s "$log" ] && [ -z "$(ls "$EMU_LOCK_DIR/queue")" ]
+}
+fresh
+if dead_ticket_passes "$script"; then pass "a dead waiter's ticket, or a reused pid's, holds up nobody"; else fail "a dead waiter's ticket, or a reused pid's, holds up nobody"; fi
+fresh
+if dead_ticket_passes "$(mutant no-liveness 's/        if \[ "$(started "$pid")" = "$start" \]; then/        if true; then/')"; then
+    fail "mutation no-liveness: the dead ticket still let it through"
+else
+    pass "mutation no-liveness: a dead ticket blocks the queue"
+fi
+
+# Real waiters, queued a beat apart, are served in that order.
+fresh
+"$script" -- sh -c "echo A >>$log; sleep 2" &
+until_in "$log" A
+for w in B C D; do
+    "$script" -- sh -c "echo $w >>$log" 2>/dev/null &
+    sleep 0.3
+done
+wait
+if [ "$(tr '\n' ' ' <"$log")" = "A B C D " ]; then pass "waiters are served first come, first served"; else fail "waiters are served first come, first served: $(tr '\n' ' ' <"$log")"; fi
+
 fresh
 export EMU_POOL="emulator-5554 emulator-5556"
 "$script" -- sh -c "echo \"A-start \$ANDROID_SERIAL\" >>$log; sleep 2; echo A-end >>$log" &

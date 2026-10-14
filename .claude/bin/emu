@@ -27,6 +27,7 @@
 set -euo pipefail
 
 lock_dir=${EMU_LOCK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/pinged-emu}
+queue=$lock_dir/queue
 pool=${EMU_POOL:-emulator-5554}
 # Longer than one full connectedDebugAndroidTest (~10 min of device time on
 # CI), so a lease queued behind one does not give up and retry. Longer than
@@ -65,6 +66,38 @@ describe() {
             printf '  %s: held\n' "$s"
         fi
     done
+    local t since where cmd n=0
+    for t in $(ls "$queue" 2>/dev/null | sort); do
+        n=$((n + 1))
+        IFS=$'\t' read -r since where cmd <"$queue/$t" || continue
+        printf '  queued %s: %s for %ss: %s\n' "$n" "$where" "$(($(date +%s) - since))" "$cmd"
+    done
+}
+
+# A process's start time in clock ticks since boot (stat field 22, counted
+# after the parenthesised name, which may hold spaces). With the pid it names
+# one process for good: a reused pid has a different start time.
+started() {
+    sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f20
+}
+
+# Waiters queued before this one that are still alive. flock alone is not
+# first come, first served: every waiter polls, and whichever polls first
+# after a release wins, so a session that queued first watched a later one
+# take the emulator for a full suite. A ticket whose process is gone is
+# removed, or a killed waiter would hold up the queue for good.
+ahead() {
+    local t pid start n=0
+    for t in $(ls "$queue" | sort); do
+        [ "$queue/$t" = "$ticket" ] && break
+        pid=${t#*-}; start=${pid#*-}; pid=${pid%-*}
+        if [ "$(started "$pid")" = "$start" ]; then
+            n=$((n + 1))
+        else
+            rm -f "$queue/$t"
+        fi
+    done
+    echo "$n"
 }
 
 online() {
@@ -100,7 +133,7 @@ reap() {
     rm -f "$lock_dir/$serial.holder"
 }
 
-mkdir -p "$lock_dir"
+mkdir -p "$lock_dir" "$queue"
 stop_now=0
 while [ $# -gt 0 ]; do
     case $1 in
@@ -120,18 +153,26 @@ done
 where=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 where=${where##*/}
 
+ticket=$queue/$(date +%s%N)-$$-$(started $$)
+printf '%s\t%s\t%s\n' "$(date +%s)" "$where" "${*:-stop}" >"$ticket"
+trap 'rm -f "$ticket"' EXIT
+
 serial=
 deadline=$((SECONDS + wait_s))
 told=0
+slots=$(wc -w <<<"$pool")
 while :; do
-    for s in $pool; do
-        exec 9>>"$lock_dir/$s.lock"
-        if flock -n 9; then
-            serial=$s
-            break 2
-        fi
-        exec 9>&-
-    done
+    if [ "$(ahead)" -lt "$slots" ]; then
+        for s in $pool; do
+            exec 9>>"$lock_dir/$s.lock"
+            if flock -n 9; then
+                serial=$s
+                rm -f "$ticket"
+                break 2
+            fi
+            exec 9>&-
+        done
+    fi
     if [ "$SECONDS" -ge "$deadline" ]; then
         printf 'emu: no emulator free after %ss. Rerun, or --wait longer.\n' "$wait_s" >&2
         describe >&2
