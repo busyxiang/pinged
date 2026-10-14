@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import my.pinged.capture.CaptureStorage
 import my.pinged.data.CaptureEvidence
@@ -173,7 +175,14 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      */
     val items: Flow<PagingData<LedgerItem>> =
         Pager(PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false)) {
-            (bound?.db?.let { LeasedFeed(it.txnDao().feed(), it.invalidationTracker) } ?: ReopeningFeed(
+            (bound?.db?.let {
+                LeasedFeed(
+                    it.txnDao().feed(),
+                    it.invalidationTracker,
+                    onWrite = { writeSeen.set(true) },
+                    onObserving = ::refreshIfWritten,
+                )
+            } ?: ReopeningFeed(
                 open = {
                     withContext(Dispatchers.IO) {
                         runCatching {
@@ -242,6 +251,47 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * The month the last [refresh] read, so [refreshIfWritten] re-reads the
+     * month on screen and not whichever one `YearMonth.now()` names by then.
+     * A test that fixes the month in [refresh] depends on it. Written from
+     * `viewModelScope` (Main) and read from the feed's IO thread, hence
+     * `@Volatile`.
+     */
+    @Volatile
+    private var lastMonth: YearMonth? = null
+
+    /**
+     * Held across one whole [refresh], so a later read is also a later write
+     * of [read]: with two in flight the older answer could land last and sit
+     * on top until the next one. Writes arrive in bursts (spec 15.4).
+     */
+    private val refreshing = Mutex()
+
+    /** Set by [LeasedFeed]'s observer when a write invalidated a source; cleared by [refreshIfWritten]. */
+    private val writeSeen = AtomicBoolean()
+
+    /**
+     * Spec 15.4: a capture updates the total without re-reading the list
+     * (#125). Called by [LeasedFeed] each time it has installed its `txn`
+     * observer, which is **after** any commit that invalidated the source
+     * before it and **before** the read of its first page. So the re-read
+     * starts after every write the previous observer reported, and a write
+     * after it invalidates this source and brings the next call: no commit
+     * falls between two reads. The feed is what is observing, so nothing here
+     * holds a lease or a tracker of its own, and a screen nobody is
+     * collecting (Paging's `LAZY` collection) never gets here.
+     *
+     * **Only when a write was seen.** A source replaced because the database
+     * was (a restore, or a connection replaced for damage) installs an
+     * observer too, and re-reading there makes a month on damaged pages read,
+     * meet the damage, replace the connection and read again for as long as
+     * the screen is up (`DamagedFeedTest` measures two quiet seconds).
+     */
+    private fun refreshIfWritten() {
+        if (writeSeen.compareAndSet(true, false)) refresh(lastMonth ?: YearMonth.now())
+    }
+
+    /**
      * Re-read the aggregates for the current month.
      *
      * Also the app's database probe from this screen's side: `guarded` is what
@@ -253,10 +303,9 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * [now] is a parameter so a test can name the month it built a fixture for
      * instead of arranging today.
      *
-     * **Nothing queues two refreshes**, unlike `SourcesViewModel`, whose
-     * `enqueue`/`tail` chain records why it needs one. The single write here is
-     * the whole answer to one read, so overlapping refreshes could only leave
-     * the older answer on top until the newer lands.
+     * **Refreshes run one at a time**, in the order they were asked for: see
+     * [refreshing]. There is no `enqueue`/`tail` chain like `SourcesViewModel`'s
+     * because the single write here is the whole answer to one read.
      *
      * **[assignCategory]'s escape is this method's too.** `guarded` catches
      * the open; a statement that fails afterwards -- a `SQLiteFullException`
@@ -264,6 +313,12 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * `viewModelScope`. Left uncovered for the reason [RowActions] records.
      */
     fun refresh(now: YearMonth = YearMonth.now()): Job = viewModelScope.launch {
+        refreshing.withLock { readMonth(now) }
+    }
+
+    /** [refresh]'s body, run under [refreshing]. */
+    private suspend fun readMonth(now: YearMonth) {
+        lastMonth = now
         val month = LocalDates.monthRange(now)
 
         // No `withContext(Dispatchers.IO)` of its own: `guarded` dispatches its
@@ -324,9 +379,11 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * Move one transaction to [categoryId] and re-read the month (§9.1's chip);
      * see [RowActions.assignCategory].
      *
-     * **The refresh is not tidiness.** The three aggregates are separate
-     * queries nothing invalidates, so without it the top three keeps naming
-     * the category the money just left.
+     * **The refresh is not tidiness.** The aggregates are separate queries
+     * that only the feed's `txn` observer re-reads (see [refreshIfWritten]),
+     * and an observer is not guaranteed to fire before the chip's own read of
+     * them; without this the top three can keep naming the category the money
+     * just left.
      *
      * [now] is a parameter for the same reason [refresh]'s is, and it is load
      * bearing rather than symmetric: a test that assigns on a fixture dated in
@@ -403,6 +460,11 @@ private class Bound(val db: PingedDatabase, val generation: Long)
  * `CloseBarrier`, and one that fails leaves triggers installed, which costs
  * a log row per write and nothing else, so neither is reported.
  *
+ * [onWrite] runs when the observer reports a write, before the invalidation
+ * it causes, and [onObserving] once the observer is installed and before the
+ * first page is read: between them a write is never between two reads of
+ * whatever else the owner keeps beside the feed.
+ *
  * Everything else is Room's, and invalidation runs both ways, so Room's
  * tracker invalidating its source reaches the `Pager` through this one.
  */
@@ -410,11 +472,16 @@ private class Bound(val db: PingedDatabase, val generation: Long)
 internal class LeasedFeed(
     private val room: PagingSource<Int, FeedRow>,
     private val tracker: InvalidationTracker,
+    private val onWrite: () -> Unit = {},
+    private val onObserving: () -> Unit = {},
 ) : PagingSource<Int, FeedRow>() {
     // Every table `TxnDao.FEED_SQL` reads, so a rename or a merge (spec 6.4)
     // redraws the rows it names, for the same reason a capture does.
     private val observer = object : InvalidationTracker.Observer(FEED_TABLES) {
-        override fun onInvalidated(tables: Set<String>) = invalidate()
+        override fun onInvalidated(tables: Set<String>) {
+            onWrite()
+            invalidate()
+        }
     }
     private val observing = AtomicBoolean()
 
@@ -444,7 +511,7 @@ internal class LeasedFeed(
                     }
                     // Invalidated while adding: the callback's removal may have
                     // run first and found nothing to remove.
-                    if (invalid) stopObserving()
+                    if (invalid) stopObserving() else onObserving()
                 }
                 room.load(params)
             }
