@@ -38,7 +38,7 @@ class SettingsNavigationTest {
     /** #50: the row is wired to the list, whose empty state is its own text. */
     @Test fun settingsReachesTheLearnedMerchantsList() {
         compose.onNodeWithText("SETTINGS").performClick()
-        compose.onNodeWithText("Learned merchants").performClick()
+        compose.onNodeWithText("Learned merchants").performScrollTo().performClick()
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("Nothing taught yet", substring = true).fetchSemanticsNodes().isNotEmpty() ||
                 compose.onAllNodesWithText("PAYMENTS", substring = true).fetchSemanticsNodes().isNotEmpty()

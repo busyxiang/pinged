@@ -38,11 +38,20 @@ class ForegroundCaptureDayTest {
      * would be checking the memo and not the gate. That write happens once
      * per connect, and a later test's delete clears the memo it set, so this
      * waits for it only once per process.
+     *
+     * **A connect is forced when one is owed.** `allow_listener` on a listener
+     * already bound starts no connect, so an earlier test that granted access
+     * and a later one whose delete cleared the memo leave a bound listener
+     * whose write this would wait for forever.
      */
     private fun boundAndSettled(): LocalDate {
         val component = PingedComponents.listener(context).flattenToString()
-        CaptureFixtures.shell("cmd notification allow_listener $component")
         val today = LocalDates.of(System.currentTimeMillis())
+        if (!connectWriteLanded && ListenerBinding.connected && CaptureDays.dayLastBound() != today) {
+            CaptureFixtures.shell("cmd notification disallow_listener $component")
+            CaptureFixtures.waitFor { !ListenerBinding.connected }
+        }
+        CaptureFixtures.shell("cmd notification allow_listener $component")
         assertTrue(
             "The listener never bound, so this test cannot set up its premise",
             CaptureFixtures.waitFor {

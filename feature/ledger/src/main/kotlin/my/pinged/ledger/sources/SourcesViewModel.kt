@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import my.pinged.capture.Graph
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.SourceCounters
+import my.pinged.capture.SourceGaps
 import my.pinged.data.entity.CaptureSource
 
 /**
@@ -53,6 +54,13 @@ data class SourceRow(
      * making a false one.
      */
     val textStored: Boolean = false,
+    /**
+     * Days since an enabled source last spoke, when that silence is out of
+     * character for it (spec 10.3, `SourceGaps.quiet`); null otherwise.
+     */
+    val quietDays: Int? = null,
+    /** What the source sent in the month before it went quiet, beside [quietDays]. */
+    val usualMonthly: Int? = null,
 )
 
 /**
@@ -263,6 +271,10 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
      * `MainThreadRefreshTest` exercises from the thread that matters.
      */
     private suspend fun read(): SourcesState {
+        val now = System.currentTimeMillis()
+        // Here as well as in the daily check, which an OEM may never let run:
+        // this screen is where the user can see which source has gone quiet.
+        SourceGaps.refresh(Databases.captureSourceDao(context), Databases.rawCaptureDao(context), now)
         val known: Map<String, CaptureSource> =
             Databases.captureSourceDao(context).all().associateBy { it.pkg }
         // The count means the same thing on both sides of the allow-list gate:
@@ -301,7 +313,10 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             enabled = known[pkg]?.enabled == true,
             authoritative = known[pkg]?.isAuthoritative == true,
             textStored = known[pkg]?.lastNotificationAt != null,
-        )
+        ).let { row ->
+            val quiet = known[pkg]?.let { SourceGaps.quiet(it, now) } ?: return@let row
+            row.copy(quietDays = quiet.days, usualMonthly = quiet.expected)
+        }
 
         val suggested = upper
             // The pack's own label is the better fallback than the raw

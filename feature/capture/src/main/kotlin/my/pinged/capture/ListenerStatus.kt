@@ -177,6 +177,9 @@ object ListenerStatus {
      * part-day state, so a `0` would hatch a day that was partly watched.
      */
     fun onAppForeground(context: Context) {
+        // Ahead of the grant check: a grant revoked after this is what the
+        // daily check exists to notice.
+        CaptureHealthWorker.schedule(context)
         if (!isGranted(context)) return
         requestRebind(context)
         ParseWorker.enqueue(context)

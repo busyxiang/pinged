@@ -43,11 +43,13 @@ import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
 import androidx.navigationevent.NavigationEvent
 import java.io.IOException
 import java.time.LocalDate
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import androidx.lifecycle.createSavedStateHandle
+import my.pinged.capture.CaptureAlerts
 import my.pinged.capture.CaptureReport
 import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
@@ -126,6 +128,12 @@ class MainActivity : ComponentActivity() {
      * again on each; see where it is collected.
      */
     private val resumes = MutableStateFlow(0)
+
+    /**
+     * Whether spec 10.2's daily check could post, for its settings row. Read
+     * on each resume: the user may have changed it in system settings.
+     */
+    private val alertsAllowed = MutableStateFlow<Boolean?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -242,6 +250,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenReview = { focus -> tabs.push(Review(focus)) },
                                     onAddPayment = { tabs.push(ManualEntry()) },
                                     onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                    heard = heardNow(),
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -357,8 +366,31 @@ class MainActivity : ComponentActivity() {
                                 val rescueLauncher = rememberLauncherForActivityResult(
                                     ActivityResultContracts.CreateDocument("application/json"),
                                 ) { uri -> if (uri != null) settings.salvageTo(DocumentSink(contentResolver, uri)) }
+                                // Spec 10.2's permission, asked only from its
+                                // own row. Refused with no rationale left to
+                                // show is a denial the system will not ask
+                                // about again, so the app's own notification
+                                // settings are the only way left.
+                                val askToPost = rememberLauncherForActivityResult(
+                                    ActivityResultContracts.RequestPermission(),
+                                ) { granted ->
+                                    alertsAllowed.value = CaptureAlerts.canPost(applicationContext)
+                                    if (!granted && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                                        openAlertSettings()
+                                    }
+                                }
                                 SettingsScreen(
                                     viewModel = settings,
+                                    alertsOn = alertsAllowed.collectAsState().value,
+                                    onAlerts = {
+                                        if (Build.VERSION.SDK_INT >= 33 &&
+                                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            askToPost.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        } else {
+                                            openAlertSettings()
+                                        }
+                                    },
                                     onOpenSources = { tabs.push(Sources) },
                                     onOpenCorrections = { tabs.push(Corrections) },
                                     onOpenLearned = { tabs.push(Learned) },
@@ -448,6 +480,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         resumes.value++
+        alertsAllowed.value = CaptureAlerts.canPost(applicationContext)
         // Spec 10.1's third rebind path is installed process-wide by
         // ForegroundRebinder; this is the screen catching up with whatever the
         // user did in Settings while it was away.
@@ -482,6 +515,22 @@ class MainActivity : ComponentActivity() {
         exportOverdue.value = readExportOverdue(applicationContext)
         betweenProbeAndReport()
         health.value = ListenerStatus.report(applicationContext)
+    }
+
+    /**
+     * [heardLine] over [health], re-measured each minute so a ledger left open
+     * does not go on saying "5 MIN AGO" for an hour.
+     */
+    @Composable
+    private fun heardNow(): String? {
+        val report = health.collectAsState().value
+        val now by produceState(System.currentTimeMillis()) {
+            while (true) {
+                delay(60_000L)
+                value = System.currentTimeMillis()
+            }
+        }
+        return heardLine(report, now)
     }
 
     /**
@@ -684,6 +733,16 @@ class MainActivity : ComponentActivity() {
             }
             exportOverdue.value = readExportOverdue(applicationContext)
         }
+    }
+
+    /**
+     * This app's notification settings, where alerts are turned off again, or
+     * on once the permission prompt will no longer be shown.
+     */
+    private fun openAlertSettings() {
+        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+        if (!start(intent)) Log.w(TAG, "This app's notification settings would not open")
     }
 
     /**
@@ -971,6 +1030,34 @@ internal fun bannerFor(report: CaptureReport, exportOverdue: Boolean): BannerKin
         // recovered. `BannerPriorityTest` is what holds it here.
         exportOverdue -> BannerKind.NUDGE_EXPORT
         else -> null
+    }
+}
+
+/**
+ * Spec 10.2's always-visible signal, for the ledger's top bar: when Pinged last
+ * heard a notification from any app, or null where [bannerFor] has something
+ * truer to say.
+ *
+ * **"Heard", not the spec's "captured".** The heartbeat counts every app's
+ * notifications, and almost none of them are captured; a user who reads
+ * "captured 2 min ago" checks for a transaction that was never there.
+ *
+ * Measured from [now], not from the report's `staleForMillis`, so a screen
+ * left open keeps counting. The heartbeat is written at most once per
+ * `CaptureHealth.THROTTLE_MILLIS`, so every answer is up to five minutes
+ * staler than the truth, never fresher, and nothing finer than five minutes
+ * is claimed.
+ */
+internal fun heardLine(report: CaptureReport?, now: Long): String? {
+    if (report == null || !report.granted || report.storageUnavailable || report.healthUnreadable) return null
+    if (report.lastNotificationAt == 0L) return null
+    val minutes = (now - report.lastNotificationAt) / 60_000L
+    return when {
+        minutes < 5 -> "HEARD IN THE LAST 5 MIN"
+        minutes < 60 -> "HEARD $minutes MIN AGO"
+        minutes < 24 * 60 -> "HEARD ${minutes / 60} HR AGO"
+        minutes < 2 * 24 * 60 -> "HEARD 1 DAY AGO"
+        else -> "HEARD ${minutes / (24 * 60)} DAYS AGO"
     }
 }
 

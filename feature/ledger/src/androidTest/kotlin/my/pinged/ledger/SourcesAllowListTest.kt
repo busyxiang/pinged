@@ -17,6 +17,7 @@ import my.pinged.capture.Graph
 import my.pinged.capture.SourceCounters
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.CaptureSource
+import my.pinged.data.entity.RawCapture
 import my.pinged.ledger.sources.SourceRow
 import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesState
@@ -367,6 +368,61 @@ class SourcesAllowListTest {
             "The row says nothing was stored while capture_source records that it was",
             row.textStored,
         )
+    }
+
+    /** Spec 10.3: the row of a source gone quiet against its own habit says so. */
+    @Test fun anEnabledSourceGoneQuietIsMarkedWithItsHabit() {
+        val pkg = "my.pinged.probe.quiet.p" + System.nanoTime()
+        val day = 24 * 60 * 60 * 1000L
+        dao.insertIfNew(CaptureSource(pkg = pkg, label = "Quiet Bank", firstSeenAt = 0L))
+        dao.setEnabled(pkg, true)
+        dao.setLastNotificationAt(pkg, System.currentTimeMillis() - 20 * day - 60_000L)
+        dao.setExpectedMonthlyCount(pkg, 40)
+        try {
+            val viewModel = sourcesViewModel()
+            viewModel.refresh()
+            val row = awaitRow(viewModel, pkg)
+
+            assertEquals(20, row.quietDays)
+            assertEquals(40, row.usualMonthly)
+        } finally {
+            dao.setEnabled(pkg, false)
+        }
+    }
+
+    /**
+     * The daily worker is not the only writer of `expected_monthly_count`: on
+     * the phones that kill it, opening this screen is the only time a
+     * source's habit is measured, and a habit never measured is a silence the
+     * screen can never call out.
+     */
+    @Test fun openingTheScreenMeasuresAnActiveSourcesHabit() {
+        val pkg = "my.pinged.probe.habit.p" + System.nanoTime()
+        val day = 24 * 60 * 60 * 1000L
+        val last = System.currentTimeMillis() - day
+        dao.insertIfNew(CaptureSource(pkg = pkg, label = "Habit Bank", firstSeenAt = 0L))
+        dao.setEnabled(pkg, true)
+        dao.setLastNotificationAt(pkg, last)
+        val captures = Databases.rawCaptureDao(context)
+        repeat(9) { i ->
+            captures.insert(
+                RawCapture(
+                    sourcePackage = pkg, postedAt = last - i * day, whenMillis = null, capturedAt = last,
+                    sbnKey = "habit|$pkg|$i", notifId = 1, notifTag = null, userHandle = 0, channelId = null,
+                    flags = 0, arrival = Arrival.POSTED, title = null, text = "Habit $i", bigText = null,
+                    subText = null, extrasJson = null, contentHash = "habit$pkg$i",
+                ),
+            )
+        }
+        try {
+            val viewModel = sourcesViewModel()
+            viewModel.refresh()
+            awaitRow(viewModel, pkg)
+
+            assertEquals(9, dao.byPackage(pkg)!!.expectedMonthlyCount)
+        } finally {
+            dao.setEnabled(pkg, false)
+        }
     }
 
     /**
