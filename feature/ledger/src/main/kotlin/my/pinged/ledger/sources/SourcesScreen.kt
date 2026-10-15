@@ -375,6 +375,7 @@ private fun SourceListRow(
                 )
                 if (row.authoritative) AuthoritativeChip()
             }
+            quietLine(row)?.let { Text(it, style = DetailStyle, color = Stamp, modifier = Modifier.padding(top = 3.dp)) }
         }
         Pill(on = row.enabled)
     }
@@ -559,6 +560,15 @@ private fun claimFor(row: SourceRow): String = when {
     row.enabled -> ""
     row.textStored -> Separator + "EARLIER TEXT STILL SAVED"
     else -> Separator + "NOT ONE WORD STORED"
+}
+
+/**
+ * Spec 10.3's check, on the row of the source it is about: the user's next
+ * step is that app's own notification settings, which only they can reach.
+ */
+private fun quietLine(row: SourceRow): String? {
+    val days = row.quietDays ?: return null
+    return "NOTHING IN $days DAYS" + Separator + "USUALLY ${row.usualMonthly} A MONTH"
 }
 
 /**

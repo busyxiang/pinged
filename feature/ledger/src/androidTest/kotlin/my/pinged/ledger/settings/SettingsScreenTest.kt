@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -153,5 +154,27 @@ class SettingsScreenTest {
         }
         compose.onNodeWithText("Licences").performScrollTo().performClick()
         org.junit.Assert.assertEquals(1, opened)
+    }
+
+    /**
+     * Spec 10.2: the daily check can only reach a user who allowed it to post,
+     * and this row is where that is asked -- never unprompted on launch.
+     */
+    @Test fun alertsSayWhetherTheyCanReachYouAndAskWhenTapped() {
+        var asked = 0
+        compose.setContent {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SettingsRows(
+                    state = SettingsState(storage = Storage.HEALTHY, loaded = true),
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                    alertsOn = false,
+                    onAlerts = { asked++ },
+                )
+            }
+        }
+        compose.onNodeWithText(CAPTURE_ALERTS).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("OFF").assertIsDisplayed()
+        compose.onNodeWithText(CAPTURE_ALERTS).performClick()
+        compose.runOnIdle { assertEquals(1, asked) }
     }
 }

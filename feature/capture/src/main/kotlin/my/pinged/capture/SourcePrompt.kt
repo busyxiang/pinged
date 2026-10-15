@@ -107,7 +107,7 @@ object SourcePrompt {
      * has silenced to `NONE` is also an answer, and posting into it would spend the
      * mark on nothing.
      */
-    private fun mayPost(context: Context, manager: NotificationManager): Boolean {
+    internal fun mayPost(context: Context, manager: NotificationManager): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -117,7 +117,7 @@ object SourcePrompt {
     }
 
     /** Idempotent: creating an existing channel changes only its name. */
-    private fun ensureChannel(context: Context, manager: NotificationManager) {
+    internal fun ensureChannel(context: Context, manager: NotificationManager) {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,

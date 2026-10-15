@@ -92,6 +92,17 @@ class LedgerScreenTest {
 
     // ---- the five states, through the stateless content ------------------
 
+    /**
+     * Spec 10.2's always-visible signal, in the top bar above every state:
+     * a ledger with nothing in it is exactly where "is this even working"
+     * gets asked.
+     */
+    @Test fun theTopBarSaysWhenPingedLastHeardAnything() {
+        content(items = emptyList(), refresh = LoadState.NotLoading(true), heard = "HEARD 12 MIN AGO")
+
+        compose.waitForText("HEARD 12 MIN AGO", "The top bar does not say when Pinged last heard anything")
+    }
+
     @Test fun theEmptyStateSaysNothingCapturedAndDrawsNoNumber() {
         content(items = emptyList(), refresh = LoadState.NotLoading(true))
 
@@ -1598,6 +1609,7 @@ class LedgerScreenTest {
         uncategorizedId: Long? = null,
         onAssign: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
         onOpenSettings: () -> Unit = {},
+        heard: String? = null,
     ) {
         // The four read fields stay separate parameters here and are packed at
         // the last moment: each state below is named by the one field it is
@@ -1625,6 +1637,7 @@ class LedgerScreenTest {
                     storageUnavailable = storageUnavailable,
                     onAssign = onAssign,
                     onOpenSettings = onOpenSettings,
+                    heard = heard,
                 )
             }
         }

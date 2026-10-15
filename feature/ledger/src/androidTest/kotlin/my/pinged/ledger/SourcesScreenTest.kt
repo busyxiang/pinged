@@ -75,6 +75,31 @@ class SourcesScreenTest {
         compose.onNodeWithText("412 SEEN").assert(isASwitch)
     }
 
+    /** Spec 10.3's per-source check, where the user can see which source it is. */
+    @Test fun aQuietSourceSaysHowLongAndWhatIsUsual() {
+        compose.setContent {
+            PingedTheme {
+                SourcesScreenContent(
+                    state = SourcesState(
+                        suggested = listOf(
+                            SourceRow(
+                                "my.com.tngdigital.ewallet", "Touch 'n Go eWallet", 412, true,
+                                quietDays = 20, usualMonthly = 40,
+                            ),
+                            SourceRow("com.maybank2u.life", "Maybank MAE", 208, true),
+                        ),
+                        loaded = true,
+                    ),
+                    onToggle = { _, _ -> },
+                    onBack = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("NOTHING IN 20 DAYS" + Separator + "USUALLY 40 A MONTH").assertIsDisplayed()
+        compose.onAllNodesWithText("NOTHING IN", substring = true).assertCountEquals(1)
+    }
+
     /**
      * The state where the app cannot open its own database does not get the
      * typography of an empty list.

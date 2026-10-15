@@ -99,6 +99,7 @@ fun LedgerScreen(
     onOpenReview: (focus: Long?) -> Unit = {},
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
+    heard: String? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
     val read by viewModel.read.collectAsState()
@@ -139,6 +140,7 @@ fun LedgerScreen(
         onAddPayment = onAddPayment,
         onOpenEntry = onOpenEntry,
         onRemove = { viewModel.removeCaptured(it) },
+        heard = heard,
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
             MerchantActions(
@@ -178,6 +180,7 @@ internal fun LedgerScreenContent(
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onRemove: ((txnId: Long) -> Unit)? = null,
+    heard: String? = null,
 ) {
     // Which row is being removed (#132), hoisted for the reason `categorizing` is.
     var removing by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -197,7 +200,7 @@ internal fun LedgerScreenContent(
         Column(Modifier.fillMaxSize().background(Paper)) {
             // Above the branch: the month being summarised is true in every state,
             // including the two with nothing to show.
-            TopBar(month = read.summary?.month ?: YearMonth.now())
+            TopBar(month = read.summary?.month ?: YearMonth.now(), heard = heard)
 
             when {
                 // First, because it is the only state where the ledger is certainly
@@ -300,9 +303,13 @@ internal fun LedgerScreenContent(
  * The month comes from the summary rather than the clock so the label cannot
  * name a period the numbers below it did not cover; before the first aggregate
  * lands there is no number to label and it names the current month.
+ *
+ * [heard] is spec 10.2's always-visible signal, worded and withheld by
+ * `MainActivity.heardLine`, which says why it is not "captured"; null draws
+ * nothing.
  */
 @Composable
-private fun TopBar(month: YearMonth) {
+private fun TopBar(month: YearMonth, heard: String?) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -310,6 +317,7 @@ private fun TopBar(month: YearMonth) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(monthName(month), style = MonoLabel, color = Muted, modifier = Modifier.weight(1f))
+        if (heard != null) Text(heard, style = MonoLabel, color = Muted)
     }
 }
 

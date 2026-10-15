@@ -49,10 +49,10 @@ import my.pinged.ledger.transfer.Unreadable
 /**
  * Spec 9.5, drawn from `design/Settings.dc.html`.
  *
- * **Only the rows with a screen behind them are here.** The artboard's six
- * others -- capture health, unread notifications, pack import, categories, the
- * review threshold -- belong to milestones that do not exist, and dead rows are
- * worse than a short screen. `HOW THINGS GET SORTED` holds the one that does:
+ * **Only the rows with a screen behind them are here.** Capture health is
+ * [CAPTURE_ALERTS], spec 10.2's daily check; the artboard's others -- unread
+ * notifications, pack import, categories, the review threshold -- belong to
+ * milestones that do not exist, and dead rows are worse than a short screen. `HOW THINGS GET SORTED` holds the one that does:
  * the learned merchants (#50), the artboard's "taught rules".
  *
  * The root of the SETTINGS tab, so no back control: the artboard draws none, and
@@ -71,6 +71,8 @@ fun SettingsScreen(
     buildVersion: String,
     packVersion: Int,
     modifier: Modifier = Modifier,
+    alertsOn: Boolean? = null,
+    onAlerts: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     // Once per foreground, keyed on the holder rather than `Unit` -- the same
@@ -102,6 +104,8 @@ fun SettingsScreen(
             onRestore = { confirmingRestore = true },
             onCheck = viewModel::check,
             onDelete = { confirmingWipe = true },
+            alertsOn = alertsOn,
+            onAlerts = onAlerts,
         )
         Footer(buildVersion, packVersion)
     }
@@ -303,6 +307,9 @@ internal fun RecoveryNotice(state: SettingsState, onRescue: () -> Unit) {
     }
 }
 
+/** The settings row behind spec 10.2's daily check. */
+const val CAPTURE_ALERTS = "Tell me if capture stops"
+
 /** The delete sheet's offer of a copy first, on a healthy ledger. */
 internal const val EXPORT_FIRST = "Export it first"
 
@@ -439,6 +446,8 @@ internal fun SettingsRows(
     onOpenCorrections: () -> Unit,
     onOpenLearned: () -> Unit,
     onOpenLicences: () -> Unit,
+    alertsOn: Boolean? = null,
+    onAlerts: (() -> Unit)? = null,
 ) {
     val readable = state.storage == Storage.HEALTHY || state.storage == Storage.DAMAGED
     val idle = state.running == null
@@ -455,6 +464,18 @@ internal fun SettingsRows(
         onClick = onOpenSources,
         chevron = true,
     )
+    // Spec 10.2's daily check reaches a user only through a notification, and
+    // this is the one place that asks for the permission: a prompt on launch
+    // would come before the user knows what it is for.
+    if (onAlerts != null) {
+        SettingsRow(
+            CAPTURE_ALERTS,
+            caption = "A DAILY CHECK, WHEN YOUR PHONE LETS IT RUN",
+            value = alertsOn?.let { if (it) "ON" else "OFF" },
+            onClick = onAlerts,
+            chevron = true,
+        )
+    }
     // The section's last row -- the rest of the artboard's belong to
     // milestones that do not exist -- so it draws no divider, for the same
     // reason `Delete everything` draws none below.
