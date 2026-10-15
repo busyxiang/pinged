@@ -5,6 +5,23 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.9.0](https://github.com/busyxiang/pinged/compare/v0.8.0...v0.9.0) (2026-10-15)
+
+
+### Features
+
+* show when capture last heard anything, flag quiet sources, and alert daily ([#162](https://github.com/busyxiang/pinged/issues/162)) ([c79dac4](https://github.com/busyxiang/pinged/commit/c79dac47586de3eb2d690d4c4068506e82deab95))
+
+
+### Bug Fixes
+
+* count a payment captured while the ledger is open in its total ([#176](https://github.com/busyxiang/pinged/issues/176)) ([14db8dc](https://github.com/busyxiang/pinged/commit/14db8dc157c315fdcc4611993ba14f72c273f0ce)), closes [#175](https://github.com/busyxiang/pinged/issues/175)
+* draw sheets, the chooser's Save and its switch as the artboards do, not Material's defaults ([#177](https://github.com/busyxiang/pinged/issues/177)) ([54ce9ff](https://github.com/busyxiang/pinged/commit/54ce9ffb56db9c3106be52327238c752984fc477)), closes [#164](https://github.com/busyxiang/pinged/issues/164)
+* give each typeface its spec 8 job on the inbox, ledger and buttons ([#180](https://github.com/busyxiang/pinged/issues/180)) ([9e0eb90](https://github.com/busyxiang/pinged/commit/9e0eb901e61603a769ce1c995522319f18c8fe25)), closes [#166](https://github.com/busyxiang/pinged/issues/166)
+* keep the ledger's place when a payment's category is changed ([#172](https://github.com/busyxiang/pinged/issues/172)) ([f5b10f7](https://github.com/busyxiang/pinged/commit/f5b10f706be02b59b9faac63c1e6380186d09682)), closes [#158](https://github.com/busyxiang/pinged/issues/158)
+* make every touch target in the ledger at least 44dp tall ([#178](https://github.com/busyxiang/pinged/issues/178)) ([8f67c17](https://github.com/busyxiang/pinged/commit/8f67c17fd00b4d533d4ba8774bb4509d431adbc5)), closes [#165](https://github.com/busyxiang/pinged/issues/165)
+* ship the fonts' OFL texts in release builds, behind a Licences row in settings ([#160](https://github.com/busyxiang/pinged/issues/160)) ([84d4836](https://github.com/busyxiang/pinged/commit/84d4836da1fe25f3747d516fdafb6b8d86be7db1)), closes [#123](https://github.com/busyxiang/pinged/issues/123)
+
 ## [0.8.0](https://github.com/busyxiang/pinged/compare/v0.7.0...v0.8.0) (2026-10-14)
 
 
