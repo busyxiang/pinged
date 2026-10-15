@@ -267,7 +267,13 @@ private fun TxnRow(
                     if (line.isNotEmpty()) {
                         Text(
                             (if (chip) Separator else "") + line,
-                            style = MonoLabel,
+                            // Karla: a category and a source are names, and
+                            // names are body copy. 12/16 rather than the
+                            // artboard's 11.5, the size and leading of the
+                            // chip it sits beside.
+                            fontFamily = Body,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
                             color = Muted,
                             modifier = if (lineOpensSheet) {
                                 // Padding outside the click, as the chip's is:

@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.ledger.R
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
@@ -77,7 +78,7 @@ private fun Header(onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "Back",
-            style = MonoLabel,
+            style = ButtonLabel.copy(fontSize = 14.sp),
             color = Muted,
             modifier = Modifier.clickable(role = Role.Button, onClick = onBack),
         )

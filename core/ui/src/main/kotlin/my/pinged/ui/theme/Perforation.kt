@@ -11,6 +11,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -33,9 +34,29 @@ fun Modifier.dottedRule(atTop: Boolean = false, inset: Dp = 0.dp): Modifier = dr
     val start = Offset(inset.toPx(), y)
     val end = Offset(size.width - inset.toPx(), y)
     val weight = 1.dp.toPx()
-    val dots = PathEffect.dashPathEffect(floatArrayOf(1.dp.toPx(), 2.dp.toPx()))
+    val dots = perforation()
     onDrawBehind { drawLine(color = Rule, start = start, end = end, strokeWidth = weight, pathEffect = dots) }
 }
+
+/**
+ * [dottedRule] around all four sides: the artboard's `1px dotted` box, which
+ * the review inbox draws around a notification quoted word for word.
+ *
+ * Stroked by hand and inset by half the stroke, as [dashedOutline] is and
+ * for its reason; the same 1dp-on-2dp-off pattern as [dottedRule], from the
+ * same declaration.
+ */
+fun Modifier.dottedOutline(): Modifier = drawWithCache {
+    val weight = 1.dp.toPx()
+    val topLeft = Offset(weight / 2f, weight / 2f)
+    val box = Size(size.width - weight, size.height - weight)
+    val corner = CornerRadius(2.dp.toPx())
+    val dots = Stroke(width = weight, pathEffect = perforation())
+    onDrawBehind { drawRoundRect(color = Rule, topLeft = topLeft, size = box, cornerRadius = corner, style = dots) }
+}
+
+/** The perforation's pattern, 1dp on and 2dp off; every dotted mark draws with it. */
+private fun Density.perforation(): PathEffect = PathEffect.dashPathEffect(floatArrayOf(1.dp.toPx(), 2.dp.toPx()))
 
 /**
  * The artboards' `1px dashed` box, for a control drawn as an offer rather than

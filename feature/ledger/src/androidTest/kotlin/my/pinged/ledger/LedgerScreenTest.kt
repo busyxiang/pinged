@@ -133,7 +133,7 @@ class LedgerScreenTest {
         compose.waitForText(NOTHING_CAPTURED, "The empty ledger does not say so")
 
         compose.onNodeWithText("SETTINGS").assertDoesNotExist()
-        compose.onNodeWithText("OPEN SETTINGS").performClick()
+        compose.onNodeWithText("Open settings").performClick()
 
         assertEquals(
             "The empty state's route to Settings did not fire",

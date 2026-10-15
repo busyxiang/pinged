@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.ledger.settings.grouped
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Display
@@ -99,7 +100,7 @@ private fun LearnedRow(merchant: LearnedMerchant, onDelete: () -> Unit) {
         }
         Text(
             DELETE,
-            style = MonoLabel,
+            style = ButtonLabel.copy(fontSize = 14.sp),
             color = Muted,
             modifier = Modifier
                 .border(1.dp, Muted, RoundedCornerShape(2.dp))
@@ -114,7 +115,7 @@ private fun Header(onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "Back",
-            style = MonoLabel,
+            style = ButtonLabel.copy(fontSize = 14.sp),
             color = Muted,
             modifier = Modifier.clickable(role = Role.Button, onClick = onBack),
         )
@@ -134,6 +135,6 @@ internal fun paymentsLabel(payments: Int): String = "PAYMENTS ${grouped(payments
 
 /** The settings row's label and this screen's title: the UI's name for a learned rule. */
 const val LEARNED_MERCHANTS = "Learned merchants"
-internal const val DELETE = "DELETE"
+internal const val DELETE = "Delete"
 internal const val NOTHING_TAUGHT =
     "Nothing taught yet. Pick a category on a payment and leave 'Always call this' on."

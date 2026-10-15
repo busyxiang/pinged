@@ -69,7 +69,7 @@ fun CaptureBanner(
     ) {
         Text(
             label,
-            style = MonoLabel.copy(fontSize = 9.5.sp, letterSpacing = 1.14.sp),
+            style = MonoLabel,
             color = Stamp,
         )
         Text(

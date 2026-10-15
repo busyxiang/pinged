@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
@@ -88,7 +89,7 @@ fun ExportSheet(state: SettingsState, onPick: () -> Unit, onCancel: () -> Unit, 
 @Composable
 private fun TapTarget(label: String, onClick: () -> Unit) = Text(
     label,
-    style = MonoLabel,
+    style = ButtonLabel,
     color = Ink,
     modifier = Modifier
         .padding(top = 16.dp)

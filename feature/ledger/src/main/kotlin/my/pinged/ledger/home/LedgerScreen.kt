@@ -52,6 +52,7 @@ import my.pinged.ledger.review.awaitingReviewLabel
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
 import my.pinged.ui.monthName
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
@@ -396,7 +397,7 @@ private fun Reading(modifier: Modifier = Modifier) {
  * names where the tap lands rather than where it eventually leads.
  */
 @Composable
-private fun Empty(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
+internal fun Empty(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
         Text("NOTHING CAPTURED YET", style = MonoLabel, color = Muted)
         Text(
@@ -428,7 +429,7 @@ private fun Empty(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
                 .padding(horizontal = 14.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text("OPEN SETTINGS", style = MonoLabel, color = Stamp)
+            Text(OPEN_SETTINGS, style = ButtonLabel.copy(fontSize = 14.5.sp), color = Stamp)
         }
     }
 }
@@ -713,3 +714,6 @@ private fun AddPaymentButton(onClick: () -> Unit, modifier: Modifier = Modifier)
 
 /** The button's 56dp and its 20dp margin, plus a little air. */
 private val ADD_PAYMENT_ROOM = 88.dp
+
+/** The empty ledger's one button, which opens Settings. */
+internal const val OPEN_SETTINGS = "Open settings"
