@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -270,12 +272,11 @@ private fun TxnRow(
                             style = MonoLabel,
                             color = Muted,
                             modifier = if (lineOpensSheet) {
-                                // Padding outside the click, as the chip's is:
-                                // it enlarges the target and not the drawing.
                                 Modifier
                                     .clip(RoundedCornerShape(2.dp))
                                     .clickable(role = Role.Button, onClick = onCategorize!!)
-                                    .padding(vertical = 6.dp)
+                                    .heightIn(min = 44.dp)
+                                    .wrapContentHeight()
                             } else {
                                 Modifier
                             },
@@ -364,17 +365,11 @@ private fun CategoryChip(onClick: () -> Unit) {
         Modifier
             .clip(RoundedCornerShape(2.dp))
             .clickable(role = Role.Button, onClick = onClick)
-            // Touch first, then the drawn box. The padding here is inside the
-            // clickable and outside `dashedOutline`, so it enlarges what can be
-            // tapped without enlarging what is drawn: the outline is painted in
-            // this node's own bounds, which exclude padding applied before it.
-            //
-            // Not `heightIn(min = 44.dp)` like the other targets in this
-            // feature: that makes the box itself 44dp and an uncategorized row
-            // visibly taller than every other row. 44dp is WCAG 2.5.5's AAA
-            // target; 2.5.8's AA minimum is 24dp, which the 6dp either side
-            // clears.
-            .padding(vertical = 6.dp)
+            // Touch first, then the drawn box. `wrapContentHeight` measures
+            // what follows it at its own size inside the 44dp target, so the
+            // outline is drawn around the label and not around the target.
+            .heightIn(min = 44.dp)
+            .wrapContentHeight()
             .dashedOutline(Stamp)
             .padding(horizontal = 7.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center,
@@ -445,9 +440,8 @@ private fun RowIcon(excluded: Boolean, uncategorized: Boolean, iconKey: String?)
 /**
  * A framed mono label, in the colour of whatever it is qualifying.
  *
- * With [onClick] it is a button. The 6dp above and below is inside the click
- * and outside the frame, as [CategoryChip]'s is: a bigger target, the same
- * drawing. 24dp tall in all, WCAG 2.5.8's AA minimum.
+ * With [onClick] it is a button: a 44dp target with the frame drawn at its
+ * own size inside it, as [CategoryChip]'s is.
  */
 @Composable
 private fun Badge(text: String, color: Color, onClick: (() -> Unit)? = null) {
@@ -463,7 +457,8 @@ private fun Badge(text: String, color: Color, onClick: (() -> Unit)? = null) {
                     Modifier
                         .clip(RoundedCornerShape(2.dp))
                         .clickable(role = Role.Button, onClickLabel = OPEN_REVIEW, onClick = onClick)
-                        .padding(vertical = 6.dp)
+                        .heightIn(min = 44.dp)
+                        .wrapContentHeight()
                 },
             )
             .border(1.dp, color, RoundedCornerShape(2.dp))
