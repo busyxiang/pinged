@@ -9,7 +9,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.DatabaseFactory
@@ -61,6 +65,11 @@ class DeleteReachesTheLedgerTest {
             compose.onNodeWithText("SETTINGS").performClick()
             compose.onNodeWithText("Delete everything").performScrollTo().performClick()
             compose.onNode(hasSetTextAction()).performTextInput("DELETE")
+            assertTrue(
+                "The keyboard never opened over the sheet, so there is no " +
+                    "settled layout to tap Delete in",
+                waitFor { keyboardShown() },
+            )
             compose.onNodeWithText("Delete").performScrollTo().performClick()
             assertTrue(
                 "The confirmed delete never emptied the database, so nothing " +
@@ -103,6 +112,29 @@ class DeleteReachesTheLedgerTest {
                 updatedAt = now,
             ),
         )
+    }
+
+    /**
+     * Whether the focused window -- the sheet's -- has the IME's insets yet.
+     *
+     * **Waited for before `Delete` is scrolled to and tapped.** Typing
+     * focuses the field and asks for the keyboard, which arrives later and
+     * outside anything Compose's idling tracks. If it lands after
+     * `performScrollTo`, it shrinks the sheet's viewport under a scroll
+     * position chosen for the old one, and `performClick` taps the button's
+     * unclipped centre outside it: nothing receives the tap, no delete
+     * starts, and the wait below times out. CI's Gboard took 455ms to show;
+     * the same API 36 image here took 125ms and lost the race once in 63
+     * runs, and 9 in 100 with Gboard reniced to 19 under load (0 in 100
+     * with this wait).
+     */
+    private fun keyboardShown(): Boolean {
+        var shown = false
+        onView(isRoot()).check { root, _ ->
+            shown = ViewCompat.getRootWindowInsets(root)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        compose.waitForIdle()
+        return shown
     }
 
     private fun waitFor(condition: () -> Boolean): Boolean {
