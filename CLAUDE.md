@@ -44,6 +44,17 @@ themselves are in doubt; main's push runs every suite regardless.
 A local run skips `:core:data`'s `@Measurement` tests, which log a figure and
 assert nothing; CI runs them, and `CI=true` before `./gradlew` runs them here.
 
+A loop that repeats a test, to reproduce a flake or count its rate, takes
+one lease per iteration, never one for the whole loop: the others queue
+behind a lease for as long as it lasts, and on 2026-10-15 a session waited
+27 minutes behind loops held under single leases. Lease each run and let
+the loop wait between them:
+
+    for i in $(seq 10); do .claude/bin/emu -- ./gradlew <task> <filter> || fails=$((fails + 1)); done
+
+not `.claude/bin/emu -- loop.sh`. An `emu` inside a lease's command waits for
+that same lease and never gets it.
+
 A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
 screen is shorter than a dev one, and a new Settings row once pushed "Delete
 everything" off it, so the click missed and two tests failed on CI only.
