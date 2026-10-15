@@ -12,6 +12,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -83,6 +87,26 @@ class WipeHostTest {
         compose.waitUntil(TIMEOUT) { viewModel.state.value.loaded }
     }
 
+    /**
+     * Holds the test until the focused window -- the sheet's -- has the IME's
+     * insets, for the reason `DeleteReachesTheLedgerTest.keyboardShown`
+     * gives: typing asks for the keyboard, which arrives outside anything
+     * Compose's idling tracks, and if it lands between [performScrollTo] and
+     * the tap it shrinks the viewport out from under `Delete`. The tap then
+     * misses and nothing reports it. On CI's API 36 image with Gboard reniced
+     * to 19, [aDeleteThatCouldNotFinishSaysSoOnTheScreen] lost that race.
+     */
+    private fun awaitKeyboard() {
+        compose.waitUntil(TIMEOUT) {
+            var shown = false
+            onView(isRoot()).check { root, _ ->
+                shown = ViewCompat.getRootWindowInsets(root)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            }
+            shown
+        }
+        compose.waitForIdle()
+    }
+
     private fun seedOneEnabledSource() {
         DatabaseFactory.build(app).useDb { db ->
             db.captureSourceDao().insertForImport(
@@ -112,6 +136,7 @@ class WipeHostTest {
         compose.onNodeWithText("THIS CANNOT BE UNDONE").assertIsDisplayed()
 
         compose.onNode(hasSetTextAction()).performTextInput("DELETE")
+        awaitKeyboard()
         compose.onNodeWithText("Delete").assertIsEnabled().performScrollTo().performClick()
 
         // `Wipe.everything` rotates the key rather than leaving none behind,
@@ -153,6 +178,7 @@ class WipeHostTest {
 
         compose.onNodeWithText("Delete everything").performScrollTo().performClick()
         compose.onNode(hasSetTextAction()).performTextInput("DELETE")
+        awaitKeyboard()
         compose.onNodeWithText("Delete").performScrollTo().performClick()
 
         compose.waitUntil(TIMEOUT) {
