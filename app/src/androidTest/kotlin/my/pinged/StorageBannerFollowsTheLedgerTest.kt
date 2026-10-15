@@ -59,7 +59,7 @@ class StorageBannerFollowsTheLedgerTest {
      */
     @Test fun theBannerOffersNoButtonOnTheScreenItLeadsTo() = withTheKeyGone {
         ActivityScenario.launch(MainActivity::class.java).use {
-            assertTrue("precondition: the storage banner never appeared", compose.waitFor { compose.countOf(LABEL) == 1 })
+            assertEventually("precondition: the storage banner never appeared") { compose.countOf(LABEL) == 1 }
             compose.onNodeWithText(ACTION).performClick()
             assertTrue("precondition: settings never said the key is gone", compose.waitFor { compose.countOf(KEY_GONE) == 1 })
 
@@ -81,7 +81,7 @@ class StorageBannerFollowsTheLedgerTest {
      */
     @Test fun theButtonOverTheAllowListGoesBackToTheSettingsUnderIt() = withTheKeyGone {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            assertTrue("precondition: the storage banner never appeared", compose.waitFor { compose.countOf(LABEL) == 1 })
+            assertEventually("precondition: the storage banner never appeared") { compose.countOf(LABEL) == 1 }
             compose.onNodeWithText(ACTION).performClick()
             assertTrue("precondition: settings never opened", compose.waitFor { compose.countOf(SETTINGS_ONLY) == 1 })
             // Scrolled to, as in the test below: with the banner and the bottom
@@ -122,7 +122,7 @@ class StorageBannerFollowsTheLedgerTest {
         var restored = false
         withTheKeyGone(putTheKeyBack = { !restored }) {
             ActivityScenario.launch(MainActivity::class.java).use {
-                assertTrue("precondition: the storage banner never appeared", compose.waitFor { compose.countOf(LABEL) == 1 })
+                assertEventually("precondition: the storage banner never appeared") { compose.countOf(LABEL) == 1 }
                 compose.onNodeWithText(ACTION).performClick()
                 assertTrue("precondition: settings never said the key is gone", compose.waitFor { compose.countOf(KEY_GONE) == 1 })
 
@@ -151,7 +151,7 @@ class StorageBannerFollowsTheLedgerTest {
         var restored = false
         withTheKeyGone(putTheKeyBack = { !restored }) {
             ActivityScenario.launch(MainActivity::class.java).use {
-                assertTrue("precondition: the storage banner never appeared", compose.waitFor { compose.countOf(LABEL) == 1 })
+                assertEventually("precondition: the storage banner never appeared") { compose.countOf(LABEL) == 1 }
 
                 restored = true
                 runBlocking {
@@ -221,7 +221,7 @@ class StorageBannerFollowsTheLedgerTest {
      */
     @Test fun aBannerThatSettingsNoLongerBearsOutGoesAway() = withTheKeyGone { key ->
         ActivityScenario.launch(MainActivity::class.java).use {
-            assertTrue("precondition: the storage banner never appeared", compose.waitFor { compose.countOf(LABEL) == 1 })
+            assertEventually("precondition: the storage banner never appeared") { compose.countOf(LABEL) == 1 }
             keyFile.writeBytes(key)
             compose.onNodeWithText(ACTION).performClick()
             assertTrue(
@@ -329,6 +329,10 @@ class StorageBannerFollowsTheLedgerTest {
      * message instead, it is read before the wait starts: issue #16's failure
      * printed `storageUnavailable=true` from the instant after the restore,
      * when the flag had been cleared for 30s.
+     *
+     * The banner's preconditions use it too: a banner that never appears is a
+     * flag that never reached the store or a banner that never sampled it,
+     * and only the report says which (issue #179).
      */
     private fun assertEventually(message: String, condition: () -> Boolean) {
         if (!compose.waitFor(condition)) fail("$message: ${report()}")

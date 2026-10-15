@@ -1,7 +1,6 @@
 package my.pinged.capture
 
 import android.content.Context
-import androidx.datastore.preferences.core.edit
 
 /**
  * Everything this module remembers outside the database, dropped in one call.
@@ -24,8 +23,5 @@ object CaptureCaches {
      * arrive again. Spec 9.6's allow-list is unaffected: it travels in the
      * backup itself, so no choice the user made is lost.
      */
-    suspend fun clear(context: Context) {
-        context.captureStore.edit { it.clear() }
-        CaptureHealth.forgetProcessMemo()
-    }
+    suspend fun clear(context: Context) = CaptureHealth.wipe(context)
 }

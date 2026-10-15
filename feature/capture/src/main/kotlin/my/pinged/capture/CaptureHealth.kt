@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * One DataStore for the whole module, declared once.
@@ -63,6 +65,9 @@ internal object CaptureHealth {
      */
     @Volatile private var storageUnavailable: Boolean? = null
 
+    /** See [writeStorageUnavailable]; [wipe] takes it too. */
+    private val flagWrites = Mutex()
+
     /**
      * Liveness for any notification from any app, so a dead listener is
      * detectable regardless of whether the user spent money (spec 10.2).
@@ -83,9 +88,9 @@ internal object CaptureHealth {
     /**
      * Forget every in-process memo, as a fresh process would.
      *
-     * Two callers. [CaptureCaches.clear] needs it because clearing the durable
-     * store while this process still holds `storageUnavailable = false` leaves
-     * the two disagreeing until the process dies. Tests need it because the
+     * Two callers. [wipe] needs it because clearing the durable store while
+     * this process still holds `storageUnavailable = false` leaves the two
+     * disagreeing until the process dies. Tests need it because the
      * throttles above are process-scoped by design, so the behaviour that
      * matters most -- what a *new* process does when it meets a flag an older
      * one wrote -- is otherwise unreachable from a suite that runs in one
@@ -109,11 +114,7 @@ internal object CaptureHealth {
      * stayed false and the app reported healthy capture, indefinitely, while
      * storing nothing.
      */
-    suspend fun recordStorageUnavailable(context: Context) {
-        if (storageUnavailable == true) return
-        storageUnavailable = true
-        context.captureStore.edit { it[STORAGE_UNAVAILABLE] = true }
-    }
+    suspend fun recordStorageUnavailable(context: Context) = writeStorageUnavailable(context, true)
 
     /**
      * Cleared once the database opens again, so the banner does not stick.
@@ -122,10 +123,46 @@ internal object CaptureHealth {
      * throttles on [storageUnavailable] being *known* clear, never on it being
      * unset. See that field for what the difference cost.
      */
-    suspend fun clearStorageUnavailable(context: Context) {
-        if (storageUnavailable == false) return
-        storageUnavailable = false
-        context.captureStore.edit { it.remove(STORAGE_UNAVAILABLE) }
+    suspend fun clearStorageUnavailable(context: Context) = writeStorageUnavailable(context, false)
+
+    /**
+     * The flag's one writer, under [flagWrites], with the memo set only once
+     * the store holds [value].
+     *
+     * `CaptureStorage.guarded` raises and clears from IO threads at once
+     * whenever one caller is refused while another opens; a run of
+     * `StorageBannerFollowsTheLedgerTest` crosses them about once. Without
+     * the lock the last memo write and the last edit can be different
+     * callers' -- `StorageFlagCrossingTest` measured 240-265 and 18-22 of
+     * 1000 crossings -- and every later call of the same kind then
+     * short-circuits on a memo the store disagrees with, for the life of the
+     * process: the flag down with the key gone, or up over a ledger that
+     * opens (issue #179).
+     *
+     * The memo after the edit, not before, so a caller whose write
+     * short-circuits returns only once the write it relied on is in the
+     * store: `MainActivity`'s sample reads the store straight after its own
+     * probe, and must not read a raise still in flight as none.
+     */
+    private suspend fun writeStorageUnavailable(context: Context, value: Boolean) {
+        if (storageUnavailable == value) return
+        flagWrites.withLock {
+            if (storageUnavailable == value) return
+            context.captureStore.edit { if (value) it[STORAGE_UNAVAILABLE] = true else it.remove(STORAGE_UNAVAILABLE) }
+            storageUnavailable = value
+        }
+    }
+
+    /**
+     * [CaptureCaches.clear]: the whole store emptied and every memo
+     * forgotten, under [flagWrites]. Outside it, a raise whose edit lands
+     * just before the wipe sets its memo just after the forget, and the flag
+     * reads down with the memo saying up. No test reaches that window: 600
+     * crossings of a raise and a wipe without the lock all came out agreeing.
+     */
+    internal suspend fun wipe(context: Context) = flagWrites.withLock {
+        context.captureStore.edit { it.clear() }
+        forgetProcessMemo()
     }
 
     suspend fun storageUnavailable(context: Context): Boolean =
