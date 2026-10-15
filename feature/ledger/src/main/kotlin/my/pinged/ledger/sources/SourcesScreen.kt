@@ -52,6 +52,7 @@ import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.Toggle
 import my.pinged.ui.theme.dottedRule
 
 /**
@@ -377,7 +378,9 @@ private fun SourceListRow(
             }
             quietLine(row)?.let { Text(it, style = DetailStyle, color = Stamp, modifier = Modifier.padding(top = 3.dp)) }
         }
-        Pill(on = row.enabled)
+        // As on the detail line: what this is drawn in is the fix, and only a
+        // device can see it.
+        Toggle(on = row.enabled, modifier = Modifier.testTag(PILL_TAG))
     }
 }
 
@@ -404,54 +407,6 @@ private fun AuthoritativeChip() {
             .border(1.dp, Stamp, RoundedCornerShape(2.dp))
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
-}
-
-/**
- * The capture toggle.
- *
- * **The off state is drawn in [Faint], and this is the one place the artboard
- * is overruled.** It drew the outline in `Border` on the upper ground and
- * `Rule` on the lower -- 1.35:1 and 1.41:1 -- with the knob `Rule` on both, at
- * 1.60:1 and 1.41:1. WCAG 1.4.11 asks 3:1 of a component and its states, and
- * this screen has exactly one question, so "not this one" being almost
- * invisible is not a stylistic matter. [Faint] clears 3:1 on both grounds.
- *
- * One colour rather than one per ground: a per-ground parameter exists to keep
- * the outline equally faint against two backgrounds, which is the property
- * that was the bug.
- *
- * The two states are **not** told apart by colour. On is a filled pill with the
- * knob right, off an outline with the knob left; the accent and [Faint] measure
- * 1.77:1 against each other, so a reader who sees no colour reads this entirely
- * from fill and position. That is WCAG 1.4.1, and why the fill is not
- * decoration.
- */
-@Composable
-private fun Pill(on: Boolean) {
-    Box(
-        Modifier
-            // As on the detail line: what this is drawn in is the fix, and
-            // only a device can see it.
-            .testTag(PILL_TAG)
-            .size(width = 42.dp, height = 24.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .then(
-                if (on) {
-                    Modifier.background(Stamp)
-                } else {
-                    Modifier.border(1.dp, Faint, RoundedCornerShape(12.dp))
-                },
-            )
-            .padding(horizontal = 3.dp),
-        contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
-    ) {
-        Box(
-            Modifier
-                .size(18.dp)
-                .clip(RoundedCornerShape(9.dp))
-                .background(if (on) Paper else Faint),
-        )
-    }
 }
 
 // Hoisted rather than `MonoLabel.copy(...)` at the call site: `TextStyle.copy`

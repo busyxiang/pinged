@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import my.pinged.charts.model.MonthsItem
 import my.pinged.charts.model.monthsSheet
 import my.pinged.ui.theme.Body
-import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
@@ -50,9 +49,8 @@ internal fun MonthsSheetHost(viewModel: ChartsViewModel, onPick: (YearMonth) -> 
  */
 @Composable
 internal fun MonthsSheet(items: List<MonthsItem>?, onPick: (YearMonth) -> Unit, onDismiss: () -> Unit) {
-    ReceiptSheet(onDismissRequest = onDismiss) {
-        Text("Jump to", fontFamily = Display, fontSize = 23.sp, color = Ink)
-        Column(Modifier.padding(top = 14.dp)) {
+    ReceiptSheet(onDismissRequest = onDismiss, title = "Jump to") {
+        Column {
             if (items == null) {
                 Text("READING", style = MonoLabel, color = Muted)
             } else {

@@ -11,8 +11,24 @@ import androidx.compose.ui.unit.sp
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Separator
+
+/** `design/Export.dc.html`'s title, over the sheet's close X. */
+const val EXPORT_TITLE = "Export"
+
+/**
+ * [ExportSheet] in [ReceiptSheet] -- the app's one sheet chrome, see that
+ * KDoc -- under the artboard's title and close X. Here rather than in
+ * `MainActivity`'s host, so a test in this module can draw what ships.
+ */
+@Composable
+fun ExportReceiptSheet(state: SettingsState, onPick: () -> Unit, onCancel: () -> Unit, onDismiss: () -> Unit) {
+    ReceiptSheet(onDismissRequest = onDismiss, title = EXPORT_TITLE) {
+        ExportSheet(state = state, onPick = onPick, onCancel = onCancel, onDismiss = onDismiss)
+    }
+}
 
 /**
  * `design/Export.dc.html`, minus the half that is CSV.
