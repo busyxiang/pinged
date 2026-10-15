@@ -53,24 +53,30 @@ class QueryPlanTest {
     @Before fun setUp() {
         db = freshDatabase(context)
         val cat = db.categoryDao().requireUncategorizedId()
-        repeat(600) {
-            db.txnDao().insert(
-                sampleTxn(
-                    amountSen = (it % 40) * 250L + 100,
-                    occurredAt = SEPTEMBER + it * 3_600_000L,
-                    categoryId = cat,
-                    // A realistic mix, not one value: spec 7.1 sends a minority
-                    // of transactions to the review inbox. With a single
-                    // distinct `state` the planner's arithmetic is degenerate
-                    // and the plans below stop meaning anything.
-                    state = if (it % 50 == 0) TxnState.PENDING else TxnState.COMMITTED,
-                ),
-            )
-        }
-        repeat(300) {
-            db.rawCaptureDao().insert(
-                sampleCapture(hash = "h$it", sbnKey = "k$it", postedAt = it * 1_000L),
-            )
+        // One transaction rather than 900 commits, each fsynced under
+        // `synchronous = FULL`. A fresh database per case still, not one per
+        // class: two cases write -- ANALYZE, and a merchant rule -- and every
+        // other plan here is asserted on a database without either.
+        db.runInTransaction {
+            repeat(600) {
+                db.txnDao().insert(
+                    sampleTxn(
+                        amountSen = (it % 40) * 250L + 100,
+                        occurredAt = SEPTEMBER + it * 3_600_000L,
+                        categoryId = cat,
+                        // A realistic mix, not one value: spec 7.1 sends a minority
+                        // of transactions to the review inbox. With a single
+                        // distinct `state` the planner's arithmetic is degenerate
+                        // and the plans below stop meaning anything.
+                        state = if (it % 50 == 0) TxnState.PENDING else TxnState.COMMITTED,
+                    ),
+                )
+            }
+            repeat(300) {
+                db.rawCaptureDao().insert(
+                    sampleCapture(hash = "h$it", sbnKey = "k$it", postedAt = it * 1_000L),
+                )
+            }
         }
         // The month range has to actually select rows, or every plan below is
         // being asserted against a predicate that matches nothing.
