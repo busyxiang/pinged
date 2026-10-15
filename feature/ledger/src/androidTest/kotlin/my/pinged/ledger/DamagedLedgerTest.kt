@@ -284,35 +284,66 @@ class DamagedLedgerTest {
     @SuppressLint("RestrictedApi")
     @Test(timeout = 60_000)
     fun aFailureOfRoomsOwnWorkThatRecursReplacesOnceAnInterval() = runBlocking<Unit> {
-        val first = Databases.shared(context)
-        val generation = Databases.generation.value
-        first.getCoroutineScope().launch { throw full() }.join()
-        val replaced = withTimeoutOrNull(Databases.ROOM_FAILURE_INTERVAL_MILLIS + 2_000) {
-            Databases.generation.first { it > generation }
-        }
-        assertNotNull("the first failure was never replaced", replaced)
+        val real = Databases.roomFailureClock
+        val clock = HandClock()
+        Databases.roomFailureClock = clock
+        try {
+            val interval = Databases.ROOM_FAILURE_INTERVAL_MILLIS
+            val generation = Databases.generation.value
 
-        val second = Databases.shared(context)
-        second.getCoroutineScope().launch { throw full() }.join()
-        val tooSoon = withTimeoutOrNull(1_000) { Databases.generation.first { it > generation + 1 } }
-        assertNull("a second failure inside the interval replaced at once", tooSoon)
-        val later = withTimeoutOrNull(Databases.ROOM_FAILURE_INTERVAL_MILLIS + 2_000) {
-            Databases.generation.first { it > generation + 1 }
+            // `join` returns once Room's handler has run, and with it
+            // `roomWorkFailed`: a replacement is announced, or one is deferred
+            // to [clock], before the next line.
+            val first = Databases.shared(context)
+            first.getCoroutineScope().launch { throw full() }.join()
+            assertEquals("the first failure was not replaced at once", generation + 1, Databases.generation.value)
+
+            val second = Databases.shared(context)
+            second.getCoroutineScope().launch { throw full() }.join()
+            assertEquals("a second failure inside the interval was not deferred", 1, clock.pending)
+            clock.advance(interval - 1)
+            assertEquals("a second failure inside the interval replaced early", generation + 1, Databases.generation.value)
+            clock.advance(1)
+            assertEquals("a second failure inside the interval was never replaced", generation + 2, Databases.generation.value)
+            assertNotSame("the second instance whose own work failed is still served", second, Databases.shared(context))
+
+            val third = Databases.shared(context)
+            third.getCoroutineScope().launch { throw full() }.join()
+            assertEquals("a third failure in a row was not deferred", 1, clock.pending)
+            clock.advance(2 * interval - 1)
+            assertEquals("a third failure in a row replaced inside the doubled interval", generation + 2, Databases.generation.value)
+            clock.advance(1)
+            assertEquals("a third failure in a row was never replaced", generation + 3, Databases.generation.value)
+        } finally {
+            Databases.roomFailureClock = real
+        }
+    }
+
+    /**
+     * A [Databases.RoomFailureClock] that moves only when told to, running each
+     * deferred replacement on the test's thread as its moment is passed.
+     * Starts well above zero: [Databases]' backoff treats a replacement at `0L`
+     * as none.
+     */
+    private class HandClock : Databases.RoomFailureClock {
+        private var now = 1_000_000L
+        private val due = mutableListOf<Pair<Long, () -> Unit>>()
+
+        override fun now() = synchronized(this) { now }
+
+        val pending: Int get() = synchronized(this) { due.size }
+
+        override fun after(millis: Long, block: () -> Unit) {
+            synchronized(this) { due += now + millis to block }
         }
 
-        assertNotNull("a second failure inside the interval was never replaced", later)
-        assertNotSame("the second instance whose own work failed is still served", second, Databases.shared(context))
-
-        val third = Databases.shared(context)
-        third.getCoroutineScope().launch { throw full() }.join()
-        val atTheFirstInterval = withTimeoutOrNull(Databases.ROOM_FAILURE_INTERVAL_MILLIS + 1_000) {
-            Databases.generation.first { it > generation + 2 }
+        fun advance(millis: Long) {
+            val ready = synchronized(this) {
+                now += millis
+                due.filter { it.first <= now }.also { due.removeAll(it) }
+            }
+            ready.sortedBy { it.first }.forEach { it.second() }
         }
-        assertNull("a third failure in a row replaced at the first interval", atTheFirstInterval)
-        val atTheSecond = withTimeoutOrNull(Databases.ROOM_FAILURE_INTERVAL_MILLIS + 2_000) {
-            Databases.generation.first { it > generation + 2 }
-        }
-        assertNotNull("a third failure in a row was never replaced", atTheSecond)
     }
 
     private fun full() = SQLiteFullException("database or disk is full (code 13), for the test")

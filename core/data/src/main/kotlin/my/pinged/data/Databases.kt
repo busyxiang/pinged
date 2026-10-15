@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import java.util.concurrent.Callable
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -678,7 +679,8 @@ object Databases {
      */
     internal fun roomWorkFailed(instance: PingedDatabase, thrown: Throwable) {
         if (poisons(thrown)) return
-        val now = SystemClock.elapsedRealtime()
+        val clock = roomFailureClock
+        val now = clock.now()
         val wait = synchronized(this) {
             if (db !== instance) return
             val interval = roomFailureInterval(roomReplacementsInARow)
@@ -697,10 +699,7 @@ object Databases {
         if (wait == 0L) {
             announceReplacement()
         } else {
-            roomFailureScope.launch {
-                delay(wait)
-                roomWorkFailed(instance, thrown)
-            }
+            clock.after(wait) { roomWorkFailed(instance, thrown) }
         }
     }
 
@@ -728,8 +727,33 @@ object Databases {
     /** How many of [roomWorkFailed]'s replacements came in a row; under the monitor. */
     private var roomReplacementsInARow = 0
 
-    /** [roomWorkFailed]'s deferred replacements. */
-    private val roomFailureScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /**
+     * [roomWorkFailed]'s time: what it measures an interval by, and how a
+     * replacement deferred to the end of one waits. A test swaps it for one it
+     * advances by hand, so the intervals pass without the 5s and 10s of real
+     * waiting they cost; swap it only between two [reset]s, which zero the
+     * backoff, since [lastRoomReplacementAt] is read off whichever clock wrote it.
+     */
+    @VisibleForTesting
+    interface RoomFailureClock {
+        fun now(): Long
+        fun after(millis: Long, block: () -> Unit)
+    }
+
+    /** `elapsedRealtime`, and a coroutine on IO that sleeps out the interval. */
+    private object RealRoomFailureClock : RoomFailureClock {
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        override fun now() = SystemClock.elapsedRealtime()
+        override fun after(millis: Long, block: () -> Unit) {
+            scope.launch {
+                delay(millis)
+                block()
+            }
+        }
+    }
+
+    /** [roomWorkFailed]'s clock; see [RoomFailureClock]. */
+    @VisibleForTesting @Volatile var roomFailureClock: RoomFailureClock = RealRoomFailureClock
 
     /**
      * [roomWorkFailed]'s first interval. A replacement costs an open, 4ms
