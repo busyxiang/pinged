@@ -2,8 +2,10 @@ package my.pinged.ledger.entry
 
 import android.app.Application
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -29,8 +31,13 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ManualEditViewModelTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val viewModels = mutableListOf<ManualEntryViewModel>()
 
-    @After fun leaveNothingBehind() = context.discardTheDatabase()
+    @After fun leaveNothingBehind() {
+        // So no view model of this test reads on into the next one's.
+        viewModels.forEach { it.viewModelScope.cancel() }
+        context.discardTheDatabase()
+    }
 
     @Test fun aNoteAloneSavesWithoutAskingAgain() = runBlocking {
         val dao = context.freshLedger()
@@ -101,6 +108,7 @@ class ManualEditViewModelTest {
     /** The view model in edit mode on [id], once its draft has loaded. */
     private suspend fun editing(id: Long): ManualEntryViewModel {
         val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle(), EditTarget(id, Databases.txnDao(context).byId(id)!!.createdAt))
+            .also(viewModels::add)
         withTimeout(TIMEOUT) { vm.state.first { it.draft.amountSen > 0L } }
         assertEquals(id, vm.state.value.editing)
         return vm

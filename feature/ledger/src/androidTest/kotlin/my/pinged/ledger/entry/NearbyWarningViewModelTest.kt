@@ -1,9 +1,11 @@
 package my.pinged.ledger.entry
 
 import android.app.Application
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.SavedStateHandle
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -27,13 +29,18 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class NearbyWarningViewModelTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val viewModels = mutableListOf<ManualEntryViewModel>()
 
-    @After fun leaveNothingBehind() = context.discardTheDatabase()
+    @After fun leaveNothingBehind() {
+        // So no view model of this test reads on into the next one's.
+        viewModels.forEach { it.viewModelScope.cancel() }
+        context.discardTheDatabase()
+    }
 
     @Test fun saveAsksFirstCancelKeepsTheDraftAndAddAnywaySaves() = runBlocking {
         val dao = context.freshLedger()
         dao.insert(ledgerTxn(amountSen = 1_250L, occurredAt = System.currentTimeMillis() - 60_000L))
-        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle())
+        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle()).also(viewModels::add)
         vm.amount(1_250L)
         withTimeout(TIMEOUT) { vm.state.first { it.draft.amountSen == 1_250L } }
 
@@ -67,7 +74,7 @@ class NearbyWarningViewModelTest {
     @Test fun withNothingNearSaveSavesAtOnce() = runBlocking {
         val dao = context.freshLedger()
         dao.insert(ledgerTxn(amountSen = 1_251L, occurredAt = System.currentTimeMillis() - 60_000L))
-        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle())
+        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle()).also(viewModels::add)
         vm.amount(1_250L)
         withTimeout(TIMEOUT) { vm.state.first { it.draft.amountSen == 1_250L } }
 
@@ -81,7 +88,7 @@ class NearbyWarningViewModelTest {
     @Test fun changingTheDraftWithdrawsTheWarning() = runBlocking {
         val dao = context.freshLedger()
         dao.insert(ledgerTxn(amountSen = 1_250L, occurredAt = System.currentTimeMillis() - 60_000L))
-        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle())
+        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle()).also(viewModels::add)
         vm.amount(1_250L)
         withTimeout(TIMEOUT) { vm.state.first { it.draft.amountSen == 1_250L } }
         vm.save().join()

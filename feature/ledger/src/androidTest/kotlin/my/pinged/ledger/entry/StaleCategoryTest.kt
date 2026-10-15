@@ -2,6 +2,7 @@ package my.pinged.ledger.entry
 
 import android.app.Application
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.CompletableDeferred
@@ -43,8 +44,11 @@ class StaleCategoryTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val app = context.applicationContext as Application
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val viewModels = mutableListOf<ManualEntryViewModel>()
 
     @After fun leaveNothingBehind() {
+        // So no view model of this test reads on into the next one's.
+        viewModels.forEach { it.viewModelScope.cancel() }
         runBlocking { withTimeout(TIMEOUT) { Transfers.state.first { it.running == null } } }
         Transfers.forgetOutcome()
         scope.cancel()
@@ -78,7 +82,7 @@ class StaleCategoryTest {
     @Test fun theScreenDropsAChipTheLedgerNoLongerHas() = runBlocking {
         context.freshLedger()
         val kopi = customCategory()
-        val vm = ManualEntryViewModel(app, SavedStateHandle(), target = null, preselection = never)
+        val vm = ManualEntryViewModel(app, SavedStateHandle(), target = null, preselection = never).also(viewModels::add)
         withTimeout(TIMEOUT) { vm.state.first { state -> state.categories.any { it.id == kopi } } }
         vm.amount(1_250L)
         vm.tapCategory(kopi)
