@@ -29,6 +29,12 @@ mkdir -p "$work/bin"
 cat >"$work/bin/adb" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$ADB_LOG"
+# The first call starts a server that outlives it, with the caller's open
+# descriptors, as the real adb does.
+if [ ! -e "$ADB_STATE/server" ]; then
+    touch "$ADB_STATE/server"
+    sleep 30 &
+fi
 up=$ADB_STATE/online-$2
 case "$*" in
     *get-state) [ -e "$up" ] && echo device || exit 1 ;;
@@ -350,6 +356,21 @@ for w in B C D; do
 done
 wait
 if [ "$(tr '\n' ' ' <"$log")" = "A B C D " ]; then pass "waiters are served first come, first served"; else fail "waiters are served first come, first served: $(tr '\n' ' ' <"$log")"; fi
+
+# The adb server the first lease starts must not keep its lock.
+server_releases() {
+    local emu=$1
+    "$emu" -- true
+    "$emu" --wait 2 -- sh -c "echo B-ran >>$log" 2>/dev/null && [ -s "$log" ]
+}
+fresh
+if server_releases "$script"; then pass "an adb server a lease starts does not hold the lease"; else fail "an adb server a lease starts does not hold the lease"; fi
+fresh
+if server_releases "$(mutant adb-fd-leak 's/    command adb "$@" 9>&-/    command adb "$@"/')"; then
+    fail "mutation adb-fd-leak: the lease was still released"
+else
+    pass "mutation adb-fd-leak: the adb server holds the lease"
+fi
 
 fresh
 export EMU_POOL="emulator-5554 emulator-5556"
