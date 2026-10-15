@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -191,13 +193,13 @@ private fun RestoreConfirmSheet(onConfirm: () -> Unit, onDismiss: () -> Unit) {
                 "Keep what's here",
                 style = MonoLabel,
                 color = Muted,
-                modifier = Modifier.clickable(role = Role.Button, onClick = onDismiss),
+                modifier = Modifier.clickable(role = Role.Button, onClick = onDismiss).heightIn(min = 44.dp).wrapContentHeight(),
             )
             Text(
                 "Continue",
                 style = MonoLabel,
                 color = Stamp,
-                modifier = Modifier.clickable(role = Role.Button, onClick = onConfirm),
+                modifier = Modifier.clickable(role = Role.Button, onClick = onConfirm).heightIn(min = 44.dp).wrapContentHeight(),
             )
         }
     }
@@ -271,7 +273,9 @@ private fun OutcomeSheet(outcome: Outcome, onDismiss: () -> Unit) {
             color = Muted,
             modifier = Modifier
                 .padding(top = 20.dp)
-                .clickable(role = Role.Button, onClick = onDismiss),
+                .clickable(role = Role.Button, onClick = onDismiss)
+                .heightIn(min = 44.dp)
+                .wrapContentHeight(),
         )
     }
 }
@@ -301,7 +305,9 @@ internal fun RecoveryNotice(state: SettingsState, onRescue: () -> Unit) {
                 color = Stamp,
                 modifier = Modifier
                     .padding(top = 14.dp)
-                    .clickable(role = Role.Button, onClick = onRescue),
+                    .clickable(role = Role.Button, onClick = onRescue)
+                    .heightIn(min = 44.dp)
+                    .wrapContentHeight(),
             )
         }
     }

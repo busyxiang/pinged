@@ -1,7 +1,9 @@
 package my.pinged.ledger.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -92,7 +94,9 @@ private fun TapTarget(label: String, onClick: () -> Unit) = Text(
     color = Ink,
     modifier = Modifier
         .padding(top = 16.dp)
-        .clickable(role = Role.Button, onClick = onClick),
+        .clickable(role = Role.Button, onClick = onClick)
+        .heightIn(min = 44.dp)
+        .wrapContentHeight(),
 )
 
 /**
