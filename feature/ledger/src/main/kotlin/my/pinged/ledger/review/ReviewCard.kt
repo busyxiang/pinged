@@ -84,12 +84,12 @@ internal fun said(to: TxnState, card: ReviewCard): String =
 
 /** An answer a card offers, by the label its button carries. */
 enum class ReviewAnswer(val label: String) {
-    ACCEPT("ACCEPT"),
-    NOT_A_PAYMENT("NOT A PAYMENT"),
-    MERGE("MERGE"),
-    KEEP_BOTH("KEEP BOTH"),
-    LEAVE_OUT("LEAVE OUT"),
-    KEEP_AS_EXPENSE("KEEP AS EXPENSE"),
+    ACCEPT("Accept"),
+    NOT_A_PAYMENT("Not a payment"),
+    MERGE("Merge"),
+    KEEP_BOTH("Keep both"),
+    LEAVE_OUT("Leave out"),
+    KEEP_AS_EXPENSE("Keep as expense"),
 }
 
 /**

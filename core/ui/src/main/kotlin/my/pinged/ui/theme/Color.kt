@@ -46,6 +46,13 @@ val Muted = Color(0xFF6B6459)
  */
 val Faint = Color(0xFF8A8175)
 
+/**
+ * The ground of a notification quoted word for word: the review inbox's
+ * verbatim box. A third ground, between [Paper] and [Card]; [Muted] on it is
+ * 5.02:1.
+ */
+val Quote = Color(0xFFF5EDDD)
+
 /** Perforations and dotted rules. Decorative: no contrast rule applies. */
 val Rule = Color(0xFFCFC4AE)
 

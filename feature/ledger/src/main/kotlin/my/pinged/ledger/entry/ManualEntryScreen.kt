@@ -65,6 +65,7 @@ import my.pinged.ledger.home.categoryIcon
 import my.pinged.ui.ringgit
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
@@ -243,7 +244,7 @@ private fun WarningButton(label: String, enabled: Boolean, onClick: () -> Unit) 
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MonoLabel, color = ink)
+        Text(label, style = ButtonLabel.copy(fontSize = 14.sp), color = ink)
     }
 }
 
@@ -463,7 +464,7 @@ private fun SaveButton(label: String, enabled: Boolean, onClick: () -> Unit) {
             .heightIn(min = 48.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MonoLabel, color = if (enabled) Paper else ink)
+        Text(label, style = ButtonLabel, color = if (enabled) Paper else ink)
     }
 }
 
@@ -476,25 +477,25 @@ const val ADD_PAYMENT = "Add payment"
 const val EDIT_PAYMENT = "Edit payment"
 
 /** The button that writes the entry. */
-const val SAVE = "SAVE"
+const val SAVE = "Save"
 
 /** Save in edit mode (#105): the entry is corrected, not added. */
-const val SAVE_CHANGES = "SAVE CHANGES"
+const val SAVE_CHANGES = "Save changes"
 
 /** [NearbyWarning]'s answer that saves the entry beside the capture. */
-const val ADD_ANYWAY = "ADD ANYWAY"
+const val ADD_ANYWAY = "Add anyway"
 
 /** [NearbyWarning]'s answer that returns to the draft unsaved. */
-const val NEARBY_CANCEL = "CANCEL"
+const val NEARBY_CANCEL = "Cancel"
 
 /** Edit mode's Delete (#106), which asks before deleting. */
-const val DELETE_PAYMENT = "DELETE PAYMENT"
+const val DELETE_PAYMENT = "Delete payment"
 
 /** Delete's question's answer that deletes the entry. */
-const val CONFIRM_DELETE = "DELETE"
+const val CONFIRM_DELETE = "Delete"
 
 /** Delete's question's answer that keeps the entry; [NEARBY_CANCEL]'s word, a different button. */
-const val DELETE_CANCEL = "CANCEL"
+const val DELETE_CANCEL = "Cancel"
 
 /** The amount field's description, read by TalkBack before the figure. */
 const val AMOUNT = "Amount"

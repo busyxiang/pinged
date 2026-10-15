@@ -97,7 +97,7 @@ class AcceptAllTest {
 
         assertEquals(
             "The net is not RM650.00 less the RM50.00 refund, over the two plain cards alone",
-            "ACCEPT 2 · RM600.00",
+            "Accept 2 · RM600.00",
             AcceptAll.of(inbox.cards.value!!)?.label,
         )
 
@@ -106,7 +106,7 @@ class AcceptAllTest {
 
         assertEquals(
             "A plain card in another currency did not drop the sum, which would add dollars to ringgit",
-            "ACCEPT 3",
+            "Accept 3",
             AcceptAll.of(inbox.cards.value!!)?.label,
         )
     }
@@ -118,11 +118,11 @@ class AcceptAllTest {
         val transfer = dao.insert(pending(PendingReason.TRANSFER_SUSPECT, at = NOON))
         val viewModel = ReviewViewModel(context.applicationContext as Application)
         compose.setContent { PingedTheme { ReviewScreen(viewModel, onBack = {}) } }
-        waitForText("ACCEPT 2 · RM662.00")
+        waitForText("Accept 2 · RM662.00")
 
         compose.onNodeWithTag(reviewCardTag(swiped)).performScrollTo().performTouchInput { swipeRight() }
         waitForText("ACCEPTED · RM650.00")
-        compose.onNodeWithText("ACCEPT 1 · RM12.00").performScrollTo().performClick()
+        compose.onNodeWithText("Accept 1 · RM12.00").performScrollTo().performClick()
         waitForText("ACCEPTED 1 · RM12.00")
 
         assertEquals(

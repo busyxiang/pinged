@@ -78,7 +78,7 @@ class ReviewSwipeScreenTest {
             ),
         )
 
-        compose.onNodeWithText("ACCEPT 2 · RM600.00").performScrollTo().performClick()
+        compose.onNodeWithText("Accept 2 · RM600.00").performScrollTo().performClick()
 
         assertEquals("Accept all was not reported once for one tap", 1, acceptAlls)
         assertEquals("Accept all reported as a card's own answer", emptyList<Any>(), answers)
@@ -92,7 +92,7 @@ class ReviewSwipeScreenTest {
             ),
         )
 
-        compose.onNodeWithText("ACCEPT 2").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("Accept 2").performScrollTo().assertIsEnabled()
     }
 
     /** The duplicate is pairless, so drawn with Accept (#116), and still not plain to Accept all. */
@@ -115,12 +115,12 @@ class ReviewSwipeScreenTest {
         assertEquals(
             "Accept all was offered over a transfer and an unpaired duplicate card alone",
             0,
-            compose.onAllNodesWithText("ACCEPT ", substring = true).fetchSemanticsNodes().size,
+            compose.onAllNodesWithText("Accept ", substring = true).fetchSemanticsNodes().size,
         )
 
         cards.value = cards.value + card(PLAIN, PendingReason.OVER_THRESHOLD)
         busy.value = Operation.DELETE
-        compose.onNodeWithText("ACCEPT 1 · RM650.00").performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNodeWithText("Accept 1 · RM650.00").performScrollTo().assertIsNotEnabled().performClick()
         assertEquals("Accept all was tapped through while the ledger was being replaced", 0, acceptAlls)
     }
 
