@@ -479,8 +479,8 @@ private class Bound(val db: PingedDatabase, val generation: Long)
  * `CloseBarrier`, and one that fails leaves triggers installed, which costs
  * a log row per write and nothing else, so neither is reported.
  *
- * [onWrite] runs when the observer reports a write, before the invalidation
- * it causes, and [onObserving] once the observer is installed and before the
+ * [onWrite] runs when the observer reports a write, or Room's source does
+ * first, before the invalidation it causes, and [onObserving] once the observer is installed and before the
  * first page is read: between them a write is never between two reads of
  * whatever else the owner keeps beside the feed.
  *
@@ -505,7 +505,17 @@ internal class LeasedFeed(
     private val observing = AtomicBoolean()
 
     init {
-        room.registerInvalidatedCallback(::invalidate)
+        // Room's source invalidating while this one is still valid is Room
+        // hearing a write before the observer did: the same commit reaches
+        // both, and the invalidation removes the observer before the tracker
+        // gets to it. So it is a write too, or the owner would not re-read
+        // (1 to 6 of every 50 writes with four busy loops in the guest). An
+        // invalidation this feed starts -- a rebind, a replaced connection --
+        // finds it already invalid and reports nothing.
+        room.registerInvalidatedCallback {
+            if (!invalid) onWrite()
+            invalidate()
+        }
         registerInvalidatedCallback(room::invalidate)
         registerInvalidatedCallback { untracking.launch { stopObserving() } }
     }

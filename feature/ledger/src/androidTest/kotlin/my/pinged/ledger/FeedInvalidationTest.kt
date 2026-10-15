@@ -12,6 +12,7 @@ import my.pinged.data.DatabaseFactory
 import my.pinged.data.PingedDatabase
 import my.pinged.ledger.home.LeasedFeed
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -104,6 +105,48 @@ class FeedInvalidationTest {
                 "the row would show its old name until the next payment",
             feed.invalid,
         )
+    }
+
+    /**
+     * The same write can reach Room's own source before it reaches this
+     * feed's observer, and the invalidation that follows removes the observer
+     * before the tracker gets to it. The feed is then replaced with no
+     * `onWrite`, so the owner never re-reads what it keeps beside the rows:
+     * the ledger drew the new row under a month total and an awaiting-review
+     * count that did not count it, in 1 to 6 of every 50 writes with four
+     * busy loops in the guest. Room's source invalidating itself is that
+     * ordering, without the race.
+     */
+    @Test fun aWriteRoomsOwnSourceHearsFirstIsStillReportedAsAWrite() {
+        var writes = 0
+        val room = db.txnDao().feed()
+        val feed = LeasedFeed(room, db.invalidationTracker, onWrite = { writes++ })
+
+        room.invalidate()
+
+        assertTrue("Room's source invalidating did not invalidate the feed", feed.invalid)
+        assertEquals(
+            "A write Room's own source heard first replaced the feed without " +
+                "reporting a write, so the totals beside it were never re-read",
+            1,
+            writes,
+        )
+    }
+
+    /**
+     * The other side of the line: an invalidation the feed starts is a
+     * rebind or a replaced connection, not a write, and reporting it would
+     * re-read a damaged month on every replacement (`DamagedFeedTest`).
+     */
+    @Test fun anInvalidationTheFeedStartsIsNotAWrite() {
+        var writes = 0
+        val room = db.txnDao().feed()
+        val feed = LeasedFeed(room, db.invalidationTracker, onWrite = { writes++ })
+
+        feed.invalidate()
+
+        assertTrue("the feed did not invalidate Room's source", room.invalid)
+        assertEquals("A rebind was reported as a write", 0, writes)
     }
 
     /** [Dispatchers.IO], except that what is dispatched while [holding] waits for [release]. */
