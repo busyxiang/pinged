@@ -100,6 +100,14 @@ ahead() {
     echo "$n"
 }
 
+# Every adb call closes fd 9. The first adb call with no server running
+# starts the server, which inherits the caller's descriptors and lives on:
+# given the lock, it held the emulator against every session after the
+# lease ended.
+adb() {
+    command adb "$@" 9>&-
+}
+
 online() {
     adb -s "$1" get-state >/dev/null 2>&1 &&
         [ "$(adb -s "$1" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]
