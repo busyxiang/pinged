@@ -18,9 +18,10 @@ import my.pinged.ui.R
  *
  * Provenance, so a later upgrade knows what it is replacing: all six files come
  * from github.com/google/fonts, directory `ofl/`, all three families under SIL
- * OFL 1.1. The licence texts ship in `res/raw/ofl_*.txt` verbatim, including
- * IBM's copyright line, because a licence that has been tidied is no longer the
- * licence that was granted.
+ * OFL 1.1. The licence texts are `:feature:ledger`'s `res/raw/ofl_*.txt`,
+ * verbatim, including IBM's copyright line, because a licence that has been
+ * tidied is no longer the licence that was granted. `LicencesScreen` shows
+ * them and is their only reference, which is what keeps them in a shrunk build.
  *
  * Karla is published upstream only as `Karla[wght].ttf`; the three static
  * instances were cut from it at wght 400, 500 and 700 with fontTools'

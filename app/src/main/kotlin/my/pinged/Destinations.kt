@@ -51,6 +51,14 @@ import kotlinx.serialization.Serializable
 @Serializable data object Learned : NavKey
 
 /**
+ * The bundled fonts' licences (spec 8), pushed from their row in settings
+ * (`SettingsScreen`'s `onOpenLicences`).
+ *
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ */
+@Serializable data object Licences : NavKey
+
+/**
  * Spec 9.5's settings, the second tab of `design/Main.dc.html`'s bottom bar.
  * [Sources] is a row inside it, as `design/Settings.dc.html` draws.
  *
