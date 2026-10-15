@@ -99,6 +99,22 @@ val MonoLabel = MonoNumerals.copy(
     letterSpacing = 1.0.sp,
 )
 
+/**
+ * A button's label: Karla at weight 500, 15.5sp, as the artboards set Save
+ * and Export. Smaller buttons copy it at their own size -- the inbox's
+ * answers at 14 -- and keep the family and the weight.
+ *
+ * Spec 8 gives buttons to the body face, not the mono: a button is an
+ * instruction in words, and the mono is for numerals, uppercase labels and
+ * quoted notification text.
+ */
+val ButtonLabel = TextStyle(
+    fontFamily = Body,
+    fontWeight = FontWeight.Medium,
+    fontSize = 15.5.sp,
+    lineHeight = 20.sp,
+)
+
 private val Default = Typography()
 
 /**
@@ -107,7 +123,11 @@ private val Default = Typography()
  * A slot left at its Material default renders in the platform sans, which on
  * a screen otherwise entirely in Karla reads as a bug and would ship
  * unnoticed. Display and headline and title take the serif (hero numerals and
- * sheet titles), body takes Karla, label takes the mono.
+ * sheet titles), body takes Karla, and the two smaller label slots the mono.
+ *
+ * `labelLarge` is [ButtonLabel], not the mono: it is the style a Material
+ * `Button` gives a `Text` that names no family, so as the mono it drew the
+ * chooser's Save in the machine voice.
  */
 val PingedTypography = Typography(
     displayLarge = Default.displayLarge.copy(fontFamily = Display),
@@ -122,7 +142,7 @@ val PingedTypography = Typography(
     bodyLarge = Default.bodyLarge.copy(fontFamily = Body),
     bodyMedium = Default.bodyMedium.copy(fontFamily = Body),
     bodySmall = Default.bodySmall.copy(fontFamily = Body),
-    labelLarge = Default.labelLarge.copy(fontFamily = Mono, fontFeatureSettings = "tnum"),
+    labelLarge = ButtonLabel,
     labelMedium = Default.labelMedium.copy(fontFamily = Mono, fontFeatureSettings = "tnum"),
     labelSmall = Default.labelSmall.copy(fontFamily = Mono, fontFeatureSettings = "tnum"),
 )

@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit
 import my.pinged.ledger.learned.LEARNED_MERCHANTS
 import my.pinged.ledger.licences.LICENCES_TITLE
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Display
@@ -169,7 +170,7 @@ fun SettingsScreen(
  * says it just as truthfully without the friction a delete earns.
  */
 @Composable
-private fun RestoreConfirmSheet(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun RestoreConfirmSheet(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     ReceiptSheet(onDismissRequest = onDismiss) {
         Text("THIS DISCARDS EVERYTHING FIRST", style = MonoLabel, color = Stamp)
         Text(
@@ -191,13 +192,13 @@ private fun RestoreConfirmSheet(onConfirm: () -> Unit, onDismiss: () -> Unit) {
         Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Text(
                 "Keep what's here",
-                style = MonoLabel,
+                style = ButtonLabel.copy(fontSize = 15.sp),
                 color = Muted,
                 modifier = Modifier.clickable(role = Role.Button, onClick = onDismiss).heightIn(min = 44.dp).wrapContentHeight(),
             )
             Text(
                 "Continue",
-                style = MonoLabel,
+                style = ButtonLabel.copy(fontSize = 15.sp),
                 color = Stamp,
                 modifier = Modifier.clickable(role = Role.Button, onClick = onConfirm).heightIn(min = 44.dp).wrapContentHeight(),
             )
@@ -221,7 +222,7 @@ private fun RestoreConfirmSheet(onConfirm: () -> Unit, onDismiss: () -> Unit) {
  * before the action started, unlike every other failure shown here.
  */
 @Composable
-private fun OutcomeSheet(outcome: Outcome, onDismiss: () -> Unit) {
+internal fun OutcomeSheet(outcome: Outcome, onDismiss: () -> Unit) {
     ReceiptSheet(onDismissRequest = onDismiss) {
         when (val job = outcome.job) {
             is TransferJob.Restored -> {
@@ -269,7 +270,7 @@ private fun OutcomeSheet(outcome: Outcome, onDismiss: () -> Unit) {
         }
         Text(
             "OK",
-            style = MonoLabel,
+            style = ButtonLabel.copy(fontSize = 15.sp),
             color = Muted,
             modifier = Modifier
                 .padding(top = 20.dp)
@@ -301,7 +302,7 @@ internal fun RecoveryNotice(state: SettingsState, onRescue: () -> Unit) {
         if (state.storage == Storage.DAMAGED) {
             Text(
                 RESCUE,
-                style = MonoLabel,
+                style = ButtonLabel.copy(fontSize = 15.sp),
                 color = Stamp,
                 modifier = Modifier
                     .padding(top = 14.dp)

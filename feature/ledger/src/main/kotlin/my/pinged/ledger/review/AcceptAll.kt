@@ -29,8 +29,8 @@ private val BATCHABLE_REASONS = setOf(
  * any is not, since a sum across currencies is no amount at all.
  */
 data class AcceptAll(val count: Int, val netSen: Long?) {
-    /** `ACCEPT 14 · RM1,234.00`, or `ACCEPT 14` with no sum. */
-    val label: String get() = "ACCEPT $count" + sum()
+    /** `Accept 14 · RM1,234.00`, or `Accept 14` with no sum. */
+    val label: String get() = "Accept $count" + sum()
 
     /** The snackbar's line once the batch is written: `ACCEPTED 14 · RM1,234.00`. */
     val said: String get() = "ACCEPTED $count" + sum()

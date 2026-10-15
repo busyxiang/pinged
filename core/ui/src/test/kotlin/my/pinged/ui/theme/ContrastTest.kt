@@ -43,8 +43,8 @@ import org.junit.Test
  */
 class ContrastTest {
 
-    /** The two colours anything on this screen is drawn on. */
-    private val grounds = mapOf("Paper" to Paper, "Card" to Card)
+    /** The colours anything is drawn on: the two grounds and the verbatim box. */
+    private val grounds = mapOf("Paper" to Paper, "Card" to Card, "Quote" to Quote)
 
     private val text = mapOf(
         "Ink, every label and title" to Ink,

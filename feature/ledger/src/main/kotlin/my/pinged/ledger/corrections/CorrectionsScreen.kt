@@ -31,6 +31,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ledger.home.words
 import my.pinged.ui.money
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Display
@@ -139,7 +140,7 @@ private fun CorrectionCard(correction: Corrections.Correction, onAccept: () -> U
 private fun Action(label: String, color: Color, onClick: () -> Unit) {
     Text(
         label,
-        style = MonoLabel,
+        style = ButtonLabel.copy(fontSize = 14.sp),
         color = color,
         modifier = Modifier
             .border(1.dp, color, RoundedCornerShape(2.dp))
@@ -166,7 +167,7 @@ private fun Header(onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "Back",
-            style = MonoLabel,
+            style = ButtonLabel.copy(fontSize = 14.sp),
             color = Muted,
             modifier = Modifier.clickable(role = Role.Button, onClick = onBack),
         )
@@ -181,6 +182,6 @@ private fun Header(onBack: () -> Unit) {
     }
 }
 
-internal const val ACCEPT = "ACCEPT"
-internal const val KEEP = "KEEP AS RECORDED"
+internal const val ACCEPT = "Accept"
+internal const val KEEP = "Keep as recorded"
 internal const val NOTHING_TO_REVIEW = "NOTHING TO REVIEW"

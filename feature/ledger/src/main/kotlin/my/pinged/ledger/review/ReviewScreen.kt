@@ -44,6 +44,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.Databases
@@ -56,6 +57,7 @@ import my.pinged.parse.Direction
 import my.pinged.ui.dayMonthYear
 import my.pinged.ui.money
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
@@ -64,8 +66,10 @@ import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.Quote
 import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.dottedOutline
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -219,7 +223,7 @@ private fun UndoBar(undoable: Undoable, enabled: Boolean, onUndo: () -> Unit, mo
                 .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(UNDO, style = MonoLabel, color = if (enabled) Paper else Muted)
+            Text(UNDO, style = ButtonLabel.copy(fontSize = 14.sp), color = if (enabled) Paper else Muted)
         }
     }
 }
@@ -274,26 +278,31 @@ private fun ReviewCardView(card: ReviewCard, enabled: Boolean, onAnswer: (Review
         if (card.kind == CardKind.TRANSFER) {
             Text(
                 transferQuestion(card),
-                fontFamily = Display,
-                fontSize = 18.sp,
-                lineHeight = 23.sp,
+                fontFamily = Body,
+                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp,
+                lineHeight = 21.sp,
                 color = Ink,
                 modifier = Modifier.padding(top = 6.dp),
             )
         }
 
         // Verbatim: §9.2's hard requirement is that the user can see exactly
-        // what Pinged saw. No trimming, no joining into one string.
+        // what Pinged saw. No trimming, no joining into one string. In the
+        // mono, which is how spec 8 marks text quoted word for word; at the
+        // 12sp floor rather than the artboard's 10.5, for [MonoLabel]'s reason.
         if (card.title != null || card.body != null) {
             Column(
                 Modifier
                     .padding(top = 12.dp)
                     .fillMaxWidth()
-                    .border(1.dp, Rule, RoundedCornerShape(2.dp))
+                    .testTag(VERBATIM)
+                    .background(Quote, RoundedCornerShape(2.dp))
+                    .dottedOutline()
                     .padding(10.dp),
             ) {
-                card.title?.let { Text(it, fontFamily = Body, fontSize = 14.sp, lineHeight = 19.sp, color = Ink) }
-                card.body?.let { Text(it, fontFamily = Body, fontSize = 14.sp, lineHeight = 19.sp, color = Ink) }
+                card.title?.let { Text(it, style = Quoted, color = Muted) }
+                card.body?.let { Text(it, style = Quoted, color = Muted) }
             }
         }
 
@@ -378,9 +387,12 @@ private fun AnswerButton(label: String, primary: Boolean, enabled: Boolean, onCl
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MonoLabel, color = if (primary) Paper else ink)
+        Text(label, style = ButtonLabel.copy(fontSize = 14.sp), color = if (primary) Paper else ink)
     }
 }
+
+/** The notification as Pinged saw it: mono, without [MonoLabel]'s tracking, at its 1.5 leading. */
+private val Quoted = MonoLabel.copy(letterSpacing = 0.sp, lineHeight = 18.sp)
 
 @Composable
 private fun Notice(text: String, color: Color) {
@@ -425,7 +437,7 @@ fun awaitingReviewLabel(count: Int): String = "$count AWAITING REVIEW"
 const val NOTHING_AWAITING_REVIEW = "NOTHING AWAITING REVIEW"
 
 /** The snackbar's button. */
-const val UNDO = "UNDO"
+const val UNDO = "Undo"
 
 /** Room under the last card for the snackbar, so it never covers a card's buttons. */
 private val UNDO_BAR_ROOM = 80.dp
@@ -481,7 +493,7 @@ private fun SwipeToAccept(card: ReviewCard, enabled: Boolean, onAccept: () -> Un
                             .background(Stamp, RoundedCornerShape(2.dp)),
                         contentAlignment = Alignment.CenterStart,
                     ) {
-                        Text(ReviewAnswer.ACCEPT.label, style = MonoLabel, color = Paper, modifier = Modifier.padding(start = 20.dp))
+                        Text(ReviewAnswer.ACCEPT.label.uppercase(), style = MonoLabel, color = Paper, modifier = Modifier.padding(start = 20.dp))
                     }
                 }
             },
@@ -491,6 +503,9 @@ private fun SwipeToAccept(card: ReviewCard, enabled: Boolean, onAccept: () -> Un
 
 /** A card's test tag, which a swipe is aimed at. */
 fun reviewCardTag(txnId: Long): String = "review-card-$txnId"
+
+/** The box that quotes a card's notification word for word. */
+internal const val VERBATIM = "review-verbatim"
 
 /** The test tag of a duplicate card's column for the row awaiting review. */
 const val DUPLICATE_HELD = "duplicate-held"
