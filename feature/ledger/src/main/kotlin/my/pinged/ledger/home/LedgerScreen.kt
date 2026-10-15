@@ -216,7 +216,14 @@ internal fun LedgerScreenContent(
 
                 // Not empty until the first load has actually returned. `loadState`
                 // distinguishes them; a bare `itemCount == 0` does not.
-                items.loadState.refresh is LoadState.Loading -> Reading(Modifier.weight(1f))
+                //
+                // Only while nothing is loaded. Every write invalidates the feed
+                // and puts `refresh` back at `Loading` over rows still drawn;
+                // drawing this then disposes the `LazyColumn` and its scroll
+                // position with it, so a recategorized row jumps the list to the
+                // top (#158).
+                items.loadState.refresh is LoadState.Loading && items.itemCount == 0 ->
+                    Reading(Modifier.weight(1f))
 
                 items.itemCount == 0 -> Empty(onOpenSettings, Modifier.weight(1f))
 
