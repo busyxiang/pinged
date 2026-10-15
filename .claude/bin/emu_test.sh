@@ -393,6 +393,25 @@ if grep -q 'emulator-5554: held by' <<<"$out"; then pass "--status shows the hol
 out=$("$script" --status)
 if grep -q 'emulator-5554: free' <<<"$out"; then pass "--status shows a released emulator free"; else fail "--status shows a released emulator free: <$out>"; fi
 
+# Every scale CI's `disable-animations` zeroes, set before the command starts.
+animations_off_first() {
+    local emu=$1 scale
+    "$emu" -- sh -c "echo COMMAND >>$ADB_LOG"
+    for scale in window_animation_scale transition_animation_scale animator_duration_scale; do
+        sed '/^COMMAND$/q' "$ADB_LOG" | grep -qF -- "shell settings put global $scale 0" || return 1
+    done
+}
+
+fresh
+if animations_off_first "$script"; then pass "animations are off before the command"; else fail "animations are off before the command: $(cat "$ADB_LOG")"; fi
+
+fresh
+if animations_off_first "$(mutant animations-on 's/settings put global "\$scale" 0/settings put global "\$scale" 1/')"; then
+    fail "mutation animations-on: animations were still turned off"
+else
+    pass "mutation animations-on: the command runs with animations on"
+fi
+
 if [ "$failures" -gt 0 ]; then
     printf '%s failed\n' "$failures"
     exit 1
