@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import my.pinged.ledger.learned.LEARNED_MERCHANTS
+import my.pinged.ledger.licences.LICENCES_TITLE
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -65,6 +66,7 @@ fun SettingsScreen(
     onRestore: () -> Unit,
     onOpenCorrections: () -> Unit,
     onOpenLearned: () -> Unit,
+    onOpenLicences: () -> Unit,
     onRescue: () -> Unit,
     buildVersion: String,
     packVersion: Int,
@@ -95,6 +97,7 @@ fun SettingsScreen(
             onOpenSources = onOpenSources,
             onOpenCorrections = onOpenCorrections,
             onOpenLearned = onOpenLearned,
+            onOpenLicences = onOpenLicences,
             onExport = onExport,
             onRestore = { confirmingRestore = true },
             onCheck = viewModel::check,
@@ -435,6 +438,7 @@ internal fun SettingsRows(
     onDelete: () -> Unit,
     onOpenCorrections: () -> Unit,
     onOpenLearned: () -> Unit,
+    onOpenLicences: () -> Unit,
 ) {
     val readable = state.storage == Storage.HEALTHY || state.storage == Storage.DAMAGED
     val idle = state.running == null
@@ -511,6 +515,11 @@ internal fun SettingsRows(
         chevron = true,
         divider = false,
     )
+
+    SectionLabel("ABOUT")
+    // Spec 8: the fonts' OFL texts ship with the app, and this row is what
+    // opens them. The section's only row, so no divider.
+    SettingsRow(LICENCES_TITLE, caption = "THE FONTS' OPEN FONT LICENSE", onClick = onOpenLicences, chevron = true, divider = false)
 }
 
 /**

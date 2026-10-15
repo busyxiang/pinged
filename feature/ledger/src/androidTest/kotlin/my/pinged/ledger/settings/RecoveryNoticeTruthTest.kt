@@ -168,7 +168,7 @@ class RecoveryNoticeTruthTest {
     private fun drawn(viewModel: SettingsViewModel) {
         compose.setContent {
             PingedTheme {
-                SettingsScreen(viewModel = viewModel, onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onExport = {}, onRestore = {}, onRescue = {}, buildVersion = "0.0.0-test", packVersion = 0)
+                SettingsScreen(viewModel = viewModel, onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onRescue = {}, buildVersion = "0.0.0-test", packVersion = 0)
             }
         }
     }

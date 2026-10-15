@@ -73,6 +73,7 @@ import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
 import my.pinged.ledger.learned.LearnedScreen
 import my.pinged.ledger.learned.LearnedViewModel
+import my.pinged.ledger.licences.LicencesScreen
 import my.pinged.ledger.review.ReviewScreen
 import my.pinged.ledger.review.ReviewViewModel
 import my.pinged.ledger.settings.SettingsScreen
@@ -361,6 +362,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenSources = { tabs.push(Sources) },
                                     onOpenCorrections = { tabs.push(Corrections) },
                                     onOpenLearned = { tabs.push(Learned) },
+                                    onOpenLicences = { tabs.push(Licences) },
                                     onExport = { exportOpen = true },
                                     // Reached only after `SettingsScreen`'s own
                                     // confirmation -- see `RestoreConfirmSheet`
@@ -406,6 +408,9 @@ class MainActivity : ComponentActivity() {
                                     onBack = tabs::pop,
                                     modifier = Modifier.fillMaxSize(),
                                 )
+                            }
+                            entry<Licences> {
+                                LicencesScreen(onBack = tabs::pop, modifier = Modifier.fillMaxSize())
                             }
                             entry<Sources> {
                                 val sources: SourcesViewModel =
