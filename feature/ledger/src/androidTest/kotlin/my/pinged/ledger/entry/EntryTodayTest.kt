@@ -2,6 +2,7 @@ package my.pinged.ledger.entry
 
 import android.app.Application
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.time.LocalDate
@@ -37,6 +38,7 @@ import org.junit.runner.RunWith
 class EntryTodayTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val app = context.applicationContext as Application
+    private val viewModels = mutableListOf<ManualEntryViewModel>()
 
     @Volatile private var now = BEFORE_MIDNIGHT
 
@@ -44,7 +46,11 @@ class EntryTodayTest {
         context.freshLedger()
     }
 
-    @After fun leaveNothingBehind() = context.discardTheDatabase()
+    @After fun leaveNothingBehind() {
+        // So no view model of this test reads on into the next one's.
+        viewModels.forEach { it.viewModelScope.cancel() }
+        context.discardTheDatabase()
+    }
 
     @Test fun todayIsTheClocksAndMovesAtMidnight() = runBlocking {
         val vm = viewModel()
@@ -106,6 +112,7 @@ class EntryTodayTest {
     }
 
     private fun viewModel() = ManualEntryViewModel(app, SavedStateHandle(), target = null, preselection = { CompletableDeferred() }, clock = { now })
+        .also(viewModels::add)
 
     private companion object {
         /** A day that is not the device's, so the device's clock cannot pass for the holder's. */

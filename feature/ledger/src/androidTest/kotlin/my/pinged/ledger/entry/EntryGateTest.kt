@@ -2,6 +2,7 @@ package my.pinged.ledger.entry
 
 import android.app.Application
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
@@ -44,8 +45,11 @@ class EntryGateTest {
     private val app = context.applicationContext as Application
     private val releases = mutableListOf<CountDownLatch>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val viewModels = mutableListOf<ManualEntryViewModel>()
 
     @After fun leaveNothingBehind() {
+        // So no view model of this test reads on into the next one's.
+        viewModels.forEach { it.viewModelScope.cancel() }
         releases.forEach { it.countDown() }
         runBlocking { withTimeout(TIMEOUT) { Transfers.state.first { it.running == null } } }
         Transfers.forgetOutcome()
@@ -88,6 +92,7 @@ class EntryGateTest {
         context.freshLedger()
         foodId = Databases.categoryDao(context).all().single { it.name == "Food & Drinks" }.id
         val vm = ManualEntryViewModel(app, SavedStateHandle(), target = null) { CompletableDeferred<Long?>(null) }
+            .also(viewModels::add)
         vm.amount(1_250L)
         vm.merchant("Kopitiam")
         vm.note("teh tarik")

@@ -1,6 +1,7 @@
 package my.pinged.ledger.entry
 
 import android.app.Application
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.SavedStateHandle
@@ -38,8 +39,11 @@ import org.junit.runner.RunWith
 class BackdatedEntryTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val viewModels = mutableListOf<ManualEntryViewModel>()
 
     @After fun leaveNothingBehind() {
+        // So no view model of this test reads on into the next one's.
+        viewModels.forEach { it.viewModelScope.cancel() }
         scope.cancel()
         context.discardTheDatabase()
     }
@@ -99,7 +103,7 @@ class BackdatedEntryTest {
     }
 
     @Test fun theViewModelDatesTheDraftOnAPastDayAndOnTodayAndNeverTheFuture() = runBlocking {
-        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle())
+        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle()).also(viewModels::add)
         val today = LocalDate.now()
 
         vm.day(today.plusDays(1))
