@@ -68,6 +68,23 @@ fun Modifier.dashedOutline(colour: Color): Modifier = drawWithCache {
 }
 
 /**
+ * The artboards' sheet edge, `border-top: 1.5px dashed`: [dashedOutline]'s
+ * dash along the top only, at the boards' heavier 1.5dp. The same 3dp on and
+ * 2dp off, so a sheet's edge and the offers inside it read as one mark.
+ *
+ * Drawn over the content rather than behind it, so a row that paints its own
+ * background at the top of a sheet cannot cover it.
+ */
+fun Modifier.dashedEdge(colour: Color): Modifier = drawWithCache {
+    val weight = 1.5.dp.toPx()
+    val dashes = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx()))
+    onDrawWithContent {
+        drawContent()
+        drawLine(colour, Offset(0f, weight / 2f), Offset(size.width, weight / 2f), weight, pathEffect = dashes)
+    }
+}
+
+/**
  * The artboards' chevron: two strokes between 38% and 62% of a [size] box,
  * meeting at its middle, pointing right where a row leads somewhere and left
  * for back.

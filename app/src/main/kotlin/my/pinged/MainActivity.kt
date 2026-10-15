@@ -69,6 +69,7 @@ import my.pinged.ledger.AppViewModelFactory
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.settings.DocumentSink
+import my.pinged.ledger.settings.ExportReceiptSheet
 import my.pinged.ledger.settings.ExportSheet
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.corrections.CorrectionsScreen
@@ -86,7 +87,6 @@ import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesViewModel
 import my.pinged.ui.theme.EXPORT_EVERYTHING
 import my.pinged.ui.theme.RESCUE
-import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.PingedTheme
@@ -1064,8 +1064,7 @@ internal fun heardLine(report: CaptureReport?, now: Long): String? {
 }
 
 /**
- * [ExportSheet] wrapped in [ReceiptSheet] -- the app's one sheet chrome, see
- * that KDoc -- plus the one thing `ExportSheet` does not do for itself: hand
+ * [ExportReceiptSheet], plus the one thing it does not do for itself: hand
  * off to the system's save-file picker.
  *
  * **No auto-fire.** The picker does not launch as this host enters
@@ -1084,14 +1083,12 @@ private fun ExportSheetHost(
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri -> if (uri != null) onExport(uri) }
-    ReceiptSheet(onDismissRequest = onDismiss) {
-        ExportSheet(
-            state = state,
-            onPick = { launcher.launch(EXPORT_FILE_NAME) },
-            onCancel = onCancel,
-            onDismiss = onDismiss,
-        )
-    }
+    ExportReceiptSheet(
+        state = state,
+        onPick = { launcher.launch(EXPORT_FILE_NAME) },
+        onCancel = onCancel,
+        onDismiss = onDismiss,
+    )
 }
 
 /** `CreateDocument`'s initial suggestion; the system picker lets the user rename it. */

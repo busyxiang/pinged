@@ -106,7 +106,8 @@ fun WipeSheet(
     onDismiss: () -> Unit,
     exportFirstLabel: String? = EXPORT_FIRST,
 ) {
-    ReceiptSheet(onDismissRequest = onDismiss) {
+    // `design/Wipe.dc.html`: the only sheet whose edge is the accent.
+    ReceiptSheet(onDismissRequest = onDismiss, edge = Stamp) {
         WipeSheetBody(counts, onConfirm, onExportFirst, onDismiss, exportFirstLabel)
     }
 }

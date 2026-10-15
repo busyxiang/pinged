@@ -1,6 +1,10 @@
 package my.pinged.ledger.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,13 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +40,9 @@ import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.ReceiptSheetFrame
+import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.Toggle
 
 /** The sheet's heading, named so the screen and its test cannot spell it differently. */
 internal const val PICKER_HEADING = "PUT THIS TRANSACTION IN"
@@ -79,6 +82,9 @@ internal fun alwaysNote(merchant: String?): String =
 internal const val NO_MERCHANT_NOTE =
     "This payment has no merchant, so nothing can be learned from it. " +
         "Choosing a category changes only this payment."
+
+/** The drawn half of "Always call this", so a test can read its pixels. */
+internal const val ALWAYS_SWITCH_TAG = "always-switch"
 
 /** The sheet's save control; nothing is written until it is tapped. */
 internal const val SAVE_LABEL = "Save"
@@ -127,13 +133,9 @@ internal fun conflictLine(count: Int, categoryNames: List<String>): String {
  * §4's category editing is out, which is why this only chooses from what the
  * seed provides.
  *
- * `@ExperimentalMaterial3Api` is required by [ModalBottomSheet] and
- * [rememberModalBottomSheetState] at material3 1.4.0, which is what this BOM
- * (2026.08.00) resolves -- checked in the artifact rather than assumed. The
- * opt-in is on this one composable rather than module-wide, so the next
- * experimental API has to be opted into deliberately too.
+ * Drawn in [ReceiptSheetFrame], the chrome every sheet shares; not in
+ * `ReceiptSheet`, whose scrolling `Column` cannot hold this `LazyColumn`.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CategoryPicker(
     categories: List<Category>,
@@ -154,21 +156,16 @@ internal fun CategoryPicker(
         answer = null
         if (teach != null && always && picked != null) answer = picked to preview(picked)
     }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        // `skipPartiallyExpanded`: the fifteen rows the seed leaves after the
-        // row's own category is dropped do not fit in a half sheet, and a
-        // chooser that opens showing four of its options and has to be dragged
-        // is a chooser that hides most of itself.
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Paper,
-        modifier = modifier,
-    ) {
+    // The frame opens fully expanded: the fifteen rows the seed leaves after
+    // the row's own category is dropped do not fit in a half sheet, and a
+    // chooser that opens showing four of its options and has to be dragged is
+    // a chooser that hides most of itself.
+    ReceiptSheetFrame(onDismissRequest = onDismiss, modifier = modifier) {
         Text(
             PICKER_HEADING,
             style = MonoLabel,
             color = Muted,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),
         )
         if (teach != null) {
             AlwaysSwitch(teach.merchant, categories.firstOrNull { it.id == picked }?.name, always) { always = it }
@@ -218,13 +215,29 @@ internal fun CategoryPicker(
                 CategoryRow(category, chosen = category.id == picked) { selected = it }
             }
         }
-        Button(
-            onClick = { picked?.let { onSave(it, teach != null && always) } },
-            enabled = picked != null,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).heightIn(min = 44.dp),
-        ) {
-            Text(SAVE_LABEL)
-        }
+        SaveButton(enabled = picked != null) { picked?.let { onSave(it, teach != null && always) } }
+    }
+}
+
+/**
+ * `design/Chooser.dc.html`'s Save: [Stamp] filled, 52dp, a 2dp corner, under
+ * the artboards' 24dp bottom margin. Material's `Button` is a full pill
+ * whatever the theme's shapes say (#164). [Muted] while there is no pick, as
+ * the review cards' answers are while disabled.
+ */
+@Composable
+private fun SaveButton(enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(2.dp))
+            .background(if (enabled) Stamp else Muted)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = 52.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(SAVE_LABEL, fontFamily = Body, fontWeight = FontWeight.Medium, fontSize = 15.5.sp, color = Paper)
     }
 }
 
@@ -255,7 +268,7 @@ private fun AlwaysSwitch(merchant: String?, category: String?, on: Boolean, onTo
             Text(alwaysNote(merchant), style = MonoLabel, color = Muted)
         }
         // Drawn only: the row above owns the click and the semantics.
-        Switch(checked = on, onCheckedChange = null)
+        Toggle(on = on, modifier = Modifier.testTag(ALWAYS_SWITCH_TAG))
     }
 }
 
