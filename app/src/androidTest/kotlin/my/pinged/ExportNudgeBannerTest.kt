@@ -21,10 +21,13 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.transfer.TransferStore
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.Rule
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * The nudge as a user meets it: its own wording, its own button, and the button
@@ -143,14 +146,29 @@ class ExportNudgeBannerTest {
                 compose.waitFor { compose.countOf(NUDGE, substring = true) == 0 },
             )
         }
-        ActivityScenario.launch(MainActivity::class.java).use {
-            // A miss here is the nudge coming back once `onResume` has read
-            // the store, so wait out a resume before calling it absent.
-            assertTrue(
-                "The dismissed nudge came back on the next launch, so the " +
-                    "dismissal was never stored",
-                !compose.waitFor { compose.countOf(NUDGE, substring = true) == 1 },
-            )
+        // A miss here is the nudge coming back once `onResume` has read the
+        // store, so the absence is asserted after that read and not before.
+        // The hook runs once `sampleHealth` has set the flag the nudge is
+        // drawn from, which ends the wait at the read rather than at TIMEOUT:
+        // a negative waitFor ran the full 30s on every pass.
+        val sampled = CountDownLatch(1)
+        betweenProbeAndReport = { sampled.countDown() }
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use {
+                assertTrue(
+                    "The second launch never sampled the backup store, so " +
+                        "nothing below is about what it read",
+                    sampled.await(TIMEOUT, TimeUnit.MILLISECONDS),
+                )
+                assertEquals(
+                    "The dismissed nudge came back on the next launch, so the " +
+                        "dismissal was never stored",
+                    0,
+                    compose.countOf(NUDGE, substring = true),
+                )
+            }
+        } finally {
+            betweenProbeAndReport = {}
         }
     }
 

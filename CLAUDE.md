@@ -41,6 +41,8 @@ An empty selection is the opposite: no suite can be reached, and the bare
 `./gradlew` only prints help.
 The whole `connectedDebugAndroidTest` is for when the selection rules
 themselves are in doubt; main's push runs every suite regardless.
+A local run skips `:core:data`'s `@Measurement` tests, which log a figure and
+assert nothing; CI runs them, and `CI=true` before `./gradlew` runs them here.
 
 A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
 screen is shorter than a dev one, and a new Settings row once pushed "Delete

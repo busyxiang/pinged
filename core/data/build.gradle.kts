@@ -13,6 +13,12 @@ android {
     defaultConfig {
         minSdk = 27
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // A local run skips @Measurement tests, which log and assert nothing:
+        // the 100k-row retroactive fix alone was 26s of the 71s suite. CI sets
+        // `CI`, so they run there. `CI=true` runs them here.
+        if (providers.environmentVariable("CI").orNull == null) {
+            testInstrumentationRunnerArguments["notAnnotation"] = "my.pinged.data.Measurement"
+        }
     }
 
     // compileOptions, not a kotlin{} block: AGP's built-in Kotlin leaves no

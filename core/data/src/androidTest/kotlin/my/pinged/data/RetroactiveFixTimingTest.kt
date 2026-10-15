@@ -34,7 +34,7 @@ class RetroactiveFixTimingTest {
      * Logged, not asserted: the largest ledger seeded, and past the bound on a
      * shared emulator. See the measurement on `teachAndFix`.
      */
-    @Test fun theFixOnAHundredThousandPaymentMerchantIsMeasured() {
+    @Measurement @Test fun theFixOnAHundredThousandPaymentMerchantIsMeasured() {
         measure(movable = 100_000)
     }
 

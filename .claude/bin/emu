@@ -248,6 +248,13 @@ if adb -s "$serial" shell wm size 2>/dev/null | grep -q Override ||
     reset_size
 fi
 
+# What ci.yml's `disable-animations: true` sets, so a timing seen here is the
+# one CI sees. On every lease rather than at boot: the settings live in
+# userdata, which outlives a boot, and anything may have turned them back on.
+for scale in window_animation_scale transition_animation_scale animator_duration_scale; do
+    adb -s "$serial" shell settings put global "$scale" 0
+done
+
 if [ "$ci_size" = 1 ]; then
     adb -s "$serial" shell wm size 320x640
     adb -s "$serial" shell wm density 160

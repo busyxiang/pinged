@@ -759,7 +759,9 @@ private const val TAG = "PingedMain"
 /**
  * Tests only: run inside `MainActivity.sampleHealth` between its probe and
  * its report -- the moment a capture refused elsewhere can raise the storage
- * flag the probe has just cleared.
+ * flag the probe has just cleared. Also the first moment [MainActivity]'s
+ * `exportOverdue` holds what this sample read, which `ExportNudgeBannerTest`
+ * waits for before asserting the nudge is absent.
  */
 @VisibleForTesting @Volatile internal var betweenProbeAndReport: suspend () -> Unit = {}
 
