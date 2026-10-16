@@ -348,9 +348,9 @@ if grep -qF 'waiting up to 1800s' "$work/$case_n/b.err"; then pass "a lease wait
 started() { sed 's/.*) //' "/proc/$1/stat" | cut -d' ' -f20; }
 older_ticket() {
     local pid=$1 start=$2
-    mkdir -p "$EMU_LOCK_DIR/queue"
+    mkdir -p "$EMU_LOCK_DIR/queue/emulator-5554"
     printf '%s\tfake-worktree\tfake command\n' "$(date +%s)" \
-        >"$EMU_LOCK_DIR/queue/$(($(date +%s%N) - 1000000000))-$pid-$start"
+        >"$EMU_LOCK_DIR/queue/emulator-5554/$(($(date +%s%N) - 1000000000))-$pid-$start"
 }
 newcomer_waits() {
     local emu=$1 status
@@ -362,7 +362,7 @@ fresh
 sleep 30 & waiter=$!
 older_ticket "$waiter" "$(started "$waiter")"
 if newcomer_waits "$script"; then pass "a newcomer waits behind an older live waiter"; else fail "a newcomer waits behind an older live waiter"; fi
-if [ "$(ls "$EMU_LOCK_DIR/queue" | wc -l)" = 1 ]; then pass "a waiter that gives up leaves the queue"; else fail "a waiter that gives up leaves the queue: $(ls "$EMU_LOCK_DIR/queue")"; fi
+if [ "$(ls "$EMU_LOCK_DIR/queue/emulator-5554" | wc -l)" = 1 ]; then pass "a waiter that gives up leaves the queue"; else fail "a waiter that gives up leaves the queue: $(ls "$EMU_LOCK_DIR/queue")"; fi
 out=$("$script" --status)
 if grep -q 'queued 1: fake-worktree' <<<"$out"; then pass "--status lists the queue"; else fail "--status lists the queue: <$out>"; fi
 kill "$waiter"; wait "$waiter" 2>/dev/null || true
@@ -387,7 +387,7 @@ dead_ticket_passes() {
     "$emu" --wait 2 -- sh -c "echo ran >>$log" 2>/dev/null
     local status=$?
     kill "$reused"; wait "$reused" 2>/dev/null || true
-    [ "$status" = 0 ] && [ -s "$log" ] && [ -z "$(ls "$EMU_LOCK_DIR/queue")" ]
+    [ "$status" = 0 ] && [ -s "$log" ] && [ -z "$(ls "$EMU_LOCK_DIR/queue/emulator-5554")" ]
 }
 fresh
 if dead_ticket_passes "$script"; then pass "a dead waiter's ticket, or a reused pid's, holds up nobody"; else fail "a dead waiter's ticket, or a reused pid's, holds up nobody"; fi
@@ -500,6 +500,26 @@ fresh
 printf '4101\n' >"$ADB_STATE/orphans"
 "$(mutant no-start-sweep '/^sweep_device$/d')" -- sh -c "[ -e $ADB_STATE/orphans ] && echo still-there >>$log; true" 2>/dev/null
 if [ -s "$log" ]; then pass "mutation no-start-sweep: the command runs beside the earlier orphan"; else fail "mutation no-start-sweep: the orphan was gone before the command"; fi
+
+# Queues are per pool: a waiter for one emulator does not hold up another.
+other_pool_free() {
+    local emu=$1 waiter status
+    sleep 30 & waiter=$!
+    mkdir -p "$EMU_LOCK_DIR/queue/emulator-5554"
+    printf '%s\tfake-worktree\tfake command\n' "$(date +%s)" \
+        >"$EMU_LOCK_DIR/queue/emulator-5554/$(($(date +%s%N) - 1000000000))-$waiter-$(started "$waiter")"
+    EMU_POOL=emulator-5556 "$emu" --wait 2 -- sh -c "echo ran >>$log" 2>/dev/null && status=0 || status=$?
+    kill "$waiter"; wait "$waiter" 2>/dev/null || true
+    [ "$status" = 0 ] && [ -s "$log" ]
+}
+fresh
+if other_pool_free "$script"; then pass "a waiter for one emulator does not hold up a lease on another"; else fail "a waiter for one emulator does not hold up a lease on another"; fi
+fresh
+if other_pool_free "$(mutant shared-queue 's|^queue=\$lock_dir/queue/\${pool// /+}$|queue=$lock_dir/queue/emulator-5554|')"; then
+    fail "mutation shared-queue: the lease still ran"
+else
+    pass "mutation shared-queue: the other emulator's waiter holds it up"
+fi
 
 fresh
 export EMU_POOL="emulator-5554 emulator-5556"
