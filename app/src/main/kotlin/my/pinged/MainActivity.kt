@@ -72,6 +72,7 @@ import my.pinged.data.IntegrityStore
 import my.pinged.ledger.AppViewModelFactory
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
+import my.pinged.ledger.onboarding.OnboardingScreen
 import my.pinged.ledger.settings.DocumentSink
 import my.pinged.ledger.settings.ExportReceiptSheet
 import my.pinged.ledger.settings.ExportSheet
@@ -101,7 +102,8 @@ import my.pinged.ledger.transfer.TransferStore
  * settings; and spec 9.6's allow-list, reachable from settings. One banner
  * strip sits above all three: spec 10.2's capture states, and the backup nudge
  * that [bannerFor] ranks below every one of them. The bottom bar sits under the
- * two tab roots and not under a pushed screen.
+ * two tab roots and not under a pushed screen. On first run, until the
+ * notification-access grant, onboarding is drawn in place of all of it.
  */
 class MainActivity : ComponentActivity() {
 
@@ -139,9 +141,19 @@ class MainActivity : ComponentActivity() {
      */
     private val alertsAllowed = MutableStateFlow<Boolean?>(null)
 
+    /**
+     * Whether first run's onboarding is drawn instead of the app ([onboards]),
+     * or null before the first [sampleHealth] has said.
+     */
+    private val onboarding = MutableStateFlow<Boolean?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         watchTheBackup()
+        // A grant means no onboarding, so the app is drawn from the first
+        // frame; only an install without one waits for [onboards] to read
+        // the flag, behind bare Paper.
+        if (ListenerStatus.isGranted(this)) onboarding.value = false
         // Built once, here, rather than per entry: the factory holds the
         // `Application` itself. See `AppViewModelFactory`.
         val sourcesFactory = AppViewModelFactory(application, ::SourcesViewModel)
@@ -189,329 +201,358 @@ class MainActivity : ComponentActivity() {
                         .background(Paper)
                         .windowInsetsPadding(WindowInsets.safeDrawing),
                 ) {
-                    // Above the NavDisplay, not inside a screen: capture being
-                    // dead matters whichever destination is showing, and one
-                    // holder computing it is one place to get it wrong.
-                    // The tab stacks live in this composition and not in the
-                    // Activity, so the banners with somewhere to go are
-                    // handed the destination rather than reaching for it.
-                    // Both buttons lead to settings, from its root: `TabStacks`
-                    // selects the tab and unwinds whatever is pushed over it.
-                    // On settings' own root it would do nothing, so there is no
-                    // button (ruling R35).
-                    val onSettings = tabs.showingSettingsRoot
-                    GrantBanner(
-                        onExportEverything = tabs::showSettings.takeUnless { onSettings },
-                        onOpenSettings = tabs::showSettings.takeUnless { onSettings },
-                    )
-                    NavDisplay(
-                        backStack = tabs.entries,
-                        // `entries` always holds both tabs' roots, so NavDisplay
-                        // always takes Back; an unhandled one (`false`, on
-                        // Spending's root) must leave the app, or the user is
-                        // trapped. `moveTaskToBack` is what a launcher Activity's
-                        // unhandled Back does on Android 12+.
-                        onBack = { if (!tabs.back()) moveTaskToBack(true) },
-                        // The chevron pops with `popTransitionSpec`, a cross-fade
-                        // by default, and the back gesture with
-                        // `predictivePopTransitionSpec`, a scale to 0.7 on a
-                        // spring: two looks for one move (#56). The gesture's
-                        // is the system's, so the chevron takes it. A tap has
-                        // no swipe edge, hence `EDGE_NONE`.
-                        // `BackTransitionTest` holds the two looks equal.
-                        popTransitionSpec = { predictivePop(this, NavigationEvent.EDGE_NONE) },
-                        predictivePopTransitionSpec = predictivePop,
-                        // Both, spelled out, because naming this parameter
-                        // replaces the default rather than adding to it --
-                        // navigation3-ui 1.1.7 defaults to the saveable-state
-                        // decorator alone. Dropping that one breaks
-                        // `SavedStateHandle` inside an entry, which the
-                        // ViewModel-store decorator depends on; dropping the
-                        // ViewModel-store one scopes every `viewModel()` below
-                        // to the Activity, so no holder is ever cleared when
-                        // its destination goes.
-                        entryDecorators = listOf(
-                            rememberSaveableStateHolderNavEntryDecorator(),
-                            rememberViewModelStoreNavEntryDecorator(),
-                        ),
-                        entryProvider = entryProvider {
-                            entry<Ledger> {
-                                // The entry's own `createSavedStateHandle`, as
-                                // Charts': the picked month (#192) survives a
-                                // process death there.
-                                val ledger: LedgerViewModel = viewModel {
-                                    LedgerViewModel(application, createSavedStateHandle())
-                                }
-                                // fillMaxSize, not weight: `Modifier.weight` is
-                                // a `ColumnScope` extension and this lambda is
-                                // not in one. The NavDisplay is, so the weight
-                                // belongs there.
-                                LedgerScreen(
-                                    viewModel = ledger,
-                                    // Settings, not `Sources`: the
-                                    // allow-list is a row inside settings
-                                    // (spec 9.5).
-                                    onOpenSettings = tabs::showSettings,
-                                    // The pinned row passes null, a row's
-                                    // badge its own id.
-                                    onOpenReview = { focus -> tabs.push(Review(focus)) },
-                                    onAddPayment = { tabs.push(ManualEntry()) },
-                                    onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
-                                    onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
-                                    onOpenSearch = { tabs.push(Search) },
-                                    heard = heardNow(),
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                            entry<Search> {
-                                // The entry's own `createSavedStateHandle`:
-                                // the words and filters survive a process
-                                // death there.
-                                val search: SearchViewModel = viewModel {
-                                    SearchViewModel(application, createSavedStateHandle())
-                                }
-                                SearchScreen(
-                                    viewModel = search,
-                                    // The same expression NavDisplay's onBack
-                                    // is given; see `pop`.
-                                    onBack = tabs::pop,
-                                    modifier = Modifier.fillMaxSize(),
-                                    onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
-                                    onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
-                                )
-                            }
-                            entry<ManualEntry> { key ->
-                                // The entry's own `createSavedStateHandle`, as
-                                // Charts': the draft survives a process death
-                                // there (#108). A new entry starts from an
-                                // empty draft, a correction (#105) from the
-                                // row `txnId` and `createdAt` name.
-                                val target = key.txnId?.let { id -> key.createdAt?.let { EditTarget(id, it) } }
-                                val entry: ManualEntryViewModel = viewModel {
-                                    ManualEntryViewModel(application, createSavedStateHandle(), target)
-                                }
-                                ManualEntryScreen(
-                                    viewModel = entry,
-                                    // The same expression NavDisplay's onBack
-                                    // is given; see `pop`.
-                                    onBack = tabs::pop,
-                                    onSaved = tabs::pop,
-                                    modifier = Modifier.fillMaxSize(),
-                                    // Back to the list the deleted row was on (#106).
-                                    onDeleted = tabs::pop,
-                                )
-                            }
-                            entry<Review> { key ->
-                                val review: ReviewViewModel = viewModel(factory = reviewFactory)
-                                ReviewScreen(
-                                    viewModel = review,
-                                    onBack = tabs::pop,
-                                    modifier = Modifier.fillMaxSize(),
-                                    focus = key.focus,
-                                )
-                            }
-                            entry<Charts> {
-                                // `createSavedStateHandle` is the entry's own:
-                                // the saveable-state decorator above gives each
-                                // entry a registry, which is where the selected
-                                // month survives a process death.
-                                val charts: ChartsViewModel = viewModel {
-                                    ChartsViewModel(application, createSavedStateHandle())
-                                }
-                                ChartsScreen(
-                                    viewModel = charts,
-                                    modifier = Modifier.fillMaxSize(),
-                                    onDayClick = { date -> tabs.push(Day(date.toString())) },
-                                    onOpenReview = { tabs.push(Review()) },
-                                )
-                            }
-                            entry<Day> { key ->
-                                // Built from the key alone, so a holder rebuilt
-                                // after a process death reads the day afresh.
-                                val day: DayViewModel = viewModel {
-                                    DayViewModel(application, LocalDate.parse(key.date))
-                                }
-                                DayScreen(
-                                    viewModel = day,
-                                    // The same expression NavDisplay's onBack
-                                    // is given; see `pop`.
-                                    onBack = tabs::pop,
-                                    modifier = Modifier.fillMaxSize(),
-                                    onOpenReview = { focus -> tabs.push(Review(focus)) },
-                                    // Onto the current stack, Charts', as
-                                    // Review is: back returns to this day.
-                                    onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
-                                    onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
-                                )
-                            }
-                            entry<Detail> { key ->
-                                // Built from the key alone, as Day's holder is.
-                                val detail: DetailViewModel = viewModel {
-                                    DetailViewModel(application, key.txnId, key.createdAt)
-                                }
-                                DetailScreen(
-                                    viewModel = detail,
-                                    // The same expression NavDisplay's onBack
-                                    // is given; see `pop`. Delete this entry
-                                    // leaves by it too.
-                                    onBack = tabs::pop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                            entry<Settings> {
-                                val settings: SettingsViewModel =
-                                    viewModel(factory = settingsFactory)
-                                var exportOpen by remember { mutableStateOf(false) }
-                                // The banner above says "Settings says more";
-                                // each time settings reads storage, the banner
-                                // reads it again, so the two cannot disagree
-                                // for the rest of the visit -- a full disk that
-                                // has cleared, say, with nothing resuming.
-                                // **Keyed on the read, not on what it found**:
-                                // a capture refused just as a gate lifts can
-                                // raise the flag between a sample's probe and
-                                // its report, over a ledger settings reads as
-                                // healthy again and again. Each read re-samples,
-                                // and the sample's probe clears it.
-                                val read by settings.state.collectAsState()
-                                LaunchedEffect(read.reads) {
-                                    if (read.reads > 0) sampleHealth()
-                                }
-                                // `OpenDocument`, not `GetContent`: `GetContent`
-                                // hands back a transient URI a provider may
-                                // revoke the moment this callback returns, and
-                                // `Restore.replaceEverything` needs the stream
-                                // to survive being copied to a cache file first.
-                                //
-                                // `arrayOf("*/*")`, not `"application/json"` --
-                                // spec 12: MIME filtering is unreliable across
-                                // document providers, so the picker accepts
-                                // anything and `Restore` validates what comes
-                                // back before it destroys anything (Task 6).
-                                //
-                                // A null `Uri` -- the user backed out of the
-                                // picker -- starts nothing. One the provider
-                                // will not open is opened by the restore, off
-                                // this thread, and reported as its refusal:
-                                // `openInputStream` throws for it, and here,
-                                // on the main thread, that would kill the app.
-                                val restoreLauncher = rememberLauncherForActivityResult(
-                                    ActivityResultContracts.OpenDocument(),
-                                ) { uri ->
-                                    if (uri != null) settings.restoreFrom { contentResolver.openInputStream(uri) }
-                                }
-                                // The damaged state's rescue, into a document
-                                // the user creates as export's is: no sheet of
-                                // its own, since the recovery notice has
-                                // already said what it is for.
-                                val rescueLauncher = rememberLauncherForActivityResult(
-                                    ActivityResultContracts.CreateDocument("application/json"),
-                                ) { uri -> if (uri != null) settings.salvageTo(DocumentSink(contentResolver, uri)) }
-                                // Spec 10.2's permission, asked only from its
-                                // own row. Refused with no rationale left to
-                                // show is a denial the system will not ask
-                                // about again, so the app's own notification
-                                // settings are the only way left.
-                                val askToPost = rememberLauncherForActivityResult(
-                                    ActivityResultContracts.RequestPermission(),
-                                ) { granted ->
-                                    alertsAllowed.value = CaptureAlerts.canPost(applicationContext)
-                                    if (!granted && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
-                                        openAlertSettings()
+                    // First run (#156) is the whole window: no banner, no tab
+                    // bar, nothing behind it for a screen reader to find.
+                    // Null until the first sample, drawn as bare Paper: it is
+                    // null only on an install without the grant, and there
+                    // the ledger would flash before onboarding replaced it.
+                    val opening = onboarding.collectAsState().value
+                    // Saved, so a process killed while the user is in
+                    // Android's settings still takes them on to sources.
+                    var granting by rememberSaveable { mutableStateOf(false) }
+                    LaunchedEffect(opening, granting) {
+                        // The next step: sources, on the tab first run leaves
+                        // the user on, so back from it lands on Spending --
+                        // or on the entry screen, when the launcher's Add
+                        // payment shortcut is what opened first run.
+                        if (opening == false && granting) {
+                            granting = false
+                            tabs.push(Sources)
+                        }
+                    }
+                    if (opening == true) {
+                        OnboardingScreen(
+                            onAllowAccess = {
+                                granting = true
+                                openListenerSettings()
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else if (opening == false) {
+                        // Above the NavDisplay, not inside a screen: capture being
+                        // dead matters whichever destination is showing, and one
+                        // holder computing it is one place to get it wrong.
+                        // The tab stacks live in this composition and not in the
+                        // Activity, so the banners with somewhere to go are
+                        // handed the destination rather than reaching for it.
+                        // Both buttons lead to settings, from its root: `TabStacks`
+                        // selects the tab and unwinds whatever is pushed over it.
+                        // On settings' own root it would do nothing, so there is no
+                        // button (ruling R35).
+                        val onSettings = tabs.showingSettingsRoot
+                        GrantBanner(
+                            onExportEverything = tabs::showSettings.takeUnless { onSettings },
+                            onOpenSettings = tabs::showSettings.takeUnless { onSettings },
+                        )
+                        NavDisplay(
+                            backStack = tabs.entries,
+                            // `entries` always holds both tabs' roots, so NavDisplay
+                            // always takes Back; an unhandled one (`false`, on
+                            // Spending's root) must leave the app, or the user is
+                            // trapped. `moveTaskToBack` is what a launcher Activity's
+                            // unhandled Back does on Android 12+.
+                            onBack = { if (!tabs.back()) moveTaskToBack(true) },
+                            // The chevron pops with `popTransitionSpec`, a cross-fade
+                            // by default, and the back gesture with
+                            // `predictivePopTransitionSpec`, a scale to 0.7 on a
+                            // spring: two looks for one move (#56). The gesture's
+                            // is the system's, so the chevron takes it. A tap has
+                            // no swipe edge, hence `EDGE_NONE`.
+                            // `BackTransitionTest` holds the two looks equal.
+                            popTransitionSpec = { predictivePop(this, NavigationEvent.EDGE_NONE) },
+                            predictivePopTransitionSpec = predictivePop,
+                            // Both, spelled out, because naming this parameter
+                            // replaces the default rather than adding to it --
+                            // navigation3-ui 1.1.7 defaults to the saveable-state
+                            // decorator alone. Dropping that one breaks
+                            // `SavedStateHandle` inside an entry, which the
+                            // ViewModel-store decorator depends on; dropping the
+                            // ViewModel-store one scopes every `viewModel()` below
+                            // to the Activity, so no holder is ever cleared when
+                            // its destination goes.
+                            entryDecorators = listOf(
+                                rememberSaveableStateHolderNavEntryDecorator(),
+                                rememberViewModelStoreNavEntryDecorator(),
+                            ),
+                            entryProvider = entryProvider {
+                                entry<Ledger> {
+                                    // The entry's own `createSavedStateHandle`, as
+                                    // Charts': the picked month (#192) survives a
+                                    // process death there.
+                                    val ledger: LedgerViewModel = viewModel {
+                                        LedgerViewModel(application, createSavedStateHandle())
                                     }
-                                }
-                                SettingsScreen(
-                                    viewModel = settings,
-                                    alertsOn = alertsAllowed.collectAsState().value,
-                                    onAlerts = {
-                                        if (Build.VERSION.SDK_INT >= 33 &&
-                                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                                        ) {
-                                            askToPost.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                        } else {
-                                            openAlertSettings()
-                                        }
-                                    },
-                                    onOpenSources = { tabs.push(Sources) },
-                                    onOpenCorrections = { tabs.push(Corrections) },
-                                    onOpenLearned = { tabs.push(Learned) },
-                                    onOpenLicences = { tabs.push(Licences) },
-                                    onExport = { exportOpen = true },
-                                    // Reached only after `SettingsScreen`'s own
-                                    // confirmation -- see `RestoreConfirmSheet`
-                                    // -- so the picker never opens ahead of the
-                                    // user knowing what a restore costs.
-                                    onRestore = { restoreLauncher.launch(arrayOf("*/*")) },
-                                    onRescue = { rescueLauncher.launch(RESCUE_FILE_NAME) },
-                                    buildVersion = BuildConfig.VERSION_NAME,
-                                    packVersion = remember { Graph.parsePack().packVersion },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                                if (exportOpen) {
-                                    val state = read
-                                    ExportSheetHost(
-                                        state = state,
-                                        onExport = { uri -> settings.exportTo(DocumentSink(contentResolver, uri)) },
-                                        onCancel = settings::cancelExport,
-                                        // Dismissing the sheet is having seen
-                                        // what it said about the last export,
-                                        // so the next one opens on its button.
-                                        onDismiss = {
-                                            exportOpen = false
-                                            state.outcome
-                                                ?.takeIf { it.operation == Operation.EXPORT }
-                                                ?.let(settings::acknowledge)
-                                        },
+                                    // fillMaxSize, not weight: `Modifier.weight` is
+                                    // a `ColumnScope` extension and this lambda is
+                                    // not in one. The NavDisplay is, so the weight
+                                    // belongs there.
+                                    LedgerScreen(
+                                        viewModel = ledger,
+                                        // Settings, not `Sources`: the
+                                        // allow-list is a row inside settings
+                                        // (spec 9.5).
+                                        onOpenSettings = tabs::showSettings,
+                                        // The pinned row passes null, a row's
+                                        // badge its own id.
+                                        onOpenReview = { focus -> tabs.push(Review(focus)) },
+                                        onAddPayment = { tabs.push(ManualEntry()) },
+                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                        onOpenSearch = { tabs.push(Search) },
+                                        heard = heardNow(),
+                                        modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                            }
-                            entry<Corrections> {
-                                val corrections: CorrectionsViewModel =
-                                    viewModel(factory = correctionsFactory)
-                                CorrectionsScreen(
-                                    viewModel = corrections,
-                                    onBack = tabs::pop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                            entry<Learned> {
-                                val learned: LearnedViewModel = viewModel(factory = learnedFactory)
-                                LearnedScreen(
-                                    viewModel = learned,
-                                    onBack = tabs::pop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                            entry<Licences> {
-                                LicencesScreen(onBack = tabs::pop, modifier = Modifier.fillMaxSize())
-                            }
-                            entry<Sources> {
-                                val sources: SourcesViewModel =
-                                    viewModel(factory = sourcesFactory)
-                                AskForNotifications()
-                                SourcesScreen(
-                                    viewModel = sources,
-                                    // The same expression NavDisplay's onBack
-                                    // is given; see `pop`.
-                                    onBack = tabs::pop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                    // Read again whenever the bar may be about to show it: a
-                    // tab change, a return to a tab's root (the inbox pushed
-                    // over Charts answers cards), a foreground and a ledger
-                    // rewrite. A capture landing while Charts shows is not
-                    // counted until one of those; nothing here watches `txn`.
-                    val resumed by resumes.collectAsState()
-                    val rewrites by Databases.rewrites.collectAsState()
-                    val awaitingReview by produceState(0, tabs.selected, tabs.showsBar, resumed, rewrites) {
-                        value = readAwaitingReview(applicationContext)
-                    }
-                    if (tabs.showsBar) {
-                        TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = awaitingReview)
+                                entry<Search> {
+                                    // The entry's own `createSavedStateHandle`:
+                                    // the words and filters survive a process
+                                    // death there.
+                                    val search: SearchViewModel = viewModel {
+                                        SearchViewModel(application, createSavedStateHandle())
+                                    }
+                                    SearchScreen(
+                                        viewModel = search,
+                                        // The same expression NavDisplay's onBack
+                                        // is given; see `pop`.
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                    )
+                                }
+                                entry<ManualEntry> { key ->
+                                    // The entry's own `createSavedStateHandle`, as
+                                    // Charts': the draft survives a process death
+                                    // there (#108). A new entry starts from an
+                                    // empty draft, a correction (#105) from the
+                                    // row `txnId` and `createdAt` name.
+                                    val target = key.txnId?.let { id -> key.createdAt?.let { EditTarget(id, it) } }
+                                    val entry: ManualEntryViewModel = viewModel {
+                                        ManualEntryViewModel(application, createSavedStateHandle(), target)
+                                    }
+                                    ManualEntryScreen(
+                                        viewModel = entry,
+                                        // The same expression NavDisplay's onBack
+                                        // is given; see `pop`.
+                                        onBack = tabs::pop,
+                                        onSaved = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        // Back to the list the deleted row was on (#106).
+                                        onDeleted = tabs::pop,
+                                    )
+                                }
+                                entry<Review> { key ->
+                                    val review: ReviewViewModel = viewModel(factory = reviewFactory)
+                                    ReviewScreen(
+                                        viewModel = review,
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        focus = key.focus,
+                                    )
+                                }
+                                entry<Charts> {
+                                    // `createSavedStateHandle` is the entry's own:
+                                    // the saveable-state decorator above gives each
+                                    // entry a registry, which is where the selected
+                                    // month survives a process death.
+                                    val charts: ChartsViewModel = viewModel {
+                                        ChartsViewModel(application, createSavedStateHandle())
+                                    }
+                                    ChartsScreen(
+                                        viewModel = charts,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onDayClick = { date -> tabs.push(Day(date.toString())) },
+                                        onOpenReview = { tabs.push(Review()) },
+                                    )
+                                }
+                                entry<Day> { key ->
+                                    // Built from the key alone, so a holder rebuilt
+                                    // after a process death reads the day afresh.
+                                    val day: DayViewModel = viewModel {
+                                        DayViewModel(application, LocalDate.parse(key.date))
+                                    }
+                                    DayScreen(
+                                        viewModel = day,
+                                        // The same expression NavDisplay's onBack
+                                        // is given; see `pop`.
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onOpenReview = { focus -> tabs.push(Review(focus)) },
+                                        // Onto the current stack, Charts', as
+                                        // Review is: back returns to this day.
+                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                    )
+                                }
+                                entry<Detail> { key ->
+                                    // Built from the key alone, as Day's holder is.
+                                    val detail: DetailViewModel = viewModel {
+                                        DetailViewModel(application, key.txnId, key.createdAt)
+                                    }
+                                    DetailScreen(
+                                        viewModel = detail,
+                                        // The same expression NavDisplay's onBack
+                                        // is given; see `pop`. Delete this entry
+                                        // leaves by it too.
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                                entry<Settings> {
+                                    val settings: SettingsViewModel =
+                                        viewModel(factory = settingsFactory)
+                                    var exportOpen by remember { mutableStateOf(false) }
+                                    // The banner above says "Settings says more";
+                                    // each time settings reads storage, the banner
+                                    // reads it again, so the two cannot disagree
+                                    // for the rest of the visit -- a full disk that
+                                    // has cleared, say, with nothing resuming.
+                                    // **Keyed on the read, not on what it found**:
+                                    // a capture refused just as a gate lifts can
+                                    // raise the flag between a sample's probe and
+                                    // its report, over a ledger settings reads as
+                                    // healthy again and again. Each read re-samples,
+                                    // and the sample's probe clears it.
+                                    val read by settings.state.collectAsState()
+                                    LaunchedEffect(read.reads) {
+                                        if (read.reads > 0) sampleHealth()
+                                    }
+                                    // `OpenDocument`, not `GetContent`: `GetContent`
+                                    // hands back a transient URI a provider may
+                                    // revoke the moment this callback returns, and
+                                    // `Restore.replaceEverything` needs the stream
+                                    // to survive being copied to a cache file first.
+                                    //
+                                    // `arrayOf("*/*")`, not `"application/json"` --
+                                    // spec 12: MIME filtering is unreliable across
+                                    // document providers, so the picker accepts
+                                    // anything and `Restore` validates what comes
+                                    // back before it destroys anything (Task 6).
+                                    //
+                                    // A null `Uri` -- the user backed out of the
+                                    // picker -- starts nothing. One the provider
+                                    // will not open is opened by the restore, off
+                                    // this thread, and reported as its refusal:
+                                    // `openInputStream` throws for it, and here,
+                                    // on the main thread, that would kill the app.
+                                    val restoreLauncher = rememberLauncherForActivityResult(
+                                        ActivityResultContracts.OpenDocument(),
+                                    ) { uri ->
+                                        if (uri != null) settings.restoreFrom { contentResolver.openInputStream(uri) }
+                                    }
+                                    // The damaged state's rescue, into a document
+                                    // the user creates as export's is: no sheet of
+                                    // its own, since the recovery notice has
+                                    // already said what it is for.
+                                    val rescueLauncher = rememberLauncherForActivityResult(
+                                        ActivityResultContracts.CreateDocument("application/json"),
+                                    ) { uri -> if (uri != null) settings.salvageTo(DocumentSink(contentResolver, uri)) }
+                                    // Spec 10.2's permission, asked only from its
+                                    // own row. Refused with no rationale left to
+                                    // show is a denial the system will not ask
+                                    // about again, so the app's own notification
+                                    // settings are the only way left.
+                                    val askToPost = rememberLauncherForActivityResult(
+                                        ActivityResultContracts.RequestPermission(),
+                                    ) { granted ->
+                                        alertsAllowed.value = CaptureAlerts.canPost(applicationContext)
+                                        if (!granted && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                                            openAlertSettings()
+                                        }
+                                    }
+                                    SettingsScreen(
+                                        viewModel = settings,
+                                        alertsOn = alertsAllowed.collectAsState().value,
+                                        onAlerts = {
+                                            if (Build.VERSION.SDK_INT >= 33 &&
+                                                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                            ) {
+                                                askToPost.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            } else {
+                                                openAlertSettings()
+                                            }
+                                        },
+                                        onOpenSources = { tabs.push(Sources) },
+                                        onOpenCorrections = { tabs.push(Corrections) },
+                                        onOpenLearned = { tabs.push(Learned) },
+                                        onOpenLicences = { tabs.push(Licences) },
+                                        onExport = { exportOpen = true },
+                                        // Reached only after `SettingsScreen`'s own
+                                        // confirmation -- see `RestoreConfirmSheet`
+                                        // -- so the picker never opens ahead of the
+                                        // user knowing what a restore costs.
+                                        onRestore = { restoreLauncher.launch(arrayOf("*/*")) },
+                                        onRescue = { rescueLauncher.launch(RESCUE_FILE_NAME) },
+                                        buildVersion = BuildConfig.VERSION_NAME,
+                                        packVersion = remember { Graph.parsePack().packVersion },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    if (exportOpen) {
+                                        val state = read
+                                        ExportSheetHost(
+                                            state = state,
+                                            onExport = { uri -> settings.exportTo(DocumentSink(contentResolver, uri)) },
+                                            onCancel = settings::cancelExport,
+                                            // Dismissing the sheet is having seen
+                                            // what it said about the last export,
+                                            // so the next one opens on its button.
+                                            onDismiss = {
+                                                exportOpen = false
+                                                state.outcome
+                                                    ?.takeIf { it.operation == Operation.EXPORT }
+                                                    ?.let(settings::acknowledge)
+                                            },
+                                        )
+                                    }
+                                }
+                                entry<Corrections> {
+                                    val corrections: CorrectionsViewModel =
+                                        viewModel(factory = correctionsFactory)
+                                    CorrectionsScreen(
+                                        viewModel = corrections,
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                                entry<Learned> {
+                                    val learned: LearnedViewModel = viewModel(factory = learnedFactory)
+                                    LearnedScreen(
+                                        viewModel = learned,
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                                entry<Licences> {
+                                    LicencesScreen(onBack = tabs::pop, modifier = Modifier.fillMaxSize())
+                                }
+                                entry<Sources> {
+                                    val sources: SourcesViewModel =
+                                        viewModel(factory = sourcesFactory)
+                                    AskForNotifications()
+                                    SourcesScreen(
+                                        viewModel = sources,
+                                        // The same expression NavDisplay's onBack
+                                        // is given; see `pop`.
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        // Read again whenever the bar may be about to show it: a
+                        // tab change, a return to a tab's root (the inbox pushed
+                        // over Charts answers cards), a foreground and a ledger
+                        // rewrite. A capture landing while Charts shows is not
+                        // counted until one of those; nothing here watches `txn`.
+                        val resumed by resumes.collectAsState()
+                        val rewrites by Databases.rewrites.collectAsState()
+                        val awaitingReview by produceState(0, tabs.selected, tabs.showsBar, resumed, rewrites) {
+                            value = readAwaitingReview(applicationContext)
+                        }
+                        if (tabs.showsBar) {
+                            TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = awaitingReview)
+                        }
                     }
                 }
             }
@@ -555,7 +596,11 @@ class MainActivity : ComponentActivity() {
     private suspend fun sampleHealth() {
         exportOverdue.value = readExportOverdue(applicationContext)
         betweenProbeAndReport()
-        health.value = ListenerStatus.report(applicationContext)
+        val report = ListenerStatus.report(applicationContext)
+        health.value = report
+        // From the same report, so first run cannot end on a grant the banner
+        // has not yet heard of.
+        onboarding.value = onboards(applicationContext, report.granted)
     }
 
     /**
@@ -853,8 +898,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** One tag for this file: the functions below are `MainActivity`'s own. */
-private const val TAG = "PingedMain"
+/** One tag for this file and `FirstRun.kt`: the functions below are `MainActivity`'s own. */
+internal const val TAG = "PingedMain"
 
 /**
  * Tests only: run inside `MainActivity.sampleHealth` between its probe and
