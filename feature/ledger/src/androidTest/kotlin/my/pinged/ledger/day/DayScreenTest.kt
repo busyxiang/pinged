@@ -1,12 +1,14 @@
 package my.pinged.ledger.day
 
 import android.app.Application
+import android.os.Looper
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -46,6 +48,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The `Day` screen over the real database, through its own holder (#69): the
@@ -55,6 +58,12 @@ import java.time.ZoneId
  * Dated relative to the device's today, because the screen reads its own
  * clock: [DAY] is three days ago, and the history starts ten days ago, so
  * whether [DAY] is "not captured" is decided by whether it is bound.
+ *
+ * The v2 rule: `DayViewModel` publishes the day from `CaptureStorage.guarded`'s
+ * IO thread, and v1's unconfined dispatcher resumed the screen's collector
+ * there, which can go on to run a frame's recomposition and layout on that
+ * thread (`ManualRowTapTest`, CI run 38901715179). [offMain] counts that first
+ * step, which v1 takes on every publish.
  */
 @RunWith(AndroidJUnit4::class)
 class DayScreenTest {
@@ -62,7 +71,13 @@ class DayScreenTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @After fun leaveNothingBehind() = context.discardTheDatabase()
+    /** Resumptions of a composition coroutine collecting the day off the main thread. */
+    private val offMain = AtomicInteger()
+
+    @After fun leaveNothingBehind() {
+        context.discardTheDatabase()
+        assertEquals("The screen's collector of the day resumed off the main thread", 0, offMain.get())
+    }
 
     @Test fun excludedRowsAreStruckThroughPendingRowsBadgedAndTheKeptOutLineSaysHowMuch() {
         val dao = seed(bindDay = true)
@@ -225,7 +240,12 @@ class DayScreenTest {
 
     private fun screen(onOpenReview: (focus: Long?) -> Unit = {}) {
         val viewModel = DayViewModel(context.applicationContext as Application, DAY)
-        compose.setContent { PingedTheme { DayScreen(viewModel, onBack = {}, onOpenReview = onOpenReview) } }
+        compose.setContent {
+            LaunchedEffect(viewModel) {
+                viewModel.read.collect { if (Looper.myLooper() != Looper.getMainLooper()) offMain.incrementAndGet() }
+            }
+            PingedTheme { DayScreen(viewModel, onBack = {}, onOpenReview = onOpenReview) }
+        }
     }
 
     private fun count(text: String): Int = compose.onAllNodes(hasText(text)).fetchSemanticsNodes().size

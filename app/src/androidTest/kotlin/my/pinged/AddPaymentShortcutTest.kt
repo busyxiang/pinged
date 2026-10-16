@@ -5,7 +5,7 @@ import android.content.Intent
 import android.content.pm.ShortcutManager
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.ComposeTestRule
-import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText

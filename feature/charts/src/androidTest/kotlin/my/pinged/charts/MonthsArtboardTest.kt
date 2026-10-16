@@ -2,7 +2,7 @@ package my.pinged.charts
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsNode
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import my.pinged.charts.model.MonthsItem
