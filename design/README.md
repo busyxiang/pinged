@@ -10,11 +10,11 @@ These are the source of truth; the pages below are generated from them.
 
 | Group | Files |
 |---|---|
-| First run | `Onboarding` `Battery` `Sources` `Empty` |
-| Every day | `Main` `Inbox` `Detail` `Cash` |
-| Looking back | `Charts` `Search` |
+| First run | `Onboarding` `Stored` `Battery` `Sources` `Empty` |
+| Every day | `Main` `Inbox` `Detail` `DetailExcluded` `Cash` |
+| Looking back | `Charts` `ChartsMonth` `Day` `Search` |
 | When it breaks | `Stopped` `Settings` |
-| Sheets and lists | `Chooser` `Category` `Months` `Export` `Wipe` `Teach` `PackImport` `Rules` `Unread` |
+| Sheets and lists | `Chooser` `Categories` `Category` `Merge` `Months` `MerchantSheet` `Export` `Wipe` `Teach` `PackImport` `Rules` `Unread` |
 | Rejected directions | `Quiet` `Warung` `Dark` |
 
 `canvas.json` — artboard layout, two pages. Only consumed by the Claude
@@ -50,3 +50,8 @@ Every populated mockup is pinned to Wednesday 30 September 2026, month end:
 RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded,
 four items awaiting review. Category bars sum to the hero total. Keep new
 mockups consistent with those figures.
+
+One board is pinned elsewhere on purpose: `ChartsMonth` shows the same person two
+weeks later, on Wednesday 14 October, because a month still in progress is its
+subject. Its figures are its own: RM1,101.40 so far, which its grid days and
+its category bars both sum to.
