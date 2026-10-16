@@ -147,3 +147,14 @@ data class DetailRow(
     @ColumnInfo(name = "matched_rule_id") val matchedRuleId: String?,
     @ColumnInfo(name = "capture_pack_version") val packVersion: Int?,
 )
+
+/**
+ * An app the ledger has rows from, for search's App filter (`TxnDao.sourceApps`).
+ *
+ * @property sourceLabel the name it was captured under; null when no capture
+ *   of it recorded one, and the package is all there is to show.
+ */
+data class SourceApp(
+    val sourcePackage: String,
+    val sourceLabel: String?,
+)

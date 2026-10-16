@@ -47,14 +47,37 @@ internal fun MonthsSheetHost(viewModel: ChartsViewModel, onPick: (YearMonth) -> 
  * [items] is null while the read is in flight, drawn as `READING` rather than
  * as an empty list, which would claim there are no months.
  *
- * Public because Spending's header opens it too (#192): `:feature:ledger`
- * depends on this module, never the other way (#81, Modules).
+ * Public because Spending's header opens it too (#192), and search's month
+ * filter (#154): `:feature:ledger` depends on this module, never the other
+ * way (#81, Modules).
+ *
+ * [onAny] adds an `Any month` row above the months, for a caller to whom no
+ * month is an answer; search's is the only one.
  */
 @Composable
-fun MonthsSheet(items: List<MonthsItem>?, onPick: (YearMonth) -> Unit, onDismiss: () -> Unit) {
+fun MonthsSheet(
+    items: List<MonthsItem>?,
+    onPick: (YearMonth) -> Unit,
+    onDismiss: () -> Unit,
+    onAny: (() -> Unit)? = null,
+) {
     ReceiptSheet(onDismissRequest = onDismiss, title = "Jump to") {
         // 4dp on `SheetHeader`'s 14 is the board's 18.
         Column(Modifier.padding(top = 4.dp)) {
+            if (onAny != null) {
+                Text(
+                    ANY_MONTH,
+                    fontFamily = Body,
+                    fontSize = 15.5.sp,
+                    color = Ink,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clickable(onClick = onAny)
+                        .dottedRule()
+                        .padding(vertical = 12.dp),
+                )
+            }
             if (items == null) {
                 Text("READING", style = MonoLabel, color = Muted)
             } else {
@@ -125,3 +148,6 @@ private fun Divider(divider: MonthsItem.Divider) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
     )
 }
+
+/** [MonthsSheet]'s row for no month at all. */
+const val ANY_MONTH = "Any month"

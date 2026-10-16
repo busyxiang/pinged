@@ -451,13 +451,18 @@ fun assertMaximal(row: Any) {
     }
 }
 
-/** The tables SQLite is actually holding, minus the ones Room and Android own. */
+/**
+ * The tables SQLite is actually holding, minus the ones Room and Android own
+ * and spec 15.2's search index: `txn_fts` and its shadow tables are derived
+ * from `txn` whole, by Room's triggers, and hold nothing an export could lose.
+ */
 fun PingedDatabase.userTables(): Set<String> {
     val out = mutableSetOf<String>()
     openHelper.readableDatabase
         .query("SELECT name FROM sqlite_master WHERE type = 'table'")
         .use { c -> while (c.moveToNext()) out += c.getString(0) }
-    return out - setOf("room_master_table", "sqlite_sequence", "android_metadata")
+    return out - setOf("room_master_table", "sqlite_sequence", "android_metadata") -
+        out.filter { it == "txn_fts" || it.startsWith("txn_fts_") }.toSet()
 }
 
 /** The column names of one table, straight off the database. */

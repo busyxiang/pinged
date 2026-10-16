@@ -146,7 +146,7 @@ class SalvageTest {
 
     /**
      * **The point of the task.** Design 2.3's injury at a year of capture --
-     * `damageMidFile` lands on a `raw_capture` leaf -- leaves transactions
+     * a flipped byte in the `raw_capture` leaf nearest the file's middle -- leaves transactions
      * naming captures the file cannot carry. The file restores, and holds
      * exactly the rows that read.
      */
@@ -154,15 +154,16 @@ class SalvageTest {
     fun aDamagedLedgerGivesBackItsRowsAndTheFileRestores() {
         val seeded = 10_000
         val pages = seedLedger(seeded)
-        val hit = (file.length() / 2 / 4096 + 1).toInt()
-        val leaf = pages.firstOrNull { it.number == hit }
-        assertTrue(
-            "damageMidFile landed on ${leaf?.tree} ${leaf?.type} page $hit, not a raw_capture leaf, so this test proves nothing",
-            leaf != null && leaf.tree == "raw_capture" && leaf.type == "leaf",
-        )
+        // The raw_capture leaf nearest the file's middle, picked from the
+        // layout: which tree owns the middle page moves with every table and
+        // index the schema adds, and a flip on any other tests something else.
+        val middle = (file.length() / 2 / 4096 + 1).toInt()
+        val leaf = pages.filter { it.tree == "raw_capture" && it.type == "leaf" }
+            .minByOrNull { kotlin.math.abs(it.number - middle) }
+        assertTrue("the seeded ledger has no raw_capture leaf, so this test proves nothing", leaf != null)
         val lost = leaf!!.ids
         Databases.reset()
-        damageMidFile(file)
+        damage(leaf)
 
         val (report, bytes) = salvage()
         val imported = restore(bytes)

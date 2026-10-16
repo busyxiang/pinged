@@ -108,8 +108,9 @@ phone than in the tests. `PackLoader` refuses `\d` at load.
 
 **Money is `Long` sen.** `BigDecimal` appears only in the string-to-sen step.
 
-**A released schema is frozen.** The current one is v2 (spec 6.4's two
-merchant tables, added by a Room auto-migration from v1). Changing an entity
+**A released schema is frozen.** The current one is v3 (spec 6.4's two
+merchant tables, added by a Room auto-migration from v1, then spec 15.2's
+`txn_fts` search index, whose migration also rebuilds it). Changing an entity
 moves Room's identity hash, and CI regenerates the schema and fails on drift,
 so a change is a version bump, a committed `schemas/N.json` and a migration
 `MigrationTest` runs from every released version. Room's hash cannot see a renamed
