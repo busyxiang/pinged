@@ -2,9 +2,7 @@ package my.pinged.ledger
 
 import android.app.Application
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -22,14 +20,7 @@ import kotlinx.coroutines.runBlocking
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
-import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.LearnedMerchant
-import my.pinged.data.entity.Category
-import my.pinged.data.entity.PendingReason
-import my.pinged.data.entity.TxnState
-import my.pinged.ledger.home.CATEGORY_CHIP
-import my.pinged.ledger.home.LedgerRow
-import my.pinged.ledger.home.awaitingReviewBadge
 import my.pinged.ledger.learned.DELETE
 import my.pinged.ledger.learned.LearnedContent
 import my.pinged.ledger.learned.LearnedState
@@ -42,7 +33,6 @@ import my.pinged.ledger.settings.Storage
 import my.pinged.ledger.settings.Transfers
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.RESCUE
-import my.pinged.ui.theme.Separator
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -54,6 +44,10 @@ import org.junit.runner.RunWith
  * the clickable node's own bounds, which is what Compose hit-tests: a tap just
  * outside a short control lands on whatever is behind it, and on a ledger row
  * that is the row's own tap.
+ *
+ * Not a ledger row's controls: those are laid out at their drawn size and
+ * take Compose's minimum touch target instead, which no layout height shows;
+ * `RowTouchTargetTest` taps around them (#186).
  */
 @RunWith(AndroidJUnit4::class)
 class TouchTargetTest {
@@ -141,43 +135,5 @@ class TouchTargetTest {
                 buildVersion = "0.0.0-test", packVersion = 1,
             )
         }
-    }
-
-    // ---- a ledger row --------------------------------------------------------
-
-    private val food = Category(id = 1L, name = "Food", iconKey = "food", sortOrder = 1)
-    private val uncategorized = Category(id = 2L, name = "Uncategorized", iconKey = "uncategorized", sortOrder = 2)
-
-    /**
-     * 600dp wide whatever the screen: a badge or line that wraps to two lines
-     * is taller than 44dp for that reason alone, and would pass unfixed. The
-     * longest `DUPLICATE_SUSPECT` badge wraps at a 1080px phone's width.
-     */
-    private fun row(categoryId: Long, state: TxnState = TxnState.COMMITTED, pendingReason: PendingReason? = null) =
-        scrolled {
-            Box(Modifier.requiredWidth(600.dp)) {
-                LedgerRow(
-                    row = FeedRow(ledgerTxn(1_250L, categoryId = categoryId, state = state, pendingReason = pendingReason, id = 7L), "WARUNG PAK ALI", MERCHANT),
-                    categoriesById = mapOf(food.id to food, uncategorized.id to uncategorized),
-                    uncategorizedId = uncategorized.id,
-                    canCategorize = true,
-                    onCategorize = {}, onOpenMerchant = {}, onOpenReview = {},
-                )
-            }
-        }
-
-    @Test fun categoryChip() {
-        row(categoryId = uncategorized.id)
-        assertTall(CATEGORY_CHIP)
-    }
-
-    @Test fun categoryLine() {
-        row(categoryId = food.id)
-        assertTall("Food" + Separator + SOURCE_LABEL)
-    }
-
-    @Test fun reviewBadge() {
-        row(categoryId = food.id, state = TxnState.PENDING, pendingReason = PendingReason.RULE_REVIEW)
-        assertTall(awaitingReviewBadge(PendingReason.RULE_REVIEW.name))
     }
 }

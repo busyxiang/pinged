@@ -9,10 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -238,6 +236,7 @@ private fun TxnRow(
                 // Not struck through, though the amount is: the number is the
                 // thing §7.3 says does not count, and striking both reads as
                 // deleted, which is exactly what an excluded row is not.
+                modifier = Modifier.fillMaxWidth().rowBody(),
             )
             // Spec 9.1: a manual entry says how it reached the ledger, never
             // how it was paid. `raw_capture_id IS NULL` is what a manual
@@ -281,8 +280,6 @@ private fun TxnRow(
                                 Modifier
                                     .clip(RoundedCornerShape(2.dp))
                                     .clickable(role = Role.Button, onClick = onCategorize!!)
-                                    .heightIn(min = 44.dp)
-                                    .wrapContentHeight()
                             } else {
                                 Modifier
                             },
@@ -341,6 +338,21 @@ internal const val REMOVE_PAYMENT = "Remove payment"
  * consume their tap, so it never reaches [onOpen]. The semantics actions are
  * what a screen reader offers instead, since a long press is a gesture
  * TalkBack does not pass through as one.
+ *
+ * **Those three are laid out at their drawn size, and their touch target is
+ * the free space around them** (#186, superseding #178's 44dp for them).
+ * The rule for a control inside a list row: it takes the space no other
+ * target holds, and never less than WCAG 2.5.8's 24dp. Compose supplies it:
+ * a clickable smaller than `ViewConfiguration.minimumTouchTargetSize`, 48dp
+ * on Android, takes a near miss up to that size around it, and as a
+ * descendant it gets the tap before this row does. It stops at a direct hit
+ * on another target -- the next row's tap below, [rowBody] on the name above
+ * -- and at 48dp in all. So the category line's target is its 16dp and the
+ * row's 10dp padding below, 26dp, and the 2dp gap above goes to whichever of
+ * it and the name is nearer. `RowTouchTargetTest` taps outside each drawn
+ * control and reaches it, reaches the row once the minimum is zeroed, and
+ * taps the name and reaches the row. Grown to 44dp in layout instead, a
+ * categorised row measured 85dp against 57dp.
  */
 private fun Modifier.rowGestures(onOpen: (() -> Unit)?, openLabel: String, onOpenMerchant: (() -> Unit)?): Modifier =
     if (onOpen == null && onOpenMerchant == null) this else this
@@ -354,6 +366,15 @@ private fun Modifier.rowGestures(onOpen: (() -> Unit)?, openLabel: String, onOpe
             if (onOpen != null) onClick(label = openLabel) { onOpen(); true }
             if (onOpenMerchant != null) onLongClick(label = EDIT_MERCHANT) { onOpenMerchant(); true }
         }
+
+/**
+ * The merchant name as a direct hit, which handles nothing itself: the tap
+ * goes on to [rowGestures], its ancestor. Without it the name is no target,
+ * and the category line's 48dp near miss reaches 16dp up into it: a tap on
+ * the name's centre, about 11.5dp above the line, opened the category sheet
+ * (#186). Full width, because a short name leaves the rest of its line bare.
+ */
+private fun Modifier.rowBody(): Modifier = pointerInput(Unit) {}
 
 /**
  * The artboard's "+ CATEGORY": the one control on a row, and the only thing on
@@ -371,11 +392,6 @@ private fun CategoryChip(onClick: () -> Unit) {
         Modifier
             .clip(RoundedCornerShape(2.dp))
             .clickable(role = Role.Button, onClick = onClick)
-            // Touch first, then the drawn box. `wrapContentHeight` measures
-            // what follows it at its own size inside the 44dp target, so the
-            // outline is drawn around the label and not around the target.
-            .heightIn(min = 44.dp)
-            .wrapContentHeight()
             .dashedOutline(Stamp)
             .padding(horizontal = 7.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center,
@@ -446,8 +462,10 @@ private fun RowIcon(excluded: Boolean, uncategorized: Boolean, iconKey: String?)
 /**
  * A framed mono label, in the colour of whatever it is qualifying.
  *
- * With [onClick] it is a button: a 44dp target with the frame drawn at its
- * own size inside it, as [CategoryChip]'s is.
+ * With [onClick] it is a button, laid out at its frame's size, its target
+ * the free space around it as [rowGestures] sets out. The 4dp above it is
+ * outside the click, as the plain badge's is: flush under the category
+ * line, the badge's upper near miss is a direct hit on the line.
  */
 @Composable
 private fun Badge(text: String, color: Color, onClick: (() -> Unit)? = null) {
@@ -461,10 +479,9 @@ private fun Badge(text: String, color: Color, onClick: (() -> Unit)? = null) {
                     Modifier.padding(top = 4.dp)
                 } else {
                     Modifier
+                        .padding(top = 4.dp)
                         .clip(RoundedCornerShape(2.dp))
                         .clickable(role = Role.Button, onClickLabel = OPEN_REVIEW, onClick = onClick)
-                        .heightIn(min = 44.dp)
-                        .wrapContentHeight()
                 },
             )
             .border(1.dp, color, RoundedCornerShape(2.dp))
