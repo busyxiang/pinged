@@ -6,6 +6,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -15,7 +16,12 @@ import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
+import java.io.OutputStream
+import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
+import my.pinged.ledger.settings.ExportSink
+import my.pinged.ledger.settings.Transfers
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.data.entity.PendingReason
@@ -167,6 +173,91 @@ class SearchScreenTest {
         assertTrue("Never said nothing was found", said)
     }
 
+    /**
+     * "Export these N rows" counts what the totals count -- every row found,
+     * not the [SearchViewModel.ROW_LIMIT] drawn -- and the sheet it opens
+     * offers that same number before handing to the picker (#201).
+     */
+    @Test fun theExportCountsEveryRowFoundNotOnlyTheRowsDrawn() {
+        val found = SearchViewModel.ROW_LIMIT + 5
+        context.freshLedger()
+        repeat(found) { dao().insert(ride(100L + it, THIS + it, merchant = GRAB)) }
+        var picked = 0
+        screen(onPickExport = { picked++ })
+
+        val footer = "EXPORT THESE $found ROWS"
+        assertTrue(
+            "Waited ${TIMEOUT}ms for '$footer'",
+            runCatching { compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(footer).fetchSemanticsNodes().isNotEmpty() } }.isSuccess,
+        )
+        // Pinned below the list, outside any scroll: nothing to scroll to.
+        compose.onNodeWithText(footer).performClick()
+        compose.onNodeWithText("Export $found rows").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals("the sheet's button did not reach the picker", 1, picked)
+    }
+
+    /**
+     * A spreadsheet the Settings sheet made, settled and not yet dismissed,
+     * is not this search's: its sheet still offers its own export rather
+     * than another file's "SAVED".
+     */
+    @Test fun anotherSheetsSpreadsheetIsNotThisSearchsResult() {
+        seed()
+        val target = File(context.cacheDir, "settings-export.csv").apply { delete() }
+        try {
+            val sink = object : ExportSink {
+                override fun open(): OutputStream = target.outputStream()
+                override fun delete(): Boolean = target.delete()
+            }
+            val answer = runBlocking {
+                Transfers.spreadsheet(context, sink, "", my.pinged.data.SearchFilter(), kotlinx.coroutines.Job()).await()
+            }
+            assertTrue("the other export did not settle: $answer", answer is Transfers.Answer.Settled)
+            screen(onPickExport = {})
+            val footer = "EXPORT THESE 4 ROWS"
+            assertTrue(
+                "Waited ${TIMEOUT}ms for '$footer'",
+                runCatching { compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(footer).fetchSemanticsNodes().isNotEmpty() } }.isSuccess,
+            )
+            // Pinned below the list, outside any scroll: nothing to scroll to.
+            compose.onNodeWithText(footer).performClick()
+
+            compose.onNodeWithText("Export 4 rows").performScrollTo().assertExists()
+            compose.onNodeWithText("SAVED", substring = true).assertDoesNotExist()
+        } finally {
+            target.delete()
+            Transfers.forgetOutcome()
+        }
+    }
+
+    /**
+     * The file holds the search on screen: its words and its month, so last
+     * month's ride and this month's coffee stay out of it.
+     */
+    @Test fun theExportWritesTheRowsTheSearchFound() {
+        seed()
+        val viewModel = SearchViewModel(context.applicationContext as Application, SavedStateHandle())
+        viewModel.setQuery("grab")
+        runBlocking { viewModel.refresh().join() }
+        val target = File(context.cacheDir, "search-export.csv").apply { delete() }
+        try {
+            val sink = object : ExportSink {
+                override fun open(): OutputStream = target.outputStream()
+                override fun delete(): Boolean = target.delete()
+            }
+            runBlocking { viewModel.exportTo(sink).join() }
+
+            val lines = target.readText().split("\r\n").filter { it.isNotEmpty() }
+            // The header and this month's three rides, newest first:
+            // 9.80, 22.10, 18.40.
+            assertEquals(listOf("9.80", "22.10", "18.40"), lines.drop(1).map { it.split(',')[1] })
+        } finally {
+            target.delete()
+            Transfers.forgetOutcome()
+        }
+    }
+
     // ---- fixture ---------------------------------------------------------
 
     private fun dao() = Databases.txnDao(context)
@@ -203,11 +294,15 @@ class SearchScreenTest {
             sourceLabel = GRAB_LABEL,
         )
 
-    private fun screen(onOpenDetail: (EditTarget) -> Unit = {}, onOpenEntry: (EditTarget) -> Unit = {}) {
+    private fun screen(
+        onOpenDetail: (EditTarget) -> Unit = {},
+        onOpenEntry: (EditTarget) -> Unit = {},
+        onPickExport: (() -> Unit)? = null,
+    ) {
         val viewModel = SearchViewModel(context.applicationContext as Application, SavedStateHandle())
         compose.setContent {
             PingedTheme {
-                SearchScreen(viewModel, onBack = {}, onOpenEntry = onOpenEntry, onOpenDetail = onOpenDetail)
+                SearchScreen(viewModel, onBack = {}, onOpenEntry = onOpenEntry, onOpenDetail = onOpenDetail, onPickExport = onPickExport)
             }
         }
     }

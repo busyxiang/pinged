@@ -1,6 +1,7 @@
 package my.pinged.data
 
 import androidx.sqlite.db.SimpleSQLiteQuery
+import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.TxnDao
 import java.util.Locale
 
@@ -52,6 +53,9 @@ object SearchMatch {
  * @property minSen the smallest `amount_sen`, and [maxSen] the largest, both
  *   in ringgit: either one set narrows the search to `MYR` rows, since a
  *   bound in sen means nothing against another currency's.
+ * @property leaveOutExcluded leaves out every `is_excluded` row, whatever its
+ *   reason, and [leaveOutPending] every row awaiting review: the export
+ *   sheet's "What to leave out" (#201). Search itself sets neither.
  */
 data class SearchFilter(
     val from: LocalDate? = null,
@@ -60,7 +64,20 @@ data class SearchFilter(
     val sourcePackage: String? = null,
     val minSen: Long? = null,
     val maxSen: Long? = null,
+    val leaveOutExcluded: Boolean = false,
+    val leaveOutPending: Boolean = false,
 )
+
+/**
+ * Where [SearchSql.page] resumes: the last row read's place in
+ * `TxnDao.FEED_ORDER`, all three of its keys, since a day and a moment can
+ * both tie and only the id then orders two rows.
+ */
+data class SearchCursor(val localDate: LocalDate, val occurredAt: Long, val id: Long) {
+    companion object {
+        fun after(row: FeedRow) = SearchCursor(row.txn.localDate, row.txn.occurredAt, row.txn.id)
+    }
+}
 
 /**
  * A search's money in one currency: every row it found that the feed would
@@ -96,6 +113,30 @@ object SearchSql {
         return SimpleSQLiteQuery(
             TxnDao.FEED_ROWS + where + TxnDao.FEED_ORDER + " LIMIT ?",
             (args + limit).toTypedArray(),
+        )
+    }
+
+    /**
+     * The rows [rows] would find, [limit] at a time, starting after [after]
+     * (from the first when null): the CSV export's read, which has no limit
+     * of its own (#201). Keyset rather than `OFFSET`, for the reason
+     * `RawCaptureDao.pageAfter` measured.
+     *
+     * The cursor is a row value compared against the feed's three keys in
+     * the feed's direction, so a page boundary inside a run of ties on day
+     * and moment loses no row and repeats none.
+     */
+    fun page(text: String, filter: SearchFilter, after: SearchCursor?, limit: Int): SimpleSQLiteQuery {
+        val (where, args) = where(text, filter)
+        val (resume, resumeArgs) = if (after == null) {
+            "" to emptyList()
+        } else {
+            "AND (txn.local_date, txn.occurred_at, txn.id) < (?, ?, ?) " to
+                listOf<Any>(after.localDate.yyyymmdd, after.occurredAt, after.id)
+        }
+        return SimpleSQLiteQuery(
+            TxnDao.FEED_ROWS + where + resume + TxnDao.FEED_ORDER + " LIMIT ?",
+            (args + resumeArgs + limit).toTypedArray(),
         )
     }
 
@@ -138,6 +179,9 @@ object SearchSql {
         if (filter.minSen != null || filter.maxSen != null) and("txn.currency = ?", RINGGIT)
         filter.minSen?.let { and("txn.amount_sen >= ?", it) }
         filter.maxSen?.let { and("txn.amount_sen <= ?", it) }
+        // Literals rather than binds: they carry no value of the user's.
+        if (filter.leaveOutExcluded) sql.append("AND txn.is_excluded = 0 ")
+        if (filter.leaveOutPending) sql.append("AND txn.state != 'PENDING' ")
         return sql.toString() to args
     }
 }

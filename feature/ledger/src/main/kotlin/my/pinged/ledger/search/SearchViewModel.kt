@@ -2,11 +2,18 @@ package my.pinged.ledger.search
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +34,8 @@ import my.pinged.data.SearchTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.SourceApp
 import my.pinged.data.entity.Category
+import my.pinged.ledger.settings.ExportSink
+import my.pinged.ledger.settings.Transfers
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -176,6 +185,51 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
         }
     }
 
+    /**
+     * "Export these N rows" (#201): every row the read on screen found -- its
+     * words and filters, with no [ROW_LIMIT] -- written as spec 12's CSV by
+     * [Transfers.spreadsheet]. The read's question rather than the field's,
+     * so the file holds the rows whose count the user tapped.
+     *
+     * This holder's scope is the requester, as `SettingsViewModel`'s is for
+     * its own: leaving search abandons the export and deletes the document.
+     * The [Job] ends once the export has let go of it.
+     */
+    fun exportTo(sink: ExportSink): Job {
+        val read = _read.value
+        return viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            if (read == null) {
+                // Nothing on screen to export; the picker's document is let go.
+                runCatching { sink.delete() }
+                return@launch
+            }
+            val pending = Transfers.spreadsheet(context, sink, read.text, read.choice.filter(), coroutineContext.job)
+            val answer = try {
+                pending.await()
+            } catch (cancelled: CancellationException) {
+                withContext(NonCancellable) { pending.await() }
+                throw cancelled
+            }
+            when (answer) {
+                is Transfers.Answer.Settled -> _exported.value = answer.outcome.serial
+                is Transfers.Answer.Refused -> Log.i(TAG, "Export refused while ${answer.busy} runs")
+                Transfers.Answer.Abandoned -> Unit
+            }
+        }
+    }
+
+    private val _exported = MutableStateFlow<Long?>(null)
+
+    /**
+     * The [Outcome.serial][my.pinged.ledger.settings.Outcome.serial] of this
+     * search's last settled export: the export sheet draws that result, and
+     * not a spreadsheet the Settings sheet made.
+     */
+    val exported: StateFlow<Long?> = _exported.asStateFlow()
+
+    /** See [Transfers.cancelExport]: the export sheet's Cancel. */
+    fun cancelExport() = Transfers.cancelExport()
+
     fun readMonths(today: LocalDate = LocalDate.now()): Job = viewModelScope.launch {
         CaptureStorage.guarded(
             context,
@@ -199,6 +253,8 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
     }
 
     internal companion object {
+        const val TAG = "PingedSearch"
+
         /**
          * Long enough that a word typed at speed is one read, short enough
          * that a pause reads as an answer. Not measured against a typist.

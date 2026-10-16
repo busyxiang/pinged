@@ -38,7 +38,9 @@ import my.pinged.data.Databases
 import my.pinged.data.Integrity
 import my.pinged.data.IntegrityStore
 import my.pinged.data.PingedDatabase
+import my.pinged.data.SearchFilter
 import my.pinged.data.Wipe
+import my.pinged.ledger.transfer.ExportCsv
 import my.pinged.ledger.transfer.ExportJson
 import my.pinged.ledger.transfer.ImportException
 import my.pinged.ledger.transfer.Restore
@@ -83,8 +85,8 @@ data class TransferState(
 }
 
 /**
- * The one owner, for the whole process, of the settings screen's five
- * transfer operations: export, check, restore, delete and salvage. Ruling R41.
+ * The one owner, for the whole process, of the six transfer operations:
+ * export, spreadsheet, check, restore, delete and salvage. Ruling R41.
  *
  * **A restore's lifetime is the process** -- from its wipe on it runs to
  * completion whoever is still watching (`Restore`'s KDoc) -- so its
@@ -291,47 +293,83 @@ object Transfers {
         requester: Job,
         beforeStart: suspend () -> Unit = {},
     ): Deferred<Answer> = perform(Operation.EXPORT, requester, beforeStart, release = { sink.delete() }) { progress ->
+        writing(context, sink, progress, write = ExportJson::write) { rows, savedAs ->
+            val unrecorded = try {
+                recordExport(context, System.currentTimeMillis())
+                null
+            } catch (thrown: Exception) {
+                Log.w(TAG, "A complete export's time could not be recorded", thrown)
+                thrown.message ?: thrown.javaClass.simpleName
+            }
+            TransferJob.Exported(rows, unrecorded, savedAs)
+        }
+    }
+
+    /**
+     * Spec 12's CSV: the rows [text] and [filter] find, as `ExportCsv` writes
+     * them (#201). The export sheet's spreadsheet card and search's "Export
+     * these N rows" both come here.
+     *
+     * [export] in every way but two. **It is not a backup**: nothing is
+     * recorded for the backup nudge, since a month of transactions rebuilds
+     * nothing, and it settles as [TransferJob.Spreadsheet] rather than
+     * [TransferJob.Exported]. And it is its own [Operation], so a screen
+     * telling the two apart is not reading a format off a job. Cancelled,
+     * abandoned or failed, its document is deleted exactly as a backup's is,
+     * and through the same code.
+     */
+    fun spreadsheet(
+        context: Context,
+        sink: ExportSink,
+        text: String,
+        filter: SearchFilter,
+        requester: Job,
+        beforeStart: suspend () -> Unit = {},
+    ): Deferred<Answer> = perform(Operation.SPREADSHEET, requester, beforeStart, release = { sink.delete() }) { progress ->
+        writing(
+            context,
+            sink,
+            progress,
+            write = { db, out, onProgress, isCancelled -> ExportCsv.write(db, out, text, filter, onProgress, isCancelled) },
+        ) { rows, savedAs -> TransferJob.Spreadsheet(rows, savedAs) }
+    }
+
+    /**
+     * [export]'s and [spreadsheet]'s body: [write] the ledger into [sink],
+     * then [finish] with the rows and the document's name, and remove the
+     * document if it does not finish.
+     */
+    private suspend fun writing(
+        context: Context,
+        sink: ExportSink,
+        progress: (Int) -> Unit,
+        write: (PingedDatabase, java.io.OutputStream, (Int) -> Unit, () -> Boolean) -> Int,
+        finish: suspend (rows: Int, savedAs: String?) -> TransferJob,
+    ): TransferJob {
         // Captured here, in the suspend body, because `isCancelled` below is
-        // a plain () -> Boolean -- ExportJson calls it from inside a
+        // a plain () -> Boolean -- the writers call it from inside a
         // blocking DAO loop, not a coroutine.
         val self = currentCoroutineContext().job
         // Inside the `try`, so a database that will not open still has its
         // document removed; kept, so damage can replace the instance it met.
         var opened: PingedDatabase? = null
-        try {
+        return try {
             val db = readable(context).also { opened = it }
-            val rows = sink.open().use { out ->
-                ExportJson.write(
-                    db,
-                    out,
-                    onProgress = progress,
-                    isCancelled = { !self.isActive },
-                )
-            }
+            val rows = sink.open().use { out -> write(db, out, progress) { !self.isActive } }
             // The file is whole from here; nothing below may delete it. So
             // NonCancellable: the sheet draws this as running, with Cancel,
-            // until it is published, and a cancel thrown out of the record
-            // would reach the catch below and delete a complete backup. A
-            // [CancellationException] from inside is the record failing, not
+            // until it is published, and a cancel thrown out of [finish]
+            // would reach the catch below and delete a complete file. A
+            // [CancellationException] from inside is [finish] failing, not
             // this export being stopped, and is reported as one.
-            withContext(NonCancellable) {
-                val savedAs = runCatching { sink.name() }.getOrNull()
-                val unrecorded = try {
-                    recordExport(context, System.currentTimeMillis())
-                    null
-                } catch (thrown: Exception) {
-                    Log.w(TAG, "A complete export's time could not be recorded", thrown)
-                    thrown.message ?: thrown.javaClass.simpleName
-                }
-                TransferJob.Exported(rows, unrecorded, savedAs)
-            }
+            withContext(NonCancellable) { finish(rows, runCatching { sink.name() }.getOrNull()) }
         } catch (thrown: CancellationException) {
             // NonCancellable because this job is already cancelled -- an
             // unguarded suspend call here would be cancelled before it ran.
             withContext(NonCancellable) { sink.delete() }
             throw thrown
         } catch (thrown: SQLiteException) {
-            if (!Databases.poisons(thrown)) return@perform failed(thrown, sink, self)
+            if (!Databases.poisons(thrown)) return failed(thrown, sink, self)
             // The likeliest way damage is found, because the check is weekly.
             //
             // Code 11 from the damage itself, or code 26 from an instance
@@ -398,14 +436,16 @@ object Transfers {
     }
 
     /**
-     * Stops the export running, whichever screen asked for it, exactly as its
-     * screen going away would: the document is deleted and the export ends
-     * as [Answer.Abandoned]. Nothing when no export is running -- in
-     * particular not another operation, of which only an export is safe to
-     * stop part way.
+     * Stops the export running, a backup or a spreadsheet, whichever screen
+     * asked for it, exactly as its screen going away would: the document is
+     * deleted and the export ends as [Answer.Abandoned]. Nothing when no
+     * export is running -- in particular not another operation, of which
+     * only an export is safe to stop part way.
      */
     fun cancelExport() {
-        claimed.get()?.takeIf { it.operation == Operation.EXPORT }?.work?.cancel(CancellationException("Cancelled from the export sheet"))
+        claimed.get()
+            ?.takeIf { it.operation.isExport }
+            ?.work?.cancel(CancellationException("Cancelled from the export sheet"))
     }
 
     /** Tests only: where [export] records a finished export. */
