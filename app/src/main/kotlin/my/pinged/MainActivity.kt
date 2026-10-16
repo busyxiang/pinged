@@ -76,6 +76,8 @@ import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
 import my.pinged.ledger.learned.LearnedScreen
 import my.pinged.ledger.learned.LearnedViewModel
+import my.pinged.ledger.unread.UnreadScreen
+import my.pinged.ledger.unread.UnreadViewModel
 import my.pinged.ledger.licences.LicencesScreen
 import my.pinged.ledger.review.ReviewScreen
 import my.pinged.ledger.review.ReviewViewModel
@@ -144,6 +146,7 @@ class MainActivity : ComponentActivity() {
         val settingsFactory = AppViewModelFactory(application, ::SettingsViewModel)
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
+        val unreadFactory = AppViewModelFactory(application, ::UnreadViewModel)
         val reviewFactory = AppViewModelFactory(application, ::ReviewViewModel)
         // Only a first creation's stack: a recreate or a process death hands
         // back the same intent, and `rememberNavBackStack` then restores the
@@ -397,6 +400,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenSources = { tabs.push(Sources) },
                                     onOpenCorrections = { tabs.push(Corrections) },
                                     onOpenLearned = { tabs.push(Learned) },
+                                    onOpenUnread = { tabs.push(Unread) },
                                     onOpenLicences = { tabs.push(Licences) },
                                     onExport = { exportOpen = true },
                                     // Reached only after `SettingsScreen`'s own
@@ -440,6 +444,14 @@ class MainActivity : ComponentActivity() {
                                 val learned: LearnedViewModel = viewModel(factory = learnedFactory)
                                 LearnedScreen(
                                     viewModel = learned,
+                                    onBack = tabs::pop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            entry<Unread> {
+                                val unread: UnreadViewModel = viewModel(factory = unreadFactory)
+                                UnreadScreen(
+                                    viewModel = unread,
                                     onBack = tabs::pop,
                                     modifier = Modifier.fillMaxSize(),
                                 )

@@ -12,6 +12,7 @@ import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
+import my.pinged.data.entity.UserRejectRule
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -71,6 +72,7 @@ class ExportCompletenessTest {
         TXN_SECTION to Txn::class.java,
         MERCHANT_ALIAS_SECTION to MerchantAlias::class.java,
         MERCHANT_NAME_SECTION to MerchantName::class.java,
+        USER_REJECT_RULE_SECTION to UserRejectRule::class.java,
     )
 
     /**

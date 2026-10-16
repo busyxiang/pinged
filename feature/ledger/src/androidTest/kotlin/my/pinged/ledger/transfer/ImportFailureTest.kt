@@ -63,6 +63,7 @@ class ImportFailureTest {
         assertEquals("a capture day survived", 0, target.captureDayDao().countAll())
         assertEquals("a merged merchant survived", 0, target.merchantIdentityDao().countAliases())
         assertEquals("a merchant's name survived", 0, target.merchantIdentityDao().countNames())
+        assertEquals("an ignored message survived", 0, target.userRejectRuleDao().countAll())
         assertEquals(
             "the seeded categories were deleted and not put back",
             16,
@@ -441,16 +442,26 @@ class ImportFailureTest {
     }
 
     /**
-     * `raw_capture.user_reject_rule_id` is the one reference in this format
-     * with no foreign key and no dangling-count check, because the table it
-     * points at is spec 5.7's and this milestone does not create it. Its shape
-     * is still checkable, and an id below one could never have been assigned.
+     * `raw_capture.user_reject_rule_id` has no foreign key, so its shape is
+     * checked as the row is read: an id below one could never have been assigned.
      */
     @Test fun aNegativeUserRejectRuleIdIsRefused() {
         val document = goodExport().replace(""""user_reject_rule_id":77""", """"user_reject_rule_id":-77""")
         val target = fresh()
         val thrown = assertThrows(ImportFormatException::class.java) { importInto(target, document) }
         assertTrue(thrown.message!!.contains("Row ids must be 1 or more"))
+        assertUntouched(target)
+    }
+
+    /**
+     * And its referent once every row is in: a capture hidden by a rule the
+     * file does not carry could never come back to the unread list.
+     */
+    @Test fun aCaptureHiddenByARuleTheFileLacksRollsTheWholeImportBack() {
+        val document = goodExport().replace(""""user_reject_rule_id":77""", """"user_reject_rule_id":78""")
+        val target = fresh()
+        val thrown = assertThrows(ImportIntegrityException::class.java) { importInto(target, document) }
+        assertTrue(thrown.message!!, thrown.message!!.contains("ignored-message rule the backup does not contain"))
         assertUntouched(target)
     }
 

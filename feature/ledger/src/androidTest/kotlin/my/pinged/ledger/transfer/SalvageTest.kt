@@ -146,7 +146,8 @@ class SalvageTest {
 
     /**
      * **The point of the task.** Design 2.3's injury at a year of capture --
-     * `damageMidFile` lands on a `raw_capture` leaf -- leaves transactions
+     * a flipped byte in the `raw_capture` leaf nearest the middle of the file,
+     * which `oneFlippedByteAtAYearOfCaptureLosesOnlyItsOwnLeaf` picks the same way -- leaves transactions
      * naming captures the file cannot carry. The file restores, and holds
      * exactly the rows that read.
      */
@@ -154,15 +155,11 @@ class SalvageTest {
     fun aDamagedLedgerGivesBackItsRowsAndTheFileRestores() {
         val seeded = 10_000
         val pages = seedLedger(seeded)
-        val hit = (file.length() / 2 / 4096 + 1).toInt()
-        val leaf = pages.firstOrNull { it.number == hit }
-        assertTrue(
-            "damageMidFile landed on ${leaf?.tree} ${leaf?.type} page $hit, not a raw_capture leaf, so this test proves nothing",
-            leaf != null && leaf.tree == "raw_capture" && leaf.type == "leaf",
-        )
-        val lost = leaf!!.ids
+        val middle = (file.length() / 2 / 4096 + 1).toInt()
+        val leaf = pages.filter { it.tree == "raw_capture" && it.type == "leaf" }.minBy { kotlin.math.abs(it.number - middle) }
+        val lost = leaf.ids
         Databases.reset()
-        damageMidFile(file)
+        damage(leaf)
 
         val (report, bytes) = salvage()
         val imported = restore(bytes)
@@ -332,6 +329,40 @@ class SalvageTest {
         assertTrue("no Uncategorized was added", report.uncategorizedAdded)
         val names = restored().categoryDao().all().map { it.name }
         assertTrue("the restored categories are $names", Seed.UNCATEGORIZED in names && "Sundry" in names)
+    }
+
+    /**
+     * Spec 5.7's rules come through a rescue, and a capture naming one that
+     * is not there -- here deleted under it by hand -- is kept unhidden,
+     * since `ImportJson` refuses a capture hidden by nothing. Either way the
+     * file restores.
+     */
+    @Test(timeout = 60_000)
+    fun aCaptureNamingAMissingRuleIsKeptUnhiddenAndTheFileRestores() {
+        freshDatabase(context).useDb { db ->
+            seedOneOfEverything(db)
+            db.openHelper.writableDatabase.execSQL("DELETE FROM user_reject_rule")
+        }
+        Databases.reset()
+
+        val (report, bytes) = salvage()
+        restore(bytes)
+
+        assertEquals(1, report.unhidden)
+        assertEquals(0, restored().rawCaptureDao().pageFrom(0L, 100).count { it.userRejectRuleId != null })
+    }
+
+    @Test(timeout = 60_000)
+    fun aRuleThatReadsComesThroughARescue() {
+        freshDatabase(context).useDb { db -> seedOneOfEverything(db) }
+        Databases.reset()
+
+        val (report, bytes) = salvage()
+        restore(bytes)
+
+        assertEquals(0, report.unhidden)
+        assertEquals(listOf(77L), restored().userRejectRuleDao().all().map { it.id })
+        assertEquals(1, restored().rawCaptureDao().pageFrom(0L, 100).count { it.userRejectRuleId == 77L })
     }
 
     /**

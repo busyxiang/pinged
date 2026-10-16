@@ -218,22 +218,18 @@ class RowReaderDamageTest {
     }
 
     /**
-     * Design 2.3's injury at a year of capture: `damageMidFile` lands on a
-     * `raw_capture` leaf, measured as ids 8962..8980 of 10,000 with this seed.
+     * Design 2.3's injury at a year of capture: one flipped byte in the
+     * `raw_capture` leaf nearest the middle of the file. The nearest leaf and
+     * not the middle byte itself, which a schema's new pages move onto an index.
      */
     @Test(timeout = 300_000)
     fun oneFlippedByteAtAYearOfCaptureLosesOnlyItsOwnLeaf() {
         val seeded = 10_000
         val pages = seedLedger(seeded)
-        val hit = (file.length() / 2 / 4096 + 1).toInt()
-        val leaf = pages.firstOrNull { it.number == hit }
-        assertTrue(
-            "damageMidFile landed on ${leaf?.tree} ${leaf?.type} page $hit, not a raw_capture leaf, so this test proves nothing",
-            leaf != null && leaf.tree == "raw_capture" && leaf.type == "leaf",
-        )
-        leaf!!
+        val middle = (file.length() / 2 / 4096 + 1).toInt()
+        val leaf = leaves(pages, "raw_capture").minBy { kotlin.math.abs(it.number - middle) }
         Graph.reset()
-        damageMidFile(file)
+        damage(leaf)
         val reach = strictReach(PagedTable.RAW_CAPTURE)
 
         salvaging().use { reader ->

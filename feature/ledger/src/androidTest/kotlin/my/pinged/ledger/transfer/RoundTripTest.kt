@@ -58,6 +58,7 @@ class RoundTripTest {
         "txn" to source.txnDao().pageFrom(0L, 1_000).byKey { it.id },
         "merchant_alias" to source.merchantIdentityDao().allAliases().byKey { it.merchantKey },
         "merchant_name" to source.merchantIdentityDao().allNames().byKey { it.merchantKey },
+        "user_reject_rule" to source.userRejectRuleDao().all().byKey { it.id },
     )
 
     /**
@@ -120,7 +121,8 @@ class RoundTripTest {
         assertEquals(2, report.txns)
         assertEquals(1, report.merchantAliases)
         assertEquals(1, report.merchantNames)
-        assertEquals(31, report.rows)
+        assertEquals(1, report.userRejectRules)
+        assertEquals(32, report.rows)
         assertEquals(Backup.FORMAT_VERSION, report.formatVersion)
         assertNotNull("The export stamps its own time and the report carries it", report.exportedAt)
 
@@ -149,6 +151,8 @@ class RoundTripTest {
         val formatOne = current
             .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":1")
             .let { it.substring(0, it.indexOf(",\"${Backup.MERCHANT_ALIASES}\":")) + "}" }
+            // No format-1 build wrote a rule id, there being no rule to name.
+            .replace("\"user_reject_rule_id\":77", "\"user_reject_rule_id\":null")
 
         val restored = fresh()
         val report = ImportJson.read(restored, ByteArrayInputStream(formatOne.toByteArray(Charsets.UTF_8)))
@@ -158,6 +162,28 @@ class RoundTripTest {
         assertEquals(0, report.merchantAliases)
         assertEquals(0, restored.merchantIdentityDao().countAliases())
         assertEquals(0, restored.merchantIdentityDao().countNames())
+    }
+
+    /**
+     * A format-2 file -- every export before spec 5.7 -- restores with no
+     * ignored messages and its merges intact.
+     */
+    @Test fun aFormatTwoFileRestoresWithNoIgnoredMessages() {
+        val original = fresh()
+        seedOneOfEverything(original)
+        val current = String(exportBytes(original), Charsets.UTF_8)
+        val formatTwo = current
+            .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":2")
+            .let { it.substring(0, it.indexOf(",\"${Backup.USER_REJECT_RULES}\":")) + "}" }
+            .replace("\"user_reject_rule_id\":77", "\"user_reject_rule_id\":null")
+
+        val restored = fresh()
+        val report = ImportJson.read(restored, ByteArrayInputStream(formatTwo.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(2, report.formatVersion)
+        assertEquals(1, report.merchantAliases)
+        assertEquals(0, report.userRejectRules)
+        assertEquals(0, restored.userRejectRuleDao().countAll())
     }
 
     /**

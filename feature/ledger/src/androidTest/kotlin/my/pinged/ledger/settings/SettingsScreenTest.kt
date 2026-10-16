@@ -109,21 +109,21 @@ class SettingsScreenTest {
         compose.onNodeWithText(" ON", substring = true).assertDoesNotExist()
     }
 
-    /** #50: the row's value is the rule count, and it opens the list. */
-    @Test fun theLearnedMerchantsRowShowsTheRuleCountAndOpensTheList() {
+    /** #50 and spec 5.7: the row's value is both lists' count, and it opens them. */
+    @Test fun theTaughtRowShowsTheRuleCountAndOpensTheList() {
         var opened = 0
         compose.setContent {
             Column(Modifier.verticalScroll(rememberScrollState())) {
             SettingsRows(
-                state = SettingsState(storage = Storage.HEALTHY, learnedCount = 1_234, loaded = true),
+                state = SettingsState(storage = Storage.HEALTHY, learnedCount = 1_230, ignoredCount = 4, loaded = true),
                 onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = { opened++ }, onOpenLicences = {},
                 onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
             }
         }
-        compose.onNodeWithText("Learned merchants").assertIsDisplayed()
+        compose.onNodeWithText("Things you taught Pinged").assertIsDisplayed()
         compose.onNodeWithText("1,234").assertIsDisplayed()
-        compose.onNodeWithText("Learned merchants").performScrollTo().performClick()
+        compose.onNodeWithText("Things you taught Pinged").performScrollTo().performClick()
         org.junit.Assert.assertEquals(1, opened)
     }
 
@@ -136,8 +136,26 @@ class SettingsScreenTest {
                 onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
-        compose.onNodeWithText("Learned merchants").assertIsDisplayed()
+        compose.onNodeWithText("Things you taught Pinged").assertIsDisplayed()
         compose.onNodeWithText("0").assertDoesNotExist()
+    }
+
+    /** Spec 5.6: the unread row says how many, and opens the list. */
+    @Test fun theUnreadRowShowsItsCountAndOpensTheList() {
+        var opened = 0
+        compose.setContent {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+            SettingsRows(
+                state = SettingsState(storage = Storage.HEALTHY, unreadCount = 1_201, loaded = true),
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {},
+                onExport = {}, onRestore = {}, onCheck = {}, onDelete = {}, onOpenUnread = { opened++ },
+            )
+            }
+        }
+        compose.onNodeWithText("HELPS ADD SUPPORT FOR NEW BANKS").assertIsDisplayed()
+        compose.onNodeWithText("1,201").assertIsDisplayed()
+        compose.onNodeWithText("Notifications Pinged could not read").performScrollTo().performClick()
+        org.junit.Assert.assertEquals(1, opened)
     }
 
     /** Spec 8: the fonts' licences are one tap from settings. */

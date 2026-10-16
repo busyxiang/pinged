@@ -121,4 +121,11 @@ class SalvageSentencesTest {
             said,
         )
     }
+
+    /** Spec 5.7: what a restore brings back to the unread list is said. */
+    @Test fun ignoredMessagesThatComeBackAreSaid() {
+        val said = salvageSentences(report().copy(lostWhole = setOf("user_reject_rule"), unhidden = 2))
+        assertTrue(said.toString(), "The messages you said were never a transaction could not be read, so mark them again after restoring." in said)
+        assertTrue(said.toString(), "2 notifications you said were never a transaction will show again among those Pinged could not read." in said)
+    }
 }

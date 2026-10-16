@@ -1,12 +1,8 @@
 package my.pinged.parse
 
 /**
- * Spec 7.2's layer-2 comparison key, ahead of its consumer.
- *
- * Nothing in production reads this yet -- spec 5.7's `user_reject_rule` and
- * 5.8's taught templates are a later milestone -- and only `SkeletonTest`
- * exercises it. Noted the way `ChartRamp` is, so it is not mistaken for
- * something in use.
+ * Spec 5.7's digit-stripped signature, which a `user_reject_rule` stores and
+ * stage two compares a later unmatched capture against by equality.
  */
 object Skeleton {
     /**
@@ -21,4 +17,12 @@ object Skeleton {
 
     fun of(raw: String): String =
         DIGIT_RUN.replace(TextNormalizer.forCompare(raw), "#")
+
+    /**
+     * A capture's skeleton, of spec 5.2's `concat` -- the text a template
+     * reads. Built from the same fields as [CaptureFields.of], so two captures
+     * every template reads alike cannot have different skeletons.
+     */
+    fun ofCapture(title: String?, text: String?, bigText: String?): String =
+        of(listOfNotNull(title, bigText ?: text).joinToString(" "))
 }

@@ -12,6 +12,7 @@ import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
 import my.pinged.data.entity.CaptureSource
+import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ledger.transfer.TransferStore
@@ -48,7 +49,7 @@ class SettingsStateTest {
     }
 
     /**
-     * #50: the "Learned merchants" row's value is the live rule count, not the
+     * #50: the learned half of the "Things you taught Pinged" row's value is the live rule count, not the
      * table's size: a dormant source rule kept for Separate is not one the
      * user sees, and a bundled rule is not one they taught.
      */
@@ -77,6 +78,26 @@ class SettingsStateTest {
         val model = SettingsViewModel(app)
         model.refresh()
         assertEquals(1, model.state.value.learnedCount)
+    }
+
+    /**
+     * Spec 5.6 and 5.7: the unread row counts the unmatched captures no rule
+     * hides, and the taught row's ignored half counts the rules. Two of the
+     * three share a shape -- the merchant number is digits -- so one tap hides both.
+     */
+    @Test fun theUnreadCountLeavesOutWhatARuleHides() = runBlocking {
+        DatabaseFactory.build(app).useDb { db ->
+            val captures = db.rawCaptureDao()
+            val first = captures.insert(bulkCapture(1).copy(parseStatus = ParseStatus.UNMATCHED))
+            captures.insert(bulkCapture(2).copy(parseStatus = ParseStatus.UNMATCHED))
+            captures.insert(bulkCapture(3).copy(parseStatus = ParseStatus.UNMATCHED, text = "Your statement is ready"))
+            captures.insert(bulkCapture(4).copy(parseStatus = ParseStatus.MATCHED))
+            db.userRejectRuleDao().neverATransaction(first, now = 2_000L)
+        }
+        val model = SettingsViewModel(app)
+        model.refresh()
+        assertEquals(1, model.state.value.unreadCount)
+        assertEquals(1, model.state.value.ignoredCount)
     }
 
     /**

@@ -22,6 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -31,18 +34,23 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.dao.LearnedMerchant
+import my.pinged.data.dao.RejectRuleRow
+import my.pinged.ui.CALENDAR
 import my.pinged.ledger.settings.grouped
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.Faint
+import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
@@ -51,8 +59,11 @@ import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.dottedRule
 
 /**
- * What the user has taught, and a way to forget it (#50). Read and delete
- * only: a category is changed by tapping it again in the chooser.
+ * What the user has taught, and a way to forget it, drawn from
+ * `design/Rules.dc.html`: learned merchants (#50) under MERCHANTS, and spec
+ * 5.7's "never a transaction" rules under IGNORED. Read and delete only: a
+ * category is changed by tapping it again in the chooser. The board's
+ * MESSAGES tab is spec 5.8's taught templates, which arrive with #151.
  *
  * Read once per foreground, as `CorrectionsScreen` is, so a payment counted or
  * a merge made elsewhere shows in the PAYMENTS figure on return.
@@ -64,8 +75,11 @@ fun LearnedScreen(viewModel: LearnedViewModel, onBack: () -> Unit, modifier: Mod
         viewModel.refresh()
         onPauseOrDispose { }
     }
-    LearnedContent(state, onBack, viewModel::delete, modifier)
+    LearnedContent(state, onBack, viewModel::delete, modifier, onDeleteIgnored = viewModel::deleteIgnored)
 }
+
+/** The board's tabs, less MESSAGES; see [LearnedScreen]. */
+internal enum class TaughtTab(val label: String) { MERCHANTS("MERCHANTS"), IGNORED("IGNORED") }
 
 /** [LearnedScreen] without its holder, so a test can draw any state. */
 @Composable
@@ -74,23 +88,99 @@ internal fun LearnedContent(
     onBack: () -> Unit,
     onDelete: (LearnedMerchant) -> Unit,
     modifier: Modifier = Modifier,
+    onDeleteIgnored: (RejectRuleRow) -> Unit = {},
+    initialTab: TaughtTab = TaughtTab.MERCHANTS,
 ) {
+    var tab by rememberSaveable { mutableStateOf(initialTab) }
     LazyColumn(modifier.fillMaxSize().background(Paper)) {
         item { Header(onBack) }
         item {
+            Tabs(
+                selected = tab,
+                counts = mapOf(TaughtTab.MERCHANTS to state.items.size, TaughtTab.IGNORED to state.ignored.size),
+                shown = state.loaded && !state.storageUnavailable,
+                onSelect = { tab = it },
+            )
+        }
+        item {
+            val empty = if (tab == TaughtTab.MERCHANTS) state.items.isEmpty() else state.ignored.isEmpty()
             val notice = when {
                 !state.loaded -> null
                 state.storageUnavailable -> CANNOT_READ_YOUR_DATA
-                state.items.isEmpty() -> NOTHING_TAUGHT
+                empty -> if (tab == TaughtTab.MERCHANTS) NOTHING_TAUGHT else NOTHING_IGNORED
                 else -> null
             }
             if (notice != null) {
                 Text(notice, fontFamily = Body, fontSize = 14.sp, color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
             }
         }
-        items(state.items, key = { it.identity }) { merchant ->
-            LearnedRow(merchant, onDelete = { onDelete(merchant) })
+        when (tab) {
+            TaughtTab.MERCHANTS -> items(state.items, key = { it.identity }) { merchant ->
+                LearnedRow(merchant, onDelete = { onDelete(merchant) })
+            }
+            TaughtTab.IGNORED -> items(state.ignored, key = { it.id }) { rule ->
+                IgnoredRow(rule, onDelete = { onDeleteIgnored(rule) })
+            }
         }
+    }
+}
+
+/**
+ * The board's chips, `MERCHANTS 38`: the selected one filled in [Stamp], the
+ * other outlined. 30dp drawn, as the board sets them, in a 44dp target. No
+ * counts until a read has given them, for `SettingsState.sourcesOn`'s reason.
+ */
+@Composable
+private fun Tabs(selected: TaughtTab, counts: Map<TaughtTab, Int>, shown: Boolean, onSelect: (TaughtTab) -> Unit) {
+    Row(Modifier.padding(start = 20.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        TaughtTab.entries.forEach { tab ->
+            val on = tab == selected
+            val shape = RoundedCornerShape(2.dp)
+            Box(
+                Modifier
+                    .heightIn(min = 44.dp)
+                    .clickable(role = Role.Tab, onClick = { onSelect(tab) })
+                    .semantics { this.selected = on },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    tab.label + if (shown) " " + grouped(counts.getValue(tab)) else "",
+                    style = MonoLabel,
+                    color = if (on) Paper else Muted,
+                    modifier = Modifier
+                        .then(if (on) Modifier.background(Stamp, shape) else Modifier.border(1.dp, Border, shape))
+                        .heightIn(min = 30.dp)
+                        .wrapContentHeight()
+                        .padding(horizontal = 9.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One "never a transaction" rule: the notification it was made from, word
+ * for word, then its app and how many captures it hides now (spec 5.7).
+ */
+@Composable
+private fun IgnoredRow(rule: RejectRuleRow, onDelete: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .dottedRule(atTop = false)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(rule.sampleText, style = MonoLabel.copy(letterSpacing = 0.sp, lineHeight = 18.sp), color = Muted)
+            Text(
+                (rule.label ?: rule.sourcePackage).uppercase(CALENDAR) + Separator + hidesLabel(rule.hidden),
+                style = MonoLabel,
+                color = Faint,
+            )
+        }
+        DeleteButton(onDelete)
     }
 }
 
@@ -182,7 +272,7 @@ private fun Header(onBack: () -> Unit) {
             modifier = Modifier.clickable(role = Role.Button, onClick = onBack).heightIn(min = 44.dp).wrapContentHeight(),
         )
         Text(
-            LEARNED_MERCHANTS,
+            TAUGHT,
             fontFamily = Display,
             fontWeight = FontWeight.Normal,
             fontSize = 22.sp,
@@ -195,8 +285,13 @@ private fun Header(onBack: () -> Unit) {
 /** The row's count, in the words the issue gives it. */
 internal fun paymentsLabel(payments: Int): String = "PAYMENTS ${grouped(payments)}"
 
-/** The settings row's label and this screen's title: the UI's name for a learned rule. */
-const val LEARNED_MERCHANTS = "Learned merchants"
+/** The settings row's label and this screen's title, the board's. */
+const val TAUGHT = "Things you taught Pinged"
+
+/** The IGNORED row's count, in the board's voice. */
+internal fun hidesLabel(hidden: Int): String = "HIDES ${grouped(hidden)}"
 internal const val DELETE = "Delete"
+internal const val NOTHING_IGNORED =
+    "Nothing ignored. Tap 'Never a transaction' on a notification Pinged could not read."
 internal const val NOTHING_TAUGHT =
     "Nothing taught yet. Pick a category on a payment and leave 'Always call this' on."

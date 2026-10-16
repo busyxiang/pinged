@@ -95,7 +95,7 @@ class TransferOutcomeScreenTest {
                         loaded = true,
                         running = TransferJob.Running(Operation.RESTORE, 1_200),
                     ),
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onOpenUnread = {},
                     onExport = { taps.incrementAndGet() },
                     onRestore = { taps.incrementAndGet() },
                     onCheck = { taps.incrementAndGet() },
@@ -233,7 +233,7 @@ class TransferOutcomeScreenTest {
             PingedTheme {
                 SettingsScreen(
                     viewModel = viewModel,
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onOpenUnread = {},
                     onExport = {},
                     onRestore = {},
                     onRescue = {},
@@ -256,7 +256,7 @@ class TransferOutcomeScreenTest {
             PingedTheme {
                 SettingsScreen(
                     viewModel = viewModel,
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onOpenUnread = {},
                     onExport = {},
                     onRestore = {},
                     onRescue = {},

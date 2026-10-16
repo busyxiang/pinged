@@ -31,6 +31,18 @@ class MigrationTest {
 
     private companion object {
         const val MIGRATED = "migration-1-2.db"
+        const val MIGRATED_3 = "migration-2-3.db"
+        const val MIGRATED_1_3 = "migration-1-3.db"
+
+        /** One unread capture, in the columns v1 and v2 share. */
+        const val CAPTURE_SQL =
+            "INSERT INTO raw_capture (id, source_package, posted_at, when_millis, captured_at, sbn_key, " +
+                "notif_id, notif_tag, user_handle, channel_id, flags, arrival, title, text, big_text, " +
+                "sub_text, extras_json, content_hash, parse_status, rejected_by_rule_id, matched_rule_id, " +
+                "reject_collision_id, pack_version, duplicate_of_id, user_reject_rule_id) VALUES " +
+                "(3, 'com.maybank2u.life', 1, NULL, 1, 'k', 1, NULL, 0, NULL, 0, 'POSTED', 'Maybank', " +
+                "'Your FD of RM5,000.00 has matured.', NULL, NULL, NULL, 'h', 'UNMATCHED', NULL, NULL, " +
+                "NULL, 1, NULL, NULL)"
     }
 
     @Test fun schemaVersionOneIsCreatable() {
@@ -89,6 +101,42 @@ class MigrationTest {
         }
     }
 
+    /**
+     * Spec 5.7's v2 -> v3: one new table, empty, and every v2 row kept -- the
+     * capture's `user_reject_rule_id` among them, which v1 already had.
+     */
+    @Test fun versionTwoMigratesToThreeKeepingEveryRow() {
+        helper.createDatabase(MIGRATED_3, 2).use { v2 ->
+            v2.execSQL(CAPTURE_SQL)
+            v2.execSQL("INSERT INTO merchant_alias (merchant_key, canonical_key) VALUES ('A', 'B')")
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED_3, 3, true).use { v3 ->
+            v3.query("SELECT id, parse_status, user_reject_rule_id FROM raw_capture").use { c ->
+                assertTrue("the v2 capture is gone", c.moveToFirst())
+                assertEquals(3L, c.getLong(0))
+                assertEquals("UNMATCHED", c.getString(1))
+                assertTrue(c.isNull(2))
+                assertEquals(1, c.count)
+            }
+            assertEquals(1L, v3.count("merchant_alias"))
+            assertEquals(0L, v3.count("user_reject_rule"))
+            assertEquals(3L, v3.pragma("user_version"))
+        }
+    }
+
+    /** And from v1, through both migrations, as a phone that skipped a release takes it. */
+    @Test fun versionOneMigratesToThree() {
+        helper.createDatabase(MIGRATED_1_3, 1).use { v1 -> v1.execSQL(CAPTURE_SQL) }
+
+        helper.runMigrationsAndValidate(MIGRATED_1_3, 3, true).use { v3 ->
+            assertEquals(1L, v3.count("raw_capture"))
+            assertEquals(0L, v3.count("merchant_alias"))
+            assertEquals(0L, v3.count("user_reject_rule"))
+            assertEquals(3L, v3.pragma("user_version"))
+        }
+    }
+
     // ---- harness/app DDL parity ----------------------------------------
 
     /**
@@ -114,7 +162,7 @@ class MigrationTest {
      * `sqlite_master.sql` holds each statement as executed, which is the one place
      * both databases are observable on equal terms, so the two are compared there:
      * **every schema object, tables and indices alike, as whole strings** --
-     * 25 at schema v2, logged on every run. Both sides are built at
+     * 27 at schema v3, logged on every run. Both sides are built at
      * [PingedDatabase.VERSION], since the app only ever creates the current one.
      *
      * **Nothing is normalised and nothing is excluded** -- not whitespace, not `IF

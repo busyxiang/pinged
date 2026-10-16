@@ -44,7 +44,7 @@ class RestoreCancellationTest {
             PingedTheme {
                 SettingsScreen(
                     viewModel = viewModel,
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onOpenUnread = {},
                     onExport = {},
                     // Stands in for `MainActivity`'s launcher receiving a null
                     // `Uri` -- the user backed out of the system picker before

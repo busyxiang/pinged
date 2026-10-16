@@ -86,3 +86,11 @@ _Avoid_: complete month, closed month, full month
 **Collecting**:
 The stretch before Pinged holds fourteen captured days, counted across all history from the history start. Until it ends, the app shows each day it has but makes no claim about where the money tends to go. It ends once and stays ended, unless deleting everything resets the history start. A restored history counts in full.
 _Avoid_: thin data, warm-up, onboarding period
+
+**Unread capture**:
+A notification Pinged kept that no rule read: no template matched it and no pack reject pattern did, and the user has not said it is never a transaction. It counts toward nothing. Settings lists them as "Notifications Pinged could not read"; the screen is "Could not read".
+_Avoid_: unmatched notification, unparsed capture, failed capture
+
+**Never a transaction**:
+The user's statement that an unread capture, and every later one of the same shape from the same app, is not money. It hides them from the unread list and decides nothing else: a capture a rule reads is a transaction whatever the user said. Settings lists each one under IGNORED, and deleting it returns its captures to the list.
+_Avoid_: reject, dismiss, ignore rule

@@ -230,7 +230,8 @@ interface RawCaptureDao : MerchantDecisions {
         "UPDATE raw_capture SET parse_status = :status, matched_rule_id = :ruleId, " +
             "rejected_by_rule_id = COALESCE(:rejectId, rejected_by_rule_id), " +
             "reject_collision_id = :collisionId, " +
-            "duplicate_of_id = :duplicateOf, pack_version = :packVersion " +
+            "duplicate_of_id = :duplicateOf, pack_version = :packVersion, " +
+            "user_reject_rule_id = COALESCE(user_reject_rule_id, :userRejectRuleId) " +
             "WHERE id = :id AND parse_status = :expected"
     )
     fun markOutcome(
@@ -242,7 +243,37 @@ interface RawCaptureDao : MerchantDecisions {
         duplicateOf: Long? = null,
         packVersion: Int = 0,
         expected: ParseStatus = ParseStatus.NEW,
+        /**
+         * Spec 5.7's rule hiding an `UNMATCHED` capture, from [markUnmatched].
+         * `COALESCE`d like [rejectId], so a capture a pack upgrade requeues
+         * keeps the rule that hid it and does not come back to the unread list.
+         */
+        userRejectRuleId: Long? = null,
     ): Int
+
+    /** Spec 15.1's reject rule lookup; see `UserRejectRuleDao`. */
+    @Query(UserRejectRuleDao.RULE_LOOKUP_SQL)
+    fun userRejectRuleFor(pkg: String, skeleton: String): Long?
+
+    /**
+     * Stage two's `UNMATCHED`, hidden from the unread list when a user reject
+     * rule of [skeleton] exists for the capture's package (spec 5.7). Only here,
+     * after every template and pack reject has failed, so a rule can never
+     * suppress a transaction.
+     *
+     * The lookup and the mark are one transaction, as is
+     * `UserRejectRuleDao.neverATransaction`: a rule written between the two
+     * would otherwise miss this capture, which neither would then hide.
+     */
+    @Transaction
+    fun markUnmatched(capture: RawCapture, skeleton: String, duplicateOf: Long?, packVersion: Int): Int =
+        markOutcome(
+            id = capture.id,
+            status = ParseStatus.UNMATCHED,
+            duplicateOf = duplicateOf,
+            packVersion = packVersion,
+            userRejectRuleId = userRejectRuleFor(capture.sourcePackage, skeleton),
+        )
 
     /**
      * Spec 5.5's re-parse: hands captures an older pack could not read back to
@@ -456,6 +487,14 @@ interface RawCaptureDao : MerchantDecisions {
     fun danglingDuplicateOfCount(): Int
 
     /**
+     * Captures naming a `user_reject_rule` that is not there, which an import
+     * refuses: `user_reject_rule_id` has no foreign key (the entity says why),
+     * and a capture hidden by nothing could never return to the unread list.
+     */
+    @Query(DANGLING_USER_REJECT_RULE_SQL)
+    fun danglingUserRejectRuleCount(): Int
+
+    /**
      * Hands every `MATCHED` capture with no transaction naming it back to
      * stage two, at `NEW`, and says how many it moved.
      *
@@ -611,6 +650,11 @@ interface RawCaptureDao : MerchantDecisions {
     }
 
     companion object {
+        /** [danglingUserRejectRuleCount]'s SQL, which `QueryPlanTest` plans. */
+        const val DANGLING_USER_REJECT_RULE_SQL =
+            "SELECT COUNT(*) FROM raw_capture c WHERE c.user_reject_rule_id IS NOT NULL " +
+                "AND NOT EXISTS (SELECT 1 FROM user_reject_rule r WHERE r.id = c.user_reject_rule_id)"
+
         /**
          * [earliestPostedAt]'s query, hoisted for `QueryPlanTest`. No index
          * leads with `posted_at`; it is answered from
