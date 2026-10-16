@@ -3,9 +3,10 @@ package my.pinged.ledger.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,7 +16,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -27,12 +31,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.paging.LoadState
@@ -40,7 +51,6 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
@@ -48,24 +58,30 @@ import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ledger.entry.ADD_PAYMENT
+import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.review.awaitingReviewLabel
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
 import my.pinged.ui.monthName
-import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Border
+import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.HeroFill
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.PlusMark
 import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.TornEdge
+import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedRule
 import java.time.YearMonth
 import java.time.format.TextStyle as JavaTextStyle
@@ -197,6 +213,10 @@ internal fun LedgerScreenContent(
     val chooser = remember(read) { read.chooser }
     val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
 
+    val unreadable = storageUnavailable || items.loadState.refresh is LoadState.Error
+    val reading = !unreadable && items.loadState.refresh is LoadState.Loading && items.itemCount == 0
+    val empty = !unreadable && !reading && items.itemCount == 0
+
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Paper)) {
             // Above the branch: the month being summarised is true in every state,
@@ -212,8 +232,7 @@ internal fun LedgerScreenContent(
                 // refresh error (see `ReopeningFeed`). Any refresh error, not only
                 // §11.1's: a page that would not load is a list that could not be
                 // read either way.
-                storageUnavailable || items.loadState.refresh is LoadState.Error ->
-                    Unreadable(Modifier.weight(1f))
+                unreadable -> Unreadable(Modifier.weight(1f))
 
                 // Not empty until the first load has actually returned. `loadState`
                 // distinguishes them; a bare `itemCount == 0` does not.
@@ -223,10 +242,9 @@ internal fun LedgerScreenContent(
                 // drawing this then disposes the `LazyColumn` and its scroll
                 // position with it, so a recategorized row jumps the list to the
                 // top (#158).
-                items.loadState.refresh is LoadState.Loading && items.itemCount == 0 ->
-                    Reading(Modifier.weight(1f))
+                reading -> Reading(Modifier.weight(1f))
 
-                items.itemCount == 0 -> Empty(onOpenSettings, Modifier.weight(1f))
+                empty -> Empty(onOpenSettings, Modifier.weight(1f), onAddPayment)
 
                 else -> Feed(
                     items = items,
@@ -247,9 +265,12 @@ internal fun LedgerScreenContent(
                 )
             }
         }
-        // In every state, an unreadable ledger included: the entry screen says
-        // for itself when it cannot save.
-        if (onAddPayment != null) {
+        // In every state but an empty ledger, an unreadable one included: the
+        // entry screen says for itself when it cannot save. `Empty.dc.html`
+        // draws no button, because its offer at the foot is the same action.
+        // Empty is a ledger with no rows, not a month with none: a quiet month
+        // over a history is the feed, and keeps the button.
+        if (onAddPayment != null && !empty) {
             AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(20.dp))
         }
     }
@@ -323,9 +344,37 @@ private fun TopBar(month: YearMonth, heard: String?) {
             .fillMaxWidth()
             .padding(start = 20.dp, end = 20.dp, top = 26.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(monthName(month), style = MonoLabel, color = Muted, modifier = Modifier.weight(1f))
-        if (heard != null) Text(heard, style = MonoLabel, color = Muted)
+        // No chevron after the month, though the boards draw one: it says
+        // "pick a month", and this label opens nothing until Spending has a
+        // month picker (#192).
+        Text(monthName(month), style = MonoLabel, color = Muted)
+        if (heard != null) HeardChip(heard, Modifier.padding(start = 12.dp).weight(1f, fill = false))
+    }
+}
+
+/**
+ * The boards' top-right chip -- `Empty.dc.html`'s "LISTENING" -- carrying
+ * [heard]. Never the board's word: the access grant is all this app knows on
+ * day one, and granted with nothing ever heard is the OEM-kill signature
+ * (`CaptureReport.looksDead`), so a claim to be listening would be the one
+ * thing it cannot back. Weighted without fill, so at 320dp it wraps under the
+ * month rather than squeezing it.
+ */
+@Composable
+private fun HeardChip(heard: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .testTag(HEARD_CHIP)
+            .border(1.dp, Border, RoundedCornerShape(2.dp))
+            .heightIn(min = 30.dp)
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Box(Modifier.size(7.dp).background(Stamp, CircleShape))
+        Text(heard, style = MonoLabel, color = Ink)
     }
 }
 
@@ -395,42 +444,101 @@ private fun Reading(modifier: Modifier = Modifier) {
  * That route is Settings, not the allow-list itself: the sources screen is
  * reached through `SettingsScreen`'s own `Capture sources` row, so the button
  * names where the tap lands rather than where it eventually leads.
+ *
+ * [onAddPayment] is the board's offer at the foot, in place of the floating
+ * button the other states draw; null draws none.
  */
 @Composable
-internal fun Empty(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
-        Text("NOTHING CAPTURED YET", style = MonoLabel, color = Muted)
-        Text(
-            "Nothing is missing. There is just nothing yet.",
-            fontFamily = Display,
-            fontSize = 24.sp,
-            lineHeight = 30.sp,
-            color = Ink,
-            modifier = Modifier.padding(top = 10.dp),
-        )
-        Text(
-            "Android will not hand over notifications from before you switched " +
-                "Pinged on, so your paper trail starts here. A payment lands in " +
-                "this list on its own once the app it comes from is switched on " +
-                "for capture.",
-            fontFamily = Body,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            color = Ink,
-            modifier = Modifier.padding(top = 12.dp),
-        )
-        Box(
+internal fun Empty(onOpenSettings: () -> Unit, modifier: Modifier = Modifier, onAddPayment: (() -> Unit)? = null) {
+    Column(modifier.fillMaxWidth()) {
+        // Scrolled on its own, so at 320x640 or a large font the offer stays
+        // at the foot and the copy above it scrolls.
+        Column(
             Modifier
-                .padding(top = 18.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .clickable(role = Role.Button, onClick = onOpenSettings)
-                .heightIn(min = 44.dp)
-                .border(1.dp, Stamp, RoundedCornerShape(2.dp))
-                .padding(horizontal = 14.dp),
-            contentAlignment = Alignment.Center,
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, top = 34.dp),
         ) {
-            Text(OPEN_SETTINGS, style = ButtonLabel.copy(fontSize = 14.5.sp), color = Stamp)
+            Column(
+                Modifier
+                    .testTag(EMPTY_HERO)
+                    .fillMaxWidth()
+                    .background(HeroFill)
+                    .border(1.dp, Border)
+                    .padding(1.dp),
+            ) {
+                Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 20.dp)) {
+                    Text("NOTHING CAPTURED YET", style = MonoLabel, color = Muted)
+                    Text(
+                        "Nothing is missing. There is just nothing yet.",
+                        fontFamily = Display,
+                        fontSize = 31.sp,
+                        lineHeight = 1.2.em,
+                        color = Ink,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    Text(
+                        "Android will not hand over notifications from before you switched " +
+                            "Pinged on, so your paper trail starts here. A payment lands in " +
+                            "this list on its own once the app it comes from is switched on " +
+                            "for capture.",
+                        fontFamily = Body,
+                        fontSize = 14.sp,
+                        lineHeight = 1.6.em,
+                        color = Muted,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 20.dp),
+                    )
+                }
+                // The board's tear runs the frame's inner width, `margin: 0 -18px`.
+                TornEdge(band = Paper, notch = HeroFill)
+            }
+            // Solid, not dashed: the dash is the offer's, below (see
+            // `dashedOutline`), and one screen with two offers has none.
+            Box(
+                Modifier
+                    .padding(top = 18.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .clickable(role = Role.Button, onClick = onOpenSettings)
+                    .heightIn(min = 44.dp)
+                    .border(1.dp, Stamp, RoundedCornerShape(2.dp))
+                    .padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(OPEN_SETTINGS, style = ButtonLabel.copy(fontSize = 14.5.sp), color = Stamp)
+            }
         }
+        if (onAddPayment != null) {
+            CashOffer(onAddPayment, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 22.dp))
+        }
+    }
+}
+
+/**
+ * Day one's way to spec 9.4's **Add payment**, in place of the floating
+ * button: the board's dashed offer at the foot.
+ *
+ * Its name to TalkBack is the words drawn and then [ADD_PAYMENT], so a
+ * screen-reader user finds the action the floating button names on every
+ * other state, and a voice user can still say what they see (WCAG 2.5.3).
+ */
+@Composable
+private fun CashOffer(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .testTag(CASH_OFFER)
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "$CASH_OFFER_LABEL. $ADD_PAYMENT" }
+            .dashedOutline(Stamp)
+            .padding(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The board's 17px glyph at stroke 1.9 of 24.
+        PlusMark(size = 17.dp, strokeWidth = 1.35.dp, tint = Stamp)
+        Text(CASH_OFFER_LABEL, style = ButtonLabel.copy(fontSize = 14.5.sp), color = Stamp)
     }
 }
 
@@ -497,7 +605,7 @@ private fun Feed(
                     // shrinks under the composition. Nothing is the honest draw
                     // for a row that is no longer there.
                     null -> Unit
-                    is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal)
+                    is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal, first = index == 0)
                     is LedgerItem.Row -> LedgerRow(
                         row = item.feedRow,
                         categoriesById = categoriesById,
@@ -548,6 +656,7 @@ private fun AwaitingReviewRow(count: Int, onOpen: () -> Unit) {
  */
 @Composable
 private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, Category>) {
+    val leaderLift = with(LocalDensity.current) { LEADER_LIFT.roundToPx() }
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
         Text("SPENT SO FAR", style = MonoLabel, color = Muted)
 
@@ -567,8 +676,9 @@ private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, 
             )
 
             else -> summary.totals.forEach { total ->
+                val amount = money(total.netSen, total.currency, symbol = true)
                 Text(
-                    money(total.netSen, total.currency, symbol = true),
+                    if (summary.totals.size == 1) heroText(amount) else AnnotatedString(amount),
                     // The serif for a single display figure, the mono the
                     // moment there are two: §8's typography note measures
                     // Instrument Serif's digits at 249-460 units per 1000 em
@@ -598,10 +708,10 @@ private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, 
         }
 
         summary?.top?.forEach { category ->
-            Row(
-                Modifier.fillMaxWidth().padding(top = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            // On one baseline, as the board's `align-items: baseline` sets
+            // them: a Karla name and a Plex amount centred apart measured 3px
+            // between their baselines.
+            Row(Modifier.fillMaxWidth().padding(top = 7.dp)) {
                 Text(
                     // The id is not a name, and a category the seed does not
                     // hold is a row pointing at a category that has been merged
@@ -610,11 +720,19 @@ private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, 
                     fontFamily = Body,
                     fontSize = 13.sp,
                     color = Ink,
+                    modifier = Modifier.alignByBaseline(),
                 )
-                Spacer(Modifier.weight(1f).height(1.dp).dottedRule(inset = LEADER_INSET))
+                Spacer(
+                    Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .alignBy { it.measuredHeight + leaderLift }
+                        .dottedRule(inset = LEADER_INSET),
+                )
                 Text(
                     money(category.netSen, category.currency, symbol = false),
                     style = MonoNumerals.copy(fontSize = 13.sp),
+                    modifier = Modifier.alignByBaseline(),
                     // Greyed with the total above it: the breakdown of a
                     // number §8 says not to trust is not itself trustworthy.
                     color = if (summary.trustworthy) Ink else Muted,
@@ -632,13 +750,17 @@ private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, 
  * and the day holds nothing that counts (§8's excluded and pending rows) -- and
  * a zero would be a false claim in the first and a claim about arithmetic the
  * rows contradict in the second. No number is true in both.
+ *
+ * The board's rhythm, with a row's 3dp above and 8dp below it (`LedgerRow`):
+ * 8 here and 3 make the 11dp between a heading and its first row, a row's 8
+ * and 6 here the 14dp between days, and [first]'s 14 the card's top padding.
  */
 @Composable
-private fun DayHeader(date: LocalDate, subtotal: List<CurrencyTotal>?) {
+private fun DayHeader(date: LocalDate, subtotal: List<CurrencyTotal>?, first: Boolean) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
+            .padding(start = 20.dp, end = 20.dp, top = if (first) 14.dp else 6.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(dayLabel(date), style = DayLabelStyle, color = Muted, modifier = Modifier.weight(1f))
@@ -646,7 +768,10 @@ private fun DayHeader(date: LocalDate, subtotal: List<CurrencyTotal>?) {
             subtotal?.forEach { total ->
                 Text(
                     money(total.netSen, total.currency, symbol = false),
-                    style = MonoNumerals.copy(fontSize = 13.sp),
+                    // The board's 11px is under the 12sp floor, and the day
+                    // label beside it is already raised to 12: smaller than
+                    // its label would turn the board's hierarchy over.
+                    style = MonoNumerals.copy(fontSize = 12.sp),
                     color = Muted,
                 )
             }
@@ -677,7 +802,17 @@ internal fun dayLabel(date: LocalDate): String {
  * Instrument Serif contains no such feature (§8 measured the file), so
  * inheriting the setting would claim tabular digits this face cannot supply.
  */
-private val HeroSerif = TextStyle(fontFamily = Display, fontSize = 44.sp, lineHeight = 48.sp)
+private val HeroSerif = TextStyle(fontFamily = Display, fontSize = 54.sp, lineHeight = 1.02.em)
+
+/** The board's `.30`: the sen in a 30px span, in Muted, after the ringgit. */
+private fun heroText(amount: String): AnnotatedString {
+    val point = amount.lastIndexOf('.')
+    if (point < 0) return AnnotatedString(amount)
+    return buildAnnotatedString {
+        append(amount.substring(0, point))
+        withStyle(SpanStyle(fontSize = 30.sp, color = Muted)) { append(amount.substring(point)) }
+    }
+}
 
 /** Two or more totals, which have to align. See the note at the call site. */
 private val HeroMono = MonoNumerals.copy(fontSize = 28.sp, lineHeight = 34.sp)
@@ -690,30 +825,52 @@ private val DayLabelStyle = MonoLabel.copy(letterSpacing = 1.4.sp)
  * text on either side of it, which is all that distinguishes it from
  * [dottedRule]'s other uses.
  */
-private val LEADER_INSET = 6.dp
+private val LEADER_INSET = 8.dp
 
 /**
- * Spec 9.4's **Add payment**, the artboard's cash button: a + at the bottom
- * right of the Spending tab, over the list. Named [ADD_PAYMENT] to TalkBack,
- * since the + alone says nothing.
+ * How far the leader's centre stands above the baseline it shares with its
+ * text: the board's `margin-bottom: 4px` under a 1px border.
+ */
+private val LEADER_LIFT = 4.5.dp
+
+/**
+ * Spec 9.4's **Add payment**, the artboard's cash button: a + over "CASH" at
+ * the bottom right of the Spending tab, over the list. Named [ADD_PAYMENT] to
+ * TalkBack, since neither the + nor "CASH" says what it does.
+ *
+ * "CASH" is [MonoLabel] at its 12sp floor, not the board's 8px; the + and the
+ * label stack 43dp at a 1.3 font scale, inside the 54dp.
  */
 @Composable
 private fun AddPaymentButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
+    Column(
         modifier
-            .size(56.dp)
+            .testTag(ADD_PAYMENT_BUTTON)
+            .size(54.dp)
             .clip(RoundedCornerShape(2.dp))
-            .background(Ink)
+            .background(Stamp)
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = ADD_PAYMENT },
-        contentAlignment = Alignment.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {
-        Text("+", fontFamily = Body, fontSize = 28.sp, color = Paper)
+        // The board's 20px glyph at stroke 2 of 24.
+        PlusMark(size = 20.dp, strokeWidth = 1.67.dp, tint = Paper)
+        Text("CASH", style = MonoLabel, color = Paper, maxLines = 1)
     }
 }
 
-/** The button's 56dp and its 20dp margin, plus a little air. */
-private val ADD_PAYMENT_ROOM = 88.dp
+/** The button's 54dp and its 20dp margin, plus a little air. */
+private val ADD_PAYMENT_ROOM = 86.dp
 
-/** The empty ledger's one button, which opens Settings. */
+/** The empty ledger's way to Settings, under its copy; the offer at its foot is the other. */
 internal const val OPEN_SETTINGS = "Open settings"
+
+/** Day one's offer, as drawn: its first words to TalkBack too. */
+internal const val CASH_OFFER_LABEL = "Or start with a cash expense"
+
+/** Test tags, for the elements a test measures the drawing of. */
+const val ADD_PAYMENT_BUTTON = "add-payment-button"
+const val CASH_OFFER = "cash-offer"
+const val EMPTY_HERO = "empty-hero"
+const val HEARD_CHIP = "heard-chip"

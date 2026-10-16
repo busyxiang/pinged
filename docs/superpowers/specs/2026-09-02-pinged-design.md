@@ -1687,8 +1687,10 @@ A control inside a row -- the category line, the chip, the review badge -- is
 laid out at its drawn size, and its touch target is the free space around it:
 never less than WCAG 2.5.8's 24dp, and never the merchant name, whose tap is
 the row's. The design system's 44px target holds everywhere else (#186). Laid
-out at 44dp, a categorised row measured 85dp against 57dp drawn; the category
-line's target is 26dp, its 16dp and the row's 10dp padding below.
+out at 44dp, a categorised row measured 85dp against 57dp drawn. Rows stand
+the artboard's 11dp apart, split 3dp above a row and 8dp below it, so the
+category line's target is 24dp, its 16dp and the row's 8dp below: the floor
+exactly, which `RowTouchTargetTest` holds (#170).
 `LedgerRow`'s `rowGestures` records the mechanism.
 
 ### 9.2 Review inbox

@@ -10,6 +10,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -124,5 +125,25 @@ fun Chevron(pointsRight: Boolean, size: Dp, strokeWidth: Dp, tint: Color) {
         val tip = if (pointsRight) far else near
         drawLine(tint, Offset(tail, this.size.height * 0.22f), Offset(tip, this.size.height * 0.5f), stroke)
         drawLine(tint, Offset(tip, this.size.height * 0.5f), Offset(tail, this.size.height * 0.78f), stroke)
+    }
+}
+
+/**
+ * The artboards' +: two round-capped strokes from 5/24 to 19/24 of a [size]
+ * box, crossing at its middle -- the boards' `M12 5v14M5 12h14`. The add
+ * button draws it at 20dp, day one's cash offer at 17dp.
+ *
+ * Here beside [Chevron] for its reason: a glyph drawn twice is geometry kept
+ * once. [strokeWidth] is the board's stroke scaled from its 24-unit box.
+ */
+@Composable
+fun PlusMark(size: Dp, strokeWidth: Dp, tint: Color) {
+    Canvas(Modifier.size(size)) {
+        val stroke = strokeWidth.toPx()
+        val near = this.size.width * 5f / 24f
+        val far = this.size.width * 19f / 24f
+        val middle = this.size.width / 2f
+        drawLine(tint, Offset(middle, near), Offset(middle, far), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(near, middle), Offset(far, middle), stroke, StrokeCap.Round)
     }
 }

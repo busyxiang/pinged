@@ -221,7 +221,9 @@ private fun TxnRow(
         Modifier
             .fillMaxWidth()
             .rowGestures(onOpen, openLabel, onOpenMerchant)
-            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 10.dp),
+            // The board's 11dp between rows, split so the 8 below keeps the
+            // category line's target at WCAG 2.5.8's 24dp (see [rowGestures]).
+            .padding(start = 20.dp, end = 20.dp, top = 3.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -352,8 +354,8 @@ internal const val REMOVE_PAYMENT = "Remove payment"
  * descendant it gets the tap before this row does. It stops at a direct hit
  * on another target -- the next row's tap below, [rowBody] on the name above
  * -- and at 48dp in all. So the category line's target is its 16dp and the
- * row's 10dp padding below, 26dp, and the 2dp gap above goes to whichever of
- * it and the name is nearer. `RowTouchTargetTest` taps outside each drawn
+ * row's 8dp padding below, 24dp -- the floor exactly, so the 8 cannot shrink
+ * -- and the 2dp gap above goes to whichever of it and the name is nearer. `RowTouchTargetTest` taps outside each drawn
  * control and reaches it, reaches the row once the minimum is zeroed, and
  * taps the name and reaches the row. Grown to 44dp in layout instead, a
  * categorised row measured 85dp against 57dp.
