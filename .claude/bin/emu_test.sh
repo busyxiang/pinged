@@ -76,7 +76,10 @@ fresh() {
     export EMU_LOCK_DIR=$work/$case_n/locks
     export ADB_STATE=$work/$case_n/state
     export ADB_LOG=$work/$case_n/adb.log
-    unset EMU_POOL EMU_IDLE EMU_BOOT_WAIT EMULATOR_FAILS EMU_MAX_HOLD EMU_KILL_GRACE
+    unset EMU_POOL EMU_BOOT_WAIT EMULATOR_FAILS EMU_MAX_HOLD EMU_KILL_GRACE
+    # No reaper unless a case asks for one: at the default 900s it would
+    # outlive the run by fifteen minutes.
+    export EMU_IDLE=0
     mkdir -p "$ADB_STATE"
     touch "$ADB_STATE/online-emulator-5554" "$ADB_STATE/online-emulator-5556"
     : >"$ADB_LOG"
@@ -90,8 +93,12 @@ mutant() {
     local copy=$work/emu-$name
     sed "$expr" "$script" >"$copy"
     chmod +x "$copy"
+    # Called as $(mutant ...): a fail here would count in that subshell only,
+    # and its message would land in the path the caller runs. So it goes to
+    # stderr and to a file the end of the run counts.
     if cmp -s "$script" "$copy"; then
-        fail "mutation $name changed nothing; the guard's line was reworded"
+        printf "FAIL mutation %s changed nothing; the guard's line was reworded\n" "$name" >&2
+        printf '%s\n' "$name" >>"$work/unchanged"
     fi
     printf '%s' "$copy"
 }
@@ -252,7 +259,7 @@ no_reap_under_lease() {
 fresh
 if no_reap_under_lease "$script"; then pass "an idle stop waits for the lease another session took"; else fail "an idle stop waits for the lease another session took"; fi
 fresh
-if no_reap_under_lease "$(mutant reap-unleased 's/    flock -n 9 || exit 0/    true/')"; then
+if no_reap_under_lease "$(mutant reap-unleased 's/^    flock -n 9 || { reap_log "quit: \$serial is leased"; exit 0; }$/    true/')"; then
     fail "mutation reap-unleased: the emulator survived anyway"
 else
     pass "mutation reap-unleased: the emulator is stopped mid-lease"
@@ -269,6 +276,48 @@ sleep 1.3
 if [ -e "$ADB_STATE/online-emulator-5554" ]; then pass "the idle clock restarts at each lease"; else fail "the idle clock restarts at each lease"; fi
 sleep 1.5
 if [ ! -e "$ADB_STATE/online-emulator-5554" ]; then pass "and stops idle after the last"; else fail "and stops idle after the last"; fi
+
+# The reaper's log: each decision, by pid, so a missed idle stop says why.
+reaper_log() { cat "$EMU_LOCK_DIR/emulator-5554.reaper.log" 2>/dev/null; }
+fresh
+rm "$ADB_STATE/online-emulator-5554"
+EMU_IDLE=1 "$script" -- true 2>/dev/null
+sleep 2.5
+if reaper_log | grep -q 'started reaper pid=' && reaper_log | grep -q 'start: stops emulator-5554' &&
+    reaper_log | grep -q 'stopping emulator-5554 after 1s idle' && reaper_log | grep -q 'stopped emulator-5554'; then
+    pass "the reaper logs its start, its stop and the lease that started it"
+else
+    fail "the reaper logs its start, its stop and the lease that started it: $(reaper_log)"
+fi
+
+fresh
+rm "$ADB_STATE/online-emulator-5554"
+EMU_IDLE=2 "$script" -- true 2>/dev/null
+sleep 1
+EMU_IDLE=2 "$script" -- true
+sleep 1.5
+if reaper_log | grep -q 'a later lease released emulator-5554'; then pass "a superseded reaper logs that a later lease took over"; else fail "a superseded reaper logs that a later lease took over: $(reaper_log)"; fi
+sleep 1
+
+signal_logged() {
+    local emu=$1 reaper
+    rm -f "$ADB_STATE/online-emulator-5554"
+    EMU_IDLE=30 "$emu" -- true 2>/dev/null
+    reaper=$(reaper_log | sed -n 's/.*started reaper pid=\([0-9]*\).*/\1/p' | tail -1)
+    [ -n "$reaper" ] || return 1
+    sleep 0.3
+    kill -TERM "$reaper" 2>/dev/null
+    sleep 0.5
+    reaper_log | grep -q "pid=$reaper ended by SIGTERM"
+}
+fresh
+if signal_logged "$script"; then pass "a reaper killed mid-wait logs the signal at once"; else fail "a reaper killed mid-wait logs the signal at once: $(reaper_log)"; fi
+fresh
+if signal_logged "$(mutant deferred-trap 's/^    sleep "\$idle_s" &$/    sleep "$idle_s"/; /^    wait \$!$/d')"; then
+    fail "mutation deferred-trap: the signal was still logged at once"
+else
+    pass "mutation deferred-trap: a foreground sleep holds the signal back"
+fi
 
 fresh
 "$script" --stop
@@ -492,6 +541,9 @@ else
     pass "mutation animations-on: the command runs with animations on"
 fi
 
+if [ -s "$work/unchanged" ]; then
+    failures=$((failures + $(wc -l <"$work/unchanged")))
+fi
 if [ "$failures" -gt 0 ]; then
     printf '%s failed\n' "$failures"
     exit 1
