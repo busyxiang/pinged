@@ -79,7 +79,12 @@ class DraftSavedStateTest {
         vm.day(day)
         vm.merchant("Kopitiam")
         vm.note("teh tarik")
-        val typed = withTimeout(TIMEOUT) { vm.state.first { it.draft.category != null } }.draft
+        // The note too, the last field typed: the lookup answers at once, so
+        // it can pre-select a chip on the empty draft before the edits land,
+        // and a draft with only a category is not the one typed.
+        val typed = withTimeout(TIMEOUT) {
+            vm.state.first { it.draft.category != null && it.draft.note == "teh tarik" }
+        }.draft
         assertEquals(
             "precondition: the draft is not the one typed",
             ManualDraft(1_250L, day, "Kopitiam", "teh tarik", CategoryChoice(FOOD, ChosenBy.PRESELECTED)),
