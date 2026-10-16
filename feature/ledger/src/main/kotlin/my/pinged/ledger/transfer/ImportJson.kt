@@ -29,6 +29,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.UserTemplateRule
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
@@ -303,6 +304,8 @@ object ImportJson {
             merchantNames = counts[Backup.MERCHANT_NAMES] ?: 0,
             // Absent from a format-1, -2 or -3 file, which held no rules to carry.
             userRejectRules = counts[Backup.USER_REJECT_RULES] ?: 0,
+            // Absent from a file older than format 5.
+            userTemplateRules = counts[Backup.USER_TEMPLATE_RULES] ?: 0,
         )
         state.report()
         return report
@@ -318,6 +321,7 @@ object ImportJson {
             db.merchantIdentityDao().countAliases().let { if (it > 0) add("$it merged merchant(s)") }
             db.merchantIdentityDao().countNames().let { if (it > 0) add("$it renamed merchant(s)") }
             db.userRejectRuleDao().countAll().let { if (it > 0) add("$it ignored message(s)") }
+            db.userTemplateRuleDao().countAll().let { if (it > 0) add("$it taught message(s)") }
         }
         if (held.isEmpty()) return
         throw ImportNotEmptyException(
@@ -649,6 +653,17 @@ object ImportJson {
         id = r.rowId("id"),
         sourcePackage = r.text("source_package"),
         skeleton = r.text("skeleton"),
+        sampleText = r.text("sample_text"),
+        createdAt = r.long("created_at"),
+    )
+
+    internal fun userTemplateRule(r: BackupRow) = UserTemplateRule(
+        id = r.rowId("id"),
+        sourcePackage = r.text("source_package"),
+        pattern = r.text("pattern"),
+        direction = r.enum("direction", Direction.entries),
+        hasMerchantGroup = r.bool("has_merchant_group"),
+        matchCount = r.int("match_count"),
         sampleText = r.text("sample_text"),
         createdAt = r.long("created_at"),
     )

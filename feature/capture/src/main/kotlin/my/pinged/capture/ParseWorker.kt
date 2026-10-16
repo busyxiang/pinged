@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import my.pinged.parse.TaughtTemplate
 
 /**
  * STAGE TWO. Reads the `raw_capture` table, parses, and writes transactions.
@@ -164,6 +165,9 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                         txns = db.txnDao(),
                         rules = db.merchantRuleDao(),
                         matcher = matcher,
+                        // Read per pass, as the categories below are, so a rule
+                        // saved or deleted between two runs counts on the next.
+                        taught = TaughtTemplate.matcher(db.userTemplateRuleDao().all().map { it.stored() }),
                         // requireUncategorizedId, not the nullable form: spec 7.1
                         // files an unknown merchant here, and a missing seed row
                         // must fail saying so rather than send a 0 down the money

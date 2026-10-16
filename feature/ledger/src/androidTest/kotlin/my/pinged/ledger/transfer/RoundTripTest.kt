@@ -59,6 +59,7 @@ class RoundTripTest {
         "merchant_alias" to source.merchantIdentityDao().allAliases().byKey { it.merchantKey },
         "merchant_name" to source.merchantIdentityDao().allNames().byKey { it.merchantKey },
         "user_reject_rule" to source.userRejectRuleDao().all().byKey { it.id },
+        "user_template_rule" to source.userTemplateRuleDao().all().byKey { it.id },
     )
 
     /**
@@ -122,7 +123,8 @@ class RoundTripTest {
         assertEquals(1, report.merchantAliases)
         assertEquals(1, report.merchantNames)
         assertEquals(1, report.userRejectRules)
-        assertEquals(32, report.rows)
+        assertEquals(1, report.userTemplateRules)
+        assertEquals(33, report.rows)
         assertEquals(Backup.FORMAT_VERSION, report.formatVersion)
         assertNotNull("The export stamps its own time and the report carries it", report.exportedAt)
 
@@ -189,6 +191,23 @@ class RoundTripTest {
         assertEquals(0, report.userRejectRules)
         assertEquals(0, restored.userRejectRuleDao().countAll())
         assertEquals(seedNames, restored.categoryDao().all().associate { it.id to it.seedName })
+    }
+
+    /** A format-4 file -- every export before spec 5.8 -- restores with no taught messages. */
+    @Test fun aFormatFourFileRestoresWithNoTaughtMessages() {
+        val original = fresh()
+        seedOneOfEverything(original)
+        val formatFour = String(exportBytes(original), Charsets.UTF_8)
+            .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":4")
+            .let { it.substring(0, it.indexOf(",\"${Backup.USER_TEMPLATE_RULES}\":")) + "}" }
+
+        val restored = fresh()
+        val report = ImportJson.read(restored, ByteArrayInputStream(formatFour.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(4, report.formatVersion)
+        assertEquals(1, report.userRejectRules)
+        assertEquals(0, report.userTemplateRules)
+        assertEquals(0, restored.userTemplateRuleDao().countAll())
     }
 
     /**

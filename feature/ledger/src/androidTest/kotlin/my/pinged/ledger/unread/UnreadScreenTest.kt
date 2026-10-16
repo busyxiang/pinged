@@ -52,10 +52,14 @@ class UnreadScreenTest {
         label = "Maybank MAE",
     )
 
-    private fun draw(state: UnreadState, onNever: (UnreadCapture) -> Unit = {}, onCopy: (UnreadCapture) -> Unit = {}) =
-        compose.setContent {
-            UnreadContent(state, onBack = {}, onNeverATransaction = onNever, onCopy = onCopy, onEnd = {}, zone = KL)
-        }
+    private fun draw(
+        state: UnreadState,
+        onNever: (UnreadCapture) -> Unit = {},
+        onCopy: (UnreadCapture) -> Unit = {},
+        onTeach: (UnreadCapture) -> Unit = {},
+    ) = compose.setContent {
+        UnreadContent(state, onBack = {}, onNeverATransaction = onNever, onCopy = onCopy, onEnd = {}, zone = KL, onTeach = onTeach)
+    }
 
     @Test fun aCardShowsItsAppItsTimeAndWhatPingedSawWordForWord() {
         draw(UnreadState(loaded = true, items = listOf(fd)))
@@ -76,16 +80,19 @@ class UnreadScreenTest {
     @Test fun eachControlReportsItsOwnCard() {
         val never = mutableListOf<Long>()
         val copied = mutableListOf<Long>()
-        draw(UnreadState(loaded = true, items = listOf(fd)), onNever = { never += it.id }, onCopy = { copied += it.id })
+        val taught = mutableListOf<Long>()
+        draw(
+            UnreadState(loaded = true, items = listOf(fd)),
+            onNever = { never += it.id },
+            onCopy = { copied += it.id },
+            onTeach = { taught += it.id },
+        )
         compose.onNodeWithText(NEVER_A_TRANSACTION).performScrollTo().performClick()
         compose.onNodeWithContentDescription(COPY_AS_FIXTURE).performScrollTo().performClick()
+        compose.onNodeWithText(TEACH_PINGED_THIS).performScrollTo().performClick()
         assertEquals(listOf(7L), never)
         assertEquals(listOf(7L), copied)
-    }
-
-    @Test fun noTeachButtonIsDrawnUntilTheTeachScreenExists() {
-        draw(UnreadState(loaded = true, items = listOf(fd)))
-        compose.onNodeWithText("Teach Pinged this").assertDoesNotExist()
+        assertEquals(listOf(7L), taught)
     }
 
     @Test fun anEmptyListSaysSoOnlyOnceItHasBeenRead() {
@@ -149,7 +156,7 @@ class UnreadScreenTest {
         app.discardTheDatabase()
         unmatched(55)
         val model = UnreadViewModel(app)
-        compose.setContent { UnreadScreen(model, onBack = {}) }
+        compose.setContent { UnreadScreen(model, onBack = {}, onTeach = {}) }
         compose.waitUntil(5_000) { model.state.value.items.size == 50 }
         compose.onNode(hasScrollToNodeAction())
             .performScrollToNode(hasText(FOOTER))

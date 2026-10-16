@@ -310,6 +310,9 @@ private class References {
             reader.whole("merchant_name") { it.merchantIdentityDao().allNames() } ?: lost("merchant_name")
         },
         userRejectRules = { rejectRules ?: lost("user_reject_rule") },
+        userTemplateRules = {
+            reader.whole("user_template_rule") { it.userTemplateRuleDao().all() } ?: lost("user_template_rule")
+        },
     )
 
     fun report(rows: Int, unreadable: Map<String, Unreadable>) = SalvageReport(

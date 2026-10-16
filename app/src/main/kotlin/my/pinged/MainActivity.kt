@@ -85,6 +85,8 @@ import my.pinged.ledger.categories.CategoriesScreen
 import my.pinged.ledger.categories.CategoriesViewModel
 import my.pinged.ledger.learned.LearnedScreen
 import my.pinged.ledger.learned.LearnedViewModel
+import my.pinged.ledger.teach.TeachScreen
+import my.pinged.ledger.teach.TeachViewModel
 import my.pinged.ledger.unread.UnreadScreen
 import my.pinged.ledger.unread.UnreadViewModel
 import my.pinged.ledger.licences.LicencesScreen
@@ -545,6 +547,17 @@ class MainActivity : ComponentActivity() {
                                     val unread: UnreadViewModel = viewModel(factory = unreadFactory)
                                     UnreadScreen(
                                         viewModel = unread,
+                                        onBack = tabs::pop,
+                                        onTeach = { tabs.push(Teach(it.id)) },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                                entry<Teach> { key ->
+                                    // Built from the key alone, as Detail's holder is.
+                                    val teach: TeachViewModel = viewModel { TeachViewModel(application, key.captureId) }
+                                    TeachScreen(
+                                        viewModel = teach,
+                                        // Saving leaves by it too, back to the list.
                                         onBack = tabs::pop,
                                         modifier = Modifier.fillMaxSize(),
                                     )

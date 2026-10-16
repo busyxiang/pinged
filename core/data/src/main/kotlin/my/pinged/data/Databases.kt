@@ -26,6 +26,7 @@ import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.dao.UserRejectRuleDao
+import my.pinged.data.dao.UserTemplateRuleDao
 import net.zetetic.database.sqlcipher.SQLiteNotADatabaseException
 
 /**
@@ -154,6 +155,7 @@ object Databases {
     fun captureDayDao(context: Context): CaptureDayDao = shared(context).captureDayDao()
     fun merchantIdentityDao(context: Context): MerchantIdentityDao = shared(context).merchantIdentityDao()
     fun userRejectRuleDao(context: Context): UserRejectRuleDao = shared(context).userRejectRuleDao()
+    fun userTemplateRuleDao(context: Context): UserTemplateRuleDao = shared(context).userTemplateRuleDao()
     fun merchantRuleDao(context: Context): MerchantRuleDao = shared(context).merchantRuleDao()
 
     /**

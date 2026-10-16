@@ -40,6 +40,7 @@ class MigrationTest {
         const val MIGRATED_3_TO_5 = "migration-3-5.db"
         const val MIGRATED_2_TO_5 = "migration-2-5.db"
         const val MIGRATED_1_TO_5 = "migration-1-5.db"
+        const val MIGRATED_TO_6 = "migration-%d-6.db"
 
         /** One unread capture, in the columns every version from v1 shares. */
         const val CAPTURE_SQL =
@@ -296,6 +297,28 @@ class MigrationTest {
             assertEquals(0L, v5.count("merchant_alias"))
             assertEquals(0L, v5.count("user_reject_rule"))
             assertEquals(5L, v5.pragma("user_version"))
+        }
+    }
+
+    /**
+     * Spec 5.8's v5 -> v6: `user_template_rule`, empty, and every row kept, from
+     * each released version as a phone that skipped the releases between takes it.
+     */
+    @Test fun everyReleasedVersionMigratesToSixKeepingEveryRow() {
+        for (from in 1..5) {
+            val name = MIGRATED_TO_6.format(from)
+            helper.createDatabase(name, from).use { old ->
+                old.execSQL(CAPTURE_SQL)
+                // v2 added it.
+                if (from >= 2) old.execSQL("INSERT INTO merchant_alias (merchant_key, canonical_key) VALUES ('A', 'B')")
+            }
+
+            helper.runMigrationsAndValidate(name, 6, true, MIGRATION_3_4).use { v6 ->
+                assertEquals("v$from's capture", 1L, v6.count("raw_capture"))
+                assertEquals("v$from's alias", if (from >= 2) 1L else 0L, v6.count("merchant_alias"))
+                assertEquals(0L, v6.count("user_template_rule"))
+                assertEquals(6L, v6.pragma("user_version"))
+            }
         }
     }
 

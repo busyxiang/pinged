@@ -20,6 +20,7 @@ import my.pinged.data.entity.RuleOrigin
 import my.pinged.data.entity.MerchantAlias
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.UserTemplateRule
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
@@ -260,6 +261,22 @@ fun seedOneOfEverything(db: PingedDatabase): SeededLedger {
                 skeleton = "maybank rm# paid to starbucks klcc on # jan",
                 sampleText = "Maybank\nRM12.34 paid to STARBUCKS KLCC on 01 Jan",
                 createdAt = 5L,
+            ),
+        ),
+    )
+
+    // Spec 5.8: a taught rule, part-way through its reviewed matches.
+    db.userTemplateRuleDao().insertAll(
+        listOf(
+            UserTemplateRule(
+                id = 41L,
+                sourcePackage = "com.maybank2u.life",
+                pattern = "^Kiosk debit RM(?<amount>[0-9][0-9,]*(?:\\.[0-9]{1,2})?)$",
+                direction = my.pinged.parse.Direction.REFUND,
+                hasMerchantGroup = false,
+                matchCount = 2,
+                sampleText = "Kiosk debit RM3.00",
+                createdAt = 6L,
             ),
         ),
     )

@@ -676,6 +676,9 @@ internal fun salvageSentences(report: SalvageReport): List<String> = buildList {
     if ("user_reject_rule" in report.lostWhole) {
         add("The messages you said were never a transaction could not be read, so mark them again after restoring.")
     }
+    if ("user_template_rule" in report.lostWhole) {
+        add("The messages you taught Pinged to read could not be read, so teach them again after restoring.")
+    }
     if (report.unhidden > 0) {
         add(
             "${count(report.unhidden, "notification", "notifications")} you said ${if (report.unhidden == 1) "was" else "were"} " +

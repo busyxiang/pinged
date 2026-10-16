@@ -59,6 +59,14 @@ import kotlinx.serialization.Serializable
 @Serializable data object Unread : NavKey
 
 /**
+ * Spec 5.8's Teach screen for unread capture [captureId], pushed from its
+ * card's "Teach Pinged this" (`UnreadScreen`'s `onTeach`), and left on save.
+ *
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ */
+@Serializable data class Teach(val captureId: Long) : NavKey
+
+/**
  * The categories list (#155), pushed from its row in settings
  * (`SettingsScreen`'s `onOpenCategories`).
  *

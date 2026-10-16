@@ -11,6 +11,7 @@ import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.UserTemplateRule
 
 /**
  * The backup file format: what is in it, what version it is, and what it
@@ -51,7 +52,6 @@ import my.pinged.data.entity.UserRejectRule
  * - **The notification-access grant.** An OS permission, re-granted by hand.
  * - **The parser pack.** It ships in the APK; `pack_version` travels with each
  *   capture, so a restored row still records which pack decided it.
- * - **`user_template_rule`** (spec 4), which does not exist yet.
  */
 object Backup {
     /**
@@ -79,8 +79,11 @@ object Backup {
      * 4 added spec 5.7's `user_reject_rules` (schema 5). An older file has none,
      * and a capture in one that names a rule anyway is refused as pointing at
      * nothing.
+     *
+     * 5 added spec 5.8's `user_template_rules` (schema 6). An older file has
+     * none, and nothing else in one names a taught rule but as text.
      */
-    const val FORMAT_VERSION = 4
+    const val FORMAT_VERSION = 5
 
     /** The oldest format [ImportJson] still reads; see [BackupSection.sinceFormat]. */
     const val OLDEST_READABLE = 1
@@ -108,6 +111,7 @@ object Backup {
     const val MERCHANT_ALIASES = "merchant_aliases"
     const val MERCHANT_NAMES = "merchant_names"
     const val USER_REJECT_RULES = "user_reject_rules"
+    const val USER_TEMPLATE_RULES = "user_template_rules"
 
     /**
      * Derived from [ALL_SECTIONS] rather than restated: the two were hand-
@@ -384,6 +388,27 @@ internal val USER_REJECT_RULE_SECTION = BackupSection<UserRejectRule>(
 )
 
 /**
+ * Spec 5.8's taught rules. Nothing points at one by key, so it may go anywhere;
+ * last, beside the other rules the user made.
+ */
+internal val USER_TEMPLATE_RULE_SECTION = BackupSection<UserTemplateRule>(
+    name = Backup.USER_TEMPLATE_RULES,
+    table = "user_template_rule",
+    columns = listOf(
+        BackupColumn("id", "id") { w, r -> w.value(r.id) },
+        BackupColumn("source_package", "sourcePackage") { w, r -> w.value(r.sourcePackage) },
+        BackupColumn("pattern", "pattern") { w, r -> w.value(r.pattern) },
+        BackupColumn("direction", "direction") { w, r -> w.enum(r.direction) },
+        BackupColumn("has_merchant_group", "hasMerchantGroup") { w, r -> w.value(r.hasMerchantGroup) },
+        BackupColumn("match_count", "matchCount") { w, r -> w.value(r.matchCount.toLong()) },
+        BackupColumn("sample_text", "sampleText") { w, r -> w.value(r.sampleText) },
+        BackupColumn("created_at", "createdAt") { w, r -> w.value(r.createdAt) },
+    ),
+    sinceFormat = 5,
+    insert = { db, rows -> db.userTemplateRuleDao().insertAll(rows.map(ImportJson::userTemplateRule)) },
+)
+
+/**
  * Every section, **in the order they appear in the file, and the order is
  * load-bearing.**
  *
@@ -403,6 +428,7 @@ internal val ALL_SECTIONS: List<BackupSection<*>> = listOf(
     MERCHANT_ALIAS_SECTION,
     MERCHANT_NAME_SECTION,
     USER_REJECT_RULE_SECTION,
+    USER_TEMPLATE_RULE_SECTION,
 )
 
 /** What an import wrote, for the screen that reports it back to the user. */
@@ -418,10 +444,11 @@ data class ImportReport(
     val merchantAliases: Int,
     val merchantNames: Int,
     val userRejectRules: Int,
+    val userTemplateRules: Int,
 ) {
     val rows: Int
         get() = categories + captureSources + captureDays + merchantRules + rawCaptures + txns +
-            merchantAliases + merchantNames + userRejectRules
+            merchantAliases + merchantNames + userRejectRules + userTemplateRules
 }
 
 /**
