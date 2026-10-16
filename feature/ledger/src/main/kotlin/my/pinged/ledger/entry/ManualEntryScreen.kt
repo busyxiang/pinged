@@ -33,8 +33,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -42,6 +47,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -63,18 +72,20 @@ import my.pinged.ledger.busyLine
 import my.pinged.ledger.home.UnderlinedField
 import my.pinged.ledger.home.categoryIcon
 import my.pinged.ui.ringgit
+import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
-import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.ReceiptSheet
-import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.dottedRule
 
 /**
  * Spec 9.4's entry screen: a payment Pinged did not see, typed in by hand
@@ -298,23 +309,43 @@ private fun Header(title: String, onBack: () -> Unit) {
  * `KeyboardType.Number`, not `NumberPassword`, though the latter is the one
  * keyboard with no separator key: Compose marks a `NumberPassword` field as a
  * password, and TalkBack does not read a password's text aloud.
+ *
+ * The caret is `design/Cash.dc.html`'s 2dp by 44dp [Stamp] bar, 3dp after
+ * the figure and standing on its baseline, drawn here off the text's layout
+ * while the field has focus. The field's own cursor is transparent: it spans
+ * the whole 58sp line, and no `BasicTextField` parameter sets its height.
  */
 @Composable
 private fun AmountField(sen: Long, onAmount: (Long) -> Unit, modifier: Modifier = Modifier) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     val shown = Keypad.shown(sen)
+    var focused by remember { mutableStateOf(false) }
+    var drawn by remember { mutableStateOf<TextLayoutResult?>(null) }
     BasicTextField(
         value = TextFieldValue(shown, selection = TextRange(shown.length)),
         onValueChange = { changed -> onAmount(Keypad.keyed(sen, shown, changed.text)) },
-        textStyle = AmountStyle.copy(color = Ink),
+        textStyle = AmountStyle,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         singleLine = true,
         visualTransformation = CashRegister,
-        cursorBrush = SolidColor(Ink),
+        cursorBrush = SolidColor(Color.Transparent),
+        onTextLayout = { drawn = it },
         modifier = modifier
             .padding(start = 20.dp, end = 8.dp, top = 24.dp)
             .focusRequester(focus)
+            .onFocusChanged { focused = it.isFocused }
+            .drawWithContent {
+                drawContent()
+                val text = drawn ?: return@drawWithContent
+                if (!focused) return@drawWithContent
+                val width = CaretWidth.toPx()
+                // At the figure's end, or the field's when a long figure has
+                // scrolled to keep its end in view.
+                val x = minOf(text.getLineRight(0) + CaretGap.toPx(), size.width - width)
+                val top = text.firstBaseline - CaretHeight.toPx()
+                drawRect(Stamp, topLeft = Offset(x, top), size = Size(width, CaretHeight.toPx()))
+            }
             .testTag(AMOUNT_FIELD)
             .semantics { contentDescription = AMOUNT },
     )
@@ -324,12 +355,16 @@ private fun AmountField(sen: Long, onAmount: (Long) -> Unit, modifier: Modifier 
  * The field's digits drawn as ringgit: `1250` as `RM12.50`, nothing as
  * `RM0.00`. Every offset maps to the end of the other text, which is where
  * [AmountField] keeps the cursor.
+ *
+ * One string with "RM" styled down to [RmSpan], not a separate `Text`: the
+ * field's text is then still `RM12.50`, which TalkBack reads and every entry
+ * test matches, and the two sizes share the line's baseline.
  */
 private object CashRegister : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val drawn = ringgit(text.text.toLongOrNull() ?: 0L)
         return TransformedText(
-            AnnotatedString(drawn),
+            AnnotatedString(drawn, listOf(AnnotatedString.Range(RmSpan, 0, RM.length))),
             object : OffsetMapping {
                 override fun originalToTransformed(offset: Int): Int = drawn.length
                 override fun transformedToOriginal(offset: Int): Int = text.length
@@ -364,8 +399,10 @@ private fun CategoryChips(categories: List<Category>, selected: Long?, onTap: (L
 }
 
 /**
- * One chip: the category's icon and name, filled in [Ink] while selected.
- * The icon is decorative, for the reason `CategoryPicker`'s tiles give.
+ * One chip, as `design/Cash.dc.html` draws them: the category's icon and its
+ * name in Karla 13, filled in [Stamp] with the name at weight 500 while
+ * selected, outlined in [Border] while not. The icon is decorative, for the
+ * reason `CategoryPicker`'s tiles give.
  */
 @Composable
 private fun CategoryChip(category: Category, chosen: Boolean, onTap: () -> Unit) {
@@ -373,17 +410,17 @@ private fun CategoryChip(category: Category, chosen: Boolean, onTap: () -> Unit)
     Row(
         Modifier
             .clip(RoundedCornerShape(2.dp))
-            .then(if (chosen) Modifier.background(Ink) else Modifier.border(1.dp, Muted, RoundedCornerShape(2.dp)))
+            .then(if (chosen) Modifier.background(Stamp) else Modifier.border(1.dp, Border, RoundedCornerShape(2.dp)))
             .selectable(selected = chosen, role = Role.Checkbox, onClick = onTap)
             .heightIn(min = 44.dp)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         categoryIcon(category.iconKey)?.let { icon ->
             Icon(painter = painterResource(icon), contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
         }
-        Text(category.name, style = MonoLabel, color = ink)
+        Text(category.name, style = if (chosen) ChipLabel.copy(fontWeight = FontWeight.Medium) else ChipLabel, color = ink)
     }
 }
 
@@ -392,6 +429,8 @@ private val ChipRowPadding = PaddingValues(horizontal = 20.dp)
 /**
  * The date chip beside the amount (#103): `Today`, or the past day the entry
  * is moved to, and a tap opens [EntryDatePicker]. Picking a day closes it.
+ * The artboard has no date chip; it is outlined in [Border] like the
+ * category chips, since `Rule` is the dotted rules' colour.
  */
 @Composable
 private fun DateChip(day: LocalDate?, today: LocalDate, onDay: (LocalDate) -> Unit) {
@@ -402,7 +441,7 @@ private fun DateChip(day: LocalDate?, today: LocalDate, onDay: (LocalDate) -> Un
             .clip(RoundedCornerShape(2.dp))
             .clickable(role = Role.Button) { picking = true }
             .heightIn(min = 44.dp)
-            .border(1.dp, Rule, RoundedCornerShape(2.dp))
+            .border(1.dp, Border, RoundedCornerShape(2.dp))
             .padding(horizontal = 10.dp, vertical = 6.dp)
             .testTag(DATE_CHIP),
         contentAlignment = Alignment.Center,
@@ -449,26 +488,58 @@ private fun OptionalLine(
 
 /**
  * Save, reading [label]: filled in the accent while it would write, outlined
- * in [Muted] while not.
+ * in [Muted] while not. 52dp, in a band under a dotted rule, as
+ * `design/Cash.dc.html` draws it below its keypad; the band is [Paper] like
+ * the screen, so the rule is all that marks it.
  */
 @Composable
 private fun SaveButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     val ink = if (enabled) Stamp else Muted
     Box(
         Modifier
+            .padding(top = 24.dp)
             .fillMaxWidth()
-            .padding(20.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .then(if (enabled) Modifier.background(ink) else Modifier.border(1.dp, ink, RoundedCornerShape(2.dp)))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .heightIn(min = 48.dp),
-        contentAlignment = Alignment.Center,
+            .dottedRule(atTop = true)
+            .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 24.dp),
     ) {
-        Text(label, style = ButtonLabel, color = if (enabled) Paper else ink)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(2.dp))
+                .then(if (enabled) Modifier.background(ink) else Modifier.border(1.dp, ink, RoundedCornerShape(2.dp)))
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .heightIn(min = 52.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, style = ButtonLabel, color = if (enabled) Paper else ink)
+        }
     }
 }
 
-private val AmountStyle = MonoNumerals.copy(fontSize = 40.sp, lineHeight = 48.sp)
+/**
+ * The amount: Instrument Serif 58 in [Ink], the screen's one total, and spec
+ * 8 gives a single display figure to the serif. Its digits are proportional
+ * (advances 249 to 460 per 1000 em, no `tnum`, measured from the bundled
+ * file), which a cash register's entry does not need: every key shifts every
+ * digit one place, so no column holds still to align whatever the face.
+ */
+private val AmountStyle = TextStyle(fontFamily = Display, fontSize = 58.sp, lineHeight = 58.sp, color = Ink)
+
+private const val RM = "RM"
+
+private val CaretWidth = 2.dp
+private val CaretHeight = 44.dp
+private val CaretGap = 3.dp
+
+/**
+ * The figure's "RM": serif 30 in [Faint]. [Faint] fails 4.5:1 and is kept
+ * off body text, but at 30sp this is large text, which WCAG 1.4.3 holds to
+ * 3:1, and [Faint] on [Paper] measures 3.55:1.
+ */
+private val RmSpan = SpanStyle(fontFamily = Display, fontSize = 30.sp, color = Faint)
+
+/** A category chip's name: Karla 13, the artboard's chip. */
+private val ChipLabel = TextStyle(fontFamily = Body, fontSize = 13.sp, lineHeight = 16.sp)
 
 /** The entry point's name: the Spending tab's + button and this screen's title (spec 9.4). */
 const val ADD_PAYMENT = "Add payment"
