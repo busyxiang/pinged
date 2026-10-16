@@ -55,6 +55,8 @@ import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
 import my.pinged.ledger.day.DayScreen
 import my.pinged.ledger.day.DayViewModel
+import my.pinged.ledger.detail.DetailScreen
+import my.pinged.ledger.detail.DetailViewModel
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.entry.ManualEntryScreen
 import my.pinged.ledger.entry.ManualEntryViewModel
@@ -253,6 +255,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenReview = { focus -> tabs.push(Review(focus)) },
                                     onAddPayment = { tabs.push(ManualEntry()) },
                                     onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                    onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                     heard = heardNow(),
                                     modifier = Modifier.fillMaxSize(),
                                 )
@@ -318,6 +321,21 @@ class MainActivity : ComponentActivity() {
                                     // Onto the current stack, Charts', as
                                     // Review is: back returns to this day.
                                     onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                    onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                )
+                            }
+                            entry<Detail> { key ->
+                                // Built from the key alone, as Day's holder is.
+                                val detail: DetailViewModel = viewModel {
+                                    DetailViewModel(application, key.txnId, key.createdAt)
+                                }
+                                DetailScreen(
+                                    viewModel = detail,
+                                    // The same expression NavDisplay's onBack
+                                    // is given; see `pop`. Delete this entry
+                                    // leaves by it too.
+                                    onBack = tabs::pop,
+                                    modifier = Modifier.fillMaxSize(),
                                 )
                             }
                             entry<Settings> {

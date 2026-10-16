@@ -609,6 +609,65 @@ interface TxnDao {
     fun removeCaptured(id: Long, updatedAt: Long): Int
 
     /**
+     * Not spending, from a captured row's detail screen (#153): a committed
+     * row the user says moved no spending, kept and drawn greyed but out of
+     * every total (§7.3), with `exclusion_reason = USER`. Returns the rows
+     * written, 0 for a row already excluded for any reason, one awaiting
+     * review (the inbox's Leave out, [leaveOut]), one rejected, or a manual
+     * entry, which is deleted rather than excluded.
+     *
+     * `user_edited` is not set: it marks a decision the re-parse must not
+     * overwrite about what the parser read, and `Corrections.reread` carries
+     * the exclusion columns over unchanged, so a pack fix keeps this answer.
+     */
+    @Query(
+        """
+        UPDATE txn SET is_excluded = 1, exclusion_reason = 'USER', updated_at = :updatedAt
+        WHERE id = :id AND state = 'COMMITTED' AND is_excluded = 0 AND raw_capture_id IS NOT NULL
+        """,
+    )
+    fun excludeByUser(id: Long, updatedAt: Long): Int
+
+    /**
+     * Count as spending: undo [excludeByUser], both columns in one statement
+     * (`requireStorable` refuses either alone). Only a `USER` exclusion: a
+     * transfer, card payment or ATM withdrawal is the pack's, and taking that
+     * back is the inbox's Keep as expense. Committed only, as [excludeByUser]
+     * is: a row since rejected is in no list to count. Returns the rows written.
+     */
+    @Query(
+        """
+        UPDATE txn SET is_excluded = 0, exclusion_reason = NULL, updated_at = :updatedAt
+        WHERE id = :id AND state = 'COMMITTED' AND exclusion_reason = 'USER'
+        """,
+    )
+    fun countAsSpending(id: Long, updatedAt: Long): Int
+
+    /**
+     * A captured row's note (#153), stored trimmed, or null when blank, as a
+     * manual entry's is (`ManualEntries`). `user_edited` is left alone: a note
+     * is not something the parser decided. A manual entry's note is its edit
+     * screen's (`editManualEntry`), so this writes nothing to one. Returns
+     * the rows written.
+     */
+    fun setCapturedNote(id: Long, note: String, updatedAt: Long): Int =
+        writeCapturedNote(id, note.trim().ifEmpty { null }, updatedAt)
+
+    /** [setCapturedNote]'s statement; call that, which trims. */
+    @Query("UPDATE txn SET note = :note, updated_at = :updatedAt WHERE id = :id AND raw_capture_id IS NOT NULL")
+    fun writeCapturedNote(id: Long, note: String?, updatedAt: Long): Int
+
+    /**
+     * One transaction for its detail screen (#153): the row as the list draws
+     * it, its category's name, and the capture it was read from -- the
+     * notification verbatim, the rule that matched it and the pack that rule
+     * came from. Null when no row has [id]. A manual entry reads with every
+     * capture field null.
+     */
+    @Query(DETAIL_SQL)
+    fun detail(id: Long): DetailRow?
+
+    /**
      * Merge (§7.2, §9.2): [settle] to `REJECTED`, and **only while [pairId]
      * is not `REJECTED` itself** -- a pair dismissed after the card was drawn
      * would otherwise leave neither row counted. The pair is never written:
@@ -892,6 +951,27 @@ interface TxnDao {
             LEFT JOIN raw_capture ON raw_capture.id = txn.raw_capture_id
             WHERE txn.state = 'PENDING'
             ORDER BY txn.occurred_at DESC, txn.id DESC
+            """
+
+        /**
+         * [detail]'s query. Every join is by primary key, as
+         * [AWAITING_REVIEW_SQL]'s are; a manual entry joins no capture.
+         */
+        const val DETAIL_SQL =
+            """
+            SELECT txn.*,
+                   """ + MerchantSql.IDENTITY + """ AS identity_key,
+                   """ + MerchantSql.NAME + """ AS display_name,
+                   category.name AS category_name,
+                   raw_capture.title AS capture_title,
+                   raw_capture.text AS capture_text,
+                   raw_capture.big_text AS capture_big_text,
+                   raw_capture.matched_rule_id AS matched_rule_id,
+                   raw_capture.pack_version AS capture_pack_version
+            FROM txn """ + MerchantSql.JOINS + """
+            LEFT JOIN category ON category.id = txn.category_id
+            LEFT JOIN raw_capture ON raw_capture.id = txn.raw_capture_id
+            WHERE txn.id = :id
             """
 
         /** [duplicateOfCapture]'s query: two primary-key lookups. */

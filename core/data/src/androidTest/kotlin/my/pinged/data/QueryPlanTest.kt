@@ -511,6 +511,19 @@ class QueryPlanTest {
         assertLooksUpByKey(p)
     }
 
+    /**
+     * The detail screen's read (#153): one row by its key, and each join a
+     * primary-key lookup, so it costs the same at any ledger size.
+     */
+    @Test fun theDetailReadIsAllKeyLookups() {
+        val p = plan(bindable(TxnDao.DETAIL_SQL), 1L)
+        listOf("txn", "category", "raw_capture").forEach { table ->
+            assertTrue("The detail's $table is scanned:\n$p", !p.contains("SCAN $table"))
+        }
+        assertTrue("The row is not found by its key:\n$p", p.contains("SEARCH txn USING INTEGER PRIMARY KEY"))
+        assertLooksUpByKey(p)
+    }
+
     @Test fun theReviewInboxBadgeCountUsesTheSameIndex() {
         val p = plan(TxnDao.AWAITING_REVIEW_COUNT_SQL)
         // A seek on `state`, not a walk of the whole index: a `+state` would

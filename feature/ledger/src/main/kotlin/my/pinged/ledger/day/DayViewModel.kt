@@ -113,9 +113,6 @@ class DayViewModel(app: Application, val date: LocalDate) : AndroidViewModel(app
     fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
         rows.assignCategory(txnId, categoryId, teach) { refresh().join() }
 
-    /** See [RowActions.removeCaptured]; the day is re-read after. */
-    fun removeCaptured(txnId: Long): Job = rows.removeCaptured(txnId) { refresh().join() }
-
     /** See [RowActions.retroPreview]. */
     suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
 

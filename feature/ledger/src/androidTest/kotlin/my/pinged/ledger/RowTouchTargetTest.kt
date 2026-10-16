@@ -59,7 +59,7 @@ import org.junit.runner.RunWith
  * 35dp drawn at CI's 320dp, reaches 6.5dp past its frame. Not above the line
  * or the chip either: the 2dp gap there is the name's as much as theirs, and
  * a tap in it goes to whichever is nearer. On a captured row the row's own
- * tap is #132's remove sheet, which is what a near miss must not open.
+ * tap is #153's detail screen, which is what a near miss must not open.
  */
 @RunWith(AndroidJUnit4::class)
 class RowTouchTargetTest {
@@ -72,7 +72,7 @@ class RowTouchTargetTest {
 
     private var categorized = 0
     private var reviewed = 0
-    private var removed = 0
+    private var opened = 0
 
     /**
      * The row under test, tagged [ROW], and under it the same row with nothing
@@ -113,7 +113,7 @@ class RowTouchTargetTest {
                                 onCategorize = { categorized++ },
                                 onOpenMerchant = {},
                                 onOpenReview = { reviewed++ },
-                                onRemove = { removed++ },
+                                onOpenDetail = { opened++ },
                             )
                         }
                     }
@@ -163,7 +163,7 @@ class RowTouchTargetTest {
         rows(categoryId = food.id)
         val below = nearMiss(line, textHeight(line) / 2, above = false)
         assertEquals("the line, $below", 1, categorized)
-        assertEquals("the row, $below", 0, removed)
+        assertEquals("the row, $below", 0, opened)
     }
 
     /**
@@ -179,14 +179,14 @@ class RowTouchTargetTest {
         assertEquals("7dp below the line, $inside", 1, categorized)
         val past = nearMiss(line, half, above = false, outside = 9.dp)
         assertEquals("9dp below the line, $past", 1, categorized)
-        assertEquals("taps the next row took", 1, removed)
+        assertEquals("taps the next row took", 1, opened)
     }
 
     @Test fun nearMissNeedsComposesMinimum() {
         rows(categoryId = food.id, minimumTarget = false)
         nearMiss(line, textHeight(line) / 2, above = false)
         assertEquals("taps the line took", 0, categorized)
-        assertEquals("taps the row took", 1, removed)
+        assertEquals("taps the row took", 1, opened)
     }
 
     /**
@@ -205,7 +205,7 @@ class RowTouchTargetTest {
             compose.waitForIdle()
         }
         assertEquals("taps the line took", 0, categorized)
-        assertEquals("taps the row took", 2, removed)
+        assertEquals("taps the row took", 2, opened)
     }
 
     /** The chip's drawing is its label and 3dp above and below, inside the outline. */
@@ -218,7 +218,7 @@ class RowTouchTargetTest {
         rows(categoryId = uncategorized.id)
         val below = nearMiss(CATEGORY_CHIP, textHeight(CATEGORY_CHIP) / 2 + 3.dp, above = false)
         assertEquals("the chip, $below", 1, categorized)
-        assertEquals("the row, $below", 0, removed)
+        assertEquals("the row, $below", 0, opened)
     }
 
     /** The badge's drawing is its text and 2dp above and below, inside the frame. */

@@ -134,6 +134,20 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
 @Serializable data class ManualEntry(val txnId: Long? = null, val createdAt: Long? = null) : NavKey
 
 /**
+ * A captured transaction's detail screen (#153), pushed on the **current**
+ * tab's stack from the row's body -- the Spending list's, or a Charts day's --
+ * so back returns to the list it was opened from. Drawn by
+ * `:feature:ledger`'s `DetailScreen`, off the stack's root, so the tab bar is
+ * hidden.
+ *
+ * [createdAt] beside [txnId] for [ManualEntry]'s reason: a row a
+ * delete-everything or a restore gives the same id is not this one.
+ *
+ * See [Ledger] for why it is registered nowhere.
+ */
+@Serializable data class Detail(val txnId: Long, val createdAt: Long) : NavKey
+
+/**
  * The Spending stack a first creation starts on: its root, with spec 9.4's
  * entry screen above it when [addPayment] (the launcher shortcut, #107).
  *
