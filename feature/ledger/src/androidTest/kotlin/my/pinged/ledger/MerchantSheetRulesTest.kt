@@ -1,6 +1,6 @@
 package my.pinged.ledger
 
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.paging.LoadState
 import androidx.paging.LoadStates
