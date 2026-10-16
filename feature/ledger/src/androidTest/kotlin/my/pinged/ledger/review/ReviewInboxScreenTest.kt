@@ -54,7 +54,7 @@ class ReviewInboxScreenTest {
         listOf("RM650.00", MERCHANT, "Rent", SOURCE_LABEL, "15 August 2026, 12:00").forEach {
             compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
         }
-        compose.onNodeWithText("Over RM500.00.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("OVER YOUR RM500 CHECK LIMIT").performScrollTo().assertIsDisplayed()
 
         compose.onNodeWithText(ReviewAnswer.ACCEPT.label).performScrollTo().performClick()
         compose.onNodeWithText(ReviewAnswer.NOT_A_PAYMENT.label).performScrollTo().performClick()

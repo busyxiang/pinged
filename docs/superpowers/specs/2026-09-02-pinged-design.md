@@ -1709,8 +1709,8 @@ One card per `PENDING` transaction showing:
 - the **raw notification text verbatim**, always: the capture's `title`, then
   its `big_text` if present, else its `text`
 - the app's interpretation (amount, merchant, category, source, time)
-- the specific reason it needs review, as one sentence stating the fact
-  ("Over RM500.00.", "No merchant in the notification.")
+- the specific reason it needs review, as one short label stating the fact
+  ("OVER YOUR RM500 CHECK LIMIT", "AMOUNT FOUND, NO NAME ATTACHED")
 - two or three large actions appropriate to the reason
 
 The actions per reason:

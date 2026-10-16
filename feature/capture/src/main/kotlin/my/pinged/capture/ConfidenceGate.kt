@@ -8,7 +8,7 @@ import my.pinged.parse.Kind
 
 /**
  * Spec 7.1's RM500, the one threshold there is (spec #109 keeps it fixed):
- * public so the review inbox's "Over RM500" is this number and not a copy.
+ * public so the review inbox's "OVER YOUR RM500 CHECK LIMIT" is this number and not a copy.
  */
 const val REVIEW_THRESHOLD_SEN: Long = 50_000L
 
