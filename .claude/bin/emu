@@ -136,17 +136,38 @@ stop() {
 # Run detached after a lease that found a booted emulator. Every such lease
 # starts one, and only the last survives the timestamp check: an earlier
 # reaper finds a newer release and leaves it to that lease's reaper.
+#
+# Every decision goes to <serial>.reaper.log, with the reaper's pid: an
+# emulator once stayed up past its idle stop with no reaper left running and
+# no way to tell why. A reaper whose start line has no ending line was killed
+# with SIGKILL.
 reap() {
     local serial=$1 released
-    released=$(cat "$lock_dir/$serial.released" 2>/dev/null) || exit 0
-    sleep "$idle_s"
+    reap_log() {
+        printf '%s pid=%s %s\n' "$(date '+%F %T')" "$$" "$*" >>"$lock_dir/$serial.reaper.log"
+    }
+    released=$(cat "$lock_dir/$serial.released" 2>/dev/null) || { reap_log "quit: no release recorded"; exit 0; }
+    reap_log "start: stops $serial at $(date -d "@$((released / 1000000000 + idle_s))" '+%T') unless leased again"
+    local sig
+    for sig in TERM INT HUP; do
+        # shellcheck disable=SC2064 # sig is meant to expand now
+        trap "reap_log 'ended by SIG$sig'; exit 0" "$sig"
+    done
+    # In the background and waited for: bash runs a trap only once a
+    # foreground command returns, so a reaper killed mid-sleep would
+    # otherwise log nothing until its sleep had run out.
+    sleep "$idle_s" &
+    wait $!
     exec 9>>"$lock_dir/$serial.lock"
-    flock -n 9 || exit 0
-    [ -e "$lock_dir/$serial.booted" ] || exit 0
-    [ "$(cat "$lock_dir/$serial.released" 2>/dev/null)" = "$released" ] || exit 0
+    flock -n 9 || { reap_log "quit: $serial is leased"; exit 0; }
+    [ -e "$lock_dir/$serial.booted" ] || { reap_log "quit: $serial was not booted by emu, or already stopped"; exit 0; }
+    [ "$(cat "$lock_dir/$serial.released" 2>/dev/null)" = "$released" ] ||
+        { reap_log "quit: a later lease released $serial; its reaper takes over"; exit 0; }
+    reap_log "stopping $serial after ${idle_s}s idle"
     printf '%s\treaper\t%s\tstopping after %ss idle\n' "$(date +%s)" "$$" "$idle_s" >"$lock_dir/$serial.holder"
     stop "$serial"
     rm -f "$lock_dir/$serial.holder"
+    reap_log "stopped $serial"
 }
 
 mkdir -p "$lock_dir" "$queue"
@@ -241,6 +262,12 @@ on_exit() {
     if [ -e "$lock_dir/$serial.booted" ] && [ "$idle_s" -gt 0 ]; then
         date +%s%N >"$lock_dir/$serial.released"
         setsid "$0" --reap "$serial" </dev/null >/dev/null 2>&1 9>&- &
+        local log=$lock_dir/$serial.reaper.log
+        printf '%s pid=%s lease by %s released %s, started reaper pid=%s\n' \
+            "$(date '+%F %T')" "$$" "$where" "$serial" "$!" >>"$log"
+        if [ "$(wc -l <"$log")" -gt 400 ]; then
+            tail -n 200 "$log" >"$log.tmp" && mv "$log.tmp" "$log"
+        fi
     fi
 }
 trap on_exit EXIT
