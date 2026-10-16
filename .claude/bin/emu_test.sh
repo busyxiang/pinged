@@ -521,6 +521,44 @@ else
     pass "mutation shared-queue: the other emulator's waiter holds it up"
 fi
 
+# Run now: C is put first and the holder A makes way. A runs again, as the
+# same process, before B, which queued ahead of C; it exits as its command does.
+run_now_order() {
+    local emu=$1 a b c status
+    "$emu" -- sh -c "echo A-start >>$log; sleep 3; echo A-end >>$log" 2>/dev/null &
+    a=$!
+    until_in "$log" A-start
+    "$emu" -- sh -c "echo B >>$log" 2>/dev/null & b=$!
+    sleep 0.3
+    "$emu" -- sh -c "echo C >>$log" 2>/dev/null & c=$!
+    sleep 0.3
+    printf '%s %s\n' "$c" "$(started "$c")" >"$EMU_LOCK_DIR/queue/emulator-5554/.front"
+    kill -USR2 "$a"
+    wait "$a" && status=0 || status=$?
+    wait "$b" "$c" 2>/dev/null || true
+    [ "$status" = 0 ] && [ "$(tr '\n' ' ' <"$log")" = "A-start C A-start A-end B " ]
+}
+fresh
+if run_now_order "$script"; then pass "Run now: the promoted waiter goes next, the holder reruns before the rest"; else fail "Run now: the promoted waiter goes next, the holder reruns before the rest: $(tr '\n' ' ' <"$log")"; fi
+fresh
+if run_now_order "$(mutant no-front 's/^    if read -r front_pid front_start <"\$queue\/.front" 2>\/dev\/null; then$/    if false; then/')"; then
+    fail "mutation no-front: the promoted waiter still went first"
+else
+    pass "mutation no-front: the promoted waiter waits its turn"
+fi
+fresh
+if run_now_order "$(mutant no-rerun 's/^    EMU_REQUEUED=1 exec "\$0" "\${argv\[@\]}"$/    exit 0/')"; then
+    fail "mutation no-rerun: the holder still ran again"
+else
+    pass "mutation no-rerun: the holder's command is dropped"
+fi
+fresh
+if run_now_order "$(mutant no-priority '/^if \[ -n "\${EMU_REQUEUED:-}" \]; then order=0000000000000000001; fi$/d')"; then
+    fail "mutation no-priority: the holder still reran before B"
+else
+    pass "mutation no-priority: the holder goes to the back"
+fi
+
 fresh
 export EMU_POOL="emulator-5554 emulator-5556"
 "$script" -- sh -c "echo \"A-start \$ANDROID_SERIAL\" >>$log; sleep 2; echo A-end >>$log" &

@@ -26,6 +26,13 @@
 
 set -euo pipefail
 
+# The whole command line, for a lease that requeue runs again.
+argv=("$@")
+# USR2 asks a holder to make way (requeue). Until its command runs there is
+# nothing to stop, so it is only noted; bash's default would end emu itself.
+preempted=0
+trap 'preempted=1' USR2
+
 lock_dir=${EMU_LOCK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/pinged-emu}
 pool=${EMU_POOL:-emulator-5554}
 # One queue per pool: a lease for a free emulator must not wait behind the
@@ -96,11 +103,27 @@ started() {
 # after a release wins, so a session that queued first watched a later one
 # take the emulator for a full suite. A ticket whose process is gone is
 # removed, or a killed waiter would hold up the queue for good.
+#
+# A waiter named in .front ("pid start", the pane's Run now) goes before
+# every ticket, its own included; a .front whose process is gone is removed.
 ahead() {
-    local t pid start n=0
+    local t pid start n=0 front_pid= front_start=
+    if read -r front_pid front_start <"$queue/.front" 2>/dev/null; then
+        if [ "$front_pid" = "$$" ]; then
+            echo 0
+            return
+        fi
+        if [ "$(started "$front_pid")" = "$front_start" ]; then
+            n=1
+        else
+            rm -f "$queue/.front"
+            front_pid=
+        fi
+    fi
     for t in $(ls "$queue" | sort); do
         [ "$queue/$t" = "$ticket" ] && break
         pid=${t#*-}; start=${pid#*-}; pid=${pid%-*}
+        [ "$pid" = "$front_pid" ] && continue
         if [ "$(started "$pid")" = "$start" ]; then
             n=$((n + 1))
         else
@@ -193,7 +216,12 @@ done
 where=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 where=${where##*/}
 
-ticket=$queue/$(date +%s%N)-$$-$(started $$)
+# A lease put back by Run now (see requeue) sorts before every ordinary
+# ticket, so it runs next after the waiter that went first.
+order=$(date +%s%N)
+if [ -n "${EMU_REQUEUED:-}" ]; then order=0000000000000000001; fi
+unset EMU_REQUEUED
+ticket=$queue/$order-$$-$(started $$)
 printf '%s\t%s\t%s\n' "$(date +%s)" "$where" "${*:-stop}" >"$ticket"
 trap 'rm -f "$ticket"' EXIT
 
@@ -208,6 +236,9 @@ while :; do
             if flock -n 9; then
                 serial=$s
                 rm -f "$ticket"
+                if read -r front_pid _ <"$queue/.front" 2>/dev/null && [ "$front_pid" = "$$" ]; then
+                    rm -f "$queue/.front"
+                fi
                 break 2
             fi
             exec 9>&-
@@ -350,10 +381,30 @@ on_timeout() {
 trap 'stop_command TERM; exit 143' TERM
 trap 'stop_command INT; exit 130' INT
 trap 'on_timeout "$@"' USR1
+
+# Another waiter was put first (the pane's Run now, which writes .front and
+# sends USR2): this lease stops its command, leaves the device as a lease's
+# end does, gives up the emulator and runs itself again, same pid and same
+# arguments, with a ticket that sorts first. Its caller sees the command take
+# longer, not fail.
+requeue() {
+    printf 'emu: another lease was put first; %s will run again after it\n' "$*" >&2
+    trap - EXIT
+    if [ -n "${watchdog:-}" ]; then kill "$watchdog" 2>/dev/null || true; fi
+    sweep_device
+    if [ "$ci_size" = 1 ]; then reset_size; fi
+    rm -f "$holder"
+    exec 9>&-
+    EMU_REQUEUED=1 exec "$0" "${argv[@]}"
+}
+trap 'preempted=1; stop_command TERM' USR2
+if [ "$preempted" = 1 ]; then stop_command TERM; fi
+
 if [ "$max_hold_s" -gt 0 ]; then
     (sleep "$max_hold_s" && kill -USR1 $$) </dev/null >/dev/null 2>&1 9>&- &
     watchdog=$!
 fi
 status=0
 wait "$child" || status=$?
+if [ "$preempted" = 1 ]; then requeue "$@"; fi
 exit "$status"
