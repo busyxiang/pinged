@@ -63,6 +63,11 @@ through `adb shell` keeps `adb shell` from returning, redirected or not: on
 2026-10-16 two leases hung on one for 27 minutes each, and so did a third
 that redirected its loop's input and output.
 
+A lease's command can be stopped part-way and run again from the start: the
+user can put a waiter first, and the holder then makes way and reruns after
+it, as the same process. So a lease's command must be safe to run twice; one
+that is not leaves its own state behind it, not only the device's.
+
 A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
 screen is shorter than a dev one, and a new Settings row once pushed "Delete
 everything" off it, so the click missed and two tests failed on CI only.
