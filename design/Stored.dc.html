@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body { margin: 0; }
+a { color: #a03826; } a:hover { color: #7a2a1c; }
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; background: #efe7d8; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden;">
+  <div style="flex: 1; background: rgba(26,23,20,0.42);"></div>
+  <div style="background: #fbf6ea; border-top: 1.5px dashed #1a1714;">
+    <div style="padding: 18px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+      <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 23px;">What gets stored</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </div>
+    <div style="padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px;">
+      <div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #a03826;">FROM THE APPS YOU PICK</span>
+        <div style="font-size: 14px; line-height: 1.6; color: #1a1714; margin-top: 6px;">Every word the notification shows, which app posted it and when, and the details Android files it under, such as its channel. Pinged reads the payment out of it, and keeps the words so a better rule can read them again later. All of it is encrypted on this phone.</div>
+      </div>
+      <div style="border-top: 1px dotted #cfc4ae; padding-top: 16px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #a03826;">FROM EVERY OTHER APP</span>
+        <div style="font-size: 14px; line-height: 1.6; color: #1a1714; margin-top: 6px;">Not one word. Only the app's name, when it first posted, and how many notifications it has posted, so Pinged can point out a bank you have not switched on.</div>
+      </div>
+      <div style="border-top: 1px dotted #cfc4ae; padding-top: 16px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #a03826;">FROM ALL APPS TOGETHER</span>
+        <div style="font-size: 14px; line-height: 1.6; color: #1a1714; margin-top: 6px;">The time the latest notification of any kind arrived, and for each day whether any arrived at all, without which app sent them. That is how Pinged can tell you if Android has stopped it listening, and tell a day you spent nothing from a day it was not listening.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -6,9 +6,11 @@ def inner(path):
     return re.sub(r'<helmet>.*?</helmet>', '', m.group(1), flags=re.S).strip()
 
 groups = [
- ("First run", "Four screens before a single ringgit is recorded. This stretch decides whether anyone still has the app installed next week.", [
+ ("First run", "Four screens and one sheet before a single ringgit is recorded. This stretch decides whether anyone still has the app installed next week.", [
   ("Onboarding", "Onboarding.dc.html", "Step 1 of 3",
    "Leads with the three things people actually worry about &mdash; including the one most trackers quietly omit: nothing from before you switch it on can ever be recovered."),
+  ("What gets stored", "Stored.dc.html", "New, behind the link on step 1",
+   "The answer to the question the link asks, in three parts: every word from the apps you pick, not one word from any other app, and from all apps together only the times notifications arrived. The last part is what lets Pinged tell a day you spent nothing from a day it was not listening, so the sheet says so."),
   ("Battery", "Battery.dc.html", "Step 2 of 3",
    "The screen most likely to lose a user. Manufacturer detected, literal menu path printed. The honest part: battery state is checked by Pinged and stamped confirmed, while MIUI autostart cannot be read at all &mdash; so that one asks you, and says why it has to."),
   ("Capture sources", "Sources.dc.html", "Step 3 of 3, and settings later",
@@ -20,15 +22,21 @@ groups = [
   ("Spending", "Main.dc.html", "Home",
    "Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved."),
   ("Needs a look", "Inbox.dc.html", "Review inbox",
-   "All four review reasons at once. Every card carries the notification word for word, so the app is never more confident than the evidence it holds."),
+   "All four review reasons at once. Every card carries the notification word for word, so the app is never more confident than the evidence it holds. The duplicate card shows both notifications side by side, labelled with which one a merge keeps, so you see what survives before you commit."),
   ("Detail", "Detail.dc.html", "One transaction",
    "The audit trail, visible: the raw notification, the acquirer string it came from (TNG*99SPEEDMART), and which rule read it. &ldquo;Not edited&rdquo; means nobody has touched what the machine decided."),
+  ("Left out", "DetailExcluded.dc.html", "New, the same detail after Not spending",
+   "Paying a friend back is money moving, not spending. Not spending keeps the row and the notification, greys the amount and leaves it out of every total, and the badge says who decided: you. Change category goes, because a category means nothing while the row counts nowhere. Count as spending brings it back in one tap."),
   ("Cash", "Cash.dc.html", "Manual entry",
    "The only typing in the whole app. Keypad open and focused, category chips ordered by what you use most, merchant optional."),
  ]),
  ("Looking back", "Three ways of asking where the money went. None of them needs a charting library.", [
   ("September", "Charts.dc.html", "Charts",
    "A daily rhythm grid, category bars on the same single-hue ramp, and a merchant ranking. The grid is the one that needed a rule: a day Pinged was not watching is hatched, never left empty &mdash; an empty cell would claim you spent nothing on a day it knows nothing about. The comparison against August appears only because the month is complete."),
+  ("October, so far", "ChartsMonth.dc.html", "New, a month still running",
+   "What the Charts tab shows on most days. Two weeks after the scenario date, on 14 October: the chip counts the day instead of saying the month is complete, today is outlined and still going, the days to come stay blank rather than empty, and the comparison with September waits for October to end. The footer line became a block, because three different kinds of money are kept out of the total and each should be checkable."),
+  ("Thursday 25 September", "Day.dc.html", "New, behind a grid cell",
+   "One square of the grid, opened. The day's total and its four payments, which add up to the RM210.00 the cell shades. It says whether Pinged watched all day, because a quiet day and a day it missed look the same otherwise. The two steppers fix the cost of a mis-tap on a 20dp cell: one tap to the next day, not back to the grid."),
   ("Search", "Search.dc.html", "Search and filter",
    "Any query becomes its own total. Searching &ldquo;grab&rdquo; answers the question a category total buries: eighteen rides, RM312.40, RM17.36 each &mdash; more than a month of petrol."),
  ]),
@@ -36,15 +44,19 @@ groups = [
   ("Capture stopped", "Stopped.dc.html", "The banner that keeps step 2 honest",
    "Xiaomi killed the listener on 27 September. The total goes grey and is labelled do-not-trust, and the missing days are drawn as a dashed hole reading &ldquo;not because you did not spend&rdquo;. The app admits the gap rather than serving a confident wrong number."),
   ("Settings", "Settings.dc.html", "Changed, third tab",
-   "A tab, not a drawer. In the first weeks this is where you live &mdash; adding banks, checking capture is alive, teaching merchants &mdash; so capture sits at the top and export and delete at the bottom. Named in plain words: &ldquo;merchants you have taught Pinged&rdquo;, &ldquo;notifications Pinged could not read&rdquo;. The footer states the privacy claim as fact, because a missing permission enforces it."),
+   "A tab, not a drawer. In the first weeks this is where you live &mdash; adding banks, checking capture is alive, teaching merchants &mdash; so capture sits at the top and export and delete at the bottom. Redrawn to the rows that shipped. The daily check lives in Android&rsquo;s notification settings, so its row carries an outward arrow instead of a chevron. Check my data says what it found. Corrections from pack updates appears only while a newer pack has something for you to review. Licences moved from its own About section into the footer, the one row nobody needs to find quickly. The footer states the privacy claim as fact, because a missing permission enforces it."),
  ]),
  ("Sheets, pickers and lists", "The layer behind the twelve. I called these derivative before drawing them; three turned out to carry real decisions.", [
   ("What was this?", "Chooser.dc.html", "Assigning a category",
    "The most repeated action in the app. It shows the acquirer string it is deciding about, and the rule it is about to write &mdash; on by default, with the ten past transactions it will retroactively fix. Teaching Pinged is visible, not a side effect."),
+  ("Categories", "Categories.dc.html", "New, behind Settings",
+   "Every category, most used first, with how many transactions each holds. The six nobody has used yet fold into one line, so the list leads with the ones that matter. Uncategorized is listed but cannot be opened: it is the one category the app depends on. New category sits at the foot as an offer."),
   ("Edit a category", "Category.dc.html", "Name and icon",
    "Name and icon in one sheet, because a renamed category carrying a stale icon is worse than no icon. The rename blast radius is stated before you commit, and Food &amp; Drinks cannot be deleted while 412 transactions point at it &mdash; the sheet says so rather than greying out a button and explaining nothing."),
   ("Move and delete", "Merge.dc.html", "New, the way out of a blocked delete",
    "A category with transactions in it cannot be deleted &mdash; that is a real foreign key with ON DELETE RESTRICT, not a greyed-out button. Which means blocking needs a way out, or it is just a dead end. So the destructive action is really a move: pick where the 412 go, see Groceries climb from 118 to 530 before you commit, and read the one thing a rename never has to admit &mdash; a merge destroys information, so afterwards those transactions cannot remember where they came from. The footer answers the question the screen actually provokes: not one transaction is deleted, because the money is never in the category row."),
+  ("99 Speedmart", "MerchantSheet.dc.html", "New, rename and same shop",
+   "One shop, two jobs. The name at the top renames it everywhere, and says how many transactions will change before you save. Same shop as&hellip; handles a shop that pays under two identities: pick the one it really is, read what moves and whose rule wins, then commit. Opened from the pencil on Detail, as well as by a long press on the row."),
   ("Jump to", "Months.dc.html", "Month picker",
    "Every month with its total, and May flagged &ldquo;3 days not captured&rdquo; so a low month is never mistaken for a frugal one. The footer names your install date, because that is where history genuinely stops."),
   ("Export", "Export.dc.html", "Two real decisions",
@@ -248,7 +260,7 @@ page = f'''<title>Pinged Screen Set</title>
 <style>{css}</style>
 <div class="wrap">
   <p class="eyebrow">Pinged &middot; Receipt direction</p>
-  <h1>Twenty-one screens, one paper trail</h1>
+  <h1>Twenty-nine screens, one paper trail</h1>
   <p class="stand">The whole v1 surface &mdash; every screen, sheet and list &mdash; grouped the way a person meets it. The populated scenario is pinned to <strong>Wednesday 30 September 2026</strong>, month end, so every figure reconciles: RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded, four items awaiting review.</p>
   <p class="stand">The system below is the handoff &mdash; those hex values and type roles become the Compose theme directly.</p>
 
@@ -281,7 +293,7 @@ page = f'''<title>Pinged Screen Set</title>
 
   <div class="gap">
     <h2 class="sec">What is left</h2>
-    <p class="stand" style="font-size:15px">One sheet: the filter panel behind the four chips on the search screen. Date range, category, source app, amount range &mdash; four controls whose behaviour the chips already describe, and the only screen here I am comfortable calling derivative.</p>
+    <p class="stand" style="font-size:15px">Two things. The filter panel behind the four chips on the search screen: date range, category, source app, amount range. These four controls do what their chips already describe, and stay derivative, along with Cash&rsquo;s date sheet, Edit payment, Corrections and Licences. And the backup reminder, which ships today but is drawn only once #222 settles its smaller form.</p>
     <p class="stand" style="font-size:15px;margin-top:20px">Worth saying plainly: the review-inbox ratio is still a guess. If real capture routes far more than a handful of items into review, that screen stops being a quiet badge and becomes the app&rsquo;s main surface &mdash; a redesign only your own notification stream can settle.</p>
   </div>
 </div>

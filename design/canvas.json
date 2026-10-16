@@ -19,7 +19,7 @@
       "page": "page-1"
     },
     {
-      "file": "Battery.dc.html",
+      "file": "Stored.dc.html",
       "x": 490,
       "y": 0,
       "w": 390,
@@ -27,7 +27,7 @@
       "page": "page-1"
     },
     {
-      "file": "Sources.dc.html",
+      "file": "Battery.dc.html",
       "x": 980,
       "y": 0,
       "w": 390,
@@ -35,8 +35,16 @@
       "page": "page-1"
     },
     {
-      "file": "Empty.dc.html",
+      "file": "Sources.dc.html",
       "x": 1470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Empty.dc.html",
+      "x": 1960,
       "y": 0,
       "w": 390,
       "h": 844,
@@ -67,8 +75,16 @@
       "page": "page-1"
     },
     {
-      "file": "Cash.dc.html",
+      "file": "DetailExcluded.dc.html",
       "x": 1470,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Cash.dc.html",
+      "x": 1960,
       "y": 1000,
       "w": 390,
       "h": 844,
@@ -83,8 +99,24 @@
       "page": "page-1"
     },
     {
-      "file": "Search.dc.html",
+      "file": "ChartsMonth.dc.html",
       "x": 490,
+      "y": 2000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Day.dc.html",
+      "x": 980,
+      "y": 2000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Search.dc.html",
+      "x": 1470,
       "y": 2000,
       "w": 390,
       "h": 844,
@@ -92,16 +124,16 @@
     },
     {
       "file": "Stopped.dc.html",
-      "x": 980,
-      "y": 2000,
+      "x": 0,
+      "y": 3000,
       "w": 390,
       "h": 844,
       "page": "page-1"
     },
     {
       "file": "Settings.dc.html",
-      "x": 1470,
-      "y": 2000,
+      "x": 490,
+      "y": 3000,
       "w": 390,
       "h": 844,
       "page": "page-1"
@@ -109,55 +141,79 @@
     {
       "file": "Chooser.dc.html",
       "x": 0,
-      "y": 3000,
+      "y": 4000,
       "w": 390,
       "h": 844,
       "page": "page-1"
     },
     {
       "file": "Category.dc.html",
+      "x": 980,
+      "y": 4000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Categories.dc.html",
       "x": 490,
-      "y": 3000,
+      "y": 4000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Merge.dc.html",
+      "x": 1470,
+      "y": 4000,
       "w": 390,
       "h": 844,
       "page": "page-1"
     },
     {
       "file": "Months.dc.html",
-      "x": 980,
-      "y": 3000,
+      "x": 1960,
+      "y": 4000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "MerchantSheet.dc.html",
+      "x": 0,
+      "y": 5000,
       "w": 390,
       "h": 844,
       "page": "page-1"
     },
     {
       "file": "Export.dc.html",
-      "x": 1470,
-      "y": 3000,
+      "x": 490,
+      "y": 5000,
       "w": 390,
       "h": 844,
       "page": "page-1"
     },
     {
       "file": "Wipe.dc.html",
-      "x": 0,
-      "y": 4000,
+      "x": 980,
+      "y": 5000,
       "w": 390,
       "h": 844,
       "page": "page-1"
     },
     {
       "file": "Teach.dc.html",
-      "x": 490,
-      "y": 4000,
+      "x": 1960,
+      "y": 5000,
       "w": 390,
       "h": 844,
       "page": "page-1"
     },
     {
       "file": "PackImport.dc.html",
-      "x": 980,
-      "y": 4000,
+      "x": 0,
+      "y": 6000,
       "w": 390,
       "h": 844,
       "page": "page-1"
@@ -165,15 +221,15 @@
     {
       "file": "Rules.dc.html",
       "x": 1470,
-      "y": 4000,
+      "y": 5000,
       "w": 390,
       "h": 844,
       "page": "page-1"
     },
     {
       "file": "Unread.dc.html",
-      "x": 0,
-      "y": 5000,
+      "x": 490,
+      "y": 6000,
       "w": 390,
       "h": 844,
       "page": "page-1"
