@@ -8,7 +8,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -83,7 +85,9 @@ class TouchTargetTest {
                 )
             }
         }
-        assertTall("Back", DELETE)
+        assertTall("Back")
+        // A drawn icon, so found by what a screen reader calls it.
+        compose.onNodeWithContentDescription(DELETE).assertHeightIsAtLeast(44.dp).assertWidthIsAtLeast(44.dp)
     }
 
     // ---- settings ------------------------------------------------------------
