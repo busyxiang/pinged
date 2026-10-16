@@ -1347,68 +1347,28 @@ class LedgerScreenTest {
     }
 
     /**
-     * The `category` table is read once for the life of the holder, and the
-     * three aggregates on every refresh.
+     * The `category` table is read on every refresh, beside the aggregates
+     * (#155): Settings renames, re-icons and deletes categories, and the rows
+     * and the chooser draw each from this read, so a holder that kept its
+     * first read would label a payment with a name the user changed.
      *
-     * `assignCategory` refreshes, so "once per refresh" was once per chip tap:
-     * sixteen rows re-read to answer a control whose whole purpose is to move
-     * a row between them.
-     *
-     * **The staleness is the assertion, and that is deliberate.** Nothing in
-     * this milestone writes `category` -- §4's editor is out and
-     * `deleteIfUnused` refuses a protected row -- so the only way to show the
-     * second refresh did not re-read is to change the table underneath it the
-     * way only an import could, which is the primitive
-     * [aMissingUncategorizedRowLeavesTheIdNullAndTheRefreshStanding] reaches
-     * for too. The inserted payment is what keeps the test honest in the other
-     * direction: a second refresh that read nothing at all would satisfy the
-     * first two assertions and fail the third.
-     *
-     * Falsified on emulator-5554 by dropping the memo and reading the table on
-     * every refresh: the first assertion fails naming its own reason, with the
-     * expected sixteen categories against a list the deleted row is gone
-     * from.
+     * The rename goes through `CategoryDao.edit`, the write the sheet makes.
+     * The inserted payment keeps the aggregates honest beside it.
      */
-    @Test fun theCategoryTableIsReadOnceAndTheAggregatesEveryTime() {
+    @Test fun theCategoryTableIsReadOnEveryRefreshWithTheAggregates() {
         val dao = freshLedger()
         val viewModel = ledgerViewModel()
         runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() } }
-        val first = viewModel.read.value
-        assertTrue(
-            "The first refresh published no categories, so there is nothing " +
-                "for a second read to differ from",
-            first.categories.isNotEmpty(),
-        )
+        val food = categoryId(FOOD)
+        assertEquals(FOOD, viewModel.read.value.categories.single { it.id == food }.name)
 
-        val categories = Databases.categoryDao(context)
-        categories.deleteRow(requireNotNull(categories.uncategorizedIdOrNull()))
-        dao.insert(
-            ledgerTxn(
-                amountSen = 5_000L,
-                occurredAt = DEAD_MONTH_NOON,
-                categoryId = categoryId(FOOD),
-            ),
-        )
+        Databases.categoryDao(context).edit(food, "Makan", "soup")
+        dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = DEAD_MONTH_NOON, categoryId = food))
         runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() } }
 
+        val renamed = viewModel.read.value.categories.single { it.id == food }
+        assertEquals("The second refresh drew the name from before the rename", "Makan" to "soup", renamed.name to renamed.iconKey)
         assertEquals(
-            "The second refresh re-read `category`. Nothing in this milestone " +
-                "writes that table, and refresh() runs after every chip tap, so " +
-                "the read is two statements per tap that cannot answer anything " +
-                "new",
-            first.categories,
-            viewModel.read.value.categories,
-        )
-        assertEquals(
-            "The uncategorized id was resolved again for the same reason, and " +
-                "it is the other half of the same one read",
-            first.uncategorizedId,
-            viewModel.read.value.uncategorizedId,
-        )
-        assertEquals(
-            "The month total does not count a payment inserted before this " +
-                "refresh, so the aggregates were memoized along with the " +
-                "categories -- which is the read that must not stop happening",
             listOf(5_000L),
             requireNotNull(viewModel.read.value.summary).totals.map { it.netSen },
         )

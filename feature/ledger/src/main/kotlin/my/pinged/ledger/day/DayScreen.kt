@@ -103,6 +103,7 @@ fun DayScreen(
         onOpenDetail = onOpenDetail,
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
+        addCategory = viewModel::addCategory,
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
             MerchantActions(
@@ -128,6 +129,8 @@ internal fun DayScreenContent(
     modifier: Modifier = Modifier,
     onOpenReview: (focus: Long?) -> Unit = {},
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
+    /** The chooser's New category (#155); null draws no tile. */
+    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
@@ -185,6 +188,7 @@ internal fun DayScreenContent(
                 onAssign(chosen, categoryId, teach)
             },
             onDismiss = { categorizing = null },
+            addCategory = addCategory,
         )
     }
     if (merchantSheet != null) MerchantSheet(merchantSheet, merchantActions)

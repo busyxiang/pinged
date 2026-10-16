@@ -72,8 +72,12 @@ object Backup {
      * 2 added spec 6.4's `merchant_aliases` and `merchant_names`. A format-1
      * file has neither and restores with both tables empty, which is exactly
      * what the ledger it came from held.
+     *
+     * 3 added `categories[].seed_name` (schema 4). An older file has none, and
+     * each row is given `Seed.seedNameOf` its name, as the schema migration
+     * gives it: no build that wrote one could rename or add a category.
      */
-    const val FORMAT_VERSION = 2
+    const val FORMAT_VERSION = 3
 
     /** The oldest format [ImportJson] still reads; see [BackupSection.sinceFormat]. */
     const val OLDEST_READABLE = 1
@@ -198,6 +202,7 @@ internal val CATEGORY_SECTION = BackupSection<Category>(
         BackupColumn("icon_key", "iconKey") { w, r -> w.value(r.iconKey) },
         BackupColumn("sort_order", "sortOrder") { w, r -> w.value(r.sortOrder.toLong()) },
         BackupColumn("is_protected", "isProtected") { w, r -> w.value(r.isProtected) },
+        BackupColumn("seed_name", "seedName") { w, r -> w.value(r.seedName) },
     ),
     clearFirst = { it.categoryDao().deleteAllForImport() },
     insert = { db, rows -> db.categoryDao().insertAll(rows.map(ImportJson::category)) },

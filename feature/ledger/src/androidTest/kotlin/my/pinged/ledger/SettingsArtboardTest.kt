@@ -117,7 +117,7 @@ class SettingsArtboardTest {
                 Column(Modifier.fillMaxSize().background(Paper).verticalScroll(rememberScrollState())) {
                     SettingsRows(
                         state = SettingsState(storage = Storage.HEALTHY, sourcesOn = 4, learnedCount = 54, loaded = true),
-                        onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {},
+                        onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {},
                         onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
                     )
                     Footer(buildVersion = "1.0", packVersion = 7)

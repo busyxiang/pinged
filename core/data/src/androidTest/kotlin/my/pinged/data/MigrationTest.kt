@@ -33,6 +33,9 @@ class MigrationTest {
         const val MIGRATED = "migration-1-2.db"
         const val MIGRATED_TO_3 = "migration-2-3.db"
         const val MIGRATED_1_TO_3 = "migration-1-3.db"
+        const val MIGRATED_3_TO_4 = "migration-3-4.db"
+        const val MIGRATED_2_TO_4 = "migration-2-4.db"
+        const val MIGRATED_1_TO_4 = "migration-1-4.db"
     }
 
     @Test fun schemaVersionOneIsCreatable() {
@@ -154,6 +157,68 @@ class MigrationTest {
         }
     }
 
+    /**
+     * v3 -> v4 (#155): `seed_name` is added and given to the seeded rows by
+     * name, the transaction filed under one survives and is still found by
+     * search, and the result validates against `4.json`. A v3 table holds
+     * only seeded rows, since nothing before v4 could add or rename one, so
+     * every row here is given its own name.
+     */
+    @Test fun versionThreeMigratesToFourNamingEachSeededRow() {
+        helper.createDatabase(MIGRATED_3_TO_4, 3).use { v3 ->
+            v3.insertSeededPair()
+            v3.insertSampleTxn(categoryId = 1)
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED_3_TO_4, 4, true, MIGRATION_3_4).use { v4 ->
+            assertEquals(
+                listOf("Food & Drinks" to "Food & Drinks", "Uncategorized" to "Uncategorized"),
+                v4.seedNames(),
+            )
+            v4.query("SELECT category_id FROM txn WHERE id = 7").use { c ->
+                assertTrue("the v3 transaction is gone", c.moveToFirst())
+                assertEquals(1L, c.getLong(0))
+            }
+            assertEquals(listOf("7"), v4.column("SELECT rowid FROM txn_fts WHERE txn_fts MATCH 'yuenkee*'"))
+            assertEquals(4L, v4.pragma("user_version"))
+        }
+    }
+
+    /** A v2 file reaches v4 through the search step and then this one. */
+    @Test fun versionTwoMigratesToFour() {
+        helper.createDatabase(MIGRATED_2_TO_4, 2).use { v2 ->
+            v2.insertSeededPair()
+            v2.insertSampleTxn(categoryId = 1)
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED_2_TO_4, 4, true, MIGRATION_3_4).use { v4 ->
+            assertEquals(
+                listOf("Food & Drinks" to "Food & Drinks", "Uncategorized" to "Uncategorized"),
+                v4.seedNames(),
+            )
+            assertEquals(listOf("7"), v4.column("SELECT rowid FROM txn_fts WHERE txn_fts MATCH 'yuenkee*'"))
+            assertEquals(4L, v4.pragma("user_version"))
+        }
+    }
+
+    /** A v1 file, the oldest released, reaches v4 through all three steps. */
+    @Test fun versionOneMigratesToFour() {
+        helper.createDatabase(MIGRATED_1_TO_4, 1).use { v1 ->
+            v1.execSQL(
+                "INSERT INTO category (id, name, icon_key, sort_order, is_protected) " +
+                    "VALUES (1, 'Uncategorized', 'circle-dashed', 0, 1)",
+            )
+            v1.insertSampleTxn(categoryId = 1)
+        }
+        helper.runMigrationsAndValidate(MIGRATED_1_TO_4, 4, true, MIGRATION_3_4).use { v4 ->
+            assertEquals(listOf("Uncategorized" to "Uncategorized"), v4.seedNames())
+            assertEquals(1L, v4.count("txn"))
+            assertEquals(listOf("7"), v4.column("SELECT rowid FROM txn_fts WHERE txn_fts MATCH 'yuenkee*'"))
+            assertEquals(0L, v4.count("merchant_alias"))
+            assertEquals(4L, v4.pragma("user_version"))
+        }
+    }
+
     // ---- harness/app DDL parity ----------------------------------------
 
     /**
@@ -179,7 +244,7 @@ class MigrationTest {
      * `sqlite_master.sql` holds each statement as executed, which is the one place
      * both databases are observable on equal terms, so the two are compared there:
      * **every schema object, tables and indices alike, as whole strings** --
-     * 25 at schema v2, logged on every run. Both sides are built at
+     * 36 at schema v4, logged on every run. Both sides are built at
      * [PingedDatabase.VERSION], since the app only ever creates the current one.
      *
      * **Nothing is normalised and nothing is excluded** -- not whitespace, not `IF
@@ -264,6 +329,32 @@ class MigrationTest {
         return DatabaseFactory.build(context).useDb {
             schemaObjects(it.openHelper.readableDatabase)
         }
+    }
+
+    private fun SupportSQLiteDatabase.seedNames(): List<Pair<String, String?>> =
+        query("SELECT name, seed_name FROM category ORDER BY id").use { c ->
+            buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
+        }
+
+    /** Two seeded categories, ids 1 and 2, as raw SQL at v3 or before. */
+    private fun SupportSQLiteDatabase.insertSeededPair() {
+        execSQL(
+            "INSERT INTO category (id, name, icon_key, sort_order, is_protected) VALUES " +
+                "(1, 'Food & Drinks', 'utensils', 0, 0), (2, 'Uncategorized', 'circle-dashed', 15, 1)",
+        )
+    }
+
+    /** One `txn` row, id 7, written as raw SQL at whatever version [this] is. */
+    private fun SupportSQLiteDatabase.insertSampleTxn(categoryId: Long) {
+        execSQL(
+            "INSERT INTO txn (id, raw_capture_id, amount_sen, currency, direction, occurred_at, " +
+                "local_date, merchant_raw, merchant_display, merchant_key, category_id, " +
+                "source_package, source_label, confidence, state, pending_reason, is_excluded, " +
+                "exclusion_reason, note, user_edited, created_at, updated_at) VALUES " +
+                "(7, NULL, 1250, 'MYR', 'EXPENSE', 1788739200000, 20260907, " +
+                "'YUENKEEHOMETOWNCAFE', 'Yuenkeehometowncafe', 'YUENKEEHOMETOWNCAFE', $categoryId, " +
+                "NULL, NULL, 'HIGH', 'COMMITTED', NULL, 0, NULL, NULL, 0, 1, 1)",
+        )
     }
 
     private fun SupportSQLiteDatabase.count(table: String): Long =

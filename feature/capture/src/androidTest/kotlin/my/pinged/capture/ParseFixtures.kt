@@ -153,7 +153,7 @@ internal object ParseFixtures {
             dictionary = dictionary,
             // Read when the pass is built, as `ParseWorker.drain` does, so a
             // category deleted before this call is absent from it.
-            categoryIds = categoryIds ?: Databases.categoryDao(context).all().associate { it.name to it.id },
+            categoryIds = categoryIds ?: Databases.categoryDao(context).seededIds(),
             captures = Databases.rawCaptureDao(context),
             txns = Databases.txnDao(context),
             rules = Databases.merchantRuleDao(context),

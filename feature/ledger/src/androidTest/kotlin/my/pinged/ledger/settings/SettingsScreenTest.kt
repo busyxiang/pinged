@@ -24,7 +24,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, sourcesOn = 4, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertIsDisplayed()
@@ -42,7 +42,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, lastExportAt = null, lastCheckAt = null, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertIsDisplayed()
@@ -55,7 +55,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.KEY_GONE, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -73,7 +73,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.DAMAGED, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -85,7 +85,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.UNREADABLE, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -102,7 +102,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.DAMAGED, sourcesOn = null, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Capture sources").assertIsDisplayed()
@@ -116,7 +116,7 @@ class SettingsScreenTest {
             Column(Modifier.verticalScroll(rememberScrollState())) {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, learnedCount = 1_234, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = { opened++ }, onOpenLicences = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = { opened++ }, onOpenCategories = {}, onOpenLicences = {},
                 onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
             }
@@ -127,12 +127,29 @@ class SettingsScreenTest {
         org.junit.Assert.assertEquals(1, opened)
     }
 
+    /** #155: the artboard's "Categories · 14", and it opens the list. */
+    @Test fun theCategoriesRowShowsTheCountAndOpensTheList() {
+        var opened = 0
+        compose.setContent {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SettingsRows(
+                    state = SettingsState(storage = Storage.HEALTHY, categoryCount = 17, loaded = true),
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = { opened++ }, onOpenLicences = {},
+                    onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                )
+            }
+        }
+        compose.onNodeWithText("17").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Categories").performScrollTo().performClick()
+        assertEquals(1, opened)
+    }
+
     /** A count nobody could read is drawn as nothing, as every count on this screen is. */
     @Test fun anUnreadCountIsDrawnAsNothing() {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, learnedCount = null, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {},
                 onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
@@ -147,7 +164,7 @@ class SettingsScreenTest {
             Column(Modifier.verticalScroll(rememberScrollState())) {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = { opened++ },
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = { opened++ },
                 onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
             }
@@ -166,7 +183,7 @@ class SettingsScreenTest {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 SettingsRows(
                     state = SettingsState(storage = Storage.HEALTHY, loaded = true),
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
                     alertsOn = false,
                     onAlerts = { asked++ },
                 )

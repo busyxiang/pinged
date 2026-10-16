@@ -12,6 +12,7 @@ import my.pinged.capture.CaptureStorage
 import my.pinged.capture.Graph
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
+import my.pinged.data.dao.CategoryNameTakenException
 import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
@@ -30,13 +31,12 @@ import my.pinged.parse.SameShop
  * process kill on a tap. `MainThreadRefreshTest` records the mechanism.
  *
  * **The guard covers the open, not the statement.** A statement that fails
- * afterwards -- `SQLiteFullException` on a full disk, or a foreign key
- * violation if a category were deleted between the sheet being drawn and the
- * tap -- is outside [DatabaseUnavailableException] and still escapes [scope].
- * Left uncovered on purpose: nothing in this milestone can delete a category
- * (§4's editor is out), and a catch-all here would swallow programming errors
- * it cannot tell from a full disk. §4 is where this stops being hypothetical
- * and where the handling belongs.
+ * afterwards -- `SQLiteFullException` on a full disk -- is outside
+ * [DatabaseUnavailableException] and still escapes [scope]: a catch-all here
+ * would swallow programming errors it cannot tell from a full disk. A category
+ * deleted in Settings between the chooser being drawn and its save (#155) is
+ * not left to the foreign key: [assignCategory] asks in the transaction that
+ * writes.
  *
  * [context] is a function so the holder can keep reading its `Application`
  * through a getter: a `Context` field is what lint's `StaticFieldLeak` fails
@@ -52,29 +52,6 @@ class RowActions(
     val merchantSheet: StateFlow<MerchantSheetState?> = _merchantSheet.asStateFlow()
 
     /**
-     * The `category` table, read once per database this holder reads from.
-     *
-     * **Safe only while nothing writes the table**: §4's editor is out and the
-     * one write a row makes is `txn.category_id`. Read per refresh these are
-     * two of the six statements a chip tap issues, re-reading sixteen rows to
-     * move one row between them. A restore does replace the table, with the
-     * backup's rows, which is why [Catalogue] carries the generation it was
-     * read under and [readCatalogueOnce] reads again when that has moved.
-     *
-     * **Null means "not read yet", never "read and empty".** A read that
-     * cannot open the database throws out of `all()` before the assignment, so
-     * a failed first read memoizes nothing and the next one tries again; that
-     * is why a single nullable field holds both values rather than two, since
-     * a resolved `uncategorizedId` is legitimately null.
-     *
-     * `@Volatile` because two reads can overlap -- a resume and a chip tap both
-     * launch on the holder's scope and both suspend into `Dispatchers.IO`. The
-     * worst a stale read costs is one extra pass over sixteen rows, never a
-     * wrong answer.
-     */
-    @Volatile private var catalogue: Catalogue? = null
-
-    /**
      * Everything the chooser needs beside the row it opens on.
      *
      * Blocking, so it may only be called from inside a `CaptureStorage.guarded`
@@ -84,49 +61,26 @@ class RowActions(
      * Ledger's is not.
      */
     fun readChooser(): ChooserRead {
-        val catalogue = readCatalogueOnce()
-        // Every read, unlike the catalogue: a teaching save changes it, and the
-        // next chooser has to start from the rule just written.
+        // Read on every refresh: Settings edits the table (#155), and a rename
+        // has to reach the rows and the chooser on the next one. Three small
+        // statements on a table of sixteen-odd rows, beside the ledger's
+        // aggregate reads.
+        val categories = Databases.categoryDao(context())
+        val all = categories.all()
+        // A teaching save changes it, and the next chooser has to start from
+        // the rule just written.
         val learned = Databases.merchantRuleDao(context()).learnedRules()
             .associate { it.pattern to it.categoryId }
         val merged = Databases.merchantIdentityDao(context()).mergedIdentities().toSet()
         return ChooserRead(
-            categories = catalogue.categories,
-            uncategorizedId = catalogue.uncategorizedId,
+            categories = all,
+            uncategorizedId = categories.uncategorizedIdOrNull(),
             learnedRules = learned,
             mergedIdentities = merged,
-            dictionaryFiling = catalogue.dictionaryFiling,
+            // The pack is the shipped one and the seeded ids are read now, so
+            // the marking is the filing stage two makes.
+            dictionaryFiling = dictionaryCategoryIds(Graph.parsePack().dictionary, categories.seededIds()),
         )
-    }
-
-    /**
-     * [catalogue], filled in on the first read that gets to the database.
-     *
-     * All sixteen categories, not a lookup per line: the table is seeded and
-     * tiny, so three point lookups cost more than one walk.
-     * `uncategorizedIdOrNull` beside it is one indexed point lookup, measured
-     * at under a millisecond next to the ledger's four aggregate reads -- so
-     * [catalogue] is a memo about statement count, not about a slow read.
-     */
-    private fun readCatalogueOnce(): Catalogue {
-        // Read before the query, so a reset landing during it leaves the
-        // older number on the result and the next read reads again.
-        val generation = Databases.generation.value
-        return catalogue?.takeIf { it.generation == generation } ?: run {
-            val categories = Databases.categoryDao(context())
-            val all = categories.all()
-            Catalogue(
-                categories = all,
-                uncategorizedId = categories.uncategorizedIdOrNull(),
-                // The pack is the shipped one and the categories are this
-                // generation's, so the marking is the filing stage two makes.
-                dictionaryFiling = dictionaryCategoryIds(
-                    Graph.parsePack().dictionary,
-                    all.associate { it.name to it.id },
-                ),
-                generation = generation,
-            ).also { catalogue = it }
-        }
     }
 
     /**
@@ -160,16 +114,47 @@ class RowActions(
             damageStopsCapture = false,
         ) {
             val at = System.currentTimeMillis()
-            // A teaching save writes the merchant's learned rule and leaves the
-            // row filed by it. It answers false for a row with no merchant key,
-            // which is then saved as the one-off the sheet said it would be.
-            //
-            // `teachAndFix` also moves the merchant's past payments (#49), under
-            // the lease `guarded` holds, in the one transaction that wrote the rule.
-            val taught = teach && Databases.merchantRuleDao(context()).teachAndFix(txnId, categoryId, at).taught
-            if (!taught) Databases.txnDao(context()).setCategory(txnId, categoryId, at)
+            // The check and the write in one transaction, so a delete from
+            // Settings cannot land between them: deleted since the chooser
+            // drew it, there is nothing to file under, and [then]'s re-read
+            // draws the chooser's new list.
+            Databases.inOneTransaction(context()) { db ->
+                if (!db.categoryDao().exists(categoryId)) return@inOneTransaction
+                // A teaching save writes the merchant's learned rule and leaves
+                // the row filed by it. It answers false for a row with no
+                // merchant key, which is then saved as the one-off the sheet
+                // said it would be.
+                //
+                // `teachAndFix` also moves the merchant's past payments (#49),
+                // in this same transaction.
+                val taught = teach && db.merchantRuleDao().teachAndFix(txnId, categoryId, at).taught
+                if (!taught) db.txnDao().setCategory(txnId, categoryId, at)
+            }
         }
         then()
+    }
+
+    /**
+     * Spec 4's "add", from the chooser's New category tile (#155): the new
+     * row's id, or null where it was not written -- the database could not be
+     * opened, or the name was taken since the sheet checked it. [then] re-reads
+     * the chooser, which is how the new tile appears.
+     */
+    suspend fun addCategory(name: String, iconKey: String, then: suspend () -> Unit = {}): Long? {
+        val id = CaptureStorage.guarded<Long?>(
+            context(),
+            what = "The category could not be added",
+            unavailable = { unavailable(); null },
+            damageStopsCapture = false,
+        ) {
+            try {
+                Databases.categoryDao(context()).add(name, iconKey)
+            } catch (_: CategoryNameTakenException) {
+                null
+            }
+        }
+        then()
+        return id
     }
 
     /**
@@ -262,18 +247,6 @@ data class ChooserRead(
     val learnedRules: Map<String, Long> = emptyMap(),
     val mergedIdentities: Set<String> = emptySet(),
     val dictionaryFiling: (String?) -> Long? = LedgerRead.NO_DICTIONARY,
-)
-
-/**
- * [RowActions.catalogue]'s two values, so one nullable field can hold both --
- * see there for why two fields could not -- beside the `Databases.generation`
- * they were read under.
- */
-private class Catalogue(
-    val categories: List<Category>,
-    val uncategorizedId: Long?,
-    val dictionaryFiling: (String?) -> Long?,
-    val generation: Long,
 )
 
 /**

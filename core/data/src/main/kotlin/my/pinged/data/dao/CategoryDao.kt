@@ -1,6 +1,8 @@
 package my.pinged.data.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
@@ -27,10 +29,29 @@ class CategoryInUseException(
         "$ruleCount merchant rule(s); merge it into another category instead",
 )
 
+/**
+ * A name another category already holds, compared ignoring case: two
+ * categories called "Makan" and "makan" are one category to anyone reading
+ * them. `category.name`'s unique index is the backstop and is case-sensitive,
+ * so this is the check, and it names the clash where SQLite would say 2067.
+ */
+class CategoryNameTakenException(val name: String) :
+    IllegalArgumentException("There is already a category called '$name'")
+
+/** One category and what points at it: the Categories list's row (#155). */
+data class CategoryUse(
+    @Embedded val category: Category,
+    @ColumnInfo(name = "transactions") val transactions: Int,
+    @ColumnInfo(name = "rules") val rules: Int,
+)
+
 @Dao
 interface CategoryDao {
     @Insert
     fun insertAll(categories: List<Category>)
+
+    @Insert
+    fun insert(category: Category): Long
 
     @Query("SELECT COUNT(*) FROM category")
     fun countAll(): Int
@@ -93,8 +114,15 @@ interface CategoryDao {
     fun topUp(): Int {
         val order = sortOrderOf(Seed.UNCATEGORIZED) ?: return 0
         if (order >= Seed.UNCATEGORIZED_SORT_ORDER) return 0
-        val present = all().mapTo(HashSet()) { it.name }
-        val missing = Seed.categories().filter { it.name in Seed.TOPPED_UP && it.name !in present }
+        // By `seed_name`, so a seeded category the user renamed is present.
+        // The name is checked as well, because a category of the user's may
+        // hold it, and the unique index would refuse the insert.
+        val rows = all()
+        val seeded = rows.mapNotNullTo(HashSet()) { it.seedName }
+        val names = rows.mapTo(HashSet()) { it.name }
+        val missing = Seed.categories().filter {
+            it.seedName in Seed.TOPPED_UP && it.seedName !in seeded && it.name !in names
+        }
         insertAll(missing)
         moveUncategorized(Seed.UNCATEGORIZED_SORT_ORDER)
         return missing.size
@@ -109,6 +137,92 @@ interface CategoryDao {
 
     @Query("SELECT * FROM category ORDER BY sort_order ASC")
     fun all(): List<Category>
+
+    @Query("SELECT * FROM category WHERE seed_name IS NOT NULL")
+    fun seeded(): List<Category>
+
+    /**
+     * The `category.id` of each seeded category still present, by its
+     * `seed_name`: what resolves a dictionary entry's category, which names a
+     * seeded category (spec #45), whatever the user has since called it.
+     */
+    fun seededIds(): Map<String, Long> = seeded().associate { it.seedName!! to it.id }
+
+    /**
+     * Every category and how many transactions and learned rules point at it,
+     * for the Categories list (#155): the counts are the rename's reach and
+     * the reason a delete is refused. Uncategorized last, being where Pinged
+     * files what it cannot place rather than a category anyone picks.
+     */
+    @Query(
+        """
+        SELECT category.*,
+            (SELECT COUNT(*) FROM txn WHERE txn.category_id = category.id) AS transactions,
+            (SELECT COUNT(*) FROM merchant_rule WHERE merchant_rule.category_id = category.id) AS rules
+        FROM category
+        ORDER BY category.is_protected, category.sort_order, category.id
+        """,
+    )
+    fun uses(): List<CategoryUse>
+
+    @Query("SELECT COALESCE(MAX(sort_order), -1) FROM category")
+    fun maxSortOrder(): Int
+
+    /**
+     * Spec 4's "add": a category named [name], drawn with [iconKey], after
+     * every category there is. Not protected and with no `seed_name`, so no
+     * dictionary entry files under it until a person does.
+     *
+     * Refuses a blank or over-long name ([IllegalArgumentException]) and one
+     * another category holds ([CategoryNameTakenException]). `@Transaction` so
+     * the check, the sort order and the insert see one table.
+     *
+     * @return the new row's id.
+     */
+    @Transaction
+    fun add(name: String, iconKey: String): Long {
+        val clean = requireUsableName(name, exceptId = null)
+        require(iconKey.isNotBlank()) { "A category needs an icon" }
+        return insert(Category(name = clean, iconKey = iconKey, sortOrder = maxSortOrder() + 1))
+    }
+
+    /**
+     * Spec 4's rename and change of icon, from the one sheet that edits both.
+     * A targeted UPDATE of the two columns: `seed_name`, `sort_order` and
+     * `is_protected` are never written, so a renamed seeded category keeps
+     * its dictionary entries.
+     *
+     * Global and retroactive by design (spec 4): no transaction stores a
+     * name, so every row filed here shows the new one, in every month.
+     *
+     * Refuses a protected or missing category ([IllegalArgumentException]),
+     * which is Uncategorized: the gate and the categorizer find it by its
+     * name. Otherwise as [add] refuses.
+     */
+    @Transaction
+    fun edit(categoryId: Long, name: String, iconKey: String) {
+        val protected = isProtected(categoryId)
+            ?: throw IllegalArgumentException("No such category: $categoryId")
+        require(!protected) { "Category $categoryId is protected and cannot be edited" }
+        val clean = requireUsableName(name, exceptId = categoryId)
+        require(iconKey.isNotBlank()) { "A category needs an icon" }
+        updateNameAndIcon(categoryId, clean, iconKey)
+    }
+
+    /** [edit]'s write. `is_protected = 0` in the statement too, as the last word. */
+    @Query("UPDATE category SET name = :name, icon_key = :iconKey WHERE id = :categoryId AND is_protected = 0")
+    fun updateNameAndIcon(categoryId: Long, name: String, iconKey: String): Int
+
+    /** [name] trimmed, or a refusal; see [add]. [exceptId] is the row being renamed. */
+    private fun requireUsableName(name: String, exceptId: Long?): String {
+        val clean = name.trim()
+        require(clean.isNotEmpty()) { "A category needs a name" }
+        require(clean.length <= MAX_NAME_LENGTH) { "A category name is at most $MAX_NAME_LENGTH characters" }
+        if (all().any { it.id != exceptId && it.name.equals(clean, ignoreCase = true) }) {
+            throw CategoryNameTakenException(clean)
+        }
+        return clean
+    }
 
     /**
      * Spec 9.4's category chips, most used first (#100): every category but
@@ -287,6 +401,13 @@ interface CategoryDao {
     }
 
     companion object {
+        /**
+         * The longest name [add] and [edit] accept. Twice the seed's longest,
+         * "Insurance & takaful" at 19, which already takes two lines in the
+         * chooser's tile at CI's 320dp.
+         */
+        const val MAX_NAME_LENGTH = 40
+
         /**
          * [rankedByUse]'s query. The count is a sub-select over the period's
          * rows, so `txn` is reached by its `local_date` range

@@ -199,6 +199,25 @@ class ManualEditTest {
         )
     }
 
+    /**
+     * Categories edited in Settings (#155). A renamed seeded category still
+     * pre-selects its dictionary merchants, read on a new holder so no earlier
+     * read can answer for it; and a deleted one stops being offered by a
+     * holder that had already read it, since a Settings edit does not move
+     * `Databases.generation`.
+     */
+    @Test fun thePreselectionFollowsARenameAndADeleteFromSettings() = runBlocking {
+        val dao = Databases.categoryDao(context)
+        val groceries = categoryId("Groceries")
+        dao.edit(groceries, "Barang dapur", "shopping-basket")
+        assertEquals(groceries, entries(NOON).preselection("99 Speedmart").await())
+
+        val holder = entries(NOON)
+        assertEquals(groceries, holder.preselection("99 Speedmart").await())
+        dao.deleteIfUnused(groceries)
+        assertEquals(null, holder.preselection("99 Speedmart").await())
+    }
+
     /** Groceries by the dictionary, left alone: rule-filed, unless [categoryId] says otherwise and is tapped. */
     private suspend fun speedmart(categoryId: Long): ManualDraft {
         val draft = ManualDraft(amountSen = 1_250L, merchant = "99 Speedmart", note = "lunch")

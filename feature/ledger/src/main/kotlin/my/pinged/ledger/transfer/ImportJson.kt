@@ -198,7 +198,7 @@ object ImportJson {
                         )
                     }
                     lastSection = sectionIndex
-                    counts[name] = readSection(db, reader, budget, name, state)
+                    counts[name] = readSection(db, reader, budget, name, state, format)
                 } else if (name == Backup.FIELD_EXPORTED_AT) {
                     exportedAt = reader.nextLong()
                 } else {
@@ -421,10 +421,11 @@ object ImportJson {
         budget: RowBudgetReader,
         name: String,
         state: Progress,
+        format: Int,
     ): Int {
         val section = ALL_SECTIONS.first { it.name == name }
         section.clearFirst?.invoke(db)
-        return readArray(reader, budget, section, state) { rows -> section.insert(db, rows) }
+        return readArray(reader, budget, section, state, format) { rows -> section.insert(db, rows) }
     }
 
     private fun readArray(
@@ -432,6 +433,7 @@ object ImportJson {
         budget: RowBudgetReader,
         section: BackupSection<*>,
         state: Progress,
+        format: Int,
         insert: (List<BackupRow>) -> Unit,
     ): Int {
         if (reader.peek() != JsonToken.BEGIN_ARRAY) {
@@ -449,7 +451,7 @@ object ImportJson {
         val chunk = ArrayList<BackupRow>(CHECK_EVERY)
         while (reader.hasNext()) {
             budget.startRow()
-            chunk += readRow(reader, section)
+            chunk += readRow(reader, section, format)
             read++
             if (chunk.size == CHECK_EVERY) {
                 insert(chunk)
@@ -462,7 +464,7 @@ object ImportJson {
         return read
     }
 
-    private fun readRow(reader: JsonReader, section: BackupSection<*>): BackupRow {
+    private fun readRow(reader: JsonReader, section: BackupSection<*>, format: Int): BackupRow {
         val table = section.table
         if (reader.peek() != JsonToken.BEGIN_OBJECT) {
             throw ImportFormatException(
@@ -505,7 +507,7 @@ object ImportJson {
             }
         }
         reader.endObject()
-        return BackupRow(table, values)
+        return BackupRow(table, values, format)
     }
 
     // ---- rows ------------------------------------------------------------
@@ -522,6 +524,7 @@ object ImportJson {
         iconKey = r.text("icon_key"),
         sortOrder = r.int("sort_order"),
         isProtected = r.bool("is_protected"),
+        seedName = if (r.format >= 3) r.optText("seed_name") else Seed.seedNameOf(r.text("name")),
     )
 
     internal fun captureSource(r: BackupRow) = CaptureSource(
@@ -755,6 +758,8 @@ private class RowBudgetReader(private val delegate: java.io.Reader) : java.io.Re
 internal class BackupRow(
     private val table: String,
     private val values: Map<String, Any?>,
+    /** The document's [Backup.FORMAT_VERSION], for a column a format added. */
+    val format: Int = Backup.FORMAT_VERSION,
 ) {
     private fun raw(column: String): Any? {
         if (!values.containsKey(column)) {

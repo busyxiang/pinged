@@ -34,7 +34,7 @@ _Avoid_: alias, nickname
 ### Categories
 
 **Dictionary**:
-The categories the app ships for well-known merchants, part of the parser pack. The user cannot edit it. A rule the user taught outranks it, and a new pack changes how new payments are filed but never re-files old ones.
+The categories the app ships for well-known merchants, part of the parser pack. The user cannot edit it. It names each category by the name it was seeded under, so a category the user renames keeps its merchants. A rule the user taught outranks it, and a new pack changes how new payments are filed but never re-files old ones.
 _Avoid_: bundled rules, shipped rules, seeded rules
 
 **Learned rule**:

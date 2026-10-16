@@ -51,6 +51,14 @@ import kotlinx.serialization.Serializable
 @Serializable data object Learned : NavKey
 
 /**
+ * The categories list (#155), pushed from its row in settings
+ * (`SettingsScreen`'s `onOpenCategories`).
+ *
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ */
+@Serializable data object Categories : NavKey
+
+/**
  * The bundled fonts' licences (spec 8), pushed from their row in settings
  * (`SettingsScreen`'s `onOpenLicences`).
  *
