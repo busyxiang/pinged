@@ -112,8 +112,12 @@ class CategorySheetTest {
         compose.onNodeWithText(DELETE_CATEGORY).assertDoesNotExist()
         save.assertIsNotEnabled()
         compose.onNodeWithTag(iconTag("tag")).assertIsSelected()
-        replaceName("Kucing")
+        // The icon before the name: typing raises the soft keyboard on CI's
+        // emulator, which leaves the icons' scroller little or no height under
+        // the pinned name and Save, and a tile there takes no tap.
         compose.onNodeWithTag(iconTag("dog")).performScrollTo().performClick()
+        compose.onNodeWithTag(iconTag("dog")).assertIsSelected()
+        replaceName("Kucing")
         save.performClick()
         assertEquals("Kucing" to "dog", saved)
     }
