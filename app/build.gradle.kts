@@ -137,6 +137,8 @@ dependencies {
     // WorkManager's Configuration.Provider because the manifest removes
     // WorkManagerInitializer, so this module uses the API directly.
     implementation(libs.androidx.work.runtime)
+    // `FirstRun`'s flag (#156).
+    implementation(libs.androidx.datastore.preferences)
     // The allow-list screen and the rest of the Ledger's screens.
     implementation(project(":feature:ledger"))
     // The Charts tab (spec 9.3).
