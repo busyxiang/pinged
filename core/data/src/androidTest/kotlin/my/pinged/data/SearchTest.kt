@@ -178,6 +178,52 @@ class SearchTest {
         )
     }
 
+    /**
+     * The CSV export's read (#201): page after page, with no limit in sight,
+     * is the same rows in the same order as one unlimited read -- across a
+     * day boundary, and across rows that tie on both the day and the moment,
+     * where only the id orders them.
+     */
+    @Test fun pagingAfterTheLastRowReadsEveryRowOnceInTheFeedsOrder() {
+        add(1, "Grab", date = SEP_6)
+        add(2, "Grab", date = SEP_8)
+        repeat(5) {
+            db.txnDao().insert(
+                sampleTxn(amountSen = 10L + it, occurredAt = 99, localDate = SEP_7, categoryId = cat)
+                    .copy(merchantDisplay = "Grab", merchantRaw = "GRAB", merchantKey = "GRAB"),
+            )
+        }
+        add(3, "Other", date = SEP_7)
+        val whole = found("grab")
+
+        val paged = mutableListOf<Long>()
+        var after: SearchCursor? = null
+        do {
+            val page = db.txnDao().searchPage("grab", SearchFilter(), after, limit = 2)
+            paged += page.map { it.txn.amountSen }
+            after = page.lastOrNull()?.let(SearchCursor::after)
+        } while (page.size == 2)
+
+        // Written out, so the order is the feed's and not just the same as
+        // another read's: newest day first, then the later id of a tie.
+        assertEquals(listOf(2L, 14L, 13L, 12L, 11L, 10L, 1L), whole)
+        assertEquals(whole, paged)
+    }
+
+    /** The export sheet's two leave-outs, in the rows and in the totals alike. */
+    @Test fun leavingOutExcludedOrPendingRowsNarrowsTheRowsAndTheTotals() {
+        add(1, "Grab")
+        add(2, "Grab", isExcluded = true)
+        add(3, "Grab", state = TxnState.PENDING)
+        add(4, "Grab", state = TxnState.PENDING, isExcluded = true)
+
+        assertEquals(listOf(4L, 3L, 2L, 1L), found(""))
+        assertEquals(listOf(3L, 1L), found("", SearchFilter(leaveOutExcluded = true)))
+        assertEquals(listOf(2L, 1L), found("", SearchFilter(leaveOutPending = true)))
+        assertEquals(listOf(1L), found("", SearchFilter(leaveOutExcluded = true, leaveOutPending = true)))
+        assertEquals(2, db.txnDao().searchTotals("", SearchFilter(leaveOutExcluded = true)).sumOf { it.rowCount })
+    }
+
     private companion object {
         const val GRAB_APP = "com.grabtaxi.passenger"
         const val OTHER_APP = "my.com.tngdigital.ewallet"

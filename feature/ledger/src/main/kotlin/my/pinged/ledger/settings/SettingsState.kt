@@ -29,16 +29,22 @@ enum class Storage {
 }
 
 /**
- * The five things [Transfers] runs, one at a time for the whole process.
+ * The six things [Transfers] runs, one at a time for the whole process.
  *
- * [doing] is what the screen calls one while it runs.
+ * [doing] is what the screen calls one while it runs. [EXPORT] is the JSON
+ * backup and [SPREADSHEET] the CSV (spec 12).
  */
 enum class Operation(val doing: String) {
     EXPORT("Exporting"),
+    SPREADSHEET("Exporting"),
     CHECK("Checking"),
     RESTORE("Restoring"),
     DELETE("Deleting"),
     SALVAGE("Rescuing"),
+    ;
+
+    /** One of the two exports: the export sheets draw it, and Cancel stops it. */
+    val isExport: Boolean get() = this == EXPORT || this == SPREADSHEET
 }
 
 /** What one transfer action is doing, so every screen state has a drawing. */
@@ -55,6 +61,12 @@ sealed interface TransferJob {
      * its provider gives it, null when it would not say.
      */
     data class Exported(val rows: Int, val unrecorded: String? = null, val savedAs: String? = null) : TransferJob
+
+    /**
+     * A CSV written whole (#201): [rows] transactions, and [savedAs] as for
+     * [Exported]. Not a backup, so there is nothing to have recorded.
+     */
+    data class Spreadsheet(val rows: Int, val savedAs: String? = null) : TransferJob
 
     data class Restored(val report: ImportReport) : TransferJob
 
@@ -150,6 +162,14 @@ data class SettingsState(
      * the count did not finish, for [wipeCounts]' reason.
      */
     val exportRows: Int? = null,
+    /** The export sheet's spreadsheet card: what is chosen (#201). */
+    val spreadsheet: SpreadsheetChoice = SpreadsheetChoice(),
+    /**
+     * What [SettingsViewModel.readSpreadsheet] last counted, for the choice
+     * it names, which may be an earlier one than [spreadsheet]. Null before a
+     * count, and when one could not be made.
+     */
+    val spreadsheetCounts: SpreadsheetCounts? = null,
     /**
      * `0` for never, and null when the store could not be read -- the row
      * then draws no value, as [sourcesOn]'s does. "NEVER" would be a claim
@@ -203,7 +223,7 @@ data class SettingsState(
  * The outcomes the settings screen reports in a sheet: a restore's or a
  * salvage's either way, a delete's or a check's only when it failed. A delete
  * that succeeded has nothing to say; a check that finished is the row value
- * beside it; an export's is the export sheet's to draw. A salvage has no sheet
+ * beside it; an export's, either format, is the export sheet's to draw. A salvage has no sheet
  * of its own -- its action is on the recovery notice -- and what it could not
  * read is the point of reporting it.
  */
@@ -211,5 +231,5 @@ private fun isReportedHere(outcome: Outcome): Boolean = when (outcome.operation)
     Operation.RESTORE -> outcome.job is TransferJob.Restored || outcome.job is TransferJob.Failed
     Operation.SALVAGE -> outcome.job is TransferJob.Salvaged || outcome.job is TransferJob.Failed
     Operation.DELETE, Operation.CHECK -> outcome.job is TransferJob.Failed
-    Operation.EXPORT -> false
+    Operation.EXPORT, Operation.SPREADSHEET -> false
 }

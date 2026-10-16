@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteQuery
 import my.pinged.data.DuplicateWindows
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
+import my.pinged.data.SearchCursor
 import my.pinged.data.SearchFilter
 import my.pinged.data.SearchSql
 import my.pinged.data.SearchTotal
@@ -857,6 +858,13 @@ interface TxnDao {
      */
     fun searchRows(text: String, filter: SearchFilter, limit: Int): List<FeedRow> =
         searchRowsRaw(SearchSql.rows(text, filter, limit))
+
+    /**
+     * [searchRows]' rows, every one of them a page at a time: see
+     * `SearchSql.page`. The CSV export's read (#201).
+     */
+    fun searchPage(text: String, filter: SearchFilter, after: SearchCursor?, limit: Int): List<FeedRow> =
+        searchRowsRaw(SearchSql.page(text, filter, after, limit))
 
     /** [searchRows]' rows, unlimited, summed per currency in SQL (§15.3). */
     fun searchTotals(text: String, filter: SearchFilter): List<SearchTotal> =

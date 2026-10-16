@@ -67,6 +67,10 @@ import my.pinged.data.entity.Category
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.home.ENTERED_BY_HAND
+import my.pinged.ledger.settings.SearchExportSheet
+import my.pinged.ledger.settings.TransferJob
+import my.pinged.ledger.settings.Transfers
+import my.pinged.ledger.settings.grouped
 import my.pinged.parse.Amount
 import my.pinged.parse.Direction
 import my.pinged.ui.CALENDAR
@@ -92,6 +96,7 @@ import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
+import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedRule
 import java.time.YearMonth
 import java.time.format.TextStyle as JavaTextStyle
@@ -106,8 +111,10 @@ import java.time.format.TextStyle as JavaTextStyle
  * manual entry's edit screen through [onOpenEntry], a capture's detail
  * through [onOpenDetail].
  *
- * The artboard's "Export these N rows" is not drawn: export is the whole
- * ledger as JSON and takes no filter yet.
+ * The artboard's "Export these N rows" opens [SearchExportSheet] over every
+ * row the search found (#201), and its button hands to the host's
+ * save-file picker through [onPickExport]; null draws no export, for a host
+ * with no picker.
  */
 @Composable
 fun SearchScreen(
@@ -116,6 +123,7 @@ fun SearchScreen(
     modifier: Modifier = Modifier,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
+    onPickExport: (() -> Unit)? = null,
 ) {
     // Re-read on each foreground and on a delete or restore, as Day's is:
     // nothing invalidates a list read whole.
@@ -129,6 +137,7 @@ fun SearchScreen(
     val read by viewModel.read.collectAsState()
     val unavailable by viewModel.storageUnavailable.collectAsState()
     var sheet by rememberSaveable { mutableStateOf<FilterSheet?>(null) }
+    var exportOpen by rememberSaveable { mutableStateOf(false) }
 
     SearchScreenContent(
         query = query,
@@ -141,7 +150,29 @@ fun SearchScreen(
         onOpenEntry = onOpenEntry,
         onOpenDetail = onOpenDetail,
         modifier = modifier,
+        onExport = onPickExport?.let { { exportOpen = true } },
     )
+
+    if (exportOpen && onPickExport != null) {
+        val transfers by Transfers.state.collectAsState()
+        val exported by viewModel.exported.collectAsState()
+        // Any export running, whichever screen asked for it -- one runs at a
+        // time for the whole process, and this button would be refused --
+        // but only this search's own result.
+        val own = transfers.outcome?.takeIf { it.serial == exported }
+        val job = transfers.running?.takeIf { it.operation.isExport } ?: own?.job ?: TransferJob.Idle
+        SearchExportSheet(
+            rows = read?.totals?.sumOf { it.rowCount },
+            job = job,
+            onPick = onPickExport,
+            onCancel = viewModel::cancelExport,
+            // Dismissing is having seen the result, as the export sheet's is.
+            onDismiss = {
+                exportOpen = false
+                own?.let { Transfers.acknowledge(it.serial) }
+            },
+        )
+    }
 
     val close = { sheet = null }
     when (sheet) {
@@ -201,28 +232,72 @@ internal fun SearchScreenContent(
     modifier: Modifier = Modifier,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
+    onExport: (() -> Unit)? = null,
 ) {
     val categoriesById = remember(read?.categories) { read?.categories.orEmpty().associateBy { it.id } }
     val categoryName = choice.categoryId?.let { categoriesById[it]?.name }
-    LazyColumn(modifier.fillMaxSize().background(Paper)) {
-        item { Field(query, onQuery, onBack) }
-        item { Chips(choice, categoryName, onOpenSheet) }
-        when {
-            // First, for the reason Day's is: rows under a ledger that cannot
-            // be read would be a claim about money no read supports.
-            storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
-            read == null -> item { Notice("READING", Muted) }
-            read.rows.isEmpty() -> item { Notice(nothingFound(read.choice), Muted) }
-            else -> {
-                item { Hero(read) }
-                item { TornEdge(Modifier.padding(top = 20.dp)) }
-                items(read.rows, key = { "txn-" + it.txn.id }) { row ->
-                    ResultRow(row, categoriesById[row.txn.categoryId], onOpenEntry, onOpenDetail)
+    // The rows the totals count, not the ones drawn: the export has no limit.
+    val found = read?.takeUnless { storageUnavailable }?.totals?.sumOf { it.rowCount } ?: 0
+    Column(modifier.fillMaxSize().background(Paper)) {
+        LazyColumn(Modifier.weight(1f)) {
+            item { Field(query, onQuery, onBack) }
+            item { Chips(choice, categoryName, onOpenSheet) }
+            when {
+                // First, for the reason Day's is: rows under a ledger that cannot
+                // be read would be a claim about money no read supports.
+                storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
+                read == null -> item { Notice("READING", Muted) }
+                read.rows.isEmpty() -> item { Notice(nothingFound(read.choice), Muted) }
+                else -> {
+                    item { Hero(read) }
+                    item { TornEdge(Modifier.padding(top = 20.dp)) }
+                    items(read.rows, key = { "txn-" + it.txn.id }) { row ->
+                        ResultRow(row, categoriesById[row.txn.categoryId], onOpenEntry, onOpenDetail)
+                    }
                 }
             }
         }
+        if (onExport != null && found > 0) ExportFooter(found, onExport)
     }
 }
+
+/**
+ * The artboard's foot: "Export these N rows" in a dashed [Muted] outline
+ * under a dotted rule, pinned below the list. [rows] is every row found.
+ */
+@Composable
+private fun ExportFooter(rows: Int, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .dottedRule(atTop = true)
+            .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 24.dp),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(2.dp))
+                .dashedOutline(Muted)
+                .clickable(role = Role.Button, onClick = onClick)
+                .heightIn(min = 46.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
+        ) {
+            Canvas(Modifier.size(16.dp)) {
+                val stroke = 1.7.dp.toPx()
+                val u = size.width / 24f
+                drawLine(Muted, Offset(4 * u, 6 * u), Offset(20 * u, 6 * u), stroke, StrokeCap.Round)
+                drawLine(Muted, Offset(7 * u, 12 * u), Offset(17 * u, 12 * u), stroke, StrokeCap.Round)
+                drawLine(Muted, Offset(10 * u, 18 * u), Offset(14 * u, 18 * u), stroke, StrokeCap.Round)
+            }
+            Text(exportTheseRows(rows), style = MonoLabel, color = Muted)
+        }
+    }
+}
+
+/** The foot's label: `EXPORT THESE 18 ROWS`, or `THIS ROW` for one. */
+internal fun exportTheseRows(rows: Int): String =
+    if (rows == 1) "EXPORT THIS ROW" else "EXPORT THESE ${grouped(rows)} ROWS"
 
 /**
  * The artboard's top line: the back chevron, then the field on a 1.5dp Ink

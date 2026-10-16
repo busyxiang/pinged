@@ -36,6 +36,7 @@ import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
 import my.pinged.data.PingedDatabase
+import my.pinged.data.SearchFilter
 import my.pinged.ledger.transfer.ExportJson
 import my.pinged.ledger.transfer.TransferStore
 
@@ -479,6 +480,46 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     fun exportTo(sink: ExportSink): Job =
         request { requester -> Transfers.export(app, sink, requester, beforeEachOperation) }
 
+    /**
+     * See [Transfers.spreadsheet]: the export sheet's spreadsheet card, for
+     * the choice [SettingsState.spreadsheet] holds as the request is made.
+     */
+    fun spreadsheetTo(sink: ExportSink): Job {
+        val filter = _state.value.spreadsheet.filter()
+        return request { requester -> Transfers.spreadsheet(app, sink, "", filter, requester, beforeEachOperation) }
+    }
+
+    /** The spreadsheet card's chips and toggles: [choice] is chosen, and counted. */
+    fun chooseSpreadsheet(choice: SpreadsheetChoice): Job {
+        _state.update { it.copy(spreadsheet = choice) }
+        return readSpreadsheet()
+    }
+
+    /**
+     * Counts what the spreadsheet card's current choice would write, on
+     * [Transfers]' turn, and publishes it beside the choice it counted; a
+     * count that could not be made publishes null, and the button then has
+     * no number rather than an old one.
+     *
+     * Three `searchTotals` in one transaction. `SearchTimingTest` measured
+     * one such read with no words at 3.3ms for a month and 25.5ms for every
+     * month of 20,000 rows, on emulator-5554, so "Everything so far" holds
+     * capture for about three of those.
+     */
+    fun readSpreadsheet(): Job = viewModelScope.launch(Dispatchers.IO) {
+        val choice = _state.value.spreadsheet
+        val counts = Transfers.reading {
+            try {
+                Databases.inOneTransaction(app) { db -> spreadsheetCounts(db, choice) }
+            } catch (thrown: Exception) {
+                if (thrown is CancellationException) throw thrown
+                Log.w(TAG, "Could not count the spreadsheet", thrown)
+                null
+            }
+        }
+        _state.update { it.copy(spreadsheetCounts = counts) }
+    }
+
     /** See [Transfers.cancelExport]: the export sheet's Cancel. */
     fun cancelExport() = Transfers.cancelExport()
 
@@ -573,6 +614,22 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     private companion object {
         const val TAG = "PingedSettings"
     }
+}
+
+/**
+ * [SpreadsheetCounts] for [choice], every number from `TxnDao.searchTotals`
+ * over a filter the export itself would read.
+ */
+internal fun spreadsheetCounts(db: PingedDatabase, choice: SpreadsheetChoice): SpreadsheetCounts {
+    fun rows(filter: SearchFilter) = db.txnDao().searchTotals("", filter).sumOf { it.rowCount }
+    val range = choice.copy(leaveOutExcluded = false, leaveOutPending = false).filter()
+    val all = rows(range)
+    return SpreadsheetCounts(
+        choice = choice,
+        rows = rows(choice.filter()),
+        excluded = all - rows(range.copy(leaveOutExcluded = true)),
+        pending = all - rows(range.copy(leaveOutPending = true)),
+    )
 }
 
 /** This state, with [Transfers]' half replaced by [transfers]. */

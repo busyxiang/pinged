@@ -232,6 +232,10 @@ class RawDatabaseAccessTest {
                 "ExportJson.write wraps the transaction, and the schema-version read " +
                     "inside it, in Databases.whileLive.",
             ),
+            "feature/ledger/src/main/kotlin/my/pinged/ledger/transfer/ExportCsv.kt" to Site(
+                mapOf("runInTransaction" to 1),
+                "ExportCsv.write wraps its transaction in Databases.whileLive, as ExportJson.write does.",
+            ),
             "feature/ledger/src/main/kotlin/my/pinged/ledger/settings/Transfers.kt" to Site(
                 mapOf("runInTransaction" to 1),
                 "Transfers.readable probes the export's instance with a transaction inside " +

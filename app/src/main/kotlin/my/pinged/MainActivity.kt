@@ -76,6 +76,8 @@ import my.pinged.ledger.onboarding.OnboardingScreen
 import my.pinged.ledger.settings.DocumentSink
 import my.pinged.ledger.settings.ExportReceiptSheet
 import my.pinged.ledger.settings.ExportSheet
+import my.pinged.ledger.settings.SpreadsheetChoice
+import my.pinged.ledger.settings.SpreadsheetPanel
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
@@ -316,6 +318,11 @@ class MainActivity : ComponentActivity() {
                                     val search: SearchViewModel = viewModel {
                                         SearchViewModel(application, createSavedStateHandle())
                                     }
+                                    // "Export these N rows" (#201): the CSV goes
+                                    // where the user creates it, as a backup does.
+                                    val exportLauncher = rememberLauncherForActivityResult(
+                                        ActivityResultContracts.CreateDocument(CSV_TYPE),
+                                    ) { uri -> if (uri != null) search.exportTo(DocumentSink(contentResolver, uri)) }
                                     SearchScreen(
                                         viewModel = search,
                                         // The same expression NavDisplay's onBack
@@ -324,6 +331,7 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.fillMaxSize(),
                                         onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                        onPickExport = { exportLauncher.launch(SEARCH_CSV_FILE_NAME) },
                                     )
                                 }
                                 entry<ManualEntry> { key ->
@@ -500,6 +508,9 @@ class MainActivity : ComponentActivity() {
                                         ExportSheetHost(
                                             state = state,
                                             onExport = { uri -> settings.exportTo(DocumentSink(contentResolver, uri)) },
+                                            onSpreadsheet = { uri -> settings.spreadsheetTo(DocumentSink(contentResolver, uri)) },
+                                            onChooseSpreadsheet = { settings.chooseSpreadsheet(it) },
+                                            onCountSpreadsheet = { settings.readSpreadsheet() },
                                             onCancel = settings::cancelExport,
                                             // Dismissing the sheet is having seen
                                             // what it said about the last export,
@@ -507,7 +518,7 @@ class MainActivity : ComponentActivity() {
                                             onDismiss = {
                                                 exportOpen = false
                                                 state.outcome
-                                                    ?.takeIf { it.operation == Operation.EXPORT }
+                                                    ?.takeIf { it.operation.isExport }
                                                     ?.let(settings::acknowledge)
                                             },
                                         )
@@ -1175,34 +1186,59 @@ internal fun heardLine(report: CaptureReport?, now: Long): String? {
 
 /**
  * [ExportReceiptSheet], plus the one thing it does not do for itself: hand
- * off to the system's save-file picker.
+ * off to the system's save-file picker, one per format.
  *
  * **No auto-fire.** The picker does not launch as this host enters
  * composition: backing out of it would leave the sheet with nothing to tap.
  * [ExportSheet]'s idle "Export" is the tap target, so opening this sheet is
  * something the user did, and reaching the system dialog is a second,
  * separate something they did.
+ *
+ * The spreadsheet card is counted once as the sheet opens, and again by
+ * each choice ([onChooseSpreadsheet]).
  */
 @Composable
 private fun ExportSheetHost(
     state: SettingsState,
     onExport: (android.net.Uri) -> Unit,
+    onSpreadsheet: (android.net.Uri) -> Unit,
+    onChooseSpreadsheet: (SpreadsheetChoice) -> Unit,
+    onCountSpreadsheet: () -> Unit,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri -> if (uri != null) onExport(uri) }
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(CSV_TYPE),
+    ) { uri -> if (uri != null) onSpreadsheet(uri) }
+    LaunchedEffect(Unit) { onCountSpreadsheet() }
     ExportReceiptSheet(
         state = state,
         onPick = { launcher.launch(EXPORT_FILE_NAME) },
         onCancel = onCancel,
         onDismiss = onDismiss,
+        spreadsheet = SpreadsheetPanel(
+            choice = state.spreadsheet,
+            counts = state.spreadsheetCounts,
+            onChoose = onChooseSpreadsheet,
+            onPick = { csvLauncher.launch(SPREADSHEET_FILE_NAME) },
+        ),
     )
 }
 
 /** `CreateDocument`'s initial suggestion; the system picker lets the user rename it. */
 private const val EXPORT_FILE_NAME = "pinged-backup.json"
+
+/** [EXPORT_FILE_NAME]'s counterpart for the export sheet's spreadsheet. */
+private const val SPREADSHEET_FILE_NAME = "pinged-transactions.csv"
+
+/** [EXPORT_FILE_NAME]'s counterpart for search's export. */
+private const val SEARCH_CSV_FILE_NAME = "pinged-search.csv"
+
+/** RFC 4180's media type, which `CreateDocument` gives the provider. */
+private const val CSV_TYPE = "text/csv"
 
 /** [EXPORT_FILE_NAME]'s counterpart for a salvage, so the two files are not mistaken for each other. */
 @VisibleForTesting internal const val RESCUE_FILE_NAME = "pinged-rescued.json"

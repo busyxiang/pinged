@@ -430,6 +430,7 @@ internal fun RunningNotice(running: TransferJob.Running?) {
                 "notification that arrives before this finishes may not be recorded."
         Operation.DELETE -> "Pinged is deleting everything on this phone."
         Operation.EXPORT -> "Pinged is writing your backup to the file you chose."
+        Operation.SPREADSHEET -> "Pinged is writing your spreadsheet to the file you chose."
         Operation.CHECK -> "Pinged is reading its whole database to check it."
         Operation.SALVAGE ->
             "Pinged is writing everything it can still read to the file you chose. " +
