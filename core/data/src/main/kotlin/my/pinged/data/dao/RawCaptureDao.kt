@@ -357,6 +357,10 @@ interface RawCaptureDao : MerchantDecisions {
      * be one the app never goes through. The throw lands inside the
      * `@Transaction`, so a rejected row takes the [markOutcome] down with it and
      * the capture stays on the queue.
+     *
+     * [taughtRuleId] names the spec 5.8 rule that read the capture, whose
+     * `match_count` moves only with a transaction written here: counted
+     * apart, a kill between the two would let a fourth match commit unseen.
      */
     @Transaction
     fun commitCapture(
@@ -369,6 +373,7 @@ interface RawCaptureDao : MerchantDecisions {
         duplicateOf: Long? = null,
         packVersion: Int = 0,
         expected: ParseStatus = ParseStatus.NEW,
+        taughtRuleId: Long? = null,
     ): Long {
         val existing = txnIdForCapture(captureId)
         val marked = markOutcome(
@@ -389,9 +394,13 @@ interface RawCaptureDao : MerchantDecisions {
         }
         return existing ?: run {
             txn.requireStorable()
-            insertTxnRow(txn)
+            insertTxnRow(txn).also { taughtRuleId?.let(::countTaughtMatch) }
         }
     }
+
+    /** One more transaction written by `user_template_rule` [id]; see [commitCapture]. */
+    @Query("UPDATE user_template_rule SET match_count = match_count + 1 WHERE id = :id")
+    fun countTaughtMatch(id: Long): Int
 
     /**
      * Non-null on purpose. Raw captures are never deleted by the app (spec 4),

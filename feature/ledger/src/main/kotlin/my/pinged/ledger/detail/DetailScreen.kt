@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import my.pinged.parse.TaughtTemplate
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.DetailRow
@@ -458,11 +459,22 @@ private fun Notice(text: String, color: Color) {
  * Not spending are not that. A capture no rule id names leaves the rule out
  * rather than inventing one.
  */
-internal fun provenance(row: DetailRow): String = listOfNotNull(
-    row.matchedRuleId?.let { "RULE $it" },
-    row.packVersion?.let { "PACK $it" },
-    if (row.row.txn.userEdited) "EDITED" else "NOT EDITED",
-).joinToString(" · ")
+internal fun provenance(row: DetailRow): String =
+    provenance(row.matchedRuleId, row.packVersion, row.row.txn.userEdited)
+
+/**
+ * [provenance] from its three facts. A rule the user taught (spec 5.8) is
+ * said to be theirs, and names no pack: stage two records the pack loaded
+ * beside it, which had no part in reading it.
+ */
+internal fun provenance(ruleId: String?, packVersion: Int?, edited: Boolean): String {
+    val taught = TaughtTemplate.storedIdOf(ruleId) != null
+    return listOfNotNull(
+        if (taught) "A RULE YOU TAUGHT" else ruleId?.let { "RULE $it" },
+        packVersion?.takeIf { !taught }?.let { "PACK $it" },
+        if (edited) "EDITED" else "NOT EDITED",
+    ).joinToString(" · ")
+}
 
 /** `30 SEP, 7.42 PM`: the row's own `local_date`, and its time in [zone] as the inbox reads it. */
 internal fun whenOf(txn: Txn, zone: ZoneId): String {

@@ -1,6 +1,7 @@
 package my.pinged.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import my.pinged.data.entity.UserTemplateRule
 import my.pinged.data.entity.RuleOrigin
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.MatchType
@@ -155,6 +156,27 @@ class EnumVocabularyTest {
         assertEquals(2, Confidence.entries.size)
         assertEquals(3, TxnState.entries.size)
         assertEquals(4, ExclusionReason.entries.size)
+    }
+
+    // ---- user_template_rule.direction ------------------------------------
+
+    /** Spec 5.8: a taught rule's answer, which every later match of it reads back. */
+    @Test fun aTaughtRulesDirectionIsStoredAsTheseExactStrings() {
+        db.userTemplateRuleDao().insertAll(
+            Direction.entries.mapIndexed { i, direction ->
+                UserTemplateRule(
+                    sourcePackage = "com.maybank2u.life",
+                    pattern = "^Paid $i RM(?<amount>[0-9]+)$",
+                    direction = direction,
+                    hasMerchantGroup = false,
+                    sampleText = "Paid $i RM5",
+                    createdAt = 1L,
+                )
+            },
+        )
+
+        assertEquals("TEXT", declaredType("user_template_rule", "direction"))
+        assertEquals(listOf("EXPENSE", "REFUND"), textIn("user_template_rule", "direction"))
     }
 
     // ---- txn.pending_reason ---------------------------------------------

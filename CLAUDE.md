@@ -108,7 +108,8 @@ phone than in the tests. `PackLoader` refuses `\d` at load.
 
 **Money is `Long` sen.** `BigDecimal` appears only in the string-to-sen step.
 
-**A released schema is frozen.** The current one is v5 (spec 5.7's
+**A released schema is frozen.** The current one is v6 (spec 5.8's
+`user_template_rule`, by auto-migration from v5; v5 is spec 5.7's
 `user_reject_rule`, by auto-migration from v4; v4 is spec 4's
 `category.seed_name`, by a hand-written migration from v3, which Room's
 auto-migration would have done by rebuilding the table; v3 is spec 15.2's

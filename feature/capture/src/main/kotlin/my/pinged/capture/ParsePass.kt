@@ -18,6 +18,7 @@ import my.pinged.parse.MatchOutcome
 import my.pinged.parse.Merchant
 import my.pinged.parse.RuleMatcher
 import my.pinged.parse.Skeleton
+import my.pinged.parse.TaughtTemplate
 
 /**
  * Stage two, all of it, with no WorkManager in it.
@@ -66,6 +67,13 @@ internal class ParsePass(
     /** Where a learned rule is looked up, by the capture's merchant identity. */
     private val rules: MerchantRuleDao,
     private val matcher: RuleMatcher,
+    /**
+     * Spec 5.8's taught rules ([TaughtTemplate.matcher]), asked only once
+     * [matcher] has read nothing. Built per pass from `match_count` as it was
+     * then, so a rule reading several captures in one pass holds them all for
+     * review: the snapshot is never ahead of the count, only behind it.
+     */
+    private val taught: RuleMatcher = TaughtTemplate.matcher(emptyList()),
     private val uncategorizedId: Long,
     private val sourceLabel: (String) -> String?,
     /**
@@ -311,6 +319,30 @@ internal class ParsePass(
             text = capture.text,
             bigText = capture.bigText,
         )
+        // Spec 5.8: a taught rule is asked only once every pack template has
+        // failed, so it cannot shadow a rule that ships -- and only once no
+        // pack reject has met the capture either. A pack template outranks a
+        // reject (spec 5.3) because its words say where the merchant ends; a
+        // taught merchant last in its message runs to the end, so "... at
+        // KEDAI failed" would read as a payment to "KEDAI failed".
+        if (outcome is MatchOutcome.Unmatched) {
+            when (val read = taught.match(capture.sourcePackage, capture.title, capture.text, capture.bigText)) {
+                is MatchOutcome.Matched -> return commit(
+                    capture,
+                    read,
+                    slotSuspectOf,
+                    taughtRuleId = TaughtTemplate.storedIdOf(read.ruleId),
+                )
+                // A taught rule out of time has not said no, as a pack rule's has not.
+                MatchOutcome.GaveUp -> return mark(
+                    capture = capture,
+                    status = ParseStatus.GAVE_UP,
+                    duplicateOf = slotSuspectOf,
+                    packVersion = matcher.packVersion,
+                )
+                else -> Unit
+            }
+        }
         when (outcome) {
             is MatchOutcome.Matched -> commit(capture, outcome, slotSuspectOf)
 
@@ -359,6 +391,7 @@ internal class ParsePass(
         capture: RawCapture,
         outcome: MatchOutcome.Matched,
         slotSuspectOf: Long?,
+        taughtRuleId: Long? = null,
     ) {
         val occurredAt = occurredAt(capture)
         val merchant = MerchantColumns.of(outcome.merchantRaw, matcher.merchantNormalization)
@@ -453,6 +486,7 @@ internal class ParsePass(
             collisionId = outcome.rejectCollisionId,
             duplicateOf = slotSuspectOf ?: layerTwoSuspect?.rawCaptureId,
             packVersion = matcher.packVersion,
+            taughtRuleId = taughtRuleId,
         )
     }
 

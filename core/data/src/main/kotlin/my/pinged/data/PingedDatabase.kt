@@ -14,6 +14,7 @@ import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.dao.UserRejectRuleDao
+import my.pinged.data.dao.UserTemplateRuleDao
 import my.pinged.data.entity.CaptureDay
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
@@ -24,12 +25,13 @@ import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnFts
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.UserTemplateRule
 
 @Database(
     entities = [
         RawCapture::class, Txn::class, Category::class, CaptureSource::class,
         MerchantRule::class, CaptureDay::class, MerchantAlias::class, MerchantName::class,
-        TxnFts::class, UserRejectRule::class,
+        TxnFts::class, UserRejectRule::class, UserTemplateRule::class,
     ],
     version = PingedDatabase.VERSION,
     exportSchema = true,
@@ -40,11 +42,13 @@ import my.pinged.data.entity.UserRejectRule
     // v4 is [MIGRATION_3_4], written by hand; see there for why.
     // v5 adds spec 5.7's `user_reject_rule` and nothing else, so its migration
     // is one CREATE TABLE and its index; `raw_capture.user_reject_rule_id` was
-    // in v1 already.
+    // in v1 already. v6 is the same for spec 5.8's `user_template_rule`; a
+    // taught rule's transactions name it as text in `matched_rule_id`, in v1.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3, spec = PingedDatabase.IndexExistingRows::class),
         AutoMigration(from = 4, to = 5),
+        AutoMigration(from = 5, to = 6),
     ],
 )
 abstract class PingedDatabase : RoomDatabase() {
@@ -55,7 +59,7 @@ abstract class PingedDatabase : RoomDatabase() {
          * because reading it back through `openHelper` is a path ruling R42
          * keeps to an allowlist.
          */
-        const val VERSION = 5
+        const val VERSION = 6
     }
 
     /**
@@ -87,6 +91,8 @@ abstract class PingedDatabase : RoomDatabase() {
     abstract fun merchantIdentityDao(): MerchantIdentityDao
 
     abstract fun userRejectRuleDao(): UserRejectRuleDao
+
+    abstract fun userTemplateRuleDao(): UserTemplateRuleDao
 
     /**
      * Whether [close] has been called on this instance, which Room's own

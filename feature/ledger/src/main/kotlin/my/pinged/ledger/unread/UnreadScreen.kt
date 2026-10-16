@@ -66,6 +66,7 @@ import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Quote
+import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
 
@@ -73,16 +74,21 @@ import my.pinged.ui.theme.dottedRule
  * Spec 5.6's unread list, drawn from `design/Unread.dc.html`: what Pinged
  * kept and no rule read, newest first, each word for word.
  *
- * **No "Teach Pinged this" yet.** Spec 5.8's Teach screen is #151, and a
- * button with nothing behind it is the dead row `SettingsScreen`'s KDoc
- * refuses. So each card's one action is "Never a transaction", drawn as the
- * artboard's secondary, and the footer drops the artboard's "two taps".
+ * Each card offers spec 5.8's "Teach Pinged this", filled, and 5.7's "Never a
+ * transaction", outlined. The board fills whichever its sample suits; this
+ * cannot tell which a notification is, so it always fills the one that can
+ * make money count.
  *
  * Read once per foreground, as `LearnedScreen` is, so a capture stage two
  * marked while the user was away is on the list when they come back.
  */
 @Composable
-fun UnreadScreen(viewModel: UnreadViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun UnreadScreen(
+    viewModel: UnreadViewModel,
+    onBack: () -> Unit,
+    onTeach: (UnreadCapture) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val state by viewModel.state.collectAsState()
     LifecycleResumeEffect(viewModel) {
         viewModel.refresh()
@@ -93,6 +99,7 @@ fun UnreadScreen(viewModel: UnreadViewModel, onBack: () -> Unit, modifier: Modif
         state = state,
         onBack = onBack,
         onNeverATransaction = viewModel::neverATransaction,
+        onTeach = onTeach,
         onCopy = { copyAsFixture(context, it) },
         onEnd = { viewModel.loadMore() },
         modifier = modifier,
@@ -109,6 +116,7 @@ internal fun UnreadContent(
     onEnd: () -> Unit,
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault(),
+    onTeach: (UnreadCapture) -> Unit = {},
 ) {
     LazyColumn(
         modifier.fillMaxSize().background(Card),
@@ -125,7 +133,13 @@ internal fun UnreadContent(
             item { Text(notice, fontFamily = Body, fontSize = 14.sp, color = Muted, modifier = Modifier.padding(horizontal = 20.dp)) }
         }
         items(state.items, key = { it.id }) { capture ->
-            UnreadCard(capture, zone, onNeverATransaction = { onNeverATransaction(capture) }, onCopy = { onCopy(capture) })
+            UnreadCard(
+                capture,
+                zone,
+                onTeach = { onTeach(capture) },
+                onNeverATransaction = { onNeverATransaction(capture) },
+                onCopy = { onCopy(capture) },
+            )
             // The last card composed is the cue for the next page, as a lazy
             // list composes only what is about to show.
             if (state.more && capture.id == state.items.last().id) LaunchedEffect(capture.id) { onEnd() }
@@ -174,7 +188,13 @@ private fun Header(onBack: () -> Unit) {
 }
 
 @Composable
-private fun UnreadCard(capture: UnreadCapture, zone: ZoneId, onNeverATransaction: () -> Unit, onCopy: () -> Unit) {
+private fun UnreadCard(
+    capture: UnreadCapture,
+    zone: ZoneId,
+    onTeach: () -> Unit,
+    onNeverATransaction: () -> Unit,
+    onCopy: () -> Unit,
+) {
     val shape = RoundedCornerShape(2.dp)
     Column(
         Modifier
@@ -205,18 +225,26 @@ private fun UnreadCard(capture: UnreadCapture, zone: ZoneId, onNeverATransaction
             capture.title?.let { Text(it, style = Quoted, color = Muted) }
             capture.body?.let { Text(it, style = Quoted, color = Muted) }
         }
-        Box(
-            Modifier
-                .padding(top = 11.dp)
-                .fillMaxWidth()
-                .clip(shape)
-                .border(1.dp, Border, shape)
-                .clickable(role = Role.Button, onClick = onNeverATransaction)
-                .heightIn(min = 44.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(NEVER_A_TRANSACTION, style = ButtonLabel.copy(fontSize = 14.sp), color = Ink)
+        Row(Modifier.padding(top = 11.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CardAction(TEACH_PINGED_THIS, filled = true, onTeach, Modifier.weight(1f))
+            CardAction(NEVER_A_TRANSACTION, filled = false, onNeverATransaction, Modifier.weight(1f))
         }
+    }
+}
+
+/** One of the card's two actions, the board's 44dp pair: [filled] in [Stamp], else outlined. */
+@Composable
+private fun CardAction(label: String, filled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(2.dp)
+    Box(
+        modifier
+            .clip(shape)
+            .then(if (filled) Modifier.background(Stamp, shape) else Modifier.border(1.dp, Border, shape))
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 44.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = ButtonLabel.copy(fontSize = 13.sp), color = if (filled) Paper else Muted)
     }
 }
 
@@ -281,6 +309,7 @@ internal const val UNREAD_BACK = "Back"
 internal const val UNREAD_CARD = "unread-card"
 internal const val UNREAD_VERBATIM = "unread-verbatim"
 internal const val NEVER_A_TRANSACTION = "Never a transaction"
+internal const val TEACH_PINGED_THIS = "Teach Pinged this"
 internal const val COPY_AS_FIXTURE = "Copy as a test case"
 internal const val NOTHING_UNREAD = "Nothing here. Every notification Pinged kept was read by a rule."
-internal const val FOOTER = "NOTHING HERE LEAVES YOUR PHONE"
+internal const val FOOTER = "TEACHING ONE TAKES TWO TAPS \u00B7 NOTHING HERE LEAVES YOUR PHONE"

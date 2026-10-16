@@ -15,12 +15,15 @@ import my.pinged.capture.CaptureStorage
 import my.pinged.data.Databases
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
+import my.pinged.data.dao.TaughtRuleRow
 
 /** What the taught-rules screen draws. */
 data class LearnedState(
     /** False until the first read completes, so an empty list is not a claim. */
     val loaded: Boolean = false,
     val items: List<LearnedMerchant> = emptyList(),
+    /** Spec 5.8's taught messages, newest first. */
+    val messages: List<TaughtRuleRow> = emptyList(),
     /** Spec 5.7's "never a transaction" rules, newest first. */
     val ignored: List<RejectRuleRow> = emptyList(),
     /** Spec 11.1: the database could not be opened, which is not "nothing taught". */
@@ -78,6 +81,22 @@ class LearnedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Forget [rule]: `UserTemplateRuleDao.delete`, which leaves every
+     * transaction it wrote as it is (spec 5.8). Guarded as [delete] is.
+     */
+    fun deleteMessage(rule: TaughtRuleRow): Job = viewModelScope.launch {
+        turn.withLock {
+            CaptureStorage.guarded(
+                context,
+                what = "The taught message could not be deleted",
+                unavailable = { 0 },
+                damageStopsCapture = false,
+            ) { Databases.userTemplateRuleDao(context).delete(rule.id) }
+            _state.value = read()
+        }
+    }
+
     private suspend fun read(): LearnedState =
         CaptureStorage.guarded(
             context,
@@ -88,6 +107,7 @@ class LearnedViewModel(app: Application) : AndroidViewModel(app) {
             LearnedState(
                 loaded = true,
                 items = Databases.merchantRuleDao(context).learnedMerchants(),
+                messages = Databases.userTemplateRuleDao(context).rows(),
                 ignored = Databases.userRejectRuleDao(context).rules(),
             )
         }

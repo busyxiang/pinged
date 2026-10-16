@@ -13,6 +13,9 @@ import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
+import my.pinged.data.dao.TaughtRuleRow
+import my.pinged.data.entity.UserTemplateRule
+import my.pinged.parse.Direction
 import my.pinged.data.entity.ParseStatus
 import my.pinged.ledger.transfer.bulkCapture
 import my.pinged.ledger.corruptTheDatabase
@@ -191,5 +194,60 @@ class LearnedMerchantsScreenTest {
 
         assertEquals(emptyList<RejectRuleRow>(), model.state.value.ignored)
         assertEquals(2, rejects.unreadCount())
+    }
+
+    // ---- spec 5.8's MESSAGES tab ------------------------------------------------
+
+    private val kioskRule = TaughtRuleRow(
+        id = 5L,
+        sourcePackage = "com.maybank2u.life",
+        sampleText = "Kiosk debit RM3.00 from account 1234",
+        direction = Direction.EXPENSE,
+        hasMerchantGroup = false,
+        matchCount = 2,
+        label = "Maybank MAE",
+    )
+
+    @Test fun messagesShowsTheTaughtMessageWordForWordAndWhatItReads() {
+        compose.setContent {
+            LearnedContent(LearnedState(loaded = true, items = listOf(mrDiy), messages = listOf(kioskRule)), onBack = {}, onDelete = {})
+        }
+        compose.onNodeWithText("MESSAGES 1").performScrollTo().performClick()
+
+        compose.onNodeWithText("Kiosk debit RM3.00 from account 1234").assertIsDisplayed()
+        compose.onNodeWithText("MAYBANK MAE \u00B7 MONEY OUT \u00B7 NO MERCHANT \u00B7 READ 2").assertIsDisplayed()
+        compose.onNodeWithText("Hardware shop").assertDoesNotExist()
+    }
+
+    @Test fun anEmptyMessagesListSaysHowToTeachOne() {
+        compose.setContent { LearnedContent(LearnedState(loaded = true), onBack = {}, onDelete = {}, initialTab = TaughtTab.MESSAGES) }
+        compose.onNodeWithText(NO_MESSAGES).assertIsDisplayed()
+    }
+
+    /** Spec 5.8: deleting a taught message leaves the transactions it wrote. */
+    @Test fun theHolderDeletesATaughtMessageAndLeavesItsTransactions() = runBlocking {
+        app.discardTheDatabase()
+        val taught = Databases.userTemplateRuleDao(app)
+        taught.teach(
+            UserTemplateRule(
+                sourcePackage = "com.maybank2u.life",
+                pattern = "^Kiosk debit RM(?<amount>[0-9]+)$",
+                direction = Direction.EXPENSE,
+                hasMerchantGroup = false,
+                sampleText = "Kiosk debit RM3",
+                createdAt = 1L,
+            ),
+            unread = emptyList(),
+        )
+        val txns = Databases.txnDao(app).countAll()
+        val model = LearnedViewModel(app)
+        model.refresh().join()
+        assertEquals(1, model.state.value.messages.size)
+
+        model.deleteMessage(model.state.value.messages.single()).join()
+
+        assertEquals(emptyList<TaughtRuleRow>(), model.state.value.messages)
+        assertEquals(0, taught.countAll())
+        assertEquals(txns, Databases.txnDao(app).countAll())
     }
 }

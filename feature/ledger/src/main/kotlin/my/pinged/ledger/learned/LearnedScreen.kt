@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
+import my.pinged.data.dao.TaughtRuleRow
+import my.pinged.parse.Direction
 import my.pinged.ui.CALENDAR
 import my.pinged.ledger.settings.grouped
 import my.pinged.ui.theme.ButtonLabel
@@ -60,10 +62,10 @@ import my.pinged.ui.theme.dottedRule
 
 /**
  * What the user has taught, and a way to forget it, drawn from
- * `design/Rules.dc.html`: learned merchants (#50) under MERCHANTS, and spec
- * 5.7's "never a transaction" rules under IGNORED. Read and delete only: a
- * category is changed by tapping it again in the chooser. The board's
- * MESSAGES tab is spec 5.8's taught templates, which arrive with #151.
+ * `design/Rules.dc.html`: learned merchants (#50) under MERCHANTS, spec 5.8's
+ * taught messages under MESSAGES, and spec 5.7's "never a transaction" rules
+ * under IGNORED. Read and delete only: a category is changed by tapping it
+ * again in the chooser, and a message is taught again from the unread list.
  *
  * Read once per foreground, as `CorrectionsScreen` is, so a payment counted or
  * a merge made elsewhere shows in the PAYMENTS figure on return.
@@ -75,11 +77,22 @@ fun LearnedScreen(viewModel: LearnedViewModel, onBack: () -> Unit, modifier: Mod
         viewModel.refresh()
         onPauseOrDispose { }
     }
-    LearnedContent(state, onBack, viewModel::delete, modifier, onDeleteIgnored = viewModel::deleteIgnored)
+    LearnedContent(
+        state,
+        onBack,
+        viewModel::delete,
+        modifier,
+        onDeleteIgnored = viewModel::deleteIgnored,
+        onDeleteMessage = viewModel::deleteMessage,
+    )
 }
 
-/** The board's tabs, less MESSAGES; see [LearnedScreen]. */
-internal enum class TaughtTab(val label: String) { MERCHANTS("MERCHANTS"), IGNORED("IGNORED") }
+/** The board's tabs, each with what it says when it lists nothing and how many it lists. */
+internal enum class TaughtTab(val label: String, val nothing: String, val countIn: (LearnedState) -> Int) {
+    MERCHANTS("MERCHANTS", NOTHING_TAUGHT, { it.items.size }),
+    MESSAGES("MESSAGES", NO_MESSAGES, { it.messages.size }),
+    IGNORED("IGNORED", NOTHING_IGNORED, { it.ignored.size }),
+}
 
 /** [LearnedScreen] without its holder, so a test can draw any state. */
 @Composable
@@ -90,6 +103,7 @@ internal fun LearnedContent(
     modifier: Modifier = Modifier,
     onDeleteIgnored: (RejectRuleRow) -> Unit = {},
     initialTab: TaughtTab = TaughtTab.MERCHANTS,
+    onDeleteMessage: (TaughtRuleRow) -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     LazyColumn(modifier.fillMaxSize().background(Paper)) {
@@ -97,17 +111,16 @@ internal fun LearnedContent(
         item {
             Tabs(
                 selected = tab,
-                counts = mapOf(TaughtTab.MERCHANTS to state.items.size, TaughtTab.IGNORED to state.ignored.size),
+                counts = TaughtTab.entries.associateWith { it.countIn(state) },
                 shown = state.loaded && !state.storageUnavailable,
                 onSelect = { tab = it },
             )
         }
         item {
-            val empty = if (tab == TaughtTab.MERCHANTS) state.items.isEmpty() else state.ignored.isEmpty()
             val notice = when {
                 !state.loaded -> null
                 state.storageUnavailable -> CANNOT_READ_YOUR_DATA
-                empty -> if (tab == TaughtTab.MERCHANTS) NOTHING_TAUGHT else NOTHING_IGNORED
+                tab.countIn(state) == 0 -> tab.nothing
                 else -> null
             }
             if (notice != null) {
@@ -117,6 +130,9 @@ internal fun LearnedContent(
         when (tab) {
             TaughtTab.MERCHANTS -> items(state.items, key = { it.identity }) { merchant ->
                 LearnedRow(merchant, onDelete = { onDelete(merchant) })
+            }
+            TaughtTab.MESSAGES -> items(state.messages, key = { it.id }) { rule ->
+                MessageRow(rule, onDelete = { onDeleteMessage(rule) })
             }
             TaughtTab.IGNORED -> items(state.ignored, key = { it.id }) { rule ->
                 IgnoredRow(rule, onDelete = { onDeleteIgnored(rule) })
@@ -179,6 +195,29 @@ private fun IgnoredRow(rule: RejectRuleRow, onDelete: () -> Unit) {
                 style = MonoLabel,
                 color = Faint,
             )
+        }
+        DeleteButton(onDelete)
+    }
+}
+
+/**
+ * One taught message: the notification it was taught on, word for word, then
+ * its app, which way the money goes and how many it has read (spec 5.8).
+ * Deleting it leaves those transactions as they are.
+ */
+@Composable
+private fun MessageRow(rule: TaughtRuleRow, onDelete: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .dottedRule(atTop = false)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(rule.sampleText, style = MonoLabel.copy(letterSpacing = 0.sp, lineHeight = 18.sp), color = Muted)
+            Text(messageLabel(rule), style = MonoLabel, color = Faint)
         }
         DeleteButton(onDelete)
     }
@@ -288,10 +327,20 @@ internal fun paymentsLabel(payments: Int): String = "PAYMENTS ${grouped(payments
 /** The settings row's label and this screen's title, the board's. */
 const val TAUGHT = "Things you taught Pinged"
 
+/** A MESSAGES row's second line: `MAYBANK MAE · MONEY OUT · NO MERCHANT · READ 2`. */
+internal fun messageLabel(rule: TaughtRuleRow): String = listOfNotNull(
+    (rule.label ?: rule.sourcePackage).uppercase(CALENDAR),
+    if (rule.direction == Direction.REFUND) "REFUND" else "MONEY OUT",
+    "NO MERCHANT".takeIf { !rule.hasMerchantGroup },
+    "READ ${grouped(rule.matchCount)}",
+).joinToString(Separator)
+
 /** The IGNORED row's count, in the board's voice. */
 internal fun hidesLabel(hidden: Int): String = "HIDES ${grouped(hidden)}"
 internal const val DELETE = "Delete"
 internal const val NOTHING_IGNORED =
     "Nothing ignored. Tap 'Never a transaction' on a notification Pinged could not read."
+internal const val NO_MESSAGES =
+    "No messages taught. Tap 'Teach Pinged this' on a notification Pinged could not read."
 internal const val NOTHING_TAUGHT =
     "Nothing taught yet. Pick a category on a payment and leave 'Always call this' on."

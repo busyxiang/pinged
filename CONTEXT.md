@@ -94,3 +94,7 @@ _Avoid_: unmatched notification, unparsed capture, failed capture
 **Never a transaction**:
 The user's statement that an unread capture, and every later one of the same shape from the same app, is not money. It hides them from the unread list and decides nothing else: a capture a rule reads is a transaction whatever the user said. Settings lists each one under IGNORED, and deleting it returns its captures to the list.
 _Avoid_: reject, dismiss, ignore rule
+
+**Taught message**:
+A rule the user made by tapping a message's amount and merchant on the Teach screen. It reads only messages of exactly that shape from that app, and only once every rule Pinged shipped with has failed. Its first three transactions wait for review. Settings lists each under MESSAGES, and deleting one leaves the transactions it wrote.
+_Avoid_: user template, custom rule, user regex

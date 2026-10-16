@@ -609,7 +609,16 @@ the file does not carry.
 | created_at | Long | |
 
 Templates the user derived by tapping an amount and a merchant. Consulted
-only after every pack template for the package has failed.
+only after every pack template for the package has failed. Added in schema v6
+and backup format 5.
+
+**`match_count` counts transactions, not matches.** It moves in the
+transaction that writes the row it read, so a kill between the two cannot let
+a fourth commit unseen; stage two reads it once per pass, so a rule that
+reads several captures in one pass holds them all for review. Nothing
+references the table: a transaction names its rule only as text in
+`raw_capture.matched_rule_id` (`taught-<id>`), so deleting one leaves what it
+wrote untouched.
 
 ### `capture_source`
 
@@ -953,16 +962,23 @@ knows what it means. So the app asks for the two facts it cannot infer
 rather than for a pattern: **tap the amount, then tap the merchant**.
 
 Everything the user did not tap becomes a literal, escaped. Every remaining
-run of digits becomes `\d+`, which is the same skeleton normalization used
-for reject rules in section 5.7 — one mechanism serving two purposes.
+run of digits matches any number, which is the same skeleton normalization
+used for reject rules in section 5.7 — one mechanism serving two purposes.
+The pattern runs over section 5.2's `concat`, the title included, and is
+anchored at both ends, so a message with a sentence appended stays unread.
 
 ```
 raw       "Transaksi berjaya. RM88.00 telah ditolak dari akaun anda 1234."
 tapped     amount = 88.00, no merchant present in this message
 
-derived    Transaksi berjaya\. RM(?<amount>[\d,]+\.\d{2}) telah ditolak
-           dari akaun anda \d+\.
+derived    ^Transaksi berjaya\. RM(?<amount>[0-9][0-9,]*(?:\.[0-9]{1,2})?)
+           telah ditolak dari akaun anda \p{Nd}(?:[\p{Nd},.]*\p{Nd})?\.$
 ```
+
+Never `\d`: the pattern is compiled by ICU on the phone, where `\d` is every
+decimal digit in Unicode (section 5.2). The amount reads ASCII digits, as
+`Amount` does, and any other number `\p{Nd}`, which both engines read alike.
+A merchant's trailing stop (`SENG.`) is left literal, outside the group.
 
 Where no merchant is present the derived rule captures amount only, and its
 transactions land in the review inbox under the existing missing-merchant
@@ -982,7 +998,12 @@ the rule does not cover simply stays unread, visible, and teachable again.
   one leaves transactions it already produced untouched.
 - Pack rules always win. A user template is consulted only after every pack
   template for that package has failed, so a user cannot shadow a rule that
-  ships correct.
+  ships correct, and only when no pack reject pattern met the capture
+  either. Section 5.3 lets a pack template outrank a reject because its words
+  say where the merchant ends; a taught merchant last in its message runs to
+  the end, so "Kiosk debit RM5.00 at KEDAI failed" would be a payment to
+  "KEDAI failed". The message it was taught on matched no reject, so this
+  costs it nothing.
 
 **Why this matters beyond convenience.** Without it, every Malaysian bank
 that changes a message format needs a release from the developer. With it,

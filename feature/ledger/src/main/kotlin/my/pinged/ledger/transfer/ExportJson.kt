@@ -16,6 +16,7 @@ import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.UserTemplateRule
 
 /**
  * Spec 12's JSON export: every row of every table, written straight onto the
@@ -101,7 +102,8 @@ object ExportJson {
             db.txnDao().countAll() +
             db.merchantIdentityDao().countAliases() +
             db.merchantIdentityDao().countNames() +
-            db.userRejectRuleDao().countAll()
+            db.userRejectRuleDao().countAll() +
+            db.userTemplateRuleDao().countAll()
 
     /** The healthy path's rows: every one, read through [db]'s transaction. */
     private fun everyRowOf(db: PingedDatabase) = DocumentSource(
@@ -114,6 +116,7 @@ object ExportJson {
         merchantAliases = { db.merchantIdentityDao().allAliases() },
         merchantNames = { db.merchantIdentityDao().allNames() },
         userRejectRules = { db.userRejectRuleDao().all() },
+        userTemplateRules = { db.userTemplateRuleDao().all() },
     )
 
     /**
@@ -173,6 +176,7 @@ object ExportJson {
             written = writeWhole(w, MERCHANT_ALIAS_SECTION, source.merchantAliases(), written, onProgress)
             written = writeWhole(w, MERCHANT_NAME_SECTION, source.merchantNames(), written, onProgress)
             written = writeWhole(w, USER_REJECT_RULE_SECTION, source.userRejectRules(), written, onProgress)
+            written = writeWhole(w, USER_TEMPLATE_RULE_SECTION, source.userTemplateRules(), written, onProgress)
 
             w.endObject()
         }
@@ -185,7 +189,8 @@ object ExportJson {
      * bounded by spec 4's sixteen plus what the user adds, `capture_source` by the
      * number of apps on the phone, `capture_day` gains one row a day, spec
      * 6.4's two gain a row per merchant the user merges or renames by hand,
-     * and spec 5.7's a row per message shape the user dismisses. Paging
+     * and spec 5.7's and 5.8's a row per message shape the user dismisses or
+     * teaches. Paging
      * machinery on a sixteen-row table is code never exercised at its interesting
      * boundary.
      */
@@ -281,6 +286,7 @@ internal class DocumentSource(
     val merchantAliases: () -> List<MerchantAlias>,
     val merchantNames: () -> List<MerchantName>,
     val userRejectRules: () -> List<UserRejectRule>,
+    val userTemplateRules: () -> List<UserTemplateRule>,
 )
 
 /**

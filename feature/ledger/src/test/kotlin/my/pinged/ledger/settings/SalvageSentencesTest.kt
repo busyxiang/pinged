@@ -128,4 +128,10 @@ class SalvageSentencesTest {
         assertTrue(said.toString(), "The messages you said were never a transaction could not be read, so mark them again after restoring." in said)
         assertTrue(said.toString(), "2 notifications you said were never a transaction will show again among those Pinged could not read." in said)
     }
+
+    /** Spec 5.8: a taught rule lost to damage is said, as an ignored one is. */
+    @Test fun taughtMessagesThatCouldNotBeReadAreSaid() {
+        val said = salvageSentences(report().copy(lostWhole = setOf("user_template_rule")))
+        assertTrue(said.toString(), "The messages you taught Pinged to read could not be read, so teach them again after restoring." in said)
+    }
 }
