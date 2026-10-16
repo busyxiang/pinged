@@ -8,7 +8,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasScrollToIndexAction
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -52,6 +52,11 @@ import kotlin.math.abs
  * month, so the summary's read, the feed's bound and the sheet's read are all
  * the production ones. `createAndroidComposeRule` for the resume, which is
  * what re-reads the summary and must re-read the picked month, not today's.
+ *
+ * The v2 rule, as Charts' tests use: v1's unconfined dispatcher ran the
+ * recomposition a summary written from IO schedules on that IO thread, and
+ * a `LazyColumn` first composed there threw for want of a `Looper` (CI's
+ * ledger-1).
  */
 @RunWith(AndroidJUnit4::class)
 class MonthPickerTest {
