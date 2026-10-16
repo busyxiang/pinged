@@ -54,7 +54,7 @@ import org.junit.runner.RunWith
  * minimum is gone. And [theNameKeepsTheRowsTap] says the target stops at the
  * name, which the minimum alone does not.
  *
- * A near miss is 5dp into the row's 10dp padding below a control. Not more:
+ * A near miss is 5dp into the row's 8dp padding below a control. Not more:
  * the minimum makes a target 48dp in all, so the review badge, two lines and
  * 35dp drawn at CI's 320dp, reaches 6.5dp past its frame. Not above the line
  * or the chip either: the 2dp gap there is the name's as much as theirs, and
@@ -164,6 +164,22 @@ class RowTouchTargetTest {
         val below = nearMiss(line, textHeight(line) / 2, above = false)
         assertEquals("the line, $below", 1, categorized)
         assertEquals("the row, $below", 0, removed)
+    }
+
+    /**
+     * The line's target is the floor exactly, 16dp and the row's 8dp below
+     * (spec 9.1): 7dp under the line reaches it, 9dp is the next row's. A row
+     * padding trimmed under 8 fails the first; a target grown past the row,
+     * the second.
+     */
+    @Test fun categoryLineTargetIsTwentyFourDp() {
+        rows(categoryId = food.id)
+        val half = textHeight(line) / 2
+        val inside = nearMiss(line, half, above = false, outside = 7.dp)
+        assertEquals("7dp below the line, $inside", 1, categorized)
+        val past = nearMiss(line, half, above = false, outside = 9.dp)
+        assertEquals("9dp below the line, $past", 1, categorized)
+        assertEquals("taps the next row took", 1, removed)
     }
 
     @Test fun nearMissNeedsComposesMinimum() {

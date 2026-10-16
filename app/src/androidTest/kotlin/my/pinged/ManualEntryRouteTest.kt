@@ -119,15 +119,20 @@ class ManualEntryRouteTest {
         }
     }
 
-    /** The + on the Spending list, then the entry screen with no tab bar. */
+    /**
+     * The + on the Spending list, then the entry screen with no tab bar.
+     *
+     * By substring: on an empty ledger the + is day one's cash offer, whose
+     * name is its own words and then [ADD_PAYMENT].
+     */
     private fun openTheEntryScreen() {
         assertTrue(
             "The Spending list has no Add payment button",
-            compose.waitFor { compose.onAllNodesWithContentDescription(ADD_PAYMENT).fetchSemanticsNodes().size == 1 },
+            compose.waitFor { compose.onAllNodesWithContentDescription(ADD_PAYMENT, substring = true).fetchSemanticsNodes().size == 1 },
         )
         // Not scrolled to: the button floats over the list, outside any
         // scrolling container, as the tab bar's items do.
-        compose.onNodeWithContentDescription(ADD_PAYMENT).performClick()
+        compose.onNodeWithContentDescription(ADD_PAYMENT, substring = true).performClick()
         assertTrue(
             "The + did not open the entry screen",
             compose.waitFor { compose.onAllNodesWithContentDescription(AMOUNT).fetchSemanticsNodes().size == 1 },
@@ -141,7 +146,7 @@ class ManualEntryRouteTest {
             why,
             compose.waitFor {
                 compose.countOf(SPENDING) == 1 &&
-                    compose.onAllNodesWithContentDescription(ADD_PAYMENT).fetchSemanticsNodes().size == 1 &&
+                    compose.onAllNodesWithContentDescription(ADD_PAYMENT, substring = true).fetchSemanticsNodes().size == 1 &&
                     compose.onAllNodesWithContentDescription(AMOUNT).fetchSemanticsNodes().isEmpty()
             },
         )

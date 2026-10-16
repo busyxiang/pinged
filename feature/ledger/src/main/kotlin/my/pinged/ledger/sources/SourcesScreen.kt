@@ -1,7 +1,6 @@
 package my.pinged.ledger.sources
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,8 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -52,6 +49,7 @@ import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.Toggle
 import my.pinged.ui.theme.dottedRule
 
@@ -445,37 +443,6 @@ const val BACK_DESCRIPTION = "Back to the ledger"
 
 /** The upper list's ground and gutters, which a lazy item cannot inherit. */
 private val UpperRow = Modifier.fillMaxWidth().background(Paper).padding(start = 20.dp, end = 20.dp)
-
-/**
- * The perforation between "stored" and "not stored".
- *
- * A 12x9 tile: the band is Card, and a Paper wedge is cut out of the bottom of
- * each tile with its apex at the middle. That is what the artboard's pair of
- * 45-degree gradients draws, and it is the one piece of the screen whose whole
- * job is to say that the two halves are different kinds of thing.
- */
-@Composable
-private fun TornEdge(modifier: Modifier = Modifier) {
-    Canvas(modifier.fillMaxWidth().height(9.dp)) {
-        drawRect(color = Card, topLeft = Offset.Zero, size = size)
-        val tile = 12.dp.toPx()
-        val h = size.height
-        // One Path, reset per tile. Built inside the loop this allocated a
-        // native-backed Path per 12dp of width -- about 33 on a 400dp screen --
-        // on every frame this strip is invalidated, i.e. throughout a scroll.
-        val wedge = Path()
-        var x = 0f
-        while (x < size.width) {
-            wedge.reset()
-            wedge.moveTo(x + tile * 0.125f, h)
-            wedge.lineTo(x + tile * 0.5f, h * 0.5f)
-            wedge.lineTo(x + tile * 0.875f, h)
-            wedge.close()
-            drawPath(path = wedge, color = Paper)
-            x += tile
-        }
-    }
-}
 
 /**
  * **No dashed frame, because there is no button inside it.**

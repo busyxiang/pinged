@@ -130,7 +130,7 @@ class AddPaymentShortcutTest {
             why,
             compose.waitFor {
                 compose.countOf(SPENDING) == 1 &&
-                    compose.onAllNodesWithContentDescription(ADD_PAYMENT).fetchSemanticsNodes().size == 1 &&
+                    compose.onAllNodesWithContentDescription(ADD_PAYMENT, substring = true).fetchSemanticsNodes().size == 1 &&
                     compose.onAllNodesWithContentDescription(AMOUNT).fetchSemanticsNodes().isEmpty()
             },
         )

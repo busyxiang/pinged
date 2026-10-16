@@ -53,6 +53,13 @@ val Faint = Color(0xFF8A8175)
  */
 val Quote = Color(0xFFF5EDDD)
 
+/**
+ * The ground inside day one's framed hero, `design/Empty.dc.html`'s
+ * `#fdfaf2`: a shade lighter than [Paper], so the frame reads as a sheet laid
+ * on the page. Ink on it is 17.11:1, [Muted] 5.60:1, [Stamp] 6.52:1.
+ */
+val HeroFill = Color(0xFFFDFAF2)
+
 /** Perforations and dotted rules. Decorative: no contrast rule applies. */
 val Rule = Color(0xFFCFC4AE)
 
