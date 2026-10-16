@@ -1,5 +1,6 @@
 package my.pinged.ledger.categories
 
+import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import kotlinx.coroutines.awaitCancellation
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.CATEGORY_NAME_TAG
 import my.pinged.ledger.home.CategorySheet
@@ -31,6 +33,14 @@ import org.junit.Test
  * Save and Delete are pinned below the scrolling icons, as the board keeps
  * Save on screen, so they are tapped without a scroll: there is no scroller
  * above them to scroll.
+ *
+ * **No keyboard.** The sheet is drawn under an interceptor that never starts
+ * the field's input session, so typing raises no soft keyboard. One would
+ * arrive outside anything Compose's idling tracks and lift the pinned Save
+ * by its height (283px at CI's size), and a tap racing it lands where Save
+ * was: [aNewCategorySavesItsNameAndIcon] saved nothing in 1 of 12 runs
+ * host-starved at CI's size. Waiting for the keyboard instead, as
+ * `WipeHostTest` does, timed out when a starved Gboard never showed.
  */
 class CategorySheetTest {
     @get:Rule val compose = createComposeRule()
@@ -45,15 +55,17 @@ class CategorySheetTest {
         onSave: (String, String) -> Unit = { _, _ -> },
         onDelete: () -> Unit = {},
     ) = compose.setContent {
-        CategorySheet(
-            existing = existing,
-            transactions = transactions,
-            rules = rules,
-            otherNames = listOf("Groceries", "Uncategorized"),
-            onSave = onSave,
-            onDelete = onDelete,
-            onDismiss = {},
-        )
+        InterceptPlatformTextInput({ _, _ -> awaitCancellation() }) {
+            CategorySheet(
+                existing = existing,
+                transactions = transactions,
+                rules = rules,
+                otherNames = listOf("Groceries", "Uncategorized"),
+                onSave = onSave,
+                onDelete = onDelete,
+                onDismiss = {},
+            )
+        }
     }
 
     /** The board's "412 TRANSACTIONS WILL SHOW THE NEW NAME", once there is one. */
@@ -112,9 +124,6 @@ class CategorySheetTest {
         compose.onNodeWithText(DELETE_CATEGORY).assertDoesNotExist()
         save.assertIsNotEnabled()
         compose.onNodeWithTag(iconTag("tag")).assertIsSelected()
-        // The icon before the name: typing raises the soft keyboard on CI's
-        // emulator, which leaves the icons' scroller little or no height under
-        // the pinned name and Save, and a tile there takes no tap.
         compose.onNodeWithTag(iconTag("dog")).performScrollTo().performClick()
         compose.onNodeWithTag(iconTag("dog")).assertIsSelected()
         replaceName("Kucing")
