@@ -120,6 +120,7 @@ object DatabaseFactory {
         Room.databaseBuilder(context, PingedDatabase::class.java, name)
             .openHelperFactory(factory)
             .addCallback(configureConnection)
+            .addMigrations(MIGRATION_3_4)
             .setQueryCoroutineContext(Dispatchers.IO + roomFailures(onRoomFailure))
 
     /**

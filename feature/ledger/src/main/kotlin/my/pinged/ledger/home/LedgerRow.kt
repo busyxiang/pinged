@@ -68,13 +68,10 @@ import my.pinged.ui.theme.dashedOutline
  * knows which rows are uncategorized, so no row is claimed to be.
  *
  * [onOpenEntry] is spec 9.4's edit screen (#105), offered on a manual
- * entry's body alone: a captured row's body has no tap action, because it
- * is the bank's word and has nothing to correct. Null where the screen
- * routes nowhere.
- *
- * [onRemove] is #132's Not a payment, offered on the body of a captured row
- * that is `COMMITTED`: a held row has its badge and the inbox, and a manual
- * entry has its edit screen. The tap only asks; the screen's sheet confirms.
+ * entry's body. [onOpenDetail] is a captured row's detail screen (#153),
+ * offered on its body whatever its state: what Pinged read is worth seeing on
+ * a held row too, and the screen offers only the answers the row can take.
+ * Either is null where the screen routes nowhere.
  */
 @Composable
 internal fun LedgerRow(
@@ -86,16 +83,15 @@ internal fun LedgerRow(
     onOpenMerchant: (ownKey: String) -> Unit,
     onOpenReview: (txnId: Long) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onRemove: ((txnId: Long) -> Unit)? = null,
+    onOpenDetail: ((EditTarget) -> Unit)? = null,
 ) {
     val txn = row.txn
-    val remove = onRemove?.takeIf { txn.rawCaptureId != null && txn.state == TxnState.COMMITTED }
+    val manual = txn.rawCaptureId == null
     TxnRow(
         txn = txn,
         name = row.displayName,
-        onOpen = onOpenEntry?.takeIf { txn.rawCaptureId == null }?.let { open -> { open(EditTarget(txn.id, txn.createdAt)) } }
-            ?: remove?.let { ask -> { ask(txn.id) } },
-        openLabel = if (txn.rawCaptureId == null) EDIT_ENTRY else REMOVE_PAYMENT,
+        onOpen = (if (manual) onOpenEntry else onOpenDetail)?.let { open -> { open(EditTarget(txn.id, txn.createdAt)) } },
+        openLabel = if (manual) EDIT_ENTRY else OPEN_DETAIL,
         onOpenMerchant = txn.merchantKey?.let { key -> { onOpenMerchant(key) } },
         category = categoriesById[txn.categoryId],
         uncategorized = txn.categoryId == uncategorizedId,
@@ -143,6 +139,7 @@ internal fun RowCategoryChooser(
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview,
     onSave: (categoryId: Long, teach: Boolean) -> Unit,
     onDismiss: () -> Unit,
+    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
 ) {
     val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
     val categoriesById = remember(chooser.categories) { chooser.categories.associateBy { it.id } }
@@ -171,6 +168,8 @@ internal fun RowCategoryChooser(
         preview = { categoryId -> retroPreview(row.txn.id, categoryId) },
         onSave = onSave,
         onDismiss = onDismiss,
+        allNames = chooser.categories.map { it.name },
+        onAdd = addCategory,
     )
 }
 
@@ -328,18 +327,18 @@ internal const val EDIT_MERCHANT = "Edit merchant"
 /** The accessibility action a manual entry's row offers for its edit screen (#105). */
 internal const val EDIT_ENTRY = "Edit payment"
 
-/** The accessibility action a captured row offers for Not a payment (#132). */
-internal const val REMOVE_PAYMENT = "Remove payment"
+/** The accessibility action a captured row offers for its detail screen (#153). */
+internal const val OPEN_DETAIL = "Show what Pinged read"
 
 /**
  * The row body's gestures: a tap is [onOpen], a manual entry's edit screen
- * (#105) or a captured row's removal (#132), named [openLabel]; a long press
- * is [onOpenMerchant], spec 6.4's merchant sheet.
+ * (#105) or a captured row's detail screen (#153), named [openLabel]; a
+ * long press is [onOpenMerchant], spec 6.4's merchant sheet.
  *
  * The sheet is a long press, not a tap, so that it cannot be mistaken for
  * the uncategorized chip inside the same row. Both go through one
  * `pointerInput` rather than `combinedClickable`, which would make every
- * row a tap target, a captured row's included, where a tap does nothing.
+ * row a tap target, one on a screen that routes the tap nowhere included.
  * The chip, the small print and the badge are clickables of their own: they
  * consume their tap, so it never reaches [onOpen]. The semantics actions are
  * what a screen reader offers instead, since a long press is a gesture

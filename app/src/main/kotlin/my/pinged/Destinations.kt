@@ -59,6 +59,14 @@ import kotlinx.serialization.Serializable
 @Serializable data object Unread : NavKey
 
 /**
+ * The categories list (#155), pushed from its row in settings
+ * (`SettingsScreen`'s `onOpenCategories`).
+ *
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ */
+@Serializable data object Categories : NavKey
+
+/**
  * The bundled fonts' licences (spec 8), pushed from their row in settings
  * (`SettingsScreen`'s `onOpenLicences`).
  *
@@ -140,6 +148,32 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
  * See [Ledger] for why it is registered nowhere.
  */
 @Serializable data class ManualEntry(val txnId: Long? = null, val createdAt: Long? = null) : NavKey
+
+/**
+ * A captured transaction's detail screen (#153), pushed on the **current**
+ * tab's stack from the row's body -- the Spending list's, or a Charts day's --
+ * so back returns to the list it was opened from. Drawn by
+ * `:feature:ledger`'s `DetailScreen`, off the stack's root, so the tab bar is
+ * hidden.
+ *
+ * [createdAt] beside [txnId] for [ManualEntry]'s reason: a row a
+ * delete-everything or a restore gives the same id is not this one.
+ *
+ * See [Ledger] for why it is registered nowhere.
+ */
+@Serializable data class Detail(val txnId: Long, val createdAt: Long) : NavKey
+
+/**
+ * Spec 9.1's search (#154), pushed on the Spending stack by the magnifier in
+ * the list's header, and drawn by `:feature:ledger`'s `SearchScreen`. Off the
+ * stack's root, so the tab bar is hidden.
+ *
+ * Carries nothing: the words and filters are in the screen's own saved
+ * state, so a restored back stack comes back to the same search.
+ *
+ * See [Ledger] for why it is registered nowhere.
+ */
+@Serializable data object Search : NavKey
 
 /**
  * The Spending stack a first creation starts on: its root, with spec 9.4's

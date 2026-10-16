@@ -521,6 +521,39 @@ class ParseWorkerTest {
         )
     }
 
+    /**
+     * Spec 4's own example of a rename, "Food & Drinks" to something else (#155):
+     * the dictionary still files under it. Entries name categories by seeded
+     * name, and the pass resolves them through `seed_name`, which a rename
+     * leaves alone. Resolved by `name`, the renamed category's entries are
+     * dropped and the capture lands in Uncategorized.
+     *
+     * Renamed through `CategoryDao.edit`, the write the sheet makes, and put
+     * back afterwards: the database is the device's shared one.
+     */
+    @Test
+    fun aRenamedSeededCategoryKeepsItsDictionaryEntries() {
+        val categories = Databases.categoryDao(context)
+        val shopping = categoryId("Shopping")
+        val renamed = "Beli-belah $marker"
+        val key = "ZZRENAMED$marker"
+        val capture = ParseFixtures.insertCapture(
+            context = context, title = "Touch 'n Go", sbnKey = "$marker-renamed", postedAt = base - 9_000L,
+            text = "Payment of ${ParseFixtures.uniqueAmount().second} to $key successful",
+        )
+        try {
+            categories.edit(shopping, renamed, "shopping-bag")
+            ParseFixtures.pass(
+                context,
+                dictionary = listOf(my.pinged.parse.DictionaryEntry(key, "Shopping", my.pinged.parse.MatchMode.EXACT)),
+            ).run()
+        } finally {
+            categories.edit(shopping, "Shopping", "shopping-bag")
+        }
+
+        assertEquals(shopping, requireNotNull(ParseFixtures.txnForCapture(context, capture)).categoryId)
+    }
+
     /** A learned rule as the teaching save writes it; a test's own, so no row is shared. */
     private fun learn(identity: String, category: String) {
         Databases.merchantRuleDao(context).insert(

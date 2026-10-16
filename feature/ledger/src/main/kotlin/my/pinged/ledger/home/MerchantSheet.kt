@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -345,7 +347,9 @@ private fun SheetButton(label: String, enabled: Boolean, onClick: () -> Unit, mo
  * wrapper for the reason that file gives, with the placeholder in [Faint] too.
  * The entry screen's merchant and note are this field as well, so the app has
  * one idiom for a line of text. [tag] is on the wrapper; the editable node is
- * its child.
+ * its child. [onDone] is the keyboard's Done key, which by default only
+ * closes the keyboard. [placeholderColour] is [Faint] on [Paper]; a field on
+ * another band passes its own.
  */
 @Composable
 internal fun UnderlinedField(
@@ -354,6 +358,8 @@ internal fun UnderlinedField(
     placeholder: String,
     tag: String,
     capitalization: KeyboardCapitalization,
+    onDone: (() -> Unit)? = null,
+    placeholderColour: Color = Faint,
 ) {
     val style = TextStyle(fontFamily = Body, fontSize = 17.sp, color = Ink)
     Box(
@@ -378,10 +384,11 @@ internal fun UnderlinedField(
             singleLine = true,
             textStyle = style,
             keyboardOptions = KeyboardOptions(capitalization = capitalization, imeAction = ImeAction.Done),
+            keyboardActions = if (onDone != null) KeyboardActions(onDone = { onDone() }) else KeyboardActions.Default,
             cursorBrush = SolidColor(Stamp),
             decorationBox = { field ->
                 Box {
-                    if (value.isEmpty()) Text(placeholder, style = style.copy(color = Faint))
+                    if (value.isEmpty()) Text(placeholder, style = style.copy(color = placeholderColour))
                     field()
                 }
             },

@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import my.pinged.ledger.categories.CATEGORIES
 import my.pinged.ledger.learned.TAUGHT
 import my.pinged.ledger.unread.UNREAD_ROW
 import my.pinged.ledger.licences.LICENCES_TITLE
@@ -58,10 +59,11 @@ import my.pinged.ledger.transfer.Unreadable
  * Spec 9.5, drawn from `design/Settings.dc.html`.
  *
  * **Only the rows with a screen behind them are here.** Capture health is
- * [CAPTURE_ALERTS], spec 10.2's daily check; the artboard's others -- unread
- * pack import, categories, the review threshold -- belong to milestones that
- * do not exist, and dead rows are worse than a short screen. `HOW THINGS GET
- * SORTED` holds the one that does: what the user taught (#50, spec 5.7).
+ * [CAPTURE_ALERTS], spec 10.2's daily check; the artboard's others -- pack
+ * import, the review threshold -- belong to milestones that do not exist, and
+ * dead rows are worse than a short screen. `HOW THINGS GET SORTED` holds the
+ * two that do: what the user taught (#50, spec 5.7), the artboard's "taught
+ * rules", and the categories (#155).
  *
  * The root of the SETTINGS tab, so no back control: the artboard draws none, and
  * the bar `MainActivity` hosts is the way out.
@@ -77,6 +79,7 @@ fun SettingsScreen(
     onRestore: () -> Unit,
     onOpenCorrections: () -> Unit,
     onOpenLearned: () -> Unit,
+    onOpenCategories: () -> Unit,
     onOpenLicences: () -> Unit,
     onRescue: () -> Unit,
     onOpenUnread: () -> Unit,
@@ -111,6 +114,7 @@ fun SettingsScreen(
             onOpenSources = onOpenSources,
             onOpenCorrections = onOpenCorrections,
             onOpenLearned = onOpenLearned,
+            onOpenCategories = onOpenCategories,
             onOpenLicences = onOpenLicences,
             onOpenUnread = onOpenUnread,
             onExport = onExport,
@@ -462,6 +466,7 @@ internal fun SettingsRows(
     onDelete: () -> Unit,
     onOpenCorrections: () -> Unit,
     onOpenLearned: () -> Unit,
+    onOpenCategories: () -> Unit,
     onOpenLicences: () -> Unit,
     alertsOn: Boolean? = null,
     onAlerts: (() -> Unit)? = null,
@@ -518,12 +523,19 @@ internal fun SettingsRows(
     SectionBreak()
     SectionLabel("HOW THINGS GET SORTED")
     // The count is the two lists' lengths, so it cannot disagree with them;
-    // see `SettingsState.learnedCount`. Blank unless both read. The section's
-    // only row, so no divider.
+    // see `SettingsState.learnedCount`. Blank unless both read.
     SettingsRow(
         TAUGHT,
         value = state.learnedCount?.let { learned -> state.ignoredCount?.let { grouped(learned + it) } },
         onClick = onOpenLearned,
+        chevron = true,
+    )
+    // The artboard's "Categories · 14": every row the list shows, Uncategorized
+    // included. The section's last row, so no divider.
+    SettingsRow(
+        CATEGORIES,
+        value = state.categoryCount?.let { grouped(it) },
+        onClick = onOpenCategories,
         chevron = true,
         divider = false,
     )

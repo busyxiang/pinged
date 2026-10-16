@@ -20,7 +20,12 @@ import androidx.room.PrimaryKey
     // "add a category" sheet are both paths to a second `Uncategorized`.
     // Unique on top of that makes the lookup a `SEARCH ... USING INDEX` rather
     // than the `SCAN category` it measured as before.
-    indices = [Index(value = ["name"], unique = true)],
+    //
+    // `seed_name` is unique too: two rows answering to one seeded identity
+    // would leave the dictionary filing under whichever the map met last.
+    // SQLite lets any number of rows hold NULL under a unique index, which is
+    // every category the user added.
+    indices = [Index(value = ["name"], unique = true), Index(value = ["seed_name"], unique = true)],
 )
 data class Category(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -28,4 +33,12 @@ data class Category(
     @ColumnInfo(name = "icon_key") val iconKey: String,
     @ColumnInfo(name = "sort_order") val sortOrder: Int,
     @ColumnInfo(name = "is_protected") val isProtected: Boolean = false,
+    /**
+     * The name this row was seeded under, or null for a category the user
+     * added. Never changed by a rename: it is what the parser pack's
+     * dictionary, which names categories by seeded name (spec #45), and the
+     * top-up resolve a seeded category through, so renaming "Food & Drinks"
+     * to "Makan" keeps its merchants filing (spec 4, `category`).
+     */
+    @ColumnInfo(name = "seed_name") val seedName: String? = null,
 )

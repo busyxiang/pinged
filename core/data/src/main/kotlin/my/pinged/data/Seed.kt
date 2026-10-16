@@ -43,7 +43,31 @@ object Seed {
             sortOrder = UNCATEGORIZED_SORT_ORDER,
             isProtected = true,
         ),
+    ).map { it.copy(seedName = it.name) }
+
+    /**
+     * [name] when it is one of [NAMES_BEFORE_V4], else null: the `seed_name` a
+     * row from before schema 4 is given. Exact because no build before it
+     * could rename a category or add one, so a row holding a seeded name then
+     * was that seeded row. The v3 -> v4 migration and a restore of a format-1
+     * or format-2 backup both use it.
+     */
+    fun seedNameOf(name: String): String? = name.takeIf { it in NAMES_BEFORE_V4 }
+
+    /**
+     * Every name any build before schema 4 seeded, written out rather than
+     * read off [categories], which later seeds will change: a released
+     * migration, and the restore of a file a released build wrote, must mean
+     * the same thing forever. Every release seeded these names and no others.
+     */
+    val NAMES_BEFORE_V4: Set<String> = setOf(
+        "Food & Drinks", "Groceries", "Transport", "Petrol & tolls", "Bills & utilities",
+        "Telco & internet", "Shopping", "Health", "Education", "Family", "Religious & zakat",
+        "Government & fees", "Entertainment", LOANS_AND_FINANCING, INSURANCE_AND_TAKAFUL, UNCATEGORIZED,
     )
+
+    /** Every seeded name, whatever the rows now call them. */
+    val NAMES: Set<String> by lazy { categories().mapTo(LinkedHashSet()) { it.name } }
 
     const val LOANS_AND_FINANCING = "Loans & financing"
     const val INSURANCE_AND_TAKAFUL = "Insurance & takaful"

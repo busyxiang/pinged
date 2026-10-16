@@ -45,7 +45,6 @@ import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.OPEN_REVIEW
-import my.pinged.ledger.home.RemoveSheet
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ui.theme.Body
@@ -74,7 +73,8 @@ import java.time.LocalDate
  * [onOpenReview] is the review inbox (§9.2), from a row's badge with that
  * row's id or from the heading's *M awaiting review* with the day's first
  * held row's; `:app` routes it, as it does Charts' `onDayClick`.
- * [onOpenEntry] is a manual entry's edit screen (#105), from its row's body.
+ * [onOpenEntry] is a manual entry's edit screen (#105), from its row's body,
+ * and [onOpenDetail] a captured row's detail screen (#153).
  */
 @Composable
 fun DayScreen(
@@ -83,6 +83,7 @@ fun DayScreen(
     modifier: Modifier = Modifier,
     onOpenReview: (focus: Long?) -> Unit = {},
     onOpenEntry: ((EditTarget) -> Unit)? = null,
+    onOpenDetail: ((EditTarget) -> Unit)? = null,
 ) {
     val rewrites by Databases.rewrites.collectAsState()
     LifecycleResumeEffect(viewModel, rewrites) {
@@ -99,9 +100,10 @@ fun DayScreen(
         onBack = onBack,
         onOpenReview = onOpenReview,
         onOpenEntry = onOpenEntry,
-        onRemove = { viewModel.removeCaptured(it) },
+        onOpenDetail = onOpenDetail,
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
+        addCategory = viewModel::addCategory,
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
             MerchantActions(
@@ -127,13 +129,13 @@ internal fun DayScreenContent(
     modifier: Modifier = Modifier,
     onOpenReview: (focus: Long?) -> Unit = {},
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
+    /** The chooser's New category (#155); null draws no tile. */
+    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onRemove: ((txnId: Long) -> Unit)? = null,
+    onOpenDetail: ((EditTarget) -> Unit)? = null,
 ) {
-    // Which row is being removed (#132).
-    var removing by rememberSaveable { mutableStateOf<Long?>(null) }
     // Hoisted out of the list for the reason `LedgerScreenContent` gives.
     var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
     val chooser = read?.chooser
@@ -164,7 +166,7 @@ internal fun DayScreenContent(
                             onOpenMerchant = merchantActions.open,
                             onOpenReview = onOpenReview,
                             onOpenEntry = onOpenEntry,
-                            onRemove = if (onRemove != null) { id -> removing = id } else null,
+                            onOpenDetail = onOpenDetail,
                         )
                     }
                 }
@@ -186,18 +188,7 @@ internal fun DayScreenContent(
                 onAssign(chosen, categoryId, teach)
             },
             onDismiss = { categorizing = null },
-        )
-    }
-    val removed = removing
-    val removedRow = removed?.let { id -> read?.rows?.firstOrNull { it.txn.id == id } }
-    if (removed != null && removedRow != null && onRemove != null) {
-        RemoveSheet(
-            row = removedRow,
-            onConfirm = {
-                removing = null
-                onRemove(removed)
-            },
-            onDismiss = { removing = null },
+            addCategory = addCategory,
         )
     }
     if (merchantSheet != null) MerchantSheet(merchantSheet, merchantActions)

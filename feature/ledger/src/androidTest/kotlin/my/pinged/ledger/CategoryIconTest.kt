@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.Seed
 import my.pinged.ledger.R
+import my.pinged.ledger.home.PICKER_GROUPS
 import my.pinged.ledger.home.categoryIcon
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -13,7 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The sixteen category icons, and the two things a generated file can get
+ * The category icons -- the seed's sixteen and the picker's 54 -- and the two things a generated file can get
  * wrong that nothing else would notice.
  *
  * These drawables are converted from Lucide's SVGs by a script (see
@@ -81,6 +82,30 @@ class CategoryIconTest {
             ids.size,
             ids.toSet().size,
         )
+    }
+
+    /**
+     * Spec 4's picker set (#155): every icon the sheet offers inflates, under
+     * its own drawable, and the set is the spec's 54 with no key twice.
+     */
+    @Test fun everyPickerIconInflatesUnderItsOwnDrawable() {
+        val keys = PICKER_GROUPS.flatMap { it.keys }
+        assertEquals("The picker set is not spec 4's 54 distinct icons: $keys", 54, keys.toSet().size)
+        assertEquals("A key is offered twice", keys.size, keys.toSet().size)
+        val ids = keys.map { key ->
+            val id = categoryIcon(key)
+            assertNotNull("No bundled drawable for picker key '$key'", id)
+            assertNotNull("R.drawable for '$key' would not inflate", ContextCompat.getDrawable(context, id!!))
+            id
+        }
+        assertEquals("Two picker keys share a drawable: $ids", ids.size, ids.toSet().size)
+    }
+
+    /** A seeded category's sheet opens with its own icon among those offered. */
+    @Test fun everySeededIconIsInThePicker() {
+        val offered = PICKER_GROUPS.flatMap { it.keys }.toSet()
+        val missing = Seed.categories().map { it.iconKey }.filterNot { it in offered }
+        assertEquals("Seeded icons the picker cannot offer back: $missing", emptyList<String>(), missing)
     }
 
     /**

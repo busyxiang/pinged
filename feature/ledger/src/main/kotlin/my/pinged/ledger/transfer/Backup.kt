@@ -72,10 +72,15 @@ object Backup {
      * file has neither and restores with both tables empty, which is exactly
      * what the ledger it came from held.
      *
-     * 3 added spec 5.7's `user_reject_rules`. An older file has none, and a
-     * capture in one that names a rule anyway is refused as pointing at nothing.
+     * 3 added `categories[].seed_name` (schema 4). An older file has none, and
+     * each row is given `Seed.seedNameOf` its name, as the schema migration
+     * gives it: no build that wrote one could rename or add a category.
+     *
+     * 4 added spec 5.7's `user_reject_rules` (schema 5). An older file has none,
+     * and a capture in one that names a rule anyway is refused as pointing at
+     * nothing.
      */
-    const val FORMAT_VERSION = 3
+    const val FORMAT_VERSION = 4
 
     /** The oldest format [ImportJson] still reads; see [BackupSection.sinceFormat]. */
     const val OLDEST_READABLE = 1
@@ -201,6 +206,7 @@ internal val CATEGORY_SECTION = BackupSection<Category>(
         BackupColumn("icon_key", "iconKey") { w, r -> w.value(r.iconKey) },
         BackupColumn("sort_order", "sortOrder") { w, r -> w.value(r.sortOrder.toLong()) },
         BackupColumn("is_protected", "isProtected") { w, r -> w.value(r.isProtected) },
+        BackupColumn("seed_name", "seedName") { w, r -> w.value(r.seedName) },
     ),
     clearFirst = { it.categoryDao().deleteAllForImport() },
     insert = { db, rows -> db.categoryDao().insertAll(rows.map(ImportJson::category)) },
@@ -373,7 +379,7 @@ internal val USER_REJECT_RULE_SECTION = BackupSection<UserRejectRule>(
         BackupColumn("sample_text", "sampleText") { w, r -> w.value(r.sampleText) },
         BackupColumn("created_at", "createdAt") { w, r -> w.value(r.createdAt) },
     ),
-    sinceFormat = 3,
+    sinceFormat = 4,
     insert = { db, rows -> db.userRejectRuleDao().insertAll(rows.map(ImportJson::userRejectRule)) },
 )
 

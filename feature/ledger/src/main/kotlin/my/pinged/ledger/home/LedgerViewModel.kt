@@ -496,12 +496,12 @@ class LedgerViewModel(
         now: YearMonth = shownMonth(),
     ): Job = rows.assignCategory(txnId, categoryId, teach) { refresh(now).join() }
 
-    /** See [RowActions.removeCaptured]; the month is re-read after. */
-    fun removeCaptured(txnId: Long, now: YearMonth = shownMonth()): Job =
-        rows.removeCaptured(txnId) { refresh(now).join() }
-
     /** See [RowActions.retroPreview]. */
     suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
+
+    /** See [RowActions.addCategory]; the month, and so the chooser, is re-read after. */
+    suspend fun addCategory(name: String, iconKey: String): Long? =
+        rows.addCategory(name, iconKey) { refresh(shownMonth()).join() }
 
     /** See [RowActions.openMerchant]. */
     fun openMerchant(ownKey: String): Job = rows.openMerchant(ownKey)

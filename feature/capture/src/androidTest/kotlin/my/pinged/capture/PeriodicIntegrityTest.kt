@@ -196,8 +196,9 @@ class PeriodicIntegrityTest {
  * A table nothing reads while the database opens and seeds, so a page of it
  * damaged leaves a database that opens and then fails the pragma. Not the
  * middle of the file: on this test's near-empty database that is a page the
- * open reads, measured on emulator-5554 at schema v3, and the open then throws
- * `DatabaseUnreadableException` before any check runs. Page 1 is no better --
+ * open reads, measured on emulator-5554 at v2's tables and `user_reject_rule`,
+ * and the open then throws `DatabaseUnreadableException` before any check
+ * runs. Page 1 is no better --
  * it holds the salt SQLCipher needs to open at all.
  */
 private const val UNREAD_AT_OPEN = "merchant_alias"

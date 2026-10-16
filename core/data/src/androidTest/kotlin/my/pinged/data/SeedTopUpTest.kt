@@ -117,6 +117,30 @@ class SeedTopUpTest {
         }
     }
 
+    /**
+     * A seeded category the user renamed is still present to the top-up
+     * (#155), which goes by `seed_name`: Loans & financing renamed, on a
+     * table the top-up has not yet run on, does not come back beside its new
+     * name, and Insurance & takaful, still missing, is added. Measured with the
+     * top-up reverted to matching by name: it tries a second Loans & financing,
+     * the unique `seed_name` index refuses it, the top-up rolls back whole, and
+     * the second assertion fails with Insurance & takaful never added.
+     */
+    @Test fun aRenamedSeededCategoryIsNotToppedUpAgain() {
+        DatabaseFactory.build(context).useDb { db ->
+            val dao = db.categoryDao()
+            dao.deleteAllForImport()
+            dao.insertAll(
+                FOURTEEN + Category(id = 20, name = "Pinjaman", iconKey = "hand-coins", sortOrder = 14, seedName = LOANS),
+            )
+        }
+        DatabaseFactory.build(context).useDb { db ->
+            val rows = db.categoryDao().all()
+            assertTrue("Loans & financing came back beside its new name", rows.none { it.name == LOANS })
+            assertEquals(setOf(LOANS, INSURANCE), rows.mapNotNull { it.seedName }.filter { it == LOANS || it == INSURANCE }.toSet())
+        }
+    }
+
     private fun PingedDatabase.txnCategoryIds(): List<Long> =
         openHelper.readableDatabase.column("SELECT category_id FROM txn ORDER BY id").map { it!!.toLong() }
 
@@ -124,7 +148,11 @@ class SeedTopUpTest {
         const val LOANS = "Loans & financing"
         const val INSURANCE = "Insurance & takaful"
 
-        /** The seed every install before #134 was made from, written out rather than derived from [Seed]. */
+        /**
+         * The seed every install before #134 was made from, written out rather
+         * than derived from [Seed], as schema 4's migration leaves it: each
+         * row with its own name as its `seed_name`.
+         */
         val FOURTEEN = listOf(
             "utensils" to "Food & Drinks", "shopping-basket" to "Groceries", "car" to "Transport",
             "fuel" to "Petrol & tolls", "zap" to "Bills & utilities", "wifi" to "Telco & internet",
@@ -132,7 +160,10 @@ class SeedTopUpTest {
             "users" to "Family", "hand-heart" to "Religious & zakat", "landmark" to "Government & fees",
             "ticket" to "Entertainment", "circle-dashed" to "Uncategorized",
         ).mapIndexed { i, (icon, name) ->
-            Category(id = i + 1L, name = name, iconKey = icon, sortOrder = i, isProtected = name == "Uncategorized")
+            Category(
+                id = i + 1L, name = name, iconKey = icon, sortOrder = i,
+                isProtected = name == "Uncategorized", seedName = name,
+            )
         }
     }
 }

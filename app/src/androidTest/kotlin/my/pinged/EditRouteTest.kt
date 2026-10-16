@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
@@ -25,6 +26,7 @@ import my.pinged.data.LocalDates
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.day.DAY_BACK
+import my.pinged.ledger.detail.DETAIL_BACK
 import my.pinged.ledger.entry.AMOUNT
 import my.pinged.ledger.entry.CONFIRM_DELETE
 import my.pinged.ledger.entry.DELETE_PAYMENT
@@ -42,7 +44,8 @@ import org.junit.runner.RunWith
 /**
  * Spec 9.4's correction (#105): a tap on a manual entry's row body opens the
  * entry screen in edit mode, filled in, and a tap on a captured row's body
- * does nothing. On the Ledger and on the Day screen, which draw the same row.
+ * opens its detail (#153) rather than the entry screen. On the Ledger and on
+ * the Day screen, which draw the same row.
  *
  * `createEmptyComposeRule`, for the reason `ExportNudgeBannerTest` gives: the
  * rows have to be in the database before the Activity reads it.
@@ -68,16 +71,16 @@ class EditRouteTest {
 
     @After fun leaveAnOpenableDatabase() = discard()
 
-    @Test fun onTheLedgerAManualRowOpensFilledInAndACapturedRowDoesNothing() {
+    @Test fun onTheLedgerAManualRowOpensFilledInAndACapturedRowOpensItsDetail() {
         ActivityScenario.launch(MainActivity::class.java).use {
             assertTrue("The Ledger did not draw both rows", compose.waitFor { compose.reached(MANUAL) && compose.reached(CAPTURED) })
 
-            tapAndCheckNothingOpens(CAPTURED)
+            tapAndCheckDetailOpens(CAPTURED)
             tapAndCheckEditMode()
         }
     }
 
-    @Test fun onTheDayScreenAManualRowOpensFilledInAndACapturedRowDoesNothing() {
+    @Test fun onTheDayScreenAManualRowOpensFilledInAndACapturedRowOpensItsDetail() {
         ActivityScenario.launch(MainActivity::class.java).use {
             compose.onNodeWithText("CHARTS").performClick()
             val month = "${today.month.name} ${today.year}"
@@ -91,7 +94,7 @@ class EditRouteTest {
                 },
             )
 
-            tapAndCheckNothingOpens(CAPTURED)
+            tapAndCheckDetailOpens(CAPTURED)
             tapAndCheckEditMode()
         }
     }
@@ -115,12 +118,17 @@ class EditRouteTest {
         }
     }
 
-    /** A tap on [merchant]'s row body, and still no entry screen once the tap has settled. */
-    private fun tapAndCheckNothingOpens(merchant: String) {
+    /**
+     * A tap on [merchant]'s row body opens its detail and never the entry
+     * screen; the detail's chevron then returns to the list.
+     */
+    private fun tapAndCheckDetailOpens(merchant: String) {
         assertTrue("$merchant's row could not be scrolled to", compose.reached(merchant))
         compose.onNodeWithText(merchant).performScrollTo().performClick()
-        compose.waitForIdle()
+        assertTrue("A captured row's body did not open its detail", compose.waitFor { compose.countOf(WHAT_PINGED_READ) == 1 })
         assertEquals("A captured row's body opened the entry screen", 0, compose.onAllNodesWithContentDescription(AMOUNT).fetchSemanticsNodes().size)
+        compose.onNodeWithContentDescription(DETAIL_BACK).performScrollTo().performClick()
+        assertTrue("The detail's chevron did not return to the list", compose.waitFor { compose.countOf(WHAT_PINGED_READ) == 0 })
     }
 
     /** A tap on the manual row's body, then the entry screen in edit mode with every field filled in. */
@@ -189,5 +197,8 @@ class EditRouteTest {
         const val CAPTURED = "Warung Probe"
         const val NOTE = "teh tarik"
         const val FOOD = "Food & Drinks"
+
+        /** The detail's heading over the quoted notification. */
+        const val WHAT_PINGED_READ = "WHAT PINGED READ"
     }
 }

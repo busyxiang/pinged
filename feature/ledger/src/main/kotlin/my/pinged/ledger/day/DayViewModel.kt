@@ -113,11 +113,11 @@ class DayViewModel(app: Application, val date: LocalDate) : AndroidViewModel(app
     fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
         rows.assignCategory(txnId, categoryId, teach) { refresh().join() }
 
-    /** See [RowActions.removeCaptured]; the day is re-read after. */
-    fun removeCaptured(txnId: Long): Job = rows.removeCaptured(txnId) { refresh().join() }
-
     /** See [RowActions.retroPreview]. */
     suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
+
+    /** See [RowActions.addCategory]; the day, and so the chooser, is re-read after. */
+    suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey) { refresh().join() }
 
     fun openMerchant(ownKey: String): Job = rows.openMerchant(ownKey)
 

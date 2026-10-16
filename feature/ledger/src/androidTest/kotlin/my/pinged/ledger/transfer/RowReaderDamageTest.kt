@@ -219,15 +219,20 @@ class RowReaderDamageTest {
 
     /**
      * Design 2.3's injury at a year of capture: one flipped byte in the
-     * `raw_capture` leaf nearest the middle of the file. The nearest leaf and
-     * not the middle byte itself, which a schema's new pages move onto an index.
+     * `raw_capture` leaf nearest the middle of the file.
      */
     @Test(timeout = 300_000)
     fun oneFlippedByteAtAYearOfCaptureLosesOnlyItsOwnLeaf() {
         val seeded = 10_000
         val pages = seedLedger(seeded)
+        // The raw_capture leaf nearest the file's middle, picked from the
+        // layout: which tree owns the middle page moves with every table and
+        // index the schema adds, and a flip on any other tests something else.
         val middle = (file.length() / 2 / 4096 + 1).toInt()
-        val leaf = leaves(pages, "raw_capture").minBy { kotlin.math.abs(it.number - middle) }
+        val leaf = pages.filter { it.tree == "raw_capture" && it.type == "leaf" }
+            .minByOrNull { kotlin.math.abs(it.number - middle) }
+        assertTrue("the seeded ledger has no raw_capture leaf, so this test proves nothing", leaf != null)
+        leaf!!
         Graph.reset()
         damage(leaf)
         val reach = strictReach(PagedTable.RAW_CAPTURE)

@@ -351,9 +351,14 @@ private class References {
         }
         uncategorizedAdded = true
         uncategorized = highest + 1
+        // Without the seed's `seed_name` when a row read still holds it -- the
+        // Uncategorized that was renamed away -- which `seed_name`'s unique
+        // index would otherwise refuse at the restore.
+        val seedName = Seed.UNCATEGORIZED.takeIf { name -> read.none { it.seedName == name } }
         return read + Seed.categories().single { it.name == Seed.UNCATEGORIZED }.copy(
             id = uncategorized,
             sortOrder = (read.maxOfOrNull { it.sortOrder } ?: -1) + 1,
+            seedName = seedName,
         )
     }
 

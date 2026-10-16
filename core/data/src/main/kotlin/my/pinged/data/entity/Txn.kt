@@ -198,6 +198,10 @@ fun Txn.requireStorable() {
         // identity hash, and because the merchant sheet's per-key lookups
         // (`MerchantIdentityDao.membersOf`) are point reads on it.
         Index("merchant_key"),
+        // Search's App filter (spec 15.2: "filters ... are ordinary indexed
+        // predicates") and the list of apps it offers, `TxnDao.sourceApps`,
+        // which groups by it. Added in v3 with search's own table.
+        Index("source_package"),
     ],
 )
 data class Txn(

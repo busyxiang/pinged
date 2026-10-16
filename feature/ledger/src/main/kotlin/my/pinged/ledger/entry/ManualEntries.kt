@@ -166,28 +166,15 @@ class ManualEntries(
         Databases.merchantRuleDao(context()).learnedCategoryFor(key) ?: dictionaryFiling()(key)
 
     /**
-     * The dictionary's filing by `category.id`, read once per database, as
-     * `RowActions`' catalogue is: a restore replaces the `category` table, so
-     * the memo carries the `Databases.generation` it was read under and is
-     * read again when that has moved. Null means not read yet; `@Volatile`
-     * because two lookups can overlap, and the worst a race costs is one more
-     * read of sixteen rows.
+     * The dictionary's filing by `category.id`, read on every lookup: Settings
+     * renames and deletes categories (#155) without moving
+     * `Databases.generation`, so a memo keyed on it would offer a deleted
+     * category's id, which the save then refuses without a word. Through
+     * `seed_name`, so a renamed seeded category keeps its merchants, as stage
+     * two files them.
      */
-    @Volatile private var dictionary: DictionaryFiling? = null
-
-    private fun dictionaryFiling(): (String?) -> Long? {
-        // Before the query, so a reset landing during it leaves the older
-        // number on the memo and the next lookup reads again.
-        val generation = Databases.generation.value
-        return dictionary?.takeIf { it.generation == generation }?.lookup
-            ?: dictionaryCategoryIds(
-                Graph.parsePack().dictionary,
-                Databases.categoryDao(context()).all().associate { it.name to it.id },
-            ).also { dictionary = DictionaryFiling(it, generation) }
-    }
-
-    /** The dictionary's [lookup] from merchant key to `category.id`, as read under [generation]. */
-    private class DictionaryFiling(val lookup: (String?) -> Long?, val generation: Long)
+    private fun dictionaryFiling(): (String?) -> Long? =
+        dictionaryCategoryIds(Graph.parsePack().dictionary, Databases.categoryDao(context()).seededIds())
 
     /**
      * Write [draft] as a new manual entry, dated now or on its past day at

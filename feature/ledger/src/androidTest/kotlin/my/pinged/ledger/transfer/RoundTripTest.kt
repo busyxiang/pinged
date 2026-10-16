@@ -165,25 +165,30 @@ class RoundTripTest {
     }
 
     /**
-     * A format-2 file -- every export before spec 5.7 -- restores with no
-     * ignored messages and its merges intact.
+     * A format-3 file -- #155's, every export before spec 5.7 -- restores with
+     * no ignored messages, its merges intact and its categories' `seed_name`
+     * read from the file.
      */
-    @Test fun aFormatTwoFileRestoresWithNoIgnoredMessages() {
+    @Test fun aFormatThreeFileRestoresWithNoIgnoredMessages() {
         val original = fresh()
         seedOneOfEverything(original)
         val current = String(exportBytes(original), Charsets.UTF_8)
-        val formatTwo = current
-            .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":2")
+        val formatThree = current
+            .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":3")
             .let { it.substring(0, it.indexOf(",\"${Backup.USER_REJECT_RULES}\":")) + "}" }
             .replace("\"user_reject_rule_id\":77", "\"user_reject_rule_id\":null")
+        check("seed_name" in formatThree) { "a format-3 file carries seed_name" }
+        // Read before the second `fresh()`, which closes this handle.
+        val seedNames = original.categoryDao().all().associate { it.id to it.seedName }
 
         val restored = fresh()
-        val report = ImportJson.read(restored, ByteArrayInputStream(formatTwo.toByteArray(Charsets.UTF_8)))
+        val report = ImportJson.read(restored, ByteArrayInputStream(formatThree.toByteArray(Charsets.UTF_8)))
 
-        assertEquals(2, report.formatVersion)
+        assertEquals(3, report.formatVersion)
         assertEquals(1, report.merchantAliases)
         assertEquals(0, report.userRejectRules)
         assertEquals(0, restored.userRejectRuleDao().countAll())
+        assertEquals(seedNames, restored.categoryDao().all().associate { it.id to it.seedName })
     }
 
     /**

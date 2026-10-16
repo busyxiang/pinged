@@ -265,6 +265,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         val learnedCount = db?.let { countLearned(it, met) }
         val ignoredCount = db?.let { d -> countOrNull(met) { d.userRejectRuleDao().countAll() } }
         val unreadCount = db?.let { d -> countOrNull(met) { d.userRejectRuleDao().unreadCount() } }
+        val categoryCount = db?.let { countCategories(it, met) }
         val correctionsPending = if (recorded == Storage.HEALTHY) db?.let { countCorrections(it, met) } else null
         val counts = if (damaged == null) null else db?.let { wipeCounts(recorded, it, met) }
         val exportRows = if (damaged == null) null else db?.let { exportRows(recorded, it, met) }
@@ -284,6 +285,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
                 learnedCount = learnedCount,
                 ignoredCount = ignoredCount,
                 unreadCount = unreadCount,
+                categoryCount = categoryCount,
                 wipeCounts = counts,
                 exportRows = exportRows,
                 lastExportAt = lastExportAt,
@@ -410,6 +412,14 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     /** The live learned rules (#50), or null where the read fails, as [countEnabledSources]'s does. */
     private fun countLearned(db: PingedDatabase, met: Met): Int? = try {
         db.merchantRuleDao().learnedCount()
+    } catch (thrown: SQLException) {
+        met.record(thrown)
+        null
+    }
+
+    /** Every category (#155), or null where the read fails, as [countEnabledSources]'s does. */
+    private fun countCategories(db: PingedDatabase, met: Met): Int? = try {
+        db.categoryDao().countAll()
     } catch (thrown: SQLException) {
         met.record(thrown)
         null

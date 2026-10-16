@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -85,6 +86,7 @@ import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.HeroFill
 import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.Magnifier
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
@@ -129,6 +131,8 @@ fun LedgerScreen(
     onOpenReview: (focus: Long?) -> Unit = {},
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
+    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
@@ -172,11 +176,13 @@ fun LedgerScreen(
         storageUnavailable = unavailable,
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
+        addCategory = viewModel::addCategory,
         onOpenSettings = onOpenSettings,
         onOpenReview = onOpenReview,
         onAddPayment = onAddPayment,
         onOpenEntry = onOpenEntry,
-        onRemove = { viewModel.removeCaptured(it) },
+        onOpenDetail = onOpenDetail,
+        onOpenSearch = onOpenSearch,
         heard = heard,
         monthPicked = picked != null,
         picks = picks,
@@ -229,12 +235,15 @@ internal fun LedgerScreenContent(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
+    /** The chooser's New category (#155); null draws no tile. */
+    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
     merchantSheet: MerchantSheetState? = null,
     merchantActions: MerchantActions = MerchantActions.None,
     onOpenReview: (focus: Long?) -> Unit = {},
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onRemove: ((txnId: Long) -> Unit)? = null,
+    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
     monthPicked: Boolean = false,
     onOpenMonths: (() -> Unit)? = null,
@@ -257,8 +266,6 @@ internal fun LedgerScreenContent(
         }
     }
 
-    // Which row is being removed (#132), hoisted for the reason `categorizing` is.
-    var removing by rememberSaveable { mutableStateOf<Long?>(null) }
     // Which row is being categorized, hoisted to here rather than held in the
     // row: a `ModalBottomSheet` emitted from inside the `LazyColumn` scrolls
     // out of the viewport and is disposed with the item that owns it.
@@ -281,7 +288,12 @@ internal fun LedgerScreenContent(
         Column(Modifier.fillMaxSize().background(Paper)) {
             // Above the branch: the month being summarised is true in every state,
             // including the two with nothing to show.
-            TopBar(month = read.summary?.month ?: YearMonth.now(), heard = heard, onOpenMonths = onOpenMonths)
+            TopBar(
+                month = read.summary?.month ?: YearMonth.now(),
+                heard = heard,
+                onOpenMonths = onOpenMonths,
+                onOpenSearch = onOpenSearch,
+            )
 
             when {
                 // First, because it is the only state where the ledger is certainly
@@ -317,7 +329,7 @@ internal fun LedgerScreenContent(
                     awaitingReview = read.awaitingReview,
                     onOpenReview = onOpenReview,
                     onOpenEntry = onOpenEntry,
-                    onRemove = if (onRemove != null) { id -> removing = id } else null,
+                    onOpenDetail = onOpenDetail,
                     // Room under the last row for the button, so it never covers
                     // the row's amount.
                     bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,
@@ -362,22 +374,7 @@ internal fun LedgerScreenContent(
                 onAssign(chosen, categoryId, teach)
             },
             onDismiss = { categorizing = null },
-        )
-    }
-
-    // Found among the rows loaded, as the chooser's row is.
-    val removed = removing
-    val removedRow = removed?.let { id ->
-        items.itemSnapshotList.firstOrNull { it is LedgerItem.Row && it.txn.id == id } as LedgerItem.Row?
-    }
-    if (removed != null && removedRow != null && onRemove != null) {
-        RemoveSheet(
-            row = removedRow.feedRow,
-            onConfirm = {
-                removing = null
-                onRemove(removed)
-            },
-            onDismiss = { removing = null },
+            addCategory = addCategory,
         )
     }
 
@@ -403,9 +400,14 @@ internal fun LedgerScreenContent(
  * [heard] is spec 10.2's always-visible signal, worded and withheld by
  * `MainActivity.heardLine`, which says why it is not "captured"; null draws
  * nothing.
+ *
+ * [onOpenSearch] is spec 9.1's search (#154), the magnifier at the row's end.
+ * `Main.dc.html` draws no way in; the screen set's note that every pushed
+ * screen carries a back arrow lists search among them, and the header is
+ * the one place on this screen above the money rather than among it.
  */
 @Composable
-private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?) {
+private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?, onOpenSearch: (() -> Unit)?) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -432,8 +434,32 @@ private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?
             if (onOpenMonths != null) DownChevron()
         }
         if (heard != null) HeardChip(heard, Modifier.padding(start = 12.dp).weight(1f, fill = false))
+        if (onOpenSearch != null) SearchButton(onOpenSearch)
     }
 }
+
+/**
+ * The magnifier, `Search.dc.html`'s glyph at 20dp in Muted, in the design
+ * system's 44dp target. Its right edge is the glyph's, on the 20dp margin.
+ */
+@Composable
+private fun SearchButton(onClick: () -> Unit) {
+    Box(
+        Modifier
+            .padding(start = 4.dp)
+            .offset(x = 12.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .size(MONTH_TARGET)
+            .semantics { contentDescription = OPEN_SEARCH },
+        contentAlignment = Alignment.Center,
+    ) {
+        Magnifier(size = 20.dp, tint = Muted)
+    }
+}
+
+/** The magnifier's description, and what a test finds it by. */
+const val OPEN_SEARCH = "Search"
 
 /**
  * How long after a pick a change of first row still sends the list to its
@@ -660,7 +686,7 @@ private fun Feed(
     awaitingReview: Int,
     onOpenReview: (focus: Long?) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)?,
-    onRemove: ((txnId: Long) -> Unit)?,
+    onOpenDetail: ((EditTarget) -> Unit)?,
     listState: LazyListState,
     modifier: Modifier = Modifier,
     bottomRoom: Dp = 0.dp,
@@ -722,7 +748,7 @@ private fun Feed(
                         onOpenMerchant = onOpenMerchant,
                         onOpenReview = onOpenReview,
                         onOpenEntry = onOpenEntry,
-                        onRemove = onRemove,
+                        onOpenDetail = onOpenDetail,
                     )
                 }
             }
@@ -909,10 +935,10 @@ internal fun dayLabel(date: LocalDate): String {
  * Instrument Serif contains no such feature (§8 measured the file), so
  * inheriting the setting would claim tabular digits this face cannot supply.
  */
-private val HeroSerif = TextStyle(fontFamily = Display, fontSize = 54.sp, lineHeight = 1.02.em)
+internal val HeroSerif = TextStyle(fontFamily = Display, fontSize = 54.sp, lineHeight = 1.02.em)
 
 /** The board's `.30`: the sen in a 30px span, in Muted, after the ringgit. */
-private fun heroText(amount: String): AnnotatedString {
+internal fun heroText(amount: String): AnnotatedString {
     val point = amount.lastIndexOf('.')
     if (point < 0) return AnnotatedString(amount)
     return buildAnnotatedString {
