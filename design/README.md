@@ -13,7 +13,7 @@ These are the source of truth; the pages below are generated from them.
 | First run | `Onboarding` `Stored` `Battery` `Sources` `Empty` |
 | Every day | `Main` `Inbox` `Detail` `DetailExcluded` `Cash` |
 | Looking back | `Charts` `ChartsMonth` `Day` `Search` |
-| When it breaks | `Stopped` `Settings` |
+| When it breaks | `Stopped` `Backup` `Settings` |
 | Sheets and lists | `Chooser` `Categories` `Category` `Merge` `Months` `MerchantSheet` `Export` `Wipe` `Teach` `PackImport` `Rules` `Unread` |
 | Rejected directions | `Quiet` `Warung` `Dark` |
 

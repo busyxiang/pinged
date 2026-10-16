@@ -131,8 +131,16 @@
       "page": "page-1"
     },
     {
-      "file": "Settings.dc.html",
+      "file": "Backup.dc.html",
       "x": 490,
+      "y": 3000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Settings.dc.html",
+      "x": 980,
       "y": 3000,
       "w": 390,
       "h": 844,
