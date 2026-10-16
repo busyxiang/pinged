@@ -763,7 +763,10 @@ interface TxnDao {
     ): Int
 
     /**
-     * The home list (§9.1), newest day first and newest within a day.
+     * The home list (§9.1), newest day first and newest within a day, from
+     * [through] back: the month Spending's header picked (#192) ends there,
+     * and nothing newer is drawn above it. [EVERY_LATER_DAY] for the whole
+     * ledger, hand-entered future dates included.
      *
      * A `PagingSource` and not a `Flow<List<Txn>>` (§15.4): the flow re-emits
      * every row on every insert, and this app inserts from a background worker
@@ -803,7 +806,7 @@ interface TxnDao {
      * either way. Pinned by `QueryPlanTest.theFeedTakesTheDayOrderedIndex`.
      */
     @Query(FEED_SQL)
-    fun feed(): PagingSource<Int, FeedRow>
+    fun feed(through: LocalDate): PagingSource<Int, FeedRow>
 
     /**
      * One day's rows for the `Day` screen (#69): what [feed] shows under that
@@ -880,7 +883,10 @@ interface TxnDao {
          * depth few users scroll to, so the name is joined rather than cached
          * on `txn`, which would need a writer per rename.
          */
-        const val FEED_SQL = FEED_ROWS + FEED_ORDER
+        const val FEED_SQL = FEED_ROWS + "AND txn.local_date <= :through " + FEED_ORDER
+
+        /** Past every `yyyymmdd`: [feed]'s bound that leaves no day out. */
+        val EVERY_LATER_DAY = LocalDate(99_999_999)
 
         /**
          * [dayRows]' query: the feed cut to one `local_date`. Its plan seeks

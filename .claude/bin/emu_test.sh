@@ -38,6 +38,9 @@ fi
 up=$ADB_STATE/online-$2
 case "$*" in
     *get-state) [ -e "$up" ] && echo device || exit 1 ;;
+    # The device sweep: orphans lists pids to report; kill records them.
+    *"ps -A -o PID=,PPID=,USER=,NAME="*) cat "$ADB_STATE/orphans" 2>/dev/null ;;
+    *"shell kill -9 "*) all="$*"; printf '%s\n' "${all##*kill -9 }" >>"$ADB_STATE/killed"; rm -f "$ADB_STATE/orphans" ;;
     *"getprop sys.boot_completed") [ -e "$up" ] && echo 1 || exit 1 ;;
     *"emu kill") rm -f "$up" ;;
     *"wm size reset") rm -f "$ADB_STATE/size" ;;
@@ -73,7 +76,7 @@ fresh() {
     export EMU_LOCK_DIR=$work/$case_n/locks
     export ADB_STATE=$work/$case_n/state
     export ADB_LOG=$work/$case_n/adb.log
-    unset EMU_POOL EMU_IDLE EMU_BOOT_WAIT EMULATOR_FAILS
+    unset EMU_POOL EMU_IDLE EMU_BOOT_WAIT EMULATOR_FAILS EMU_MAX_HOLD EMU_KILL_GRACE
     mkdir -p "$ADB_STATE"
     touch "$ADB_STATE/online-emulator-5554" "$ADB_STATE/online-emulator-5556"
     : >"$ADB_LOG"
@@ -371,6 +374,83 @@ if server_releases "$(mutant adb-fd-leak 's/    command adb "$@" 9>&-/    comman
 else
     pass "mutation adb-fd-leak: the adb server holds the lease"
 fi
+
+# Stall guards. A hung command is stopped at --max-hold, its whole process
+# group goes with it, and what it left on the device is swept.
+times_out() {
+    local emu=$1 status
+    EMU_MAX_HOLD=1 timeout 8 "$emu" -- sh -c "echo \$\$ >$log; exec sleep 30" 2>"$work/$case_n/err" && status=0 || status=$?
+    sleep 0.3
+    local held=$(cat "$log")
+    if kill -0 "$held" 2>/dev/null; then kill "$held"; return 1; fi
+    [ "$status" = 124 ] && grep -q -- '--max-hold limit' "$work/$case_n/err"
+}
+fresh
+if times_out "$script"; then pass "a command that outlasts --max-hold is stopped (124)"; else fail "a command that outlasts --max-hold is stopped (124): $(cat "$work/$case_n/err")"; fi
+fresh
+if times_out "$(mutant no-watchdog '/(sleep "$max_hold_s" \&\& kill -USR1 \$\$)/d')"; then
+    fail "mutation no-watchdog: the command was still stopped"
+else
+    pass "mutation no-watchdog: the command holds on past the limit"
+fi
+
+stops_grandchildren() {
+    local emu=$1 pid gc
+    "$emu" -- sh -c "sleep 30 & echo \$! >$log; wait" 2>/dev/null &
+    pid=$!
+    until [ -s "$log" ]; do sleep 0.05; done
+    gc=$(cat "$log")
+    kill -TERM "$pid"; wait "$pid" 2>/dev/null || true
+    sleep 0.3
+    if kill -0 "$gc" 2>/dev/null; then kill "$gc"; return 1; fi
+}
+fresh
+if stops_grandchildren "$script"; then pass "a stop reaches the command's children"; else fail "a stop reaches the command's children"; fi
+fresh
+if stops_grandchildren "$(mutant no-setsid 's/^setsid "\$@" <&3 9>&- &$/"$@" <\&3 9>\&- \&/')"; then
+    fail "mutation no-setsid: the child was still stopped"
+else
+    pass "mutation no-setsid: the command's child outlives the stop"
+fi
+
+kills_term_ignorer() {
+    local emu=$1 pid gone
+    EMU_KILL_GRACE=1 "$emu" -- sh -c "trap '' TERM; echo \$\$ >$log; while :; do sleep 0.1; done" 2>/dev/null &
+    pid=$!
+    until [ -s "$log" ]; do sleep 0.05; done
+    gone=$(cat "$log")
+    kill -TERM "$pid"; wait "$pid" 2>/dev/null || true
+    sleep 0.3
+    if kill -0 "$gone" 2>/dev/null; then kill -KILL "$gone"; return 1; fi
+}
+fresh
+if kills_term_ignorer "$script"; then pass "a command that ignores TERM is killed after the grace"; else fail "a command that ignores TERM is killed after the grace"; fi
+fresh
+if kills_term_ignorer "$(mutant no-kill '/^    kill -KILL -- -"\$child" 2>\/dev\/null || true$/d')"; then
+    fail "mutation no-kill: the TERM-ignoring command still died"
+else
+    pass "mutation no-kill: the TERM-ignoring command survives"
+fi
+
+# Orphans on the device before the lease (a dead holder's) and after it.
+fresh
+printf '4101\n4102\n' >"$ADB_STATE/orphans"
+"$script" -- sh -c "[ -e $ADB_STATE/orphans ] && echo still-there >>$log; true" 2>"$work/$case_n/err"
+if [ ! -s "$log" ] && grep -qx '4101 4102' "$ADB_STATE/killed" && grep -q 'killed 2 process' "$work/$case_n/err"; then
+    pass "a lease sweeps what an earlier one left on the device, before its command"
+else
+    fail "a lease sweeps what an earlier one left on the device, before its command: $(cat "$log" "$ADB_STATE/killed" 2>/dev/null)"
+fi
+fresh
+"$script" -- sh -c "printf '5201\n' >$ADB_STATE/orphans" 2>/dev/null
+if grep -qx '5201' "$ADB_STATE/killed" 2>/dev/null; then pass "a lease sweeps what its own command left on the device"; else fail "a lease sweeps what its own command left on the device"; fi
+fresh
+"$(mutant no-end-sweep 's/^    if \[ -n "\${child:-}" \]; then sweep_device; fi$/    true/')" -- sh -c "printf '5201\n' >$ADB_STATE/orphans" 2>/dev/null
+if grep -qx '5201' "$ADB_STATE/killed" 2>/dev/null; then fail "mutation no-end-sweep: the orphan was still swept"; else pass "mutation no-end-sweep: the command's orphan stays on the device"; fi
+fresh
+printf '4101\n' >"$ADB_STATE/orphans"
+"$(mutant no-start-sweep '/^sweep_device$/d')" -- sh -c "[ -e $ADB_STATE/orphans ] && echo still-there >>$log; true" 2>/dev/null
+if [ -s "$log" ]; then pass "mutation no-start-sweep: the command runs beside the earlier orphan"; else fail "mutation no-start-sweep: the orphan was gone before the command"; fi
 
 fresh
 export EMU_POOL="emulator-5554 emulator-5556"

@@ -19,6 +19,7 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -1537,7 +1538,7 @@ class LedgerScreenTest {
         Databases.categoryDao(context).all().single { it.name == name }.id
 
     private fun ledgerViewModel() =
-        LedgerViewModel(context.applicationContext as Application)
+        LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
 
     /** The whole screen, reading the real database through its own holder. */
     private fun screen(onOpenReview: (focus: Long?) -> Unit = {}) {

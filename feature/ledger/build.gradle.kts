@@ -42,6 +42,10 @@ dependencies {
     // The theme, the fonts and the shared sheet chrome, in their own module so
     // the Charts can use them without depending on this one (#81, Modules).
     implementation(project(":core:ui"))
+    // The `Months` sheet and its read, which Spending's header opens too
+    // (#192). This way round only: :feature:charts refuses an edge to this
+    // module at resolution (#81, Modules).
+    implementation(project(":feature:charts"))
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)

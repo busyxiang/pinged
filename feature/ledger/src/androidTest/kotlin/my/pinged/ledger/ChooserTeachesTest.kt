@@ -22,6 +22,7 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -403,7 +404,7 @@ class ChooserTeachesTest {
             ledgerTxn(amountSen = 5_000L, occurredAt = now(), categoryId = categoryId(UNCATEGORIZED))
                 .copy(merchantRaw = null, merchantDisplay = null, merchantKey = null),
         )
-        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
 
         runBlocking { withTimeout(TIMEOUT) { viewModel.assignCategory(id, categoryId(FOOD), teach = true).join() } }
 
@@ -632,7 +633,7 @@ class ChooserTeachesTest {
 
     /** The screen over the real database, refreshed for this month. */
     private fun screenFor(): LedgerViewModel {
-        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
         val loaded = AtomicInteger(0)
         compose.setContent {
             PingedTheme {
