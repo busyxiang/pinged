@@ -16,6 +16,7 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -141,7 +142,7 @@ class LedgerScrollTest {
     private fun shop(i: Int) = "Shop %02d".format(i)
 
     private fun screenFor(saved: AtomicReference<Job?>) {
-        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
         val loaded = AtomicInteger(0)
         compose.setContent {
             PingedTheme {

@@ -7,6 +7,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.runBlocking
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.ListenerStatus
@@ -56,7 +57,7 @@ class DamagedFeedTest {
     fun theFeedFollowsAConnectionReplacedForDamage() {
         context.damagedLedger()
         Databases.txnDao(context).insert(ledgerTxn(amountSen = 5_000L, occurredAt = System.currentTimeMillis()).copy(merchantDisplay = BEFORE))
-        val viewModel = LedgerViewModel(app)
+        val viewModel = LedgerViewModel(app, SavedStateHandle())
         compose.setContent { PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) } }
         assertTrue("the fixture row never reached the screen", waitFor { count(BEFORE) == 1 })
         context.poisonTheSharedInstance()
@@ -89,7 +90,7 @@ class DamagedFeedTest {
     @Test(timeout = 60_000)
     fun aMonthOnDamagedPagesDoesNotReadItselfInALoop() = runBlocking<Unit> {
         context.damagedMonth()
-        val viewModel = LedgerViewModel(app)
+        val viewModel = LedgerViewModel(app, SavedStateHandle())
         // A view set on the activity, and frames advanced by hand, rather than
         // the rule's `setContent` and `waitForIdle`: both wait for an idle
         // that a screen reading itself in a loop never reaches, and would fail

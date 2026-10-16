@@ -157,21 +157,7 @@ class ChartsViewModel(app: Application, private val handle: SavedStateHandle) : 
         return refresh(today)
     }
 
-    /**
-     * Read the `Months` sheet as of [today] (#75): the history start, then
-     * two statements, in one transaction as [refresh] is, so a month's total
-     * and the captured days that flag it are of one snapshot. Measured on
-     * [refresh]'s ledger: 47ms median, 51ms at the longest of 40, of which
-     * two years of `capturedDates` is 20ms.
-     *
-     * - `monthlyTotals` from the first packed day there is, since a month of
-     *   money before the history start lists too (#75), to the end of
-     *   [today]'s month. One grouped scan of `local_date`'s range, however
-     *   long the history.
-     * - `capturedDates` from the history start, before which nothing is
-     *   counted, to the same end. With no history start nothing is counted,
-     *   so it is not read.
-     */
+    /** Read the `Months` sheet as of [today] (#75), through [monthsRead]. */
     fun readMonths(today: LocalDate = LocalDate.now()): Job = viewModelScope.launch {
         CaptureStorage.guarded(
             context,
@@ -179,22 +165,11 @@ class ChartsViewModel(app: Application, private val handle: SavedStateHandle) : 
             unavailable = { _unavailable.value = true },
             damageStopsCapture = false,
         ) {
-            _months.value = Databases.inOneTransaction(context) { db ->
-                val captureDays = db.captureDayDao()
-                val historyStart = CaptureEvidence.historyStart(captureDays, db.rawCaptureDao())
-                val end = YearMonth.from(today).atEndOfMonth()
-                val totals = db.txnDao().monthlyTotals(EVERY_DAY, LocalDates.of(end))
-                midRead()
-                val captured = historyStart?.let { CaptureEvidence.capturedDates(captureDays, it, end) } ?: emptySet()
-                MonthsRead(today, historyStart, totals, captured)
-            }
+            _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today, midRead) }
         }
     }
 
     private companion object {
-        /** Below every `yyyymmdd`: the bound that leaves no day out. */
-        val EVERY_DAY = my.pinged.data.LocalDate(0)
-
         /** `monthByCategory`'s limit, set past any category count: no effective limit. */
         const val EVERY_CATEGORY = Int.MAX_VALUE
 

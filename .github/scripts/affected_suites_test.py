@@ -62,11 +62,12 @@ class AffectedSuites(unittest.TestCase):
             suites("core/ui/src/main/kotlin/my/pinged/ui/theme/Color.kt"),
         )
 
-    def test_charts_reaches_app_but_not_the_ledger(self):
-        # :feature:charts never depends on :feature:ledger (#81), and nothing
-        # but :app depends on it.
+    def test_charts_reaches_the_ledger_and_app(self):
+        # :feature:charts never depends on :feature:ledger (#81), but the
+        # ledger depends on it for the `Months` sheet (#192), and
+        # :feature:capture's tests drive the ledger.
         self.assertEqual(
-            {CHARTS, APP, SMOKE},
+            {CHARTS, LEDGER, CAPTURE, APP, SMOKE},
             suites("feature/charts/src/main/kotlin/my/pinged/charts/ChartsScreen.kt"),
         )
 

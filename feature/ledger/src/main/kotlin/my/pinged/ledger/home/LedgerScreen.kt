@@ -1,5 +1,6 @@
 package my.pinged.ledger.home
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,21 +17,28 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -51,6 +59,11 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import my.pinged.charts.MonthsSheet
+import my.pinged.charts.model.monthsSheet
 import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
@@ -122,6 +135,13 @@ fun LedgerScreen(
     val read by viewModel.read.collectAsState()
     val merchantSheet by viewModel.merchantSheet.collectAsState()
     val unavailable by viewModel.storageUnavailable.collectAsState()
+    val picked by viewModel.picked.collectAsState()
+    // Saveable, so a sheet open at a process death is open again after it,
+    // as Charts' is.
+    var monthsOpen by rememberSaveable { mutableStateOf(false) }
+    // Counts picks, so the feed goes back to its top after each, the current
+    // month's included.
+    var picks by rememberSaveable { mutableIntStateOf(0) }
 
     // Once per foreground, not once per holder -- see `SourcesScreen`, which
     // records the mechanism. Firing once per holder would leave the aggregates
@@ -158,6 +178,9 @@ fun LedgerScreen(
         onOpenEntry = onOpenEntry,
         onRemove = { viewModel.removeCaptured(it) },
         heard = heard,
+        monthPicked = picked != null,
+        picks = picks,
+        onOpenMonths = { monthsOpen = true },
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
             MerchantActions(
@@ -170,6 +193,21 @@ fun LedgerScreen(
         },
         modifier = modifier,
     )
+
+    if (monthsOpen) {
+        // Read when it opens, so its rows are as of that moment.
+        LaunchedEffect(viewModel) { viewModel.readMonths() }
+        val months by viewModel.months.collectAsState()
+        MonthsSheet(
+            items = months?.let(::monthsSheet),
+            onPick = {
+                monthsOpen = false
+                picks++
+                viewModel.pick(it)
+            },
+            onDismiss = { monthsOpen = false },
+        )
+    }
 }
 
 /**
@@ -198,7 +236,27 @@ internal fun LedgerScreenContent(
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onRemove: ((txnId: Long) -> Unit)? = null,
     heard: String? = null,
+    monthPicked: Boolean = false,
+    onOpenMonths: (() -> Unit)? = null,
+    picks: Int = 0,
 ) {
+    val listState = rememberLazyListState()
+    // A pick starts the feed at its month, so the list goes to its top: at
+    // once, over the rows still drawn, and again when the first row changes.
+    // A `LazyColumn` keeps its first visible key across new data, so when the
+    // picked month's rows land after the first scroll -- CI's emulator, and
+    // `MonthPickerTest`'s slowed pages -- a pick back to now follows last
+    // month's header deep into the new list. Bounded by [PICK_SETTLE], since
+    // a pick that leaves the first row as it was never changes it.
+    LaunchedEffect(picks) {
+        if (picks == 0) return@LaunchedEffect
+        listState.scrollToItem(0)
+        withTimeoutOrNull(PICK_SETTLE) {
+            snapshotFlow { items.itemSnapshotList.firstOrNull() }.drop(1).first()
+            listState.scrollToItem(0)
+        }
+    }
+
     // Which row is being removed (#132), hoisted for the reason `categorizing` is.
     var removing by rememberSaveable { mutableStateOf<Long?>(null) }
     // Which row is being categorized, hoisted to here rather than held in the
@@ -215,13 +273,15 @@ internal fun LedgerScreenContent(
 
     val unreadable = storageUnavailable || items.loadState.refresh is LoadState.Error
     val reading = !unreadable && items.loadState.refresh is LoadState.Loading && items.itemCount == 0
-    val empty = !unreadable && !reading && items.itemCount == 0
+    // A picked month with nothing on or before it is the feed, not day one:
+    // the sheet listed it, so there is a history, only none of it that old.
+    val empty = !unreadable && !reading && items.itemCount == 0 && !monthPicked
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Paper)) {
             // Above the branch: the month being summarised is true in every state,
             // including the two with nothing to show.
-            TopBar(month = read.summary?.month ?: YearMonth.now(), heard = heard)
+            TopBar(month = read.summary?.month ?: YearMonth.now(), heard = heard, onOpenMonths = onOpenMonths)
 
             when {
                 // First, because it is the only state where the ledger is certainly
@@ -261,6 +321,7 @@ internal fun LedgerScreenContent(
                     // Room under the last row for the button, so it never covers
                     // the row's amount.
                     bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,
+                    listState = listState,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -327,30 +388,74 @@ internal fun LedgerScreenContent(
 }
 
 /**
- * The month being summarised.
+ * The month being summarised, and the way to pick another (#192).
  *
  * The month comes from the summary rather than the clock so the label cannot
  * name a period the numbers below it did not cover; before the first aggregate
  * lands there is no number to label and it names the current month.
+ *
+ * With [onOpenMonths] the label and the board's chevron are one button with
+ * the design system's 44dp target. The row's top is the board's 26dp less
+ * half of what that target adds over the 30dp chip beside it, so with the
+ * chip drawn the label sits on the board's line; what is under the bar sits
+ * 7dp lower than the board's, the target's height over the chip's.
  *
  * [heard] is spec 10.2's always-visible signal, worded and withheld by
  * `MainActivity.heardLine`, which says why it is not "captured"; null draws
  * nothing.
  */
 @Composable
-private fun TopBar(month: YearMonth, heard: String?) {
+private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 26.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 26.dp - (MONTH_TARGET - 30.dp) / 2),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        // No chevron after the month, though the boards draw one: it says
-        // "pick a month", and this label opens nothing until Spending has a
-        // month picker (#192).
-        Text(monthName(month), style = MonoLabel, color = Muted)
+        Row(
+            Modifier
+                .testTag(MONTH_BUTTON)
+                .heightIn(min = MONTH_TARGET)
+                .then(
+                    if (onOpenMonths != null) {
+                        Modifier.clickable(role = Role.Button, onClickLabel = CHOOSE_A_MONTH, onClick = onOpenMonths)
+                    } else {
+                        Modifier
+                    },
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(monthName(month), style = MonoLabel, color = Muted)
+            // Only where it opens something: it says "pick a month".
+            if (onOpenMonths != null) DownChevron()
+        }
         if (heard != null) HeardChip(heard, Modifier.padding(start = 12.dp).weight(1f, fill = false))
+    }
+}
+
+/**
+ * How long after a pick a change of first row still sends the list to its
+ * top. Past the slowest first page a test or CI has shown; a payment captured
+ * inside it scrolls to the top, which is where a pick left the user.
+ */
+private const val PICK_SETTLE = 10_000L
+
+/** The month button's height: the design system's 44px target. */
+private val MONTH_TARGET = 44.dp
+
+/**
+ * The board's month chevron, `M6 9l6 6 6-6` in a 24-unit box at 14dp, stroke
+ * 1.8 of 24, round-capped, in Muted.
+ */
+@Composable
+private fun DownChevron() {
+    Canvas(Modifier.testTag(MONTH_CHEVRON).size(14.dp)) {
+        val unit = size.width / 24f
+        val stroke = 1.8f * unit
+        drawLine(Muted, Offset(6 * unit, 9 * unit), Offset(12 * unit, 15 * unit), stroke, StrokeCap.Round)
+        drawLine(Muted, Offset(12 * unit, 15 * unit), Offset(18 * unit, 9 * unit), stroke, StrokeCap.Round)
     }
 }
 
@@ -556,6 +661,7 @@ private fun Feed(
     onOpenReview: (focus: Long?) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)?,
     onRemove: ((txnId: Long) -> Unit)?,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
     bottomRoom: Dp = 0.dp,
 ) {
@@ -567,7 +673,8 @@ private fun Feed(
         // keep in step.
         Spacer(Modifier.fillMaxWidth().padding(top = 18.dp).height(1.dp).background(Rule))
         LazyColumn(
-            Modifier
+            state = listState,
+            modifier = Modifier
                 .weight(1f)
                 .background(Card)
                 .fillMaxWidth(),
@@ -874,3 +981,8 @@ const val ADD_PAYMENT_BUTTON = "add-payment-button"
 const val CASH_OFFER = "cash-offer"
 const val EMPTY_HERO = "empty-hero"
 const val HEARD_CHIP = "heard-chip"
+const val MONTH_BUTTON = "month-button"
+const val MONTH_CHEVRON = "month-chevron"
+
+/** The month button's action, to TalkBack; Charts' header says the same. */
+internal const val CHOOSE_A_MONTH = "Choose a month"

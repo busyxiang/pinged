@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
@@ -29,6 +30,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import my.pinged.capture.CaptureStorage
+import my.pinged.charts.MonthsRead
+import my.pinged.charts.monthsRead
 import my.pinged.data.CaptureEvidence
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
@@ -61,7 +64,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * that met damage is replaced; `LedgerScreen`'s resume effect re-runs
  * [refresh] on `Databases.rewrites`, which does not.
  */
-class LedgerViewModel(app: Application) : AndroidViewModel(app) {
+class LedgerViewModel(
+    app: Application,
+    /** Where [picked] survives a process death, as Charts' month does: the entry's own. */
+    private val handle: SavedStateHandle,
+) : AndroidViewModel(app) {
 
     /** A getter, not a field, for the reason `SourcesViewModel` records. */
     private val context: Context get() = getApplication<Application>()
@@ -88,6 +95,21 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         scope = viewModelScope,
         unavailable = { _storageUnavailable.value = true },
     )
+
+    /**
+     * The month Spending's header picked (#192), or null to follow the clock:
+     * a screen left open across a month's end reads the new month on its next
+     * resume, as it did before there was a picker. Picking the current month
+     * is null too, for the same reason. Kept in [handle] under
+     * [PICKED_MONTH] as `2026-09`.
+     */
+    private val _picked = MutableStateFlow(handle.get<String>(PICKED_MONTH)?.let(YearMonth::parse))
+    val picked: StateFlow<YearMonth?> = _picked.asStateFlow()
+
+    private val _months = MutableStateFlow<MonthsRead?>(null)
+
+    /** The `Months` sheet's last read; null until [readMonths] lands one. */
+    val months: StateFlow<MonthsRead?> = _months.asStateFlow()
 
     /** Spec 6.4's merchant sheet, while one is open; see [openMerchant]. */
     val merchantSheet: StateFlow<MerchantSheetState?> = rows.merchantSheet
@@ -120,6 +142,14 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      */
     @VisibleForTesting
     internal var afterOpen: suspend () -> Unit = {}
+
+    /**
+     * Tests only: runs before each page of the feed is read, outside the
+     * lease, so a test can make new rows land after the screen has acted on
+     * the old ones -- CI's emulator does that on its own.
+     */
+    @VisibleForTesting
+    internal var beforePage: suspend () -> Unit = {}
 
     /**
      * The rows, newest day first, with a day header above the first row of each
@@ -178,10 +208,11 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         Pager(PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false)) {
             (bound?.db?.let {
                 LeasedFeed(
-                    it.txnDao().feed(),
+                    it.txnDao().feed(feedThrough()),
                     it.invalidationTracker,
                     onWrite = { writeSeen.set(true) },
                     onObserving = ::refreshIfWritten,
+                    beforeLoad = { beforePage() },
                 )
             } ?: ReopeningFeed(
                 open = {
@@ -206,6 +237,15 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             .cachedIn(viewModelScope)
+
+    /**
+     * The last day the feed draws: the picked month's end, so the rows start
+     * at the month the summary above them names and run on into older ones,
+     * or every day when nothing is picked. Read when the factory runs; [pick]
+     * invalidates the source so it runs again.
+     */
+    private fun feedThrough(): LocalDate =
+        _picked.value?.let { LocalDates.of(it.atEndOfMonth()) } ?: TxnDao.EVERY_LATER_DAY
 
     /**
      * One day's subtotal for its heading, from SQL (§15.3), or null.
@@ -315,7 +355,8 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Re-read the aggregates for the current month.
+     * Re-read the aggregates for the month on screen: the one [pick] chose,
+     * else the current one.
      *
      * Also the app's database probe from this screen's side: `guarded` is what
      * opens the database and therefore what records or clears the storage flag
@@ -335,8 +376,47 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * on a full disk -- is outside [DatabaseUnavailableException] and escapes
      * `viewModelScope`. Left uncovered for the reason [RowActions] records.
      */
-    fun refresh(now: YearMonth = YearMonth.now()): Job = viewModelScope.launch {
+    fun refresh(now: YearMonth = shownMonth()): Job = viewModelScope.launch {
         refreshing.withLock { readMonth(now) }
+    }
+
+    /** The month on screen: the one picked, else the clock's. */
+    private fun shownMonth(): YearMonth = _picked.value ?: YearMonth.now()
+
+    /**
+     * Show [month] (#192): the summary re-reads it and the feed starts at its
+     * last day ([feedThrough]).
+     *
+     * [lastMonth] is set here as well as in [readMonth], and before it: a
+     * write the feed reports before this month's read has run then re-reads
+     * this month, not the one it replaces. Queued behind it under
+     * [refreshing], the old month's read would land last and stay on screen.
+     *
+     * Main thread only, as [feedSource] is. [today] is a parameter so a test
+     * can name the month that counts as now.
+     */
+    fun pick(month: YearMonth, today: YearMonth = YearMonth.now()): Job {
+        _picked.value = month.takeIf { it != today }
+        handle[PICKED_MONTH] = _picked.value?.toString()
+        lastMonth = month
+        feedSource?.invalidate()
+        return refresh(month)
+    }
+
+    /**
+     * Read the `Months` sheet as of [today], through Charts' own read
+     * ([monthsRead]), so the two sheets cannot list different months or flag
+     * different days. In one transaction, for the reason it gives.
+     */
+    fun readMonths(today: java.time.LocalDate = java.time.LocalDate.now()): Job = viewModelScope.launch {
+        CaptureStorage.guarded(
+            context,
+            what = "The months cannot be read",
+            unavailable = { _storageUnavailable.value = true },
+            damageStopsCapture = false,
+        ) {
+            _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today) }
+        }
     }
 
     /** [refresh]'s body, run under [refreshing]. */
@@ -413,11 +493,11 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         txnId: Long,
         categoryId: Long,
         teach: Boolean = false,
-        now: YearMonth = YearMonth.now(),
+        now: YearMonth = shownMonth(),
     ): Job = rows.assignCategory(txnId, categoryId, teach) { refresh(now).join() }
 
     /** See [RowActions.removeCaptured]; the month is re-read after. */
-    fun removeCaptured(txnId: Long, now: YearMonth = YearMonth.now()): Job =
+    fun removeCaptured(txnId: Long, now: YearMonth = shownMonth()): Job =
         rows.removeCaptured(txnId) { refresh(now).join() }
 
     /** See [RowActions.retroPreview]. */
@@ -445,6 +525,9 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
          * put a day boundary on the far side of a page.
          */
         const val PAGE_SIZE = 40
+
+        /** The [SavedStateHandle] key [picked] is kept under. */
+        const val PICKED_MONTH = "pickedMonth"
     }
 }
 
@@ -493,6 +576,7 @@ internal class LeasedFeed(
     private val tracker: InvalidationTracker,
     private val onWrite: () -> Unit = {},
     private val onObserving: () -> Unit = {},
+    private val beforeLoad: suspend () -> Unit = {},
 ) : PagingSource<Int, FeedRow>() {
     // Every table `TxnDao.FEED_SQL` reads, so a rename or a merge (spec 6.4)
     // redraws the rows it names, for the same reason a capture does.
@@ -527,6 +611,7 @@ internal class LeasedFeed(
     // Paging calls this from whatever its collector runs on.
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, FeedRow> =
         withContext(Dispatchers.IO) {
+            beforeLoad()
             Databases.leasing {
                 if (observing.compareAndSet(false, true)) {
                     val failed = runCatching { tracker.addObserver(observer) }.exceptionOrNull()

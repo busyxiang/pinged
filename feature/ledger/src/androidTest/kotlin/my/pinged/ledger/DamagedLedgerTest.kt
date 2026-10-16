@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteException
 import android.database.sqlite.SQLiteFullException
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.SavedStateHandle
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.util.Collections
@@ -103,7 +104,7 @@ class DamagedLedgerTest {
         val uncaught = Collections.synchronizedList(mutableListOf<Throwable>())
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { _, thrown -> uncaught += thrown }
-        val ledger = withContext(Dispatchers.Main) { LedgerViewModel(app) }
+        val ledger = withContext(Dispatchers.Main) { LedgerViewModel(app, SavedStateHandle()) }
         try {
             withContext(Dispatchers.Main) { ledger.refresh() }.join()
         } finally {

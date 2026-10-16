@@ -1683,6 +1683,12 @@ entry (section 9.4) names how it reached the ledger in place of the source:
 its small print reads `<category> · Entered by hand`, on every screen that
 draws the row. Search and filter by category, source, date range, amount range.
 
+The month label above the summary opens the Charts' `Months` sheet (#192),
+the same read and the same rows. A pick moves the summary to that month and
+starts the feed at its last day, older months running on below it; picking
+the current month, or none, follows the clock. A picked month with no rows
+on or before it is an empty feed under its summary, never day one's copy.
+
 A control inside a row -- the category line, the chip, the review badge -- is
 laid out at its drawn size, and its touch target is the free space around it:
 never less than WCAG 2.5.8's 24dp, and never the merchant name, whose tap is
