@@ -55,6 +55,14 @@ the loop wait between them:
 not `.claude/bin/emu -- loop.sh`. An `emu` inside a lease's command waits for
 that same lease and never gets it.
 
+A lease that holds the emulator for 20 minutes is stopped, its command's
+whole process group with it, and `emu` exits 124; `--max-hold SECONDS` is for
+the rare run that needs longer. At the start and end of every lease `emu`
+kills shell-user processes left orphaned on the device. A loop backgrounded
+through `adb shell` keeps `adb shell` from returning, redirected or not: on
+2026-10-16 two leases hung on one for 27 minutes each, and so did a third
+that redirected its loop's input and output.
+
 A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
 screen is shorter than a dev one, and a new Settings row once pushed "Delete
 everything" off it, so the click missed and two tests failed on CI only.
