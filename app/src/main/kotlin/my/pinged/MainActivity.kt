@@ -57,6 +57,8 @@ import my.pinged.ledger.day.DayScreen
 import my.pinged.ledger.day.DayViewModel
 import my.pinged.ledger.detail.DetailScreen
 import my.pinged.ledger.detail.DetailViewModel
+import my.pinged.ledger.search.SearchScreen
+import my.pinged.ledger.search.SearchViewModel
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.entry.ManualEntryScreen
 import my.pinged.ledger.entry.ManualEntryViewModel
@@ -256,8 +258,26 @@ class MainActivity : ComponentActivity() {
                                     onAddPayment = { tabs.push(ManualEntry()) },
                                     onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
                                     onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                    onOpenSearch = { tabs.push(Search) },
                                     heard = heardNow(),
                                     modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            entry<Search> {
+                                // The entry's own `createSavedStateHandle`:
+                                // the words and filters survive a process
+                                // death there.
+                                val search: SearchViewModel = viewModel {
+                                    SearchViewModel(application, createSavedStateHandle())
+                                }
+                                SearchScreen(
+                                    viewModel = search,
+                                    // The same expression NavDisplay's onBack
+                                    // is given; see `pop`.
+                                    onBack = tabs::pop,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                    onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                 )
                             }
                             entry<ManualEntry> { key ->

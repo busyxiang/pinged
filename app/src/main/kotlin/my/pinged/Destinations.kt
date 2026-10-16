@@ -148,6 +148,18 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
 @Serializable data class Detail(val txnId: Long, val createdAt: Long) : NavKey
 
 /**
+ * Spec 9.1's search (#154), pushed on the Spending stack by the magnifier in
+ * the list's header, and drawn by `:feature:ledger`'s `SearchScreen`. Off the
+ * stack's root, so the tab bar is hidden.
+ *
+ * Carries nothing: the words and filters are in the screen's own saved
+ * state, so a restored back stack comes back to the same search.
+ *
+ * See [Ledger] for why it is registered nowhere.
+ */
+@Serializable data object Search : NavKey
+
+/**
  * The Spending stack a first creation starts on: its root, with spec 9.4's
  * entry screen above it when [addPayment] (the launcher shortcut, #107).
  *

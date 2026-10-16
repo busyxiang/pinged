@@ -241,6 +241,60 @@ class QueryPlanTest {
     }
 
     /**
+     * Spec 15.2's "filters as ordinary indexed predicates": a search with no
+     * words, narrowed to a month as the search screen opens, seeks that month
+     * in the feed's index -- rows and totals both -- rather than reading
+     * every transaction to keep one month's.
+     */
+    @Test fun aMonthsSearchSeeksTheMonth() {
+        val filter = SearchFilter(from = LocalDate(MONTH[0] as Int), to = LocalDate(MONTH[1] as Int))
+        val rows = plan(SearchSql.rows("", filter, 200).sql, *MONTH, 200)
+        val totals = plan(SearchSql.totals("", filter).sql, *MONTH)
+        listOf(rows, totals).forEach { p ->
+            assertTrue(
+                "The search does not seek its month:\n$p",
+                p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at (local_date>? AND local_date<?)"),
+            )
+        }
+        assertNoSort(rows)
+        assertLooksUpByKey(rows)
+    }
+
+    /**
+     * The App filter on its own, over every month: a seek on
+     * `txn(source_package)`, not a scan of every transaction.
+     */
+    @Test fun anAppSearchSeeksTheApp() {
+        val filter = SearchFilter(sourcePackage = "my.com.tngdigital.ewallet")
+        listOf(
+            plan(SearchSql.rows("", filter, 200).sql, "my.com.tngdigital.ewallet", 200),
+            plan(SearchSql.totals("", filter).sql, "my.com.tngdigital.ewallet"),
+        ).forEach { p ->
+            assertTrue(
+                "The search does not seek its app:\n$p",
+                p.contains("SEARCH txn USING INDEX index_txn_source_package (source_package=?)"),
+            )
+        }
+    }
+
+    /**
+     * A search by words finds its rows in `txn_fts` and reaches each in
+     * `txn` by its primary key: never a scan of `txn` testing every row
+     * against the index's answer.
+     */
+    @Test fun aSearchByWordsReachesItsRowsByKey() {
+        val words = SearchMatch.of("a")!!
+        listOf(
+            plan(SearchSql.rows("a", SearchFilter(), 200).sql, words, 200),
+            plan(SearchSql.totals("a", SearchFilter()).sql, words),
+        ).forEach { p ->
+            assertTrue("txn is not reached by key:\n$p", p.contains("SEARCH txn USING INTEGER PRIMARY KEY (rowid=?)"))
+            assertTrue("txn is scanned:\n$p", !p.contains("SCAN txn\n"))
+            assertTrue("txn_fts is not asked:\n$p", p.contains("txn_fts VIRTUAL TABLE"))
+        }
+    }
+
+    /**
      * Each of spec 6.4's two tables is reached through its primary key, never
      * scanned. A text primary key is served by SQLite's own
      * `sqlite_autoindex_<table>_1`.

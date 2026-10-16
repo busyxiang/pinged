@@ -4,10 +4,15 @@ import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.RawQuery
 import androidx.room.Transaction
+import androidx.sqlite.db.SupportSQLiteQuery
 import my.pinged.data.DuplicateWindows
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
+import my.pinged.data.SearchFilter
+import my.pinged.data.SearchSql
+import my.pinged.data.SearchTotal
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
@@ -845,6 +850,45 @@ interface TxnDao {
     fun merchantTotals(from: LocalDate, to: LocalDate, limit: Int): List<MerchantTotal>
 
     /**
+     * Spec 15.2's search: the rows the feed would draw that match [text] and
+     * [filter], in the feed's order and with its names, at most [limit] of
+     * them. A list, as [dayRows] is: its reader re-reads on every change of
+     * question. `SearchSql` builds the statement.
+     */
+    fun searchRows(text: String, filter: SearchFilter, limit: Int): List<FeedRow> =
+        searchRowsRaw(SearchSql.rows(text, filter, limit))
+
+    /** [searchRows]' rows, unlimited, summed per currency in SQL (§15.3). */
+    fun searchTotals(text: String, filter: SearchFilter): List<SearchTotal> =
+        searchTotalsRaw(SearchSql.totals(text, filter))
+
+    /**
+     * The apps search's App filter offers: every package a drawn row came
+     * from, most rows first, with the label its rows carry -- `MAX`, so one
+     * of them when a rename left two. A manual entry has no package and is
+     * not offered.
+     *
+     * Read when the filter's sheet opens, grouped in
+     * `index_txn_source_package`'s order.
+     */
+    @Query(
+        """
+        SELECT source_package AS sourcePackage, MAX(source_label) AS sourceLabel
+        FROM txn
+        WHERE source_package IS NOT NULL AND state != 'REJECTED'
+        GROUP BY source_package
+        ORDER BY COUNT(*) DESC, source_package
+        """,
+    )
+    fun sourceApps(): List<SourceApp>
+
+    @RawQuery
+    fun searchRowsRaw(query: SupportSQLiteQuery): List<FeedRow>
+
+    @RawQuery
+    fun searchTotalsRaw(query: SupportSQLiteQuery): List<SearchTotal>
+
+    /**
      * The ledger's SQL, hoisted so `QueryPlanTest` pins the plan of the string
      * the app issues instead of the plan of a copy of it -- see this
      * interface's own documentation.
@@ -911,6 +955,15 @@ interface TxnDao {
          * (see "A released schema is frozen" in the repository's CLAUDE.md).
          */
         const val COUNTED = "+state = 'COMMITTED' AND is_excluded = 0"
+
+        /**
+         * [COUNTED] as a value rather than a filter, for search's totals
+         * (`SearchSql.totals`): there it picks which of the rows found enter
+         * the sum, and the rows are reached by the search's own predicates,
+         * so the `+state` hint has nothing to steer. Here beside [COUNTED] so
+         * the two are changed together.
+         */
+        const val COUNTED_ROW = "(txn.state = 'COMMITTED' AND txn.is_excluded = 0)"
 
         /**
          * [distinctMonthCount]'s query, hoisted for the same reason the

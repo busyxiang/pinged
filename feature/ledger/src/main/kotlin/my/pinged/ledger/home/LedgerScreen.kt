@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -85,6 +86,7 @@ import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.HeroFill
 import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.Magnifier
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
@@ -130,6 +132,7 @@ fun LedgerScreen(
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
+    onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
@@ -178,6 +181,7 @@ fun LedgerScreen(
         onAddPayment = onAddPayment,
         onOpenEntry = onOpenEntry,
         onOpenDetail = onOpenDetail,
+        onOpenSearch = onOpenSearch,
         heard = heard,
         monthPicked = picked != null,
         picks = picks,
@@ -236,6 +240,7 @@ internal fun LedgerScreenContent(
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
+    onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
     monthPicked: Boolean = false,
     onOpenMonths: (() -> Unit)? = null,
@@ -280,7 +285,12 @@ internal fun LedgerScreenContent(
         Column(Modifier.fillMaxSize().background(Paper)) {
             // Above the branch: the month being summarised is true in every state,
             // including the two with nothing to show.
-            TopBar(month = read.summary?.month ?: YearMonth.now(), heard = heard, onOpenMonths = onOpenMonths)
+            TopBar(
+                month = read.summary?.month ?: YearMonth.now(),
+                heard = heard,
+                onOpenMonths = onOpenMonths,
+                onOpenSearch = onOpenSearch,
+            )
 
             when {
                 // First, because it is the only state where the ledger is certainly
@@ -386,9 +396,14 @@ internal fun LedgerScreenContent(
  * [heard] is spec 10.2's always-visible signal, worded and withheld by
  * `MainActivity.heardLine`, which says why it is not "captured"; null draws
  * nothing.
+ *
+ * [onOpenSearch] is spec 9.1's search (#154), the magnifier at the row's end.
+ * `Main.dc.html` draws no way in; the screen set's note that every pushed
+ * screen carries a back arrow lists search among them, and the header is
+ * the one place on this screen above the money rather than among it.
  */
 @Composable
-private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?) {
+private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?, onOpenSearch: (() -> Unit)?) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -415,8 +430,32 @@ private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?
             if (onOpenMonths != null) DownChevron()
         }
         if (heard != null) HeardChip(heard, Modifier.padding(start = 12.dp).weight(1f, fill = false))
+        if (onOpenSearch != null) SearchButton(onOpenSearch)
     }
 }
+
+/**
+ * The magnifier, `Search.dc.html`'s glyph at 20dp in Muted, in the design
+ * system's 44dp target. Its right edge is the glyph's, on the 20dp margin.
+ */
+@Composable
+private fun SearchButton(onClick: () -> Unit) {
+    Box(
+        Modifier
+            .padding(start = 4.dp)
+            .offset(x = 12.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .size(MONTH_TARGET)
+            .semantics { contentDescription = OPEN_SEARCH },
+        contentAlignment = Alignment.Center,
+    ) {
+        Magnifier(size = 20.dp, tint = Muted)
+    }
+}
+
+/** The magnifier's description, and what a test finds it by. */
+const val OPEN_SEARCH = "Search"
 
 /**
  * How long after a pick a change of first row still sends the list to its

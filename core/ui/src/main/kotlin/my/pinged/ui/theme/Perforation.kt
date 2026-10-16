@@ -129,6 +129,23 @@ fun Chevron(pointsRight: Boolean, size: Dp, strokeWidth: Dp, tint: Color) {
 }
 
 /**
+ * `Search.dc.html`'s magnifier: a circle of radius 6.5 about (11, 11) and a
+ * round-capped handle from (16, 16) to (20, 20), in a 24-unit [size] box at
+ * a 1.7 stroke. Spending's header draws it at 20dp, the search field at 17dp.
+ *
+ * Here beside [Chevron] for its reason.
+ */
+@Composable
+fun Magnifier(size: Dp, tint: Color) {
+    Canvas(Modifier.size(size)) {
+        val unit = this.size.width / 24f
+        val stroke = 1.7f * unit
+        drawCircle(tint, radius = 6.5f * unit, center = Offset(11 * unit, 11 * unit), style = Stroke(stroke))
+        drawLine(tint, Offset(16 * unit, 16 * unit), Offset(20 * unit, 20 * unit), stroke, StrokeCap.Round)
+    }
+}
+
+/**
  * The artboards' +: two round-capped strokes from 5/24 to 19/24 of a [size]
  * box, crossing at its middle -- the boards' `M12 5v14M5 12h14`. The add
  * button draws it at 20dp, day one's cash offer at 17dp.

@@ -31,6 +31,8 @@ class MigrationTest {
 
     private companion object {
         const val MIGRATED = "migration-1-2.db"
+        const val MIGRATED_TO_3 = "migration-2-3.db"
+        const val MIGRATED_1_TO_3 = "migration-1-3.db"
     }
 
     @Test fun schemaVersionOneIsCreatable() {
@@ -86,6 +88,69 @@ class MigrationTest {
             assertEquals(0L, v2.count("merchant_alias"))
             assertEquals(0L, v2.count("merchant_name"))
             assertEquals(2L, v2.pragma("user_version"))
+        }
+    }
+
+    /**
+     * Spec 15.2's v2 -> v3: a transaction written before the update is found
+     * by search after it. Room creates the external-content FTS table empty
+     * and its triggers index only later writes, so this is the case
+     * `PingedDatabase.IndexExistingRows` exists for; without its `rebuild`
+     * the migration validates and the row is unfindable.
+     */
+    @Test fun versionTwoMigratesToThreeWithEveryRowSearchable() {
+        helper.createDatabase(MIGRATED_TO_3, 2).use { v2 ->
+            v2.execSQL(
+                "INSERT INTO category (id, name, icon_key, sort_order, is_protected) " +
+                    "VALUES (1, 'Uncategorized', 'circle-dashed', 0, 1)",
+            )
+            v2.execSQL(
+                "INSERT INTO txn (id, raw_capture_id, amount_sen, currency, direction, occurred_at, " +
+                    "local_date, merchant_raw, merchant_display, merchant_key, category_id, " +
+                    "source_package, source_label, confidence, state, pending_reason, is_excluded, " +
+                    "exclusion_reason, note, user_edited, created_at, updated_at) VALUES " +
+                    "(7, NULL, 1250, 'MYR', 'EXPENSE', 1788739200000, 20260907, " +
+                    "'YUENKEEHOMETOWNCAFE', 'Yuen Kee Hometown Cafe', 'YUENKEEHOMETOWNCAFE', 1, " +
+                    "NULL, NULL, 'HIGH', 'COMMITTED', NULL, 0, NULL, 'kopi with Ah Meng', 0, 1, 1)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED_TO_3, 3, true).use { v3 ->
+            fun match(words: String): List<String?> =
+                v3.column("SELECT rowid FROM txn_fts WHERE txn_fts MATCH '$words'")
+            assertEquals("the shown name", listOf("7"), match("hometown*"))
+            assertEquals("the raw name", listOf("7"), match("yuenkee*"))
+            assertEquals("the note", listOf("7"), match("meng*"))
+            assertEquals(1L, v3.count("txn"))
+            assertEquals(3L, v3.pragma("user_version"))
+        }
+    }
+
+    /**
+     * The other released version, v1, straight to v3: both steps in turn,
+     * so a v1 phone that skipped v2 still ends with every row searchable.
+     */
+    @Test fun versionOneMigratesToThreeWithEveryRowSearchable() {
+        helper.createDatabase(MIGRATED_1_TO_3, 1).use { v1 ->
+            v1.execSQL(
+                "INSERT INTO category (id, name, icon_key, sort_order, is_protected) " +
+                    "VALUES (1, 'Uncategorized', 'circle-dashed', 0, 1)",
+            )
+            v1.execSQL(
+                "INSERT INTO txn (id, raw_capture_id, amount_sen, currency, direction, occurred_at, " +
+                    "local_date, merchant_raw, merchant_display, merchant_key, category_id, " +
+                    "source_package, source_label, confidence, state, pending_reason, is_excluded, " +
+                    "exclusion_reason, note, user_edited, created_at, updated_at) VALUES " +
+                    "(9, NULL, 800, 'MYR', 'EXPENSE', 1788739200000, 20260907, " +
+                    "'NASIKANDARPELITA', 'Nasi Kandar Pelita', 'NASIKANDARPELITA', 1, " +
+                    "NULL, NULL, 'HIGH', 'COMMITTED', NULL, 0, NULL, NULL, 0, 1, 1)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED_1_TO_3, 3, true).use { v3 ->
+            assertEquals(listOf("9"), v3.column("SELECT rowid FROM txn_fts WHERE txn_fts MATCH 'pelita*'"))
+            assertEquals(0L, v3.count("merchant_alias"))
+            assertEquals(3L, v3.pragma("user_version"))
         }
     }
 
