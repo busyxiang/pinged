@@ -365,7 +365,7 @@ private fun CategoryChips(categories: List<Category>, selected: Long?, onTap: (L
 
 /**
  * One chip: the category's icon and name, filled in [Ink] while selected.
- * The icon is decorative, for the reason `CategoryPicker`'s rows give.
+ * The icon is decorative, for the reason `CategoryPicker`'s tiles give.
  */
 @Composable
 private fun CategoryChip(category: Category, chosen: Boolean, onTap: () -> Unit) {

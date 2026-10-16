@@ -164,6 +164,10 @@ internal fun RowCategoryChooser(
         ?.let { ruleId -> categoriesById[ruleId]?.name }
     CategoryPicker(
         categories = choices,
+        subject = ChooserSubject(
+            bill = row.txn.merchantRaw ?: row.displayName ?: "Unknown merchant",
+            amount = money(row.txn.amountSen, row.txn.currency, symbol = false),
+        ),
         teach = startsOn?.let { TeachOffer(row.displayName, it, mergedRuleCategory) },
         initial = row.txn.categoryId.takeIf { it != chooser.uncategorizedId },
         preview = { categoryId -> retroPreview(row.txn.id, categoryId) },

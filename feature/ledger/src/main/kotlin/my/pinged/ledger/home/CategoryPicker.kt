@@ -1,21 +1,23 @@
 package my.pinged.ledger.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,7 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -36,16 +38,29 @@ import androidx.compose.ui.unit.sp
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.Quote
 import my.pinged.ui.theme.ReceiptSheetFrame
+import my.pinged.ui.theme.SheetHeader
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.Toggle
+import my.pinged.ui.theme.dottedOutline
+import my.pinged.ui.theme.dottedRule
 
 /** The sheet's heading, named so the screen and its test cannot spell it differently. */
-internal const val PICKER_HEADING = "PUT THIS TRANSACTION IN"
+internal const val PICKER_HEADING = "What was this?"
+
+/**
+ * What the chooser is filing, as its context strip shows it: the bill's name
+ * as it arrived, which is the notification's text and so the mono's (spec 8),
+ * and its amount.
+ */
+internal data class ChooserSubject(val bill: String, val amount: String)
 
 /**
  * What the chooser offers to teach: the merchant it would teach, and where the
@@ -133,12 +148,24 @@ internal fun conflictLine(count: Int, categoryNames: List<String>): String {
  * §4's category editing is out, which is why this only chooses from what the
  * seed provides.
  *
+ * Drawn as `design/Chooser.dc.html` (#167): the serif question and its X,
+ * a dotted strip quoting the bill and its amount, the categories as a
+ * two-column grid of outlined tiles, then the switch under a dotted rule, then
+ * Save. A pick is drawn as the board draws it, a [Stamp] outline with the
+ * icon and name in [Stamp], not as a fill.
+ *
+ * Two columns hold the seed's longest names: at CI's 320dp a tile has about
+ * 89dp for its name at 13sp, so "Insurance & takaful" takes two lines, which
+ * the 52dp tile holds. The grid is the part that scrolls, so Save stays on a
+ * 640dp screen beside all fifteen (`ChooserArtboardTest`).
+ *
  * Drawn in [ReceiptSheetFrame], the chrome every sheet shares; not in
- * `ReceiptSheet`, whose scrolling `Column` cannot hold this `LazyColumn`.
+ * `ReceiptSheet`, whose scrolling `Column` cannot hold this lazy grid.
  */
 @Composable
 internal fun CategoryPicker(
     categories: List<Category>,
+    subject: ChooserSubject,
     teach: TeachOffer?,
     initial: Long?,
     preview: suspend (categoryId: Long) -> RetroPreview,
@@ -156,17 +183,29 @@ internal fun CategoryPicker(
         answer = null
         if (teach != null && always && picked != null) answer = picked to preview(picked)
     }
-    // The frame opens fully expanded: the fifteen rows the seed leaves after
-    // the row's own category is dropped do not fit in a half sheet, and a
+    // The frame opens fully expanded: the fifteen choices the seed leaves
+    // after `Uncategorized` is dropped do not fit in a half sheet, and a
     // chooser that opens showing four of its options and has to be dragged is
     // a chooser that hides most of itself.
     ReceiptSheetFrame(onDismissRequest = onDismiss, modifier = modifier) {
-        Text(
-            PICKER_HEADING,
-            style = MonoLabel,
-            color = Muted,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),
-        )
+        SheetHeader(PICKER_HEADING, onDismiss, Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp))
+        SubjectStrip(subject)
+        // Lazy because fifteen tiles do not fit a short phone, and the sheet's
+        // own slot is a `ColumnScope`, which does not scroll. `fill = false`
+        // leaves what follows its own room beneath, instead of the grid
+        // taking all of the sheet.
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(categories, key = { it.id }) { category ->
+                CategoryTile(category, chosen = category.id == picked) { selected = it }
+            }
+        }
+        val note = Modifier.padding(start = 20.dp, end = 20.dp)
         if (teach != null) {
             AlwaysSwitch(teach.merchant, categories.firstOrNull { it.id == picked }?.name, always) { always = it }
             teach.mergedRuleCategory?.let { category ->
@@ -176,15 +215,14 @@ internal fun CategoryPicker(
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
                     color = Muted,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                    modifier = note.padding(bottom = 4.dp),
                 )
             }
             val shown = answer?.takeIf { it.first == picked }?.second
             if (always && shown != null) {
                 val names = shown.conflicts.map { c -> categories.firstOrNull { it.id == c.categoryId }?.name ?: "another category" }
-                val pad = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
                 if (shown.conflicts.isEmpty()) {
-                    Text(fixLine(shown.movable), style = MonoLabel, color = Muted, modifier = pad)
+                    Text(fixLine(shown.movable), style = MonoLabel, color = Stamp, modifier = note)
                 } else {
                     Text(
                         conflictLine(shown.conflicts.sumOf { it.count }, names),
@@ -192,7 +230,7 @@ internal fun CategoryPicker(
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         color = Muted,
-                        modifier = pad,
+                        modifier = note,
                     )
                 }
             }
@@ -203,19 +241,38 @@ internal fun CategoryPicker(
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
                 color = Muted,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                modifier = note.padding(top = 18.dp),
             )
         }
-        // A `LazyColumn` because the sheet is scrollable and that many rows do
-        // not fit on a short phone. The sheet's own slot is a `ColumnScope`,
-        // which does not scroll. `fill = false` leaves the save control its
-        // own room beneath, instead of the list taking all of the sheet.
-        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth()) {
-            items(categories, key = { it.id }) { category ->
-                CategoryRow(category, chosen = category.id == picked) { selected = it }
-            }
-        }
         SaveButton(enabled = picked != null) { picked?.let { onSave(it, teach != null && always) } }
+    }
+}
+
+/**
+ * The board's context strip: the bill as it arrived and its amount, in a
+ * dotted box on [Quote], as the review inbox quotes a notification. The bill
+ * at the 12sp floor rather than the board's 10.5, for [MonoLabel]'s reason;
+ * the amount 2sp above it, as the board sets it 1.5px above.
+ */
+@Composable
+private fun SubjectStrip(subject: ChooserSubject) {
+    Row(
+        Modifier
+            .padding(start = 20.dp, end = 20.dp)
+            .fillMaxWidth()
+            .background(Quote, RoundedCornerShape(2.dp))
+            .dottedOutline()
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            subject.bill,
+            style = MonoLabel.copy(letterSpacing = 0.sp),
+            color = Muted,
+            maxLines = 1,
+            modifier = Modifier.weight(1f).alignByBaseline(),
+        )
+        Text(subject.amount, style = MonoNumerals, fontSize = 14.sp, color = Ink, modifier = Modifier.alignByBaseline())
     }
 }
 
@@ -229,7 +286,7 @@ internal fun CategoryPicker(
 private fun SaveButton(enabled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
-            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(2.dp))
             .background(if (enabled) Stamp else Muted)
@@ -243,29 +300,25 @@ private fun SaveButton(enabled: Boolean, onClick: () -> Unit) {
 
 /**
  * "Always call this": one toggleable row, so a screen reader announces the
- * label and the state together and the whole row is the 44dp target.
+ * label and the state together and the whole row is the 44dp target. Under
+ * the board's dotted rule, which separates it from the grid above.
  */
 @Composable
 private fun AlwaysSwitch(merchant: String?, category: String?, on: Boolean, onToggle: (Boolean) -> Unit) {
     Row(
         Modifier
+            .padding(start = 20.dp, end = 20.dp, top = 18.dp)
+            .dottedRule(atTop = true)
             .fillMaxWidth()
             .toggleable(value = on, role = Role.Switch, onValueChange = onToggle)
             .heightIn(min = 44.dp)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .padding(vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
-                alwaysLabel(category),
-                fontFamily = Body,
-                fontWeight = FontWeight.Medium,
-                fontSize = 15.sp,
-                lineHeight = 19.sp,
-                color = Ink,
-            )
-            Text(alwaysNote(merchant), style = MonoLabel, color = Muted)
+            Text(alwaysLabel(category), fontFamily = Body, fontSize = 14.sp, lineHeight = 18.sp, color = Ink)
+            Text(alwaysNote(merchant), style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 3.dp))
         }
         // Drawn only: the row above owns the click and the semantics.
         Toggle(on = on, modifier = Modifier.testTag(ALWAYS_SWITCH_TAG))
@@ -273,45 +326,42 @@ private fun AlwaysSwitch(merchant: String?, category: String?, on: Boolean, onTo
 }
 
 /**
- * One category: the icon it is drawn with, and its name. A tap selects it;
- * the sheet's save control is what writes.
+ * One category, as the board's tile: its icon and its name in a 52dp box
+ * outlined in [Border], or in [Stamp] at 1.5dp with the icon and name in
+ * [Stamp] once [chosen]. A tap selects it; the sheet's save control is what
+ * writes.
  *
  * The icon is decorative here and carries a null `contentDescription`: the
  * name is beside it in the same control, so announcing the icon as well would
- * read the row twice. [categoryIcon] returns null for a key this build does
- * not bundle, and the row is then the name alone -- see its KDoc for why that
+ * read the tile twice. [categoryIcon] returns null for a key this build does
+ * not bundle, and the tile is then the name alone -- see its KDoc for why that
  * is the right answer rather than a stand-in glyph.
  */
 @Composable
-private fun CategoryRow(category: Category, chosen: Boolean, onChoose: (Long) -> Unit) {
+private fun CategoryTile(category: Category, chosen: Boolean, onChoose: (Long) -> Unit) {
+    val tint = if (chosen) Stamp else Muted
+    val shape = RoundedCornerShape(2.dp)
     Row(
         Modifier
             .fillMaxWidth()
-            // A labelled control taking the 44dp target every other tappable
-            // thing in this feature takes.
+            .clip(shape)
+            .border(if (chosen) 1.5.dp else 1.dp, if (chosen) Stamp else Border, shape)
             .selectable(selected = chosen, role = Role.RadioButton) { onChoose(category.id) }
-            .background(if (chosen) Ink.copy(alpha = 0.08f) else Color.Transparent)
-            .heightIn(min = 44.dp)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .heightIn(min = 52.dp)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         val icon = categoryIcon(category.iconKey)
         if (icon != null) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = null,
-                tint = Ink,
-                modifier = Modifier.size(20.dp),
-            )
+            Icon(painter = painterResource(icon), contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
         }
         Text(
             category.name,
             fontFamily = Body,
-            fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium,
-            fontSize = 15.sp,
-            lineHeight = 19.sp,
-            color = Ink,
+            fontSize = 13.sp,
+            lineHeight = 17.sp,
+            color = if (chosen) Stamp else Ink,
         )
     }
 }

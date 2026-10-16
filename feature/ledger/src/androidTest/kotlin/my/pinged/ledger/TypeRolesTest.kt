@@ -44,6 +44,7 @@ import my.pinged.ledger.entry.NEARBY_CANCEL
 import my.pinged.ledger.entry.NearbyCapture
 import my.pinged.ledger.entry.SAVE
 import my.pinged.ledger.home.CategoryPicker
+import my.pinged.ledger.home.ChooserSubject
 import my.pinged.ledger.home.Empty
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.OPEN_SETTINGS
@@ -205,6 +206,7 @@ class TypeRolesTest {
             PingedTheme {
                 CategoryPicker(
                     categories = listOf(groceries),
+                    subject = ChooserSubject("TNG*99SPEEDMART", "32.00"),
                     teach = null,
                     initial = groceries.id,
                     preview = { RetroPreview(0, emptyList()) },
