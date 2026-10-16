@@ -143,9 +143,17 @@ internal object CaptureHealth {
      * short-circuits returns only once the write it relied on is in the
      * store: `MainActivity`'s sample reads the store straight after its own
      * probe, and must not read a raise still in flight as none.
+     *
+     * **The memo is read only under the lock**, never as a fast path before
+     * it. The edit is visible to the store's watchers before the memo
+     * follows, and `MainActivity` samples on every change: its probe's clear
+     * can start inside that window, read the memo as still clear, and return
+     * with the flag up and nothing left to clear it.
+     * `StorageFlagCrossingTest` lost 9 and 6 in 1000 of those clears with
+     * the fast path. Not timed: a caller that would have short-circuited now
+     * takes a `Mutex`, uncontended but for a crossing, and does no IO.
      */
     private suspend fun writeStorageUnavailable(context: Context, value: Boolean) {
-        if (storageUnavailable == value) return
         flagWrites.withLock {
             if (storageUnavailable == value) return
             context.captureStore.edit { if (value) it[STORAGE_UNAVAILABLE] = true else it.remove(STORAGE_UNAVAILABLE) }
