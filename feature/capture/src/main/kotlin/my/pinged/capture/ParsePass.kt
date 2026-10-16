@@ -17,6 +17,7 @@ import my.pinged.parse.DictionaryEntry
 import my.pinged.parse.MatchOutcome
 import my.pinged.parse.Merchant
 import my.pinged.parse.RuleMatcher
+import my.pinged.parse.Skeleton
 
 /**
  * Stage two, all of it, with no WorkManager in it.
@@ -321,12 +322,18 @@ internal class ParsePass(
                 packVersion = matcher.packVersion,
             )
 
-            MatchOutcome.Unmatched -> mark(
-                capture = capture,
-                status = ParseStatus.UNMATCHED,
-                duplicateOf = slotSuspectOf,
-                packVersion = matcher.packVersion,
-            )
+            // Spec 5.7: a user reject rule is consulted here and nowhere else,
+            // so it decides whether the unread list shows this, never whether
+            // a transaction exists.
+            MatchOutcome.Unmatched -> {
+                val rows = captures.markUnmatched(
+                    capture = capture,
+                    skeleton = Skeleton.ofCapture(capture.title, capture.text, capture.bigText),
+                    duplicateOf = slotSuspectOf,
+                    packVersion = matcher.packVersion,
+                )
+                if (rows == 0) Log.i(TAG, "Capture ${capture.id} left NEW before UNMATCHED could be recorded")
+            }
 
             MatchOutcome.NoExtras -> mark(
                 capture = capture,

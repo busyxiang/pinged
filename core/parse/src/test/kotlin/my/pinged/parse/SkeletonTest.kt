@@ -24,4 +24,20 @@ class SkeletonTest {
         Skeleton.of("RM\u00A088.00 debited"),
         Skeleton.of("RM 88.00 debited")
     )
+
+    /**
+     * Spec 5.2's `concat`, which is what a template reads: the title, then the
+     * big text where there is one, else the text. A skeleton of anything else
+     * would let two captures the matcher reads alike be told apart.
+     */
+    @Test fun `a capture's skeleton is of its title and the body the matcher reads`() {
+        assertEquals(
+            "maybank your fd of rm# has matured.",
+            Skeleton.ofCapture(title = "Maybank", text = "Your FD has matured.", bigText = "Your FD of RM5,000.00 has matured."),
+        )
+        assertEquals(
+            "your fd of rm# has matured.",
+            Skeleton.ofCapture(title = null, text = "Your FD of RM9.00 has matured.", bigText = null),
+        )
+    }
 }

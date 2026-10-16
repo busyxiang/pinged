@@ -68,44 +68,50 @@ object ParseFixtures {
         corpus.firstOrNull { it.name == name }
             ?: error("no fixture named '$name'; the corpus holds ${corpus.map { it.name }}")
 
-    private fun parse(file: File): Fixture {
+    private fun parse(file: File): Fixture = parse(file.name, file.readText())
+
+    /**
+     * One fixture from its text, for a test of what writes one --
+     * `FixtureTextTest` holds the app's copy to the parser the corpus uses.
+     */
+    fun parse(name: String, text: String): Fixture {
         // Tolerant of CRLF, and explicit about the one structural rule: a
         // header block, a blank line, then the notification body. Destructuring
         // a short split threw an opaque IndexOutOfBoundsException instead.
-        val parts = file.readText().replace("\r\n", "\n").split("\n\n", limit = 2)
+        val parts = text.replace("\r\n", "\n").split("\n\n", limit = 2)
         require(parts.size == 2) {
-            "${file.name} is malformed: expected a header block, a blank line, then the " +
+            "$name is malformed: expected a header block, a blank line, then the " +
                 "notification body, but found no blank line"
         }
         val (header, body) = parts
         val h = header.lineSequence()
-            .filter { it.contains(':') }
+            .filter { it.contains(':') && !it.startsWith("#") }
             .associate { it.substringBefore(':').trim() to it.substringAfter(':').trim() }
         return Fixture(
-            name = file.name,
-            pkg = requireNotNull(h["package"]) { "${file.name} has no package" },
+            name = name,
+            pkg = requireNotNull(h["package"]) { "$name has no package" },
             title = h["title"],
             bigText = h["big_text"],
-            expect = requireNotNull(h["expect"]) { "${file.name} has no expect" },
+            expect = requireNotNull(h["expect"]) { "$name has no expect" },
             rule = h["rule"],
             amountSen = h["amount_sen"]?.toLong(),
             merchant = h["merchant"],
             merchantDisplay = h["merchant_display"],
-            direction = h["direction"]?.let { name ->
-                Direction.entries.firstOrNull { it.name == name }
-                    ?: error("${file.name} names an unknown direction '$name'")
+            direction = h["direction"]?.let { value ->
+                Direction.entries.firstOrNull { it.name == value }
+                    ?: error("$name names an unknown direction '$value'")
             },
-            confidence = h["confidence"]?.let { name ->
-                Confidence.entries.firstOrNull { it.name == name }
-                    ?: error("${file.name} names an unknown confidence '$name'")
+            confidence = h["confidence"]?.let { value ->
+                Confidence.entries.firstOrNull { it.name == value }
+                    ?: error("$name names an unknown confidence '$value'")
             },
-            kind = h["kind"]?.let { name ->
-                Kind.entries.firstOrNull { it.name == name }
-                    ?: error("${file.name} names an unknown kind '$name'")
+            kind = h["kind"]?.let { value ->
+                Kind.entries.firstOrNull { it.name == value }
+                    ?: error("$name names an unknown kind '$value'")
             },
-            exclusionReason = h["exclusion_reason"]?.let { name ->
-                ExclusionReason.entries.firstOrNull { it.name == name }
-                    ?: error("${file.name} names an unknown exclusion_reason '$name'")
+            exclusionReason = h["exclusion_reason"]?.let { value ->
+                ExclusionReason.entries.firstOrNull { it.name == value }
+                    ?: error("$name names an unknown exclusion_reason '$value'")
             },
             body = body.trim(),
         )

@@ -11,6 +11,7 @@ import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
+import my.pinged.data.entity.UserRejectRule
 
 /**
  * Design 5's salvage: [ExportJson]'s document, written from every row a
@@ -209,6 +210,8 @@ object SalvageJson {
  *   cleared because [SalvageJson.FORWARD_HELD] were already held.
  * @property txnsReread `MATCHED` captures in the file whose transaction is
  *   not: stage two writes each again after the restore (`ImportJson`).
+ * @property unhidden captures kept with `user_reject_rule_id` cleared, the
+ *   rule not in the file: back in the unread list after the restore.
  */
 data class SalvageReport(
     val rows: Int,
@@ -225,6 +228,7 @@ data class SalvageReport(
     val rulesLeftOutSince: Int = 0,
     val linksUnheld: Int = 0,
     val txnsReread: Int = 0,
+    val unhidden: Int = 0,
 )
 
 /** The filter of [SalvageJson]'s KDoc, as the sections are read in order. */
@@ -254,6 +258,15 @@ private class References {
     private var txnsUncategorizedSince = 0
     private var rulesLeftOutSince = 0
     private var linksUnheld = 0
+    private var unhidden = 0
+
+    /**
+     * Spec 5.7's rules, read before the captures that name them so a capture
+     * naming one the file will not carry is unhidden as it is written. Null
+     * when `user_reject_rule` would not read.
+     */
+    private var rejectRules: List<UserRejectRule>? = null
+    private var rejectRuleIds: Set<Long> = emptySet()
 
     /**
      * [capturesAtStart], before any section is read. `sqlite_sequence` has
@@ -263,6 +276,8 @@ private class References {
     fun freeze(reader: RowReader<PingedDatabase>) {
         reader.whole("sqlite_sequence") { listOf(it.rawCaptureDao().highestIdEver() ?: 0L) }
             ?.let { capturesAtStart = it.single() }
+        rejectRules = reader.whole("user_reject_rule") { it.userRejectRuleDao().all() }
+        rejectRuleIds = rejectRules.orEmpty().mapTo(HashSet()) { it.id }
     }
 
     fun over(reader: RowReader<PingedDatabase>) = DocumentSource(
@@ -294,6 +309,7 @@ private class References {
         merchantNames = {
             reader.whole("merchant_name") { it.merchantIdentityDao().allNames() } ?: lost("merchant_name")
         },
+        userRejectRules = { rejectRules ?: lost("user_reject_rule") },
     )
 
     fun report(rows: Int, unreadable: Map<String, Unreadable>) = SalvageReport(
@@ -311,6 +327,7 @@ private class References {
         rulesLeftOutSince = rulesLeftOutSince,
         linksUnheld = linksUnheld,
         txnsReread = matched.size - matchedWithTxn,
+        unhidden = unhidden,
     )
 
     private fun <T> lost(table: String): List<T> {
@@ -355,7 +372,8 @@ private class References {
     }
 
     /** Called in id order, so every earlier id this walk will recover it already has. */
-    private fun capture(capture: RawCapture): RawCapture? {
+    private fun capture(read: RawCapture): RawCapture? {
+        val capture = unhiddenUnlessRuled(read)
         recovered.add(capture.id)
         if (capture.parseStatus == ParseStatus.MATCHED) matched.add(capture.id)
         val target = capture.duplicateOfId ?: return capture
@@ -368,6 +386,17 @@ private class References {
             return capture.copy(duplicateOfId = null)
         }
         return linked(capture)
+    }
+
+    /**
+     * [capture] with its rule kept if the file carries it, else cleared:
+     * `ImportJson` refuses a capture hidden by a rule that is not there.
+     */
+    private fun unhiddenUnlessRuled(capture: RawCapture): RawCapture {
+        val rule = capture.userRejectRuleId ?: return capture
+        if (rule in rejectRuleIds) return capture
+        unhidden++
+        return capture.copy(userRejectRuleId = null)
     }
 
     /** [capture] as written: its link kept if it names a recovered capture, else cleared. */

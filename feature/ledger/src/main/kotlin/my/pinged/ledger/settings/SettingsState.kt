@@ -121,11 +121,18 @@ data class SettingsState(
      */
     val correctionsPending: Int? = null,
     /**
-     * The "Learned merchants" row's value (#50): the live learned rules, which
-     * is the list's length. Null when it could not be read, drawn as nothing
+     * Half the "Things you taught Pinged" row's value (#50): the live learned
+     * rules, which is the MERCHANTS list's length. Null when it could not be read, drawn as nothing
      * as [sourcesOn] is; `0` is a true "nothing taught".
      */
     val learnedCount: Int? = null,
+    /** Spec 5.7's user reject rules, beside [learnedCount] in the same row's value. */
+    val ignoredCount: Int? = null,
+    /**
+     * Spec 5.6's unread captures: `UNMATCHED`, and hidden by no rule. Null when
+     * it could not be read, as [sourcesOn] is.
+     */
+    val unreadCount: Int? = null,
     /**
      * The "Categories" row's value (#155): every category, which is the
      * list's length. Null when it could not be read, as [learnedCount] is.

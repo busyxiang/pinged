@@ -75,7 +75,7 @@ class WipeHostTest {
             PingedTheme {
                 SettingsScreen(
                     viewModel = viewModel,
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onOpenUnread = {},
                     onExport = onExport,
                     onRestore = {},
                     onRescue = onRescue,

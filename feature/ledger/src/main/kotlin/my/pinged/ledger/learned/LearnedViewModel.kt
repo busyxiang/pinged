@@ -14,19 +14,22 @@ import kotlinx.coroutines.sync.withLock
 import my.pinged.capture.CaptureStorage
 import my.pinged.data.Databases
 import my.pinged.data.dao.LearnedMerchant
+import my.pinged.data.dao.RejectRuleRow
 
-/** What the learned-merchants screen draws. */
+/** What the taught-rules screen draws. */
 data class LearnedState(
     /** False until the first read completes, so an empty list is not a claim. */
     val loaded: Boolean = false,
     val items: List<LearnedMerchant> = emptyList(),
+    /** Spec 5.7's "never a transaction" rules, newest first. */
+    val ignored: List<RejectRuleRow> = emptyList(),
     /** Spec 11.1: the database could not be opened, which is not "nothing taught". */
     val storageUnavailable: Boolean = false,
 )
 
 /**
- * The list of learned rules (#50, spec #45 "Learned merchants list"): read,
- * and delete.
+ * The list of learned rules (#50, spec #45 "Learned merchants list") and of
+ * spec 5.7's user reject rules: read, and delete.
  *
  * A delete and the read after it take [turn], so the list never draws a state
  * older than a delete that landed. Delete is `MerchantRuleDao.deleteLearnedOfIdentity`
@@ -59,6 +62,22 @@ class LearnedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Forget [rule]: `UserRejectRuleDao.delete`, which returns its captures to
+     * the unread list (spec 5.7) and touches nothing else. Guarded as [delete] is.
+     */
+    fun deleteIgnored(rule: RejectRuleRow): Job = viewModelScope.launch {
+        turn.withLock {
+            CaptureStorage.guarded(
+                context,
+                what = "The ignored message could not be deleted",
+                unavailable = { 0 },
+                damageStopsCapture = false,
+            ) { Databases.userRejectRuleDao(context).delete(rule.id) }
+            _state.value = read()
+        }
+    }
+
     private suspend fun read(): LearnedState =
         CaptureStorage.guarded(
             context,
@@ -66,6 +85,10 @@ class LearnedViewModel(app: Application) : AndroidViewModel(app) {
             unavailable = { LearnedState(loaded = true, storageUnavailable = true) },
             damageStopsCapture = false,
         ) {
-            LearnedState(loaded = true, items = Databases.merchantRuleDao(context).learnedMerchants())
+            LearnedState(
+                loaded = true,
+                items = Databases.merchantRuleDao(context).learnedMerchants(),
+                ignored = Databases.userRejectRuleDao(context).rules(),
+            )
         }
 }

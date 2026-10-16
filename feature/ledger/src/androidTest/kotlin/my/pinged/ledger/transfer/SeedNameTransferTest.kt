@@ -48,8 +48,9 @@ class SeedNameTransferTest {
     /**
      * A format-2 file carries no `seed_name`; each row is given its name when
      * that is a seeded one, which no build that wrote format 2 could have
-     * renamed. Made from a real export by taking the column out and the
-     * format back, so it is shaped exactly as a format-2 export is.
+     * renamed. Made from a real export by taking the column and the later
+     * section out and the format back, so it is shaped exactly as a format-2
+     * export is.
      */
     @Test fun aFormatTwoBackupGivesTheSeededRowsTheirSeedNames() {
         val original = fresh()
@@ -57,6 +58,8 @@ class SeedNameTransferTest {
         val formatTwo = text
             .replace(Regex(""","seed_name":(null|"[^"]*")"""), "")
             .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":2")
+            // Format 4's section, which no format-2 build wrote.
+            .let { it.substring(0, it.indexOf(",\"${Backup.USER_REJECT_RULES}\":")) + "}" }
         check("seed_name" !in formatTwo) { "the column is still in the file" }
 
         val restored = fresh()

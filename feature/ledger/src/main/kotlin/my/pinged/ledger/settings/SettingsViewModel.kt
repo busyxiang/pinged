@@ -263,6 +263,8 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         val met = Met()
         val sourcesOn = db?.let { countEnabledSources(it, met) }
         val learnedCount = db?.let { countLearned(it, met) }
+        val ignoredCount = db?.let { d -> countOrNull(met) { d.userRejectRuleDao().countAll() } }
+        val unreadCount = db?.let { d -> countOrNull(met) { d.userRejectRuleDao().unreadCount() } }
         val categoryCount = db?.let { countCategories(it, met) }
         val correctionsPending = if (recorded == Storage.HEALTHY) db?.let { countCorrections(it, met) } else null
         val counts = if (damaged == null) null else db?.let { wipeCounts(recorded, it, met) }
@@ -281,6 +283,8 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
                 sourcesOn = sourcesOn,
                 correctionsPending = correctionsPending,
                 learnedCount = learnedCount,
+                ignoredCount = ignoredCount,
+                unreadCount = unreadCount,
                 categoryCount = categoryCount,
                 wipeCounts = counts,
                 exportRows = exportRows,
@@ -392,6 +396,14 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
      */
     private fun countEnabledSources(db: PingedDatabase, met: Met): Int? = try {
         db.captureSourceDao().enabledCount()
+    } catch (thrown: SQLException) {
+        met.record(thrown)
+        null
+    }
+
+    /** [count]'s answer, or null where the read fails, as [countEnabledSources]'s does. */
+    private fun countOrNull(met: Met, count: () -> Int): Int? = try {
+        count()
     } catch (thrown: SQLException) {
         met.record(thrown)
         null

@@ -51,6 +51,14 @@ import kotlinx.serialization.Serializable
 @Serializable data object Learned : NavKey
 
 /**
+ * Spec 5.6's unread list, pushed from its row in settings
+ * (`SettingsScreen`'s `onOpenUnread`).
+ *
+ * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ */
+@Serializable data object Unread : NavKey
+
+/**
  * The categories list (#155), pushed from its row in settings
  * (`SettingsScreen`'s `onOpenCategories`).
  *

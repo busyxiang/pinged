@@ -18,7 +18,7 @@ import my.pinged.ledger.ArtboardProbe.layoutOf
 import my.pinged.ledger.ArtboardProbe.px
 import my.pinged.ledger.ArtboardProbe.settledScreen
 import my.pinged.ledger.learned.DELETE
-import my.pinged.ledger.learned.LEARNED_MERCHANTS
+import my.pinged.ledger.learned.TAUGHT
 import my.pinged.ledger.learned.LearnedContent
 import my.pinged.ledger.learned.LearnedState
 import my.pinged.ui.theme.Body
@@ -41,7 +41,7 @@ class LearnedArtboardTest {
 
     @Test fun theTitleIsSerif22() {
         learned()
-        val style = layoutOf(compose.onNodeWithText(LEARNED_MERCHANTS, useUnmergedTree = true)).layoutInput.style
+        val style = layoutOf(compose.onNodeWithText(TAUGHT, useUnmergedTree = true)).layoutInput.style
         assertEquals("The title's family", Display, style.fontFamily)
         assertEquals("The title's size", 22.sp, style.fontSize)
     }

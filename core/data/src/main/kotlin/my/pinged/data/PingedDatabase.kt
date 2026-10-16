@@ -13,6 +13,7 @@ import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
+import my.pinged.data.dao.UserRejectRuleDao
 import my.pinged.data.entity.CaptureDay
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
@@ -22,12 +23,13 @@ import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnFts
+import my.pinged.data.entity.UserRejectRule
 
 @Database(
     entities = [
         RawCapture::class, Txn::class, Category::class, CaptureSource::class,
         MerchantRule::class, CaptureDay::class, MerchantAlias::class, MerchantName::class,
-        TxnFts::class,
+        TxnFts::class, UserRejectRule::class,
     ],
     version = PingedDatabase.VERSION,
     exportSchema = true,
@@ -36,9 +38,13 @@ import my.pinged.data.entity.TxnFts
     // the SQLCipher factory, from v1, as spec 13 requires. v3 adds spec 15.2's
     // search index, which Room creates empty: [IndexExistingRows] fills it.
     // v4 is [MIGRATION_3_4], written by hand; see there for why.
+    // v5 adds spec 5.7's `user_reject_rule` and nothing else, so its migration
+    // is one CREATE TABLE and its index; `raw_capture.user_reject_rule_id` was
+    // in v1 already.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3, spec = PingedDatabase.IndexExistingRows::class),
+        AutoMigration(from = 4, to = 5),
     ],
 )
 abstract class PingedDatabase : RoomDatabase() {
@@ -49,7 +55,7 @@ abstract class PingedDatabase : RoomDatabase() {
          * because reading it back through `openHelper` is a path ruling R42
          * keeps to an allowlist.
          */
-        const val VERSION = 4
+        const val VERSION = 5
     }
 
     /**
@@ -79,6 +85,8 @@ abstract class PingedDatabase : RoomDatabase() {
     abstract fun merchantRuleDao(): MerchantRuleDao
 
     abstract fun merchantIdentityDao(): MerchantIdentityDao
+
+    abstract fun userRejectRuleDao(): UserRejectRuleDao
 
     /**
      * Whether [close] has been called on this instance, which Room's own

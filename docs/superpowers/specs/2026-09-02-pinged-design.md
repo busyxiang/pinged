@@ -579,13 +579,21 @@ than a live reference.
 |---|---|---|
 | id | Long PK | |
 | source_package | Text | scoped to one app |
-| skeleton | Text, indexed | digit-stripped signature, see section 5.7 |
+| skeleton | Text | digit-stripped signature, see section 5.7; unique with `source_package` |
 | sample_text | Text | the notification that created it, for review |
 | created_at | Long | |
-| hit_count | Int | |
 
 Rules the user creates by tapping "never a transaction" on an unread
-capture. They do not affect the ledger; see section 5.7.
+capture. They do not affect the ledger; see section 5.7. Added in schema v5
+and backup format 4.
+
+**No `hit_count`.** The count settings shows is how many `UNMATCHED` captures
+the rule hides now, which `raw_capture.user_reject_rule_id` already records;
+a stored counter would be a second answer, and a capture a pack upgrade
+matches would leave it wrong. `raw_capture.user_reject_rule_id` has no foreign
+key, because adding one rebuilds `raw_capture` in the migration: deleting a
+rule clears it on every capture, and an import refuses a capture naming a rule
+the file does not carry.
 
 ### `user_template_rule`
 
@@ -920,6 +928,8 @@ of digits with its embedded separators replaced by a single placeholder.
   -> "your fd of rm# has matured. view details in mae."
 ```
 
+The text is section 5.2's `concat`, the title included, because that is what
+a template reads: two captures every template reads alike have one skeleton.
 A later capture is hidden only when its skeleton is equal to a stored one
 for the same package. Equality rather than substring matching is chosen on
 purpose: it makes over-rejection almost impossible, at the cost of needing
@@ -927,7 +937,8 @@ one rule per distinct message shape, which is the right trade for something
 the user cannot see working.
 
 **Review.** User reject rules are listed in settings beside learned
-merchants, each showing its `sample_text` and hit count, and each deletable.
+merchants, each showing its `sample_text` and how many captures it hides,
+and each deletable.
 Deleting one returns its captures to the unread list.
 
 ### 5.8 Teaching a rule by example
@@ -1439,10 +1450,11 @@ loaded pack's rule `matched_rule_id` names, searched among the capture's
 package's rules and then the shared rules. A rule no longer in the pack, or
 one that suggests no reason, gives `TRANSFER`.
 
-**"Always exclude Touch 'n Go reloads" waits for a user-rules milestone with
-schema v3.** It needs a standing rule, and v2 can store none: `merchant_rule`
-has no kind or exclusion column, and `user_reject_rule` was never built. Until
-then every such capture is asked about.
+**"Always exclude Touch 'n Go reloads" waits for a user-rules milestone.** It
+needs a standing rule, and the schema can store none: `merchant_rule` has no
+kind or exclusion column, and `user_reject_rule` decides only what the unread
+list shows (section 5.7), never what the ledger counts. Until then every such
+capture is asked about.
 
 Excluded transactions are retained with `is_excluded = true`. They render
 greyed in the list and are absent from all totals and charts. They are not

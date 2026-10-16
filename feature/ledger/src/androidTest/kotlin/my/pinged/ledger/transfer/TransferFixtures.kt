@@ -19,6 +19,7 @@ import my.pinged.data.entity.MatchType
 import my.pinged.data.entity.RuleOrigin
 import my.pinged.data.entity.MerchantAlias
 import my.pinged.data.entity.MerchantRule
+import my.pinged.data.entity.UserRejectRule
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
@@ -249,6 +250,19 @@ fun seedOneOfEverything(db: PingedDatabase): SeededLedger {
     // visible as the rows' own.
     db.merchantIdentityDao().insertAlias(MerchantAlias(merchantKey = "MCD KLCC", canonicalKey = "STARBUCKS KLCC"))
     db.merchantIdentityDao().setName("STARBUCKS KLCC", "Kopi at KLCC")
+
+    // Spec 5.7: the rule the fourth capture's `user_reject_rule_id` names.
+    db.userRejectRuleDao().insertAll(
+        listOf(
+            UserRejectRule(
+                id = 77L,
+                sourcePackage = "com.maybank2u.life",
+                skeleton = "maybank rm# paid to starbucks klcc on # jan",
+                sampleText = "Maybank\nRM12.34 paid to STARBUCKS KLCC on 01 Jan",
+                createdAt = 5L,
+            ),
+        ),
+    )
 
     return SeededLedger(db, uncategorized, userCategory, captures, txns)
 }

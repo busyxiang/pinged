@@ -6,11 +6,15 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
 import my.pinged.data.dao.LearnedMerchant
+import my.pinged.data.dao.RejectRuleRow
+import my.pinged.data.entity.ParseStatus
+import my.pinged.ledger.transfer.bulkCapture
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.ledgerTxn
@@ -122,5 +126,70 @@ class LearnedMerchantsScreenTest {
         model.refresh().join()
 
         assertEquals(true, model.state.value.storageUnavailable)
+    }
+
+    // ---- spec 5.7's IGNORED tab -------------------------------------------------
+
+    private val fdRule = RejectRuleRow(
+        id = 3L,
+        sourcePackage = "com.maybank2u.life",
+        sampleText = "Your FD of RM5,000.00 has matured.",
+        createdAt = 1L,
+        label = "Maybank MAE",
+        hidden = 2,
+    )
+
+    @Test fun theTabsCountBothListsAndIgnoredShowsTheRuleWordForWord() {
+        compose.setContent {
+            LearnedContent(LearnedState(loaded = true, items = listOf(mrDiy), ignored = listOf(fdRule)), onBack = {}, onDelete = {})
+        }
+        compose.onNodeWithText("MERCHANTS 1").assertIsDisplayed()
+        compose.onNodeWithText("Hardware shop").assertIsDisplayed()
+
+        compose.onNodeWithText("IGNORED 1").performScrollTo().performClick()
+
+        compose.onNodeWithText("Your FD of RM5,000.00 has matured.").assertIsDisplayed()
+        compose.onNodeWithText("MAYBANK MAE \u00B7 HIDES 2").assertIsDisplayed()
+        compose.onNodeWithText("Hardware shop").assertDoesNotExist()
+    }
+
+    @Test fun anEmptyIgnoredListSaysHowToMakeOne() {
+        compose.setContent { LearnedContent(LearnedState(loaded = true), onBack = {}, onDelete = {}, initialTab = TaughtTab.IGNORED) }
+        compose.onNodeWithText(NOTHING_IGNORED).assertIsDisplayed()
+        compose.onNodeWithText(NOTHING_TAUGHT).assertDoesNotExist()
+    }
+
+    @Test fun deletingAnIgnoredRuleReportsItsOwnRow() {
+        val deleted = mutableListOf<Long>()
+        compose.setContent {
+            LearnedContent(
+                LearnedState(loaded = true, ignored = listOf(fdRule)),
+                onBack = {},
+                onDelete = {},
+                onDeleteIgnored = { deleted += it.id },
+                initialTab = TaughtTab.IGNORED,
+            )
+        }
+        compose.onNodeWithContentDescription(DELETE).performScrollTo().performClick()
+        assertEquals(listOf(3L), deleted)
+    }
+
+    /** Spec 5.7: deleting a rule returns its captures to the unread list. */
+    @Test fun theHolderDeletesARuleAndItsCapturesAreUnreadAgain() = runBlocking {
+        app.discardTheDatabase()
+        val captures = Databases.rawCaptureDao(app)
+        val first = captures.insert(bulkCapture(1).copy(parseStatus = ParseStatus.UNMATCHED))
+        captures.insert(bulkCapture(2).copy(parseStatus = ParseStatus.UNMATCHED))
+        val rejects = Databases.userRejectRuleDao(app)
+        rejects.neverATransaction(first, now = 2_000L)
+        assertEquals(0, rejects.unreadCount())
+        val model = LearnedViewModel(app)
+        model.refresh().join()
+        assertEquals(listOf(2), model.state.value.ignored.map { it.hidden })
+
+        model.deleteIgnored(model.state.value.ignored.single()).join()
+
+        assertEquals(emptyList<RejectRuleRow>(), model.state.value.ignored)
+        assertEquals(2, rejects.unreadCount())
     }
 }

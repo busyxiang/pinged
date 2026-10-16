@@ -7,6 +7,7 @@ import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
+import my.pinged.data.dao.UserRejectRuleDao
 import my.pinged.data.entity.TxnState
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -942,6 +943,44 @@ class QueryPlanTest {
             "SELECT COUNT(*) FROM raw_capture c WHERE c.duplicate_of_id IS NOT NULL " +
                 "AND NOT EXISTS (SELECT 1 FROM raw_capture p WHERE p.id = c.duplicate_of_id)",
         )
+        assertTrue("Inner lookup is not a primary-key probe:\n$p", p.contains("USING INTEGER PRIMARY KEY"))
+    }
+
+    // ---- spec 5.6's unread list and 5.7's user reject rules ----------------
+
+    /**
+     * Spec 15.1: the unread list is `raw_capture(parse_status, posted_at)`,
+     * read backwards from its keyset with no sort, and the source's name a
+     * primary-key probe of `capture_source`.
+     */
+    @Test fun theUnreadListSeeksTheStatusIndexAndDoesNotSort() {
+        val p = plan(bindable(UserRejectRuleDao.UNREAD_PAGE_SQL), "UNMATCHED", Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 50)
+        assertUsesIndex("index_raw_capture_parse_status_posted_at", p, table = "raw_capture")
+        assertTrue("capture_source is scanned:\n$p", !p.contains("SCAN s"))
+        assertNoSort(p)
+    }
+
+    @Test fun theUnreadCountSeeksTheStatusIndex() {
+        val p = plan(bindable(UserRejectRuleDao.UNREAD_COUNT_SQL), "UNMATCHED")
+        assertTrue("The unread count does not seek parse_status:\n$p", p.contains("(parse_status=?)"))
+        assertTrue("The unread count scans raw_capture:\n$p", !p.contains("SCAN raw_capture\n"))
+    }
+
+    /** Spec 15.1's reject rule lookup, once per unmatched capture in stage two. */
+    @Test fun theRejectRuleLookupSeeksItsUniqueIndex() {
+        val p = plan(bindable(UserRejectRuleDao.RULE_LOOKUP_SQL), "com.maybank2u.life", "your fd of rm# has matured.")
+        assertUsesIndex("index_user_reject_rule_source_package_skeleton", p, table = "user_reject_rule")
+    }
+
+    /** Each rule's count reads only the `UNMATCHED` range of the status index. */
+    @Test fun eachRulesHiddenCountSeeksTheStatusIndex() {
+        val p = plan(bindable(UserRejectRuleDao.RULES_SQL), "UNMATCHED")
+        assertTrue("A rule's count scans raw_capture:\n$p", !p.contains("SCAN c"))
+        assertTrue("A rule's count does not seek parse_status:\n$p", p.contains("(parse_status=?)"))
+    }
+
+    @Test fun theDanglingUserRejectRuleCheckProbesByPrimaryKey() {
+        val p = plan(RawCaptureDao.DANGLING_USER_REJECT_RULE_SQL)
         assertTrue("Inner lookup is not a primary-key probe:\n$p", p.contains("USING INTEGER PRIMARY KEY"))
     }
 }

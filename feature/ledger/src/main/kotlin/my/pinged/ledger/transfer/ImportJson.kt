@@ -28,6 +28,7 @@ import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
+import my.pinged.data.entity.UserRejectRule
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
@@ -300,6 +301,8 @@ object ImportJson {
             // Absent from a format-1 file, which held no merges to carry.
             merchantAliases = counts[Backup.MERCHANT_ALIASES] ?: 0,
             merchantNames = counts[Backup.MERCHANT_NAMES] ?: 0,
+            // Absent from a format-1, -2 or -3 file, which held no rules to carry.
+            userRejectRules = counts[Backup.USER_REJECT_RULES] ?: 0,
         )
         state.report()
         return report
@@ -314,6 +317,7 @@ object ImportJson {
             db.merchantRuleDao().countAll().let { if (it > 0) add("$it learned rule(s)") }
             db.merchantIdentityDao().countAliases().let { if (it > 0) add("$it merged merchant(s)") }
             db.merchantIdentityDao().countNames().let { if (it > 0) add("$it renamed merchant(s)") }
+            db.userRejectRuleDao().countAll().let { if (it > 0) add("$it ignored message(s)") }
         }
         if (held.isEmpty()) return
         throw ImportNotEmptyException(
@@ -351,6 +355,16 @@ object ImportJson {
                     "the backup does not contain. Spec 4 keeps raw captures forever so " +
                     "that every transaction can be traced back to the notification that " +
                     "produced it, and these could not be. Nothing was imported.",
+            )
+        }
+        val unruled = db.rawCaptureDao().danglingUserRejectRuleCount()
+        if (unruled > 0) {
+            throw ImportIntegrityException(
+                "$unruled captured notification(s) in this backup are hidden by an " +
+                    "ignored-message rule the backup does not contain. Restored, they " +
+                    "would be missing from the list of notifications Pinged could not " +
+                    "read with no rule to delete that brings them back (spec 5.7). " +
+                    "Nothing was imported.",
             )
         }
         val chained = db.merchantIdentityDao().chainedAliasCount()
@@ -631,6 +645,14 @@ object ImportJson {
         canonicalKey = r.text("canonical_key"),
     )
 
+    internal fun userRejectRule(r: BackupRow) = UserRejectRule(
+        id = r.rowId("id"),
+        sourcePackage = r.text("source_package"),
+        skeleton = r.text("skeleton"),
+        sampleText = r.text("sample_text"),
+        createdAt = r.long("created_at"),
+    )
+
     internal fun merchantName(r: BackupRow) = MerchantName(
         merchantKey = r.text("merchant_key"),
         display = r.text("display"),
@@ -804,12 +826,9 @@ internal class BackupRow(
     fun long(column: String): Long = optLong(column) ?: throw nullNotAllowed(column)
 
     /**
-     * A primary key that may be absent, for a reference this build cannot check
-     * any other way: `raw_capture.user_reject_rule_id` points at spec 5.7's
-     * `user_reject_rule` table, which this milestone does not create, so it has
-     * no foreign key and no dangling-count check. Its shape is still checkable.
-     *
-     * The milestone that builds spec 5.7 owes the real check here.
+     * A primary key that may be absent, for a reference with no foreign key:
+     * `raw_capture.user_reject_rule_id`, which `verifyReferences` checks once
+     * every row is in. Its shape is checked here.
      */
     fun optRowId(column: String): Long? = optLong(column)?.also { rowIdOrThrow(column, it) }
 

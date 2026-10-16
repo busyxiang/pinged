@@ -36,6 +36,20 @@ class MigrationTest {
         const val MIGRATED_3_TO_4 = "migration-3-4.db"
         const val MIGRATED_2_TO_4 = "migration-2-4.db"
         const val MIGRATED_1_TO_4 = "migration-1-4.db"
+        const val MIGRATED_4_TO_5 = "migration-4-5.db"
+        const val MIGRATED_3_TO_5 = "migration-3-5.db"
+        const val MIGRATED_2_TO_5 = "migration-2-5.db"
+        const val MIGRATED_1_TO_5 = "migration-1-5.db"
+
+        /** One unread capture, in the columns every version from v1 shares. */
+        const val CAPTURE_SQL =
+            "INSERT INTO raw_capture (id, source_package, posted_at, when_millis, captured_at, sbn_key, " +
+                "notif_id, notif_tag, user_handle, channel_id, flags, arrival, title, text, big_text, " +
+                "sub_text, extras_json, content_hash, parse_status, rejected_by_rule_id, matched_rule_id, " +
+                "reject_collision_id, pack_version, duplicate_of_id, user_reject_rule_id) VALUES " +
+                "(3, 'com.maybank2u.life', 1, NULL, 1, 'k', 1, NULL, 0, NULL, 0, 'POSTED', 'Maybank', " +
+                "'Your FD of RM5,000.00 has matured.', NULL, NULL, NULL, 'h', 'UNMATCHED', NULL, NULL, " +
+                "NULL, 1, NULL, NULL)"
     }
 
     @Test fun schemaVersionOneIsCreatable() {
@@ -219,6 +233,72 @@ class MigrationTest {
         }
     }
 
+    /**
+     * Spec 5.7's v4 -> v5: one new table, empty, and every v4 row kept -- the
+     * capture's `user_reject_rule_id` among them, which v1 already had.
+     */
+    @Test fun versionFourMigratesToFiveKeepingEveryRow() {
+        helper.createDatabase(MIGRATED_4_TO_5, 4).use { v4 ->
+            v4.execSQL(CAPTURE_SQL)
+            v4.execSQL("INSERT INTO merchant_alias (merchant_key, canonical_key) VALUES ('A', 'B')")
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED_4_TO_5, 5, true).use { v5 ->
+            v5.query("SELECT id, parse_status, user_reject_rule_id FROM raw_capture").use { c ->
+                assertTrue("the v4 capture is gone", c.moveToFirst())
+                assertEquals(3L, c.getLong(0))
+                assertEquals("UNMATCHED", c.getString(1))
+                assertTrue(c.isNull(2))
+                assertEquals(1, c.count)
+            }
+            assertEquals(1L, v5.count("merchant_alias"))
+            assertEquals(0L, v5.count("user_reject_rule"))
+            assertEquals(5L, v5.pragma("user_version"))
+        }
+    }
+
+    /** v3, through the categories step and then this one. */
+    @Test fun versionThreeMigratesToFive() {
+        helper.createDatabase(MIGRATED_3_TO_5, 3).use { v3 ->
+            v3.execSQL(CAPTURE_SQL)
+            v3.insertSeededPair()
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED_3_TO_5, 5, true, MIGRATION_3_4).use { v5 ->
+            assertEquals(1L, v5.count("raw_capture"))
+            assertEquals(2L, v5.count("category"))
+            assertEquals(0L, v5.count("user_reject_rule"))
+            assertEquals(5L, v5.pragma("user_version"))
+        }
+    }
+
+    /** v2, through the search step, the categories step and this one. */
+    @Test fun versionTwoMigratesToFive() {
+        helper.createDatabase(MIGRATED_2_TO_5, 2).use { v2 ->
+            v2.execSQL(CAPTURE_SQL)
+            v2.execSQL("INSERT INTO merchant_alias (merchant_key, canonical_key) VALUES ('A', 'B')")
+        }
+
+        helper.runMigrationsAndValidate(MIGRATED_2_TO_5, 5, true, MIGRATION_3_4).use { v5 ->
+            assertEquals(1L, v5.count("raw_capture"))
+            assertEquals(1L, v5.count("merchant_alias"))
+            assertEquals(0L, v5.count("user_reject_rule"))
+            assertEquals(5L, v5.pragma("user_version"))
+        }
+    }
+
+    /** And from v1, through all four steps, as a phone that skipped every release takes it. */
+    @Test fun versionOneMigratesToFive() {
+        helper.createDatabase(MIGRATED_1_TO_5, 1).use { v1 -> v1.execSQL(CAPTURE_SQL) }
+
+        helper.runMigrationsAndValidate(MIGRATED_1_TO_5, 5, true, MIGRATION_3_4).use { v5 ->
+            assertEquals(1L, v5.count("raw_capture"))
+            assertEquals(0L, v5.count("merchant_alias"))
+            assertEquals(0L, v5.count("user_reject_rule"))
+            assertEquals(5L, v5.pragma("user_version"))
+        }
+    }
+
     // ---- harness/app DDL parity ----------------------------------------
 
     /**
@@ -244,7 +324,7 @@ class MigrationTest {
      * `sqlite_master.sql` holds each statement as executed, which is the one place
      * both databases are observable on equal terms, so the two are compared there:
      * **every schema object, tables and indices alike, as whole strings** --
-     * 36 at schema v4, logged on every run. Both sides are built at
+     * 38 at schema v5, logged on every run. Both sides are built at
      * [PingedDatabase.VERSION], since the app only ever creates the current one.
      *
      * **Nothing is normalised and nothing is excluded** -- not whitespace, not `IF

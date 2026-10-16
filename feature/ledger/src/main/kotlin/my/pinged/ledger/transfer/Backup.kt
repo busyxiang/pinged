@@ -10,6 +10,7 @@ import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
+import my.pinged.data.entity.UserRejectRule
 
 /**
  * The backup file format: what is in it, what version it is, and what it
@@ -50,9 +51,7 @@ import my.pinged.data.entity.Txn
  * - **The notification-access grant.** An OS permission, re-granted by hand.
  * - **The parser pack.** It ships in the APK; `pack_version` travels with each
  *   capture, so a restored row still records which pack decided it.
- * - **`user_reject_rule` and `user_template_rule`** (spec 4), which do not exist
- *   yet -- `raw_capture.user_reject_rule_id` restores as a number whose referent
- *   this schema version cannot hold.
+ * - **`user_template_rule`** (spec 4), which does not exist yet.
  */
 object Backup {
     /**
@@ -76,8 +75,12 @@ object Backup {
      * 3 added `categories[].seed_name` (schema 4). An older file has none, and
      * each row is given `Seed.seedNameOf` its name, as the schema migration
      * gives it: no build that wrote one could rename or add a category.
+     *
+     * 4 added spec 5.7's `user_reject_rules` (schema 5). An older file has none,
+     * and a capture in one that names a rule anyway is refused as pointing at
+     * nothing.
      */
-    const val FORMAT_VERSION = 3
+    const val FORMAT_VERSION = 4
 
     /** The oldest format [ImportJson] still reads; see [BackupSection.sinceFormat]. */
     const val OLDEST_READABLE = 1
@@ -104,6 +107,7 @@ object Backup {
     const val TXNS = "txns"
     const val MERCHANT_ALIASES = "merchant_aliases"
     const val MERCHANT_NAMES = "merchant_names"
+    const val USER_REJECT_RULES = "user_reject_rules"
 
     /**
      * Derived from [ALL_SECTIONS] rather than restated: the two were hand-
@@ -361,6 +365,25 @@ internal val MERCHANT_NAME_SECTION = BackupSection<MerchantName>(
 )
 
 /**
+ * Spec 5.7's "never a transaction" rules. Last, after the captures that name
+ * them: `raw_capture.user_reject_rule_id` has no foreign key, and
+ * `ImportJson` checks the reference once every row is in.
+ */
+internal val USER_REJECT_RULE_SECTION = BackupSection<UserRejectRule>(
+    name = Backup.USER_REJECT_RULES,
+    table = "user_reject_rule",
+    columns = listOf(
+        BackupColumn("id", "id") { w, r -> w.value(r.id) },
+        BackupColumn("source_package", "sourcePackage") { w, r -> w.value(r.sourcePackage) },
+        BackupColumn("skeleton", "skeleton") { w, r -> w.value(r.skeleton) },
+        BackupColumn("sample_text", "sampleText") { w, r -> w.value(r.sampleText) },
+        BackupColumn("created_at", "createdAt") { w, r -> w.value(r.createdAt) },
+    ),
+    sinceFormat = 4,
+    insert = { db, rows -> db.userRejectRuleDao().insertAll(rows.map(ImportJson::userRejectRule)) },
+)
+
+/**
  * Every section, **in the order they appear in the file, and the order is
  * load-bearing.**
  *
@@ -379,6 +402,7 @@ internal val ALL_SECTIONS: List<BackupSection<*>> = listOf(
     TXN_SECTION,
     MERCHANT_ALIAS_SECTION,
     MERCHANT_NAME_SECTION,
+    USER_REJECT_RULE_SECTION,
 )
 
 /** What an import wrote, for the screen that reports it back to the user. */
@@ -393,10 +417,11 @@ data class ImportReport(
     val txns: Int,
     val merchantAliases: Int,
     val merchantNames: Int,
+    val userRejectRules: Int,
 ) {
     val rows: Int
         get() = categories + captureSources + captureDays + merchantRules + rawCaptures + txns +
-            merchantAliases + merchantNames
+            merchantAliases + merchantNames + userRejectRules
 }
 
 /**

@@ -78,7 +78,7 @@ class PeriodicIntegrityTest {
      * [theFirstRunChecks] -- both still pass with the default replaced by
      * `{ Integrity.Result.Ok }`, because neither looks at a verdict the real
      * pragma had to produce. [theDefaultCheckIsTheRealPragma] is the one that
-     * does, and it is what the copy of [damageMidFile] below buys.
+     * does, and it is what [damagePage] below buys.
      */
     @Test fun damageIsRecordedWhereTheScreenReadsIt() = runBlocking {
         val db = DatabaseFactory.build(context)
@@ -155,7 +155,7 @@ class PeriodicIntegrityTest {
      * starts before the damage rather than after it.** Everything else in this
      * APK shares `pinged.db` and [ParseFixtures] deliberately does not recreate
      * it per test, so a damaged file left here surfaces as a failure in some
-     * other class entirely -- which is what a throw from [damageMidFile] or
+     * other class entirely -- which is what a throw from [damagePage] or
      * from the [DatabaseFactory.build] that follows it would do with either
      * outside the `try`. The verdict is the second: `integrity` is one store
      * for the process, so a `damaged = true` left here is read by every class
@@ -164,16 +164,19 @@ class PeriodicIntegrityTest {
      * statement of a `finally` whose later lines are the ones that matter.
      */
     @Test fun theDefaultCheckIsTheRealPragma() = runBlocking {
-        DatabaseFactory.build(context).let { db ->
+        val page = DatabaseFactory.build(context).let { db ->
             // The flipped byte has to be in the file, not in a `-wal` the
             // check reads through.
             db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
-            db.close()
+            db.openHelper.readableDatabase.query("SELECT pageno FROM dbstat WHERE name = '$UNREAD_AT_OPEN'").use {
+                it.moveToFirst()
+                it.getInt(0)
+            }.also { db.close() }
         }
 
         var db: PingedDatabase? = null
         try {
-            damageMidFile(context.getDatabasePath(DatabaseFactory.NAME))
+            damagePage(context.getDatabasePath(DatabaseFactory.NAME), page)
             db = DatabaseFactory.build(context)
             PeriodicIntegrity.checkIfDue(context, now = 1_000L)
             assertTrue(
@@ -190,18 +193,23 @@ class PeriodicIntegrityTest {
 }
 
 /**
- * Flip one byte halfway into a database file.
- *
- * The third copy of this: `core/data/src/androidTest/.../Fixtures.kt` and
- * `feature/ledger/src/androidTest/.../TransferFixtures.kt` carry the others,
- * because androidTest source sets are not shared between modules and there is
- * no test-fixtures module here. The offset is not re-derived per test -- page 1
- * holds the salt SQLCipher needs to open at all, so damaging it gives
- * `DatabaseUnreadableException` instead of a database that opens and fails.
+ * A table nothing reads while the database opens and seeds, so a page of it
+ * damaged leaves a database that opens and then fails the pragma. Not the
+ * middle of the file: on this test's near-empty database that is a page the
+ * open reads, measured on emulator-5554 at v2's tables and `user_reject_rule`,
+ * and the open then throws `DatabaseUnreadableException` before any check
+ * runs. Page 1 is no better --
+ * it holds the salt SQLCipher needs to open at all.
  */
-private fun damageMidFile(file: java.io.File) {
+private const val UNREAD_AT_OPEN = "merchant_alias"
+
+/**
+ * Flip one byte inside page [page] of a database file. SQLCipher's page is
+ * 4,096 bytes, and a flip anywhere in one fails its HMAC.
+ */
+private fun damagePage(file: java.io.File, page: Int) {
     java.io.RandomAccessFile(file, "rw").use { raf ->
-        val at = file.length() / 2
+        val at = (page - 1).toLong() * 4096 + 1000
         raf.seek(at)
         val original = raf.readByte()
         raf.seek(at)

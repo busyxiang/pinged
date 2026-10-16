@@ -336,6 +336,40 @@ class SalvageTest {
     }
 
     /**
+     * Spec 5.7's rules come through a rescue, and a capture naming one that
+     * is not there -- here deleted under it by hand -- is kept unhidden,
+     * since `ImportJson` refuses a capture hidden by nothing. Either way the
+     * file restores.
+     */
+    @Test(timeout = 60_000)
+    fun aCaptureNamingAMissingRuleIsKeptUnhiddenAndTheFileRestores() {
+        freshDatabase(context).useDb { db ->
+            seedOneOfEverything(db)
+            db.openHelper.writableDatabase.execSQL("DELETE FROM user_reject_rule")
+        }
+        Databases.reset()
+
+        val (report, bytes) = salvage()
+        restore(bytes)
+
+        assertEquals(1, report.unhidden)
+        assertEquals(0, restored().rawCaptureDao().pageFrom(0L, 100).count { it.userRejectRuleId != null })
+    }
+
+    @Test(timeout = 60_000)
+    fun aRuleThatReadsComesThroughARescue() {
+        freshDatabase(context).useDb { db -> seedOneOfEverything(db) }
+        Databases.reset()
+
+        val (report, bytes) = salvage()
+        restore(bytes)
+
+        assertEquals(0, report.unhidden)
+        assertEquals(listOf(77L), restored().userRejectRuleDao().all().map { it.id })
+        assertEquals(1, restored().rawCaptureDao().pageFrom(0L, 100).count { it.userRejectRuleId == 77L })
+    }
+
+    /**
      * **`category` itself unreadable.** Every transaction and learned rule
      * then names a category the file cannot carry: the transactions are kept
      * under `Uncategorized`, the rules left out, and the file restores.
