@@ -5,6 +5,32 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.10.0](https://github.com/busyxiang/pinged/compare/v0.9.0...v0.10.0) (2026-10-16)
+
+
+### Features
+
+* add, rename, re-icon and delete categories ([#155](https://github.com/busyxiang/pinged/issues/155)) ([#203](https://github.com/busyxiang/pinged/issues/203)) ([f7a9827](https://github.com/busyxiang/pinged/commit/f7a9827889ba657b546598cae895677413a06b5f))
+* export a CSV from the Export sheet and from a search ([#201](https://github.com/busyxiang/pinged/issues/201)) ([#205](https://github.com/busyxiang/pinged/issues/205)) ([d6b4653](https://github.com/busyxiang/pinged/commit/d6b46534a9b02d994a38a597b7a98770b67a4743))
+* list the notifications Pinged could not read, with Never a transaction ([#150](https://github.com/busyxiang/pinged/issues/150)) ([#204](https://github.com/busyxiang/pinged/issues/204)) ([ca4713a](https://github.com/busyxiang/pinged/commit/ca4713a5baae2c2b071a51bb08e7e5b495c81c23))
+* open a fresh install on onboarding's three claims and the access grant ([#156](https://github.com/busyxiang/pinged/issues/156)) ([#200](https://github.com/busyxiang/pinged/issues/200)) ([c2af30d](https://github.com/busyxiang/pinged/commit/c2af30d7ec7bb91b53ee8a780b1edfff6dcba77f))
+* pick a month from Spending's header ([#197](https://github.com/busyxiang/pinged/issues/197)) ([fba6002](https://github.com/busyxiang/pinged/commit/fba6002f512ad80c84eb462674eeb7672922ac36))
+* search the ledger by word, month, category, app and amount ([#154](https://github.com/busyxiang/pinged/issues/154)) ([#202](https://github.com/busyxiang/pinged/issues/202)) ([9cc549d](https://github.com/busyxiang/pinged/commit/9cc549d97f307f807960c204e78d3d66315a2d32))
+* show what Pinged read for a captured payment, and the rule that read it ([#153](https://github.com/busyxiang/pinged/issues/153)) ([#199](https://github.com/busyxiang/pinged/issues/199)) ([9669844](https://github.com/busyxiang/pinged/commit/96698442c5dc69d5f781c6fd62498902c11ad7d7))
+* teach Pinged to read a message by tapping its amount and merchant ([#151](https://github.com/busyxiang/pinged/issues/151)) ([#206](https://github.com/busyxiang/pinged/issues/206)) ([420d2a1](https://github.com/busyxiang/pinged/commit/420d2a12e8462d77541803057acf056bb6b2127f))
+
+
+### Bug Fixes
+
+* draw Cash entry at its artboard's type, colours and Save band ([#169](https://github.com/busyxiang/pinged/issues/169)) ([#196](https://github.com/busyxiang/pinged/issues/196)) ([f711493](https://github.com/busyxiang/pinged/commit/f711493235510f42368e5dccf6052e3a5a180f81))
+* draw ledger rows at the artboard's height, with touch targets in the free space ([#189](https://github.com/busyxiang/pinged/issues/189)) ([12456d6](https://github.com/busyxiang/pinged/commit/12456d6e2d28b6b4b24287432e925c1dd43795e1)), closes [#186](https://github.com/busyxiang/pinged/issues/186)
+* draw Settings, Export, Months and learned merchants as their artboards ([#171](https://github.com/busyxiang/pinged/issues/171)) ([#194](https://github.com/busyxiang/pinged/issues/194)) ([6cf8191](https://github.com/busyxiang/pinged/commit/6cf8191b122c345918e40c1cd8c8863da8cebf29))
+* draw Spending and day one at their artboards' sizes, rhythm and offer ([#193](https://github.com/busyxiang/pinged/issues/193)) ([e147716](https://github.com/busyxiang/pinged/commit/e14771627c97dbd8a00b8f61394308287cf9f294)), closes [#170](https://github.com/busyxiang/pinged/issues/170)
+* draw the category chooser as its artboard, a grid of outlined tiles ([#190](https://github.com/busyxiang/pinged/issues/190)) ([b24117d](https://github.com/busyxiang/pinged/commit/b24117d82983fedc065cfe47744ff48cf2b1d93b)), closes [#167](https://github.com/busyxiang/pinged/issues/167)
+* draw the review inbox as its artboard does, Stamp only where it needs you ([#168](https://github.com/busyxiang/pinged/issues/168)) ([#191](https://github.com/busyxiang/pinged/issues/191)) ([8cd0844](https://github.com/busyxiang/pinged/commit/8cd0844d7631c84aad7368c0a9cf1c6e28ebe9e0))
+* keep the storage flag's memo in step with its store when a raise and a clear cross ([#185](https://github.com/busyxiang/pinged/issues/185)) ([cffcbbc](https://github.com/busyxiang/pinged/commit/cffcbbcc6ab35e50f8706a2f3540eb3b71e74961)), closes [#179](https://github.com/busyxiang/pinged/issues/179)
+* let a clear started on seeing a raise reach the storage flag ([#195](https://github.com/busyxiang/pinged/issues/195)) ([52e8444](https://github.com/busyxiang/pinged/commit/52e84442f2c1a853c56b3e26cec15cd49fc6148e)), closes [#179](https://github.com/busyxiang/pinged/issues/179)
+
 ## [0.9.0](https://github.com/busyxiang/pinged/compare/v0.8.0...v0.9.0) (2026-10-15)
 
 
