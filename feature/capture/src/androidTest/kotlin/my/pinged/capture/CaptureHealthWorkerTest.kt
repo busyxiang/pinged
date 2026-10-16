@@ -35,6 +35,7 @@ class CaptureHealthWorkerTest {
 
     @Before
     fun healthyListener() = runBlocking {
+        noDailyCheckDue()
         CaptureFixtures.shell("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
         CaptureFixtures.shell("cmd notification allow_listener ${PingedComponents.listener(context).flattenToString()}")
         assertTrue(CaptureFixtures.waitFor { ListenerStatus.isGranted(context) })
@@ -50,8 +51,39 @@ class CaptureHealthWorkerTest {
 
     @After
     fun stopWatchingTheTestSource() {
+        noDailyCheckDue()
         sources.setEnabled(bank, false)
         notifications.cancelAll()
+    }
+
+    /**
+     * The real daily check, not [run]'s copy, is neither running nor due.
+     *
+     * A schedule runs its first period at once, and
+     * `aForegroundSchedulesTheDailyCheck`'s started 95ms into the next test
+     * and ran for 120ms on CI (run 38748682455). Beside [run] it reads the
+     * sources before [quietSource], finds nothing to say, then reads the key
+     * [run] has just recorded and withdraws its alert. Locally it takes 3-6ms
+     * and never overlaps; stalled 15ms after its read, with the first poll
+     * 50ms after [run], it failed `aSourceThatSpeaksAgainWithdrawsTheAlert`
+     * 8 times in 15 without this wait and 0 in 15 with it. After that first
+     * period it is not due for a day.
+     *
+     * Not `cancelUniqueWork`: a cancelled `CoroutineWorker` carries on until
+     * its next suspension, and `CaptureAlerts.withdraw` is not one.
+     */
+    private fun noDailyCheckDue() {
+        val work = WorkManager.getInstance(context)
+        assertTrue(
+            "The daily check scheduled by an earlier test never finished its first run",
+            CaptureFixtures.waitFor(30_000L) {
+                work.getWorkInfosForUniqueWork(CaptureHealthWorker.UNIQUE_NAME).get().all {
+                    it.state.isFinished ||
+                        it.state == WorkInfo.State.ENQUEUED &&
+                        it.nextScheduleTimeMillis > System.currentTimeMillis() + day / 2
+                }
+            },
+        )
     }
 
     private fun quietSource() {
