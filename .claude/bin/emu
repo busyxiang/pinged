@@ -27,8 +27,10 @@
 set -euo pipefail
 
 lock_dir=${EMU_LOCK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/pinged-emu}
-queue=$lock_dir/queue
 pool=${EMU_POOL:-emulator-5554}
+# One queue per pool: a lease for a free emulator must not wait behind the
+# sessions queued for another, as one for emulator-5560 did behind 5554's.
+queue=$lock_dir/queue/${pool// /+}
 # Longer than one full connectedDebugAndroidTest (~10 min of device time on
 # CI), so a lease queued behind one does not give up and retry. Longer than
 # the Bash tool's 600s ceiling too, which is why leases run in the background.
