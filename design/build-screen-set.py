@@ -43,6 +43,8 @@ groups = [
  ("When it breaks", "The failure this whole category gets wrong, plus the small print.", [
   ("Capture stopped", "Stopped.dc.html", "The banner that keeps step 2 honest",
    "Xiaomi killed the listener on 27 September. The total goes grey and is labelled do-not-trust, and the missing days are drawn as a dashed hole reading &ldquo;not because you did not spend&rdquo;. The app admits the gap rather than serving a confident wrong number."),
+  ("No backup yet", "Backup.dc.html", "New, the reminder that keeps the only copy honest",
+   "Pinged has no internet permission, so this phone holds the only copy of six months of history. The reminder says so in one line, on Spending only, and scrolls away with the list rather than taking space from it. Export opens the Export sheet on JSON. The X hides it for a week. Settings&rsquo; &ldquo;Export everything&rdquo; row keeps the fact on record in between, so nothing else in the app needs to repeat it (#222)."),
   ("Settings", "Settings.dc.html", "Changed, third tab",
    "A tab, not a drawer. In the first weeks this is where you live &mdash; adding banks, checking capture is alive, teaching merchants &mdash; so capture sits at the top and export and delete at the bottom. Redrawn to the rows that shipped. The daily check lives in Android&rsquo;s notification settings, so its row carries an outward arrow instead of a chevron. Check my data says what it found. Corrections from pack updates appears only while a newer pack has something for you to review. Licences moved from its own About section into the footer, the one row nobody needs to find quickly. The footer states the privacy claim as fact, because a missing permission enforces it."),
  ]),
@@ -260,7 +262,7 @@ page = f'''<title>Pinged Screen Set</title>
 <style>{css}</style>
 <div class="wrap">
   <p class="eyebrow">Pinged &middot; Receipt direction</p>
-  <h1>Twenty-nine screens, one paper trail</h1>
+  <h1>Thirty screens, one paper trail</h1>
   <p class="stand">The whole v1 surface &mdash; every screen, sheet and list &mdash; grouped the way a person meets it. The populated scenario is pinned to <strong>Wednesday 30 September 2026</strong>, month end, so every figure reconciles: RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded, four items awaiting review.</p>
   <p class="stand">The system below is the handoff &mdash; those hex values and type roles become the Compose theme directly.</p>
 
@@ -293,7 +295,7 @@ page = f'''<title>Pinged Screen Set</title>
 
   <div class="gap">
     <h2 class="sec">What is left</h2>
-    <p class="stand" style="font-size:15px">Two things. The filter panel behind the four chips on the search screen: date range, category, source app, amount range. These four controls do what their chips already describe, and stay derivative, along with Cash&rsquo;s date sheet, Edit payment, Corrections and Licences. And the backup reminder, which ships today but is drawn only once #222 settles its smaller form.</p>
+    <p class="stand" style="font-size:15px">One sheet: the filter panel behind the four chips on the search screen: date range, category, source app, amount range. These four controls do what their chips already describe, and stay derivative, along with Cash&rsquo;s date sheet, Edit payment, Corrections and Licences.</p>
     <p class="stand" style="font-size:15px;margin-top:20px">Worth saying plainly: the review-inbox ratio is still a guess. If real capture routes far more than a handful of items into review, that screen stops being a quiet badge and becomes the app&rsquo;s main surface &mdash; a redesign only your own notification stream can settle.</p>
   </div>
 </div>
