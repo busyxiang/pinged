@@ -2,6 +2,7 @@ package my.pinged.ledger
 
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
@@ -15,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import kotlinx.coroutines.awaitCancellation
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.CATEGORY_NAME_TAG
@@ -41,22 +43,27 @@ class ChooserNewCategoryTest {
 
     private fun chooser(onAdd: (suspend (String, String) -> Long?)?, saved: (Long) -> Unit = {}) = compose.setContent {
         val categories = remember { mutableStateListOf(groceries) }
-        CategoryPicker(
-            categories = categories.toList(),
-            subject = ChooserSubject("TNG*99SPEEDMART", "32.00"),
-            teach = null,
-            initial = null,
-            preview = { RetroPreview(0, emptyList()) },
-            onSave = { id, _ -> saved(id) },
-            onDismiss = {},
-            allNames = categories.map { it.name } + "Uncategorized",
-            // The holder's re-read, played by the test: the row arrives
-            // before the id is answered, as `RowActions.addCategory`'s `then`
-            // runs before it returns.
-            onAdd = onAdd?.let { add ->
-                { name, icon -> add(name, icon)?.also { categories += Category(it, name, icon, 99) } }
-            },
-        )
+        // No keyboard, for the reason `CategorySheetTest` gives: one landing
+        // during the sheet's Save tap lifts Save from under it, and on CI's
+        // ledger-2 (run 38917718855) nothing was made or picked.
+        InterceptPlatformTextInput({ _, _ -> awaitCancellation() }) {
+            CategoryPicker(
+                categories = categories.toList(),
+                subject = ChooserSubject("TNG*99SPEEDMART", "32.00"),
+                teach = null,
+                initial = null,
+                preview = { RetroPreview(0, emptyList()) },
+                onSave = { id, _ -> saved(id) },
+                onDismiss = {},
+                allNames = categories.map { it.name } + "Uncategorized",
+                // The holder's re-read, played by the test: the row arrives
+                // before the id is answered, as `RowActions.addCategory`'s `then`
+                // runs before it returns.
+                onAdd = onAdd?.let { add ->
+                    { name, icon -> add(name, icon)?.also { categories += Category(it, name, icon, 99) } }
+                },
+            )
+        }
     }
 
     @Test fun aCategoryMadeFromTheChooserIsPickedForThisPayment() {
