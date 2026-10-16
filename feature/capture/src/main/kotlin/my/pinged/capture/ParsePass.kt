@@ -76,8 +76,9 @@ internal class ParsePass(
      */
     dictionary: List<DictionaryEntry> = emptyList(),
     /**
-     * The `category.id` of each category that exists, by name: what resolves a
-     * dictionary entry's category name to an id. A snapshot of the moment the
+     * The `category.id` of each seeded category that exists, by its
+     * `seed_name` (`CategoryDao.seededIds`): what resolves a dictionary
+     * entry's category name to an id, whatever the user has renamed it to. A snapshot of the moment the
      * pass was built; a learned rule is read by id and does not depend on it.
      */
     private val categoryIds: Map<String, Long> = emptyMap(),

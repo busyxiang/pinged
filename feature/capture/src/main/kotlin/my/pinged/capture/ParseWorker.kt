@@ -173,7 +173,7 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                         // Read per pass, so a category deleted between two
                         // runs stops its entries filing on the next one.
                         dictionary = Graph.parsePack().dictionary,
-                        categoryIds = db.categoryDao().all().associate { it.name to it.id },
+                        categoryIds = db.categoryDao().seededIds(),
                         isStopped = { isStopped },
                         progress = progress,
                     ).run()

@@ -435,7 +435,20 @@ and Uncategorized moves to that place. Only the added names: a missing
 seeded name is as likely to be one the user deleted, and the top-up runs
 once per table, so a category deleted after it stays deleted.
 
-Columns: `id`, `name`, `icon_key`, `sort_order`, `is_protected`.
+Columns: `id`, `name`, `icon_key`, `sort_order`, `is_protected`, `seed_name`.
+
+**`seed_name` is the seeded identity a rename cannot move** (schema v4,
+#155). The parser pack's dictionary names its categories by seeded name, so
+resolving them by `name` would silently stop filing every merchant of a
+category the user renamed -- "Food & Drinks" to "Makan" is exactly the rename
+this section endorses. `seed_name` holds the name the row was seeded under,
+is never written by a rename, is null for a category the user added, and is
+unique. The dictionary and the top-up go through it. v4 adds it by
+`ALTER TABLE ... ADD COLUMN` and fills it in by name, which is exact because
+no build at v3 or before could rename or add a category; backup format 3
+carries it, and an older file is given it the same way. A category the user
+adds has none, so no shipped entry files into it, and one they delete and
+make again under a seeded name is theirs, not the seed's.
 
 **Icons.** `icon_key` holds a Lucide icon name. The icons are imported as
 vector drawables rather than through a library dependency: single-colour

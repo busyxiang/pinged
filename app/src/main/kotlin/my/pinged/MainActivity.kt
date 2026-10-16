@@ -79,6 +79,8 @@ import my.pinged.ledger.settings.ExportSheet
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
+import my.pinged.ledger.categories.CategoriesScreen
+import my.pinged.ledger.categories.CategoriesViewModel
 import my.pinged.ledger.learned.LearnedScreen
 import my.pinged.ledger.learned.LearnedViewModel
 import my.pinged.ledger.licences.LicencesScreen
@@ -160,6 +162,7 @@ class MainActivity : ComponentActivity() {
         val settingsFactory = AppViewModelFactory(application, ::SettingsViewModel)
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
+        val categoriesFactory = AppViewModelFactory(application, ::CategoriesViewModel)
         val reviewFactory = AppViewModelFactory(application, ::ReviewViewModel)
         // Only a first creation's stack: a recreate or a process death hands
         // back the same intent, and `rememberNavBackStack` then restores the
@@ -475,6 +478,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenSources = { tabs.push(Sources) },
                                         onOpenCorrections = { tabs.push(Corrections) },
                                         onOpenLearned = { tabs.push(Learned) },
+                                        onOpenCategories = { tabs.push(Categories) },
                                         onOpenLicences = { tabs.push(Licences) },
                                         onExport = { exportOpen = true },
                                         // Reached only after `SettingsScreen`'s own
@@ -518,6 +522,14 @@ class MainActivity : ComponentActivity() {
                                     val learned: LearnedViewModel = viewModel(factory = learnedFactory)
                                     LearnedScreen(
                                         viewModel = learned,
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                                entry<Categories> {
+                                    val categories: CategoriesViewModel = viewModel(factory = categoriesFactory)
+                                    CategoriesScreen(
+                                        viewModel = categories,
                                         onBack = tabs::pop,
                                         modifier = Modifier.fillMaxSize(),
                                     )

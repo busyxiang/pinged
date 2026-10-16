@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ui.theme.Body
@@ -49,6 +51,8 @@ import my.pinged.ui.theme.ReceiptSheetFrame
 import my.pinged.ui.theme.SheetHeader
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.Toggle
+import my.pinged.ui.theme.PlusMark
+import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
 
@@ -145,8 +149,11 @@ internal fun conflictLine(count: Int, categoryNames: List<String>): String {
  * save re-checks in its own transaction; this is what the user is told, not
  * what is enforced.
  *
- * §4's category editing is out, which is why this only chooses from what the
- * seed provides.
+ * The grid ends in the board's "New category" tile when [onAdd] is given
+ * (#155): it opens [CategorySheet] over this one, and the category it makes is
+ * picked here once [onAdd] answers its id. [allNames] are every category's,
+ * Uncategorized's included, which [categories] leaves out, so the new sheet
+ * can say a name is taken.
  *
  * Drawn as `design/Chooser.dc.html` (#167): the serif question and its X,
  * a dotted strip quoting the bill and its amount, the categories as a
@@ -172,7 +179,11 @@ internal fun CategoryPicker(
     onSave: (categoryId: Long, teach: Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    allNames: List<String> = categories.map { it.name },
+    onAdd: (suspend (name: String, iconKey: String) -> Long?)? = null,
 ) {
+    var adding by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     var always by remember(teach) { mutableStateOf(teach?.startsOn ?: false) }
     var selected by remember { mutableStateOf(initial?.takeIf { id -> categories.any { it.id == id } }) }
     // Which selection the answer is for, so a count is never drawn beside a
@@ -203,6 +214,9 @@ internal fun CategoryPicker(
         ) {
             items(categories, key = { it.id }) { category ->
                 CategoryTile(category, chosen = category.id == picked) { selected = it }
+            }
+            if (onAdd != null) {
+                item(key = NEW_CATEGORY_KEY) { NewCategoryTile { adding = true } }
             }
         }
         val note = Modifier.padding(start = 20.dp, end = 20.dp)
@@ -244,7 +258,24 @@ internal fun CategoryPicker(
                 modifier = note.padding(top = 18.dp),
             )
         }
-        SaveButton(enabled = picked != null) { picked?.let { onSave(it, teach != null && always) } }
+        SaveButton(enabled = picked != null, onClick = { picked?.let { onSave(it, teach != null && always) } })
+    }
+    if (adding && onAdd != null) {
+        CategorySheet(
+            existing = null,
+            transactions = 0,
+            rules = 0,
+            otherNames = allNames,
+            onSave = { name, icon ->
+                adding = false
+                // Picked once written: the tile itself arrives with the
+                // holder's re-read, and `selected` is an id, so it is drawn
+                // chosen as soon as it is drawn at all.
+                scope.launch { onAdd(name, icon)?.let { selected = it } }
+            },
+            onDelete = null,
+            onDismiss = { adding = false },
+        )
     }
 }
 
@@ -280,13 +311,18 @@ private fun SubjectStrip(subject: ChooserSubject) {
  * `design/Chooser.dc.html`'s Save: [Stamp] filled, 52dp, a 2dp corner, under
  * the artboards' 24dp bottom margin. Material's `Button` is a full pill
  * whatever the theme's shapes say (#164). [Muted] while there is no pick, as
- * the review cards' answers are while disabled.
+ * the review cards' answers are while disabled. The category sheet gives it
+ * its own [margins].
  */
 @Composable
-private fun SaveButton(enabled: Boolean, onClick: () -> Unit) {
+internal fun SaveButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    margins: PaddingValues = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp),
+) {
     Box(
         Modifier
-            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp)
+            .padding(margins)
             .fillMaxWidth()
             .clip(RoundedCornerShape(2.dp))
             .background(if (enabled) Stamp else Muted)
@@ -324,6 +360,32 @@ private fun AlwaysSwitch(merchant: String?, category: String?, on: Boolean, onTo
         Toggle(on = on, modifier = Modifier.testTag(ALWAYS_SWITCH_TAG))
     }
 }
+
+/**
+ * The board's last tile: a dashed [Muted] outline, the plus, and "New
+ * category" in [Ink], drawn as an offer rather than a choice. A button, not a
+ * radio: it opens a sheet and selects nothing itself.
+ */
+@Composable
+private fun NewCategoryTile(onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(2.dp))
+            .dashedOutline(Muted)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 52.dp)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        PlusMark(size = 18.dp, strokeWidth = 1.6.dp, tint = Muted)
+        Text(NEW_CATEGORY, fontFamily = Body, fontSize = 13.sp, lineHeight = 17.sp, color = Ink)
+    }
+}
+
+/** The New category tile's key in the grid, which no `category.id` can be. */
+private const val NEW_CATEGORY_KEY = "new-category"
 
 /**
  * One category, as the board's tile: its icon and its name in a 52dp box

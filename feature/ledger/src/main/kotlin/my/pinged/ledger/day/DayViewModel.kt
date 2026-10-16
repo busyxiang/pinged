@@ -116,6 +116,9 @@ class DayViewModel(app: Application, val date: LocalDate) : AndroidViewModel(app
     /** See [RowActions.retroPreview]. */
     suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
 
+    /** See [RowActions.addCategory]; the day, and so the chooser, is re-read after. */
+    suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey) { refresh().join() }
+
     fun openMerchant(ownKey: String): Job = rows.openMerchant(ownKey)
 
     fun closeMerchant() = rows.closeMerchant()

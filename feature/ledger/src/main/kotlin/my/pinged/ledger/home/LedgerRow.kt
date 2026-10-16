@@ -139,6 +139,7 @@ internal fun RowCategoryChooser(
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview,
     onSave: (categoryId: Long, teach: Boolean) -> Unit,
     onDismiss: () -> Unit,
+    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
 ) {
     val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
     val categoriesById = remember(chooser.categories) { chooser.categories.associateBy { it.id } }
@@ -167,6 +168,8 @@ internal fun RowCategoryChooser(
         preview = { categoryId -> retroPreview(row.txn.id, categoryId) },
         onSave = onSave,
         onDismiss = onDismiss,
+        allNames = chooser.categories.map { it.name },
+        onAdd = addCategory,
     )
 }
 

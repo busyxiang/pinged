@@ -263,6 +263,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         val met = Met()
         val sourcesOn = db?.let { countEnabledSources(it, met) }
         val learnedCount = db?.let { countLearned(it, met) }
+        val categoryCount = db?.let { countCategories(it, met) }
         val correctionsPending = if (recorded == Storage.HEALTHY) db?.let { countCorrections(it, met) } else null
         val counts = if (damaged == null) null else db?.let { wipeCounts(recorded, it, met) }
         val exportRows = if (damaged == null) null else db?.let { exportRows(recorded, it, met) }
@@ -280,6 +281,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
                 sourcesOn = sourcesOn,
                 correctionsPending = correctionsPending,
                 learnedCount = learnedCount,
+                categoryCount = categoryCount,
                 wipeCounts = counts,
                 exportRows = exportRows,
                 lastExportAt = lastExportAt,
@@ -398,6 +400,14 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     /** The live learned rules (#50), or null where the read fails, as [countEnabledSources]'s does. */
     private fun countLearned(db: PingedDatabase, met: Met): Int? = try {
         db.merchantRuleDao().learnedCount()
+    } catch (thrown: SQLException) {
+        met.record(thrown)
+        null
+    }
+
+    /** Every category (#155), or null where the read fails, as [countEnabledSources]'s does. */
+    private fun countCategories(db: PingedDatabase, met: Met): Int? = try {
+        db.categoryDao().countAll()
     } catch (thrown: SQLException) {
         met.record(thrown)
         null

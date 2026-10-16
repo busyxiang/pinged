@@ -127,6 +127,11 @@ data class SettingsState(
      */
     val learnedCount: Int? = null,
     /**
+     * The "Categories" row's value (#155): every category, which is the
+     * list's length. Null when it could not be read, as [learnedCount] is.
+     */
+    val categoryCount: Int? = null,
+    /**
      * What the delete sheet itemises, or null when it may not itemise
      * anything -- see [WipeCounts], and [SettingsViewModel.wipeCounts] for
      * when it is left null. Only the delete sheet reads it.

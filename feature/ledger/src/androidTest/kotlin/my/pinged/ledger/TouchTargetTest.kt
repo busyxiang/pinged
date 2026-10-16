@@ -134,7 +134,7 @@ class TouchTargetTest {
         PingedTheme {
             SettingsScreen(
                 viewModel = viewModel,
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenLicences = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {},
                 onExport = {}, onRestore = {}, onRescue = {},
                 buildVersion = "0.0.0-test", packVersion = 1,
             )
