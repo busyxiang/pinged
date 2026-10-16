@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -58,6 +59,9 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.charts.MonthsSheet
 import my.pinged.charts.model.monthsSheet
 import my.pinged.data.Databases
@@ -237,14 +241,20 @@ internal fun LedgerScreenContent(
     picks: Int = 0,
 ) {
     val listState = rememberLazyListState()
-    // A pick starts the feed at its month, so the list goes to its top, at
-    // once and over the rows still drawn. Left where it was, a `LazyColumn`
-    // keeps its first visible key across the new rows: scrolled into last
-    // month, a pick back to now lands on last month's header, deep in the
-    // new list. At index 0 it stays at 0 when they arrive: one scroll here
-    // was enough for both picks in `MonthPickerTest.aPickStartsTheListAtItsTop`.
+    // A pick starts the feed at its month, so the list goes to its top: at
+    // once, over the rows still drawn, and again when the first row changes.
+    // A `LazyColumn` keeps its first visible key across new data, so when the
+    // picked month's rows land after the first scroll -- CI's emulator, and
+    // `MonthPickerTest`'s slowed pages -- a pick back to now follows last
+    // month's header deep into the new list. Bounded by [PICK_SETTLE], since
+    // a pick that leaves the first row as it was never changes it.
     LaunchedEffect(picks) {
-        if (picks > 0) listState.scrollToItem(0)
+        if (picks == 0) return@LaunchedEffect
+        listState.scrollToItem(0)
+        withTimeoutOrNull(PICK_SETTLE) {
+            snapshotFlow { items.itemSnapshotList.firstOrNull() }.drop(1).first()
+            listState.scrollToItem(0)
+        }
     }
 
     // Which row is being removed (#132), hoisted for the reason `categorizing` is.
@@ -424,6 +434,13 @@ private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?
         if (heard != null) HeardChip(heard, Modifier.padding(start = 12.dp).weight(1f, fill = false))
     }
 }
+
+/**
+ * How long after a pick a change of first row still sends the list to its
+ * top. Past the slowest first page a test or CI has shown; a payment captured
+ * inside it scrolls to the top, which is where a pick left the user.
+ */
+private const val PICK_SETTLE = 10_000L
 
 /** The month button's height: the design system's 44px target. */
 private val MONTH_TARGET = 44.dp

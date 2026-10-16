@@ -18,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.delay
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.TxnDao
@@ -145,6 +146,9 @@ class MonthPickerTest {
         waitUntilShown(dayLabel(LocalDates.of(lastMonthsDay)))
 
         compose.onNode(hasScrollToIndexAction()).performScrollToIndex(20)
+        // The new rows land after the screen has scrolled over the old ones,
+        // as they do on CI's emulator.
+        viewModel.beforePage = { delay(1_500) }
         pick(thisMonth)
         compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM80.00") > 0 }
         waitUntilShown(dayLabel(LocalDates.of(today)))

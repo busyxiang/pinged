@@ -144,6 +144,14 @@ class LedgerViewModel(
     internal var afterOpen: suspend () -> Unit = {}
 
     /**
+     * Tests only: runs before each page of the feed is read, outside the
+     * lease, so a test can make new rows land after the screen has acted on
+     * the old ones -- CI's emulator does that on its own.
+     */
+    @VisibleForTesting
+    internal var beforePage: suspend () -> Unit = {}
+
+    /**
      * The rows, newest day first, with a day header above the first row of each
      * day.
      *
@@ -204,6 +212,7 @@ class LedgerViewModel(
                     it.invalidationTracker,
                     onWrite = { writeSeen.set(true) },
                     onObserving = ::refreshIfWritten,
+                    beforeLoad = { beforePage() },
                 )
             } ?: ReopeningFeed(
                 open = {
@@ -567,6 +576,7 @@ internal class LeasedFeed(
     private val tracker: InvalidationTracker,
     private val onWrite: () -> Unit = {},
     private val onObserving: () -> Unit = {},
+    private val beforeLoad: suspend () -> Unit = {},
 ) : PagingSource<Int, FeedRow>() {
     // Every table `TxnDao.FEED_SQL` reads, so a rename or a merge (spec 6.4)
     // redraws the rows it names, for the same reason a capture does.
@@ -601,6 +611,7 @@ internal class LeasedFeed(
     // Paging calls this from whatever its collector runs on.
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, FeedRow> =
         withContext(Dispatchers.IO) {
+            beforeLoad()
             Databases.leasing {
                 if (observing.compareAndSet(false, true)) {
                     val failed = runCatching { tracker.addObserver(observer) }.exceptionOrNull()
