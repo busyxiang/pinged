@@ -129,10 +129,14 @@ fun ReceiptSheetFrame(
  * The artboards' sheet header: the title in the serif at 23, and the close X,
  * 20dp at a 1.7 stroke, whose 44dp target reaches 12dp past the glyph so the
  * glyph's own edge sits on the 20dp margin.
+ *
+ * Public for `CategoryPicker`, which is drawn in [ReceiptSheetFrame] and so
+ * does not get it from [ReceiptSheet]; [modifier] carries the margins that
+ * [ReceiptSheet]'s padded `Column` otherwise gives it.
  */
 @Composable
-private fun SheetHeader(title: String, onClose: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+fun SheetHeader(title: String, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, fontFamily = Display, fontSize = 23.sp, color = Ink, modifier = Modifier.weight(1f))
         Box(
             Modifier

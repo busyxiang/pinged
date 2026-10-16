@@ -134,7 +134,7 @@ internal class MerchantActions(
  * unlike a category merge (spec 4), nothing a merge does is lost.
  *
  * A `ModalBottomSheet` over a `LazyColumn` rather than a `ReceiptSheet`, for
- * the reason `CategoryPicker` is one: the list of merchants grows with the
+ * the reason `CategoryPicker`'s grid is lazy: the list of merchants grows with the
  * ledger, and a scrolling `Column` would compose every row of it.
  */
 @OptIn(ExperimentalMaterial3Api::class)

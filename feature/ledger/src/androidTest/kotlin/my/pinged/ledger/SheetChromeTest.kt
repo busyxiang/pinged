@@ -36,6 +36,7 @@ import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.ALWAYS_SWITCH_TAG
 import my.pinged.ledger.home.CategoryPicker
+import my.pinged.ledger.home.ChooserSubject
 import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.home.TeachOffer
 import my.pinged.ledger.settings.EXPORT_TITLE
@@ -231,6 +232,7 @@ class SheetChromeTest {
                         Category(id = 1, name = "Food & drink", iconKey = "food", sortOrder = 0),
                         Category(id = 2, name = "Groceries", iconKey = "groceries", sortOrder = 1),
                     ),
+                    subject = ChooserSubject("PROBE KOPITIAM", "12.50"),
                     teach = TeachOffer(merchant = "Probe Kopitiam", startsOn = true),
                     initial = 1,
                     preview = { RetroPreview(movable = 0, conflicts = emptyList()) },
