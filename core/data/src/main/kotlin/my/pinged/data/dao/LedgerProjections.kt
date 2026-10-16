@@ -123,3 +123,27 @@ data class ReviewRow(
     @ColumnInfo(name = "capture_text") val captureText: String?,
     @ColumnInfo(name = "capture_big_text") val captureBigText: String?,
 )
+
+/**
+ * One transaction for its detail screen (#153): `TxnDao.detail`.
+ *
+ * @property row the transaction and its merchant, as the list draws it.
+ * @property categoryName the name of the row's `category_id`.
+ * @property captureTitle the capture's `title`, verbatim; null for a manual
+ *   entry, which has no capture, and the capture fields with it.
+ * @property captureText the capture's `text`, verbatim.
+ * @property captureBigText the capture's `big_text`, verbatim.
+ * @property matchedRuleId the rule that read the capture
+ *   (`raw_capture.matched_rule_id`).
+ * @property packVersion the pack that rule came from
+ *   (`raw_capture.pack_version`).
+ */
+data class DetailRow(
+    @Embedded val row: FeedRow,
+    @ColumnInfo(name = "category_name") val categoryName: String?,
+    @ColumnInfo(name = "capture_title") val captureTitle: String?,
+    @ColumnInfo(name = "capture_text") val captureText: String?,
+    @ColumnInfo(name = "capture_big_text") val captureBigText: String?,
+    @ColumnInfo(name = "matched_rule_id") val matchedRuleId: String?,
+    @ColumnInfo(name = "capture_pack_version") val packVersion: Int?,
+)

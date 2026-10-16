@@ -173,24 +173,6 @@ class RowActions(
     }
 
     /**
-     * Not a payment on a committed captured row (#132), then run [then]; see
-     * `TxnDao.removeCaptured`. [then] re-reads the totals, which nothing
-     * invalidates, as [assignCategory]'s does. A 0 from the write means the row
-     * moved underneath, and the re-read is the honest answer to that.
-     */
-    fun removeCaptured(txnId: Long, then: suspend () -> Unit = {}): Job = scope.launch {
-        CaptureStorage.guarded<Unit>(
-            context(),
-            what = "The payment could not be removed",
-            unavailable = { unavailable() },
-            damageStopsCapture = false,
-        ) {
-            Databases.txnDao(context()).removeCaptured(txnId, System.currentTimeMillis())
-        }
-        then()
-    }
-
-    /**
      * What teaching [categoryId] on the row [txnId] would also fix (#49), for the
      * chooser's count line. An unreadable ledger answers "nothing", which draws
      * as a count of 0 and is corrected by the save, which re-checks inside its

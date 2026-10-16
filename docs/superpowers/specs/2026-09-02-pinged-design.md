@@ -1872,7 +1872,9 @@ A capture of the same amount near that time (section 7.2's ten minutes, or
 the whole day for a backdated entry) is named above Save, with **Add anyway**
 and **Cancel**. Tapping a manual entry's row reopens the screen filled in;
 every field can change, and **Delete** removes it after one confirmation.
-Captured rows have no edit and no delete: they are the bank's word. While a
+A captured row's amount, date and merchant never change: they are the bank's
+word. Its tap opens section 9.7's detail instead, whose Delete is Not a
+payment, a state change that keeps the capture. While a
 restore or a delete-everything runs, the screen keeps its draft and Save is
 off; nothing is queued behind the operation.
 
@@ -1995,6 +1997,41 @@ identifier alone and never on notification content.
 privacy posture and is covered by an explicit instrumented test asserting
 that a notification from a disabled package produces no `raw_capture` row
 and no stored content of any kind.
+
+### 9.7 Transaction detail
+
+A captured row's tap opens it, on the stack of the tab the row was on
+(`design/Detail.dc.html`). A manual entry's tap stays section 9.4's edit
+screen, since it has no notification to show. The screen shows:
+
+- the amount, the merchant, and a pencil that opens section 6.4's merchant
+  sheet;
+- **When**, **Category**, **Came from** (`source_label`), and **Name on the
+  bill**, `merchant_raw`, only when it differs from the name shown;
+- **What Pinged read**: the capture's `title` and `big_text` (else `text`),
+  verbatim, as the review inbox quotes them (section 9.2);
+- `RULE <matched_rule_id> · PACK <pack_version> · NOT EDITED`, read from the
+  capture rather than the `txn`. It reads **EDITED** once `user_edited` is
+  set.
+
+Its actions write only what the row can take:
+
+- **A note**, stored trimmed. It does not set `user_edited`, because it is
+  not something the parser decided.
+- **Change category**, the list's chooser, on a row that is not excluded.
+- **Not spending**, on a committed row that is not excluded:
+  `is_excluded = 1`, `exclusion_reason = USER`. The row stays in the list,
+  greyed, and leaves every total. **Count as spending** undoes it, and only a
+  `USER` exclusion: a transfer's is the pack's, and the inbox's Keep as
+  expense answers it. Neither sets `user_edited`, and a re-parse carries the
+  exclusion columns over unchanged.
+- **Delete this entry**, on a committed row: Not a payment (`REJECTED`),
+  after one confirmation. The capture stays as evidence, and the screen
+  leaves.
+
+A row awaiting review is the inbox's to answer, so it is offered neither
+Not spending nor Delete. A merged duplicate shows the surviving row's own
+capture only.
 
 ## 10. Reliability
 

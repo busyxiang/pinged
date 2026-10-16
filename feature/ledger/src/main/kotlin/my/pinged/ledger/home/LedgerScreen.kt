@@ -116,6 +116,7 @@ fun LedgerScreen(
     onOpenReview: (focus: Long?) -> Unit = {},
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
+    onOpenDetail: ((EditTarget) -> Unit)? = null,
     heard: String? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
@@ -156,7 +157,7 @@ fun LedgerScreen(
         onOpenReview = onOpenReview,
         onAddPayment = onAddPayment,
         onOpenEntry = onOpenEntry,
-        onRemove = { viewModel.removeCaptured(it) },
+        onOpenDetail = onOpenDetail,
         heard = heard,
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
@@ -196,11 +197,9 @@ internal fun LedgerScreenContent(
     onOpenReview: (focus: Long?) -> Unit = {},
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onRemove: ((txnId: Long) -> Unit)? = null,
+    onOpenDetail: ((EditTarget) -> Unit)? = null,
     heard: String? = null,
 ) {
-    // Which row is being removed (#132), hoisted for the reason `categorizing` is.
-    var removing by rememberSaveable { mutableStateOf<Long?>(null) }
     // Which row is being categorized, hoisted to here rather than held in the
     // row: a `ModalBottomSheet` emitted from inside the `LazyColumn` scrolls
     // out of the viewport and is disposed with the item that owns it.
@@ -257,7 +256,7 @@ internal fun LedgerScreenContent(
                     awaitingReview = read.awaitingReview,
                     onOpenReview = onOpenReview,
                     onOpenEntry = onOpenEntry,
-                    onRemove = if (onRemove != null) { id -> removing = id } else null,
+                    onOpenDetail = onOpenDetail,
                     // Room under the last row for the button, so it never covers
                     // the row's amount.
                     bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,
@@ -301,22 +300,6 @@ internal fun LedgerScreenContent(
                 onAssign(chosen, categoryId, teach)
             },
             onDismiss = { categorizing = null },
-        )
-    }
-
-    // Found among the rows loaded, as the chooser's row is.
-    val removed = removing
-    val removedRow = removed?.let { id ->
-        items.itemSnapshotList.firstOrNull { it is LedgerItem.Row && it.txn.id == id } as LedgerItem.Row?
-    }
-    if (removed != null && removedRow != null && onRemove != null) {
-        RemoveSheet(
-            row = removedRow.feedRow,
-            onConfirm = {
-                removing = null
-                onRemove(removed)
-            },
-            onDismiss = { removing = null },
         )
     }
 
@@ -555,7 +538,7 @@ private fun Feed(
     awaitingReview: Int,
     onOpenReview: (focus: Long?) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)?,
-    onRemove: ((txnId: Long) -> Unit)?,
+    onOpenDetail: ((EditTarget) -> Unit)?,
     modifier: Modifier = Modifier,
     bottomRoom: Dp = 0.dp,
 ) {
@@ -615,7 +598,7 @@ private fun Feed(
                         onOpenMerchant = onOpenMerchant,
                         onOpenReview = onOpenReview,
                         onOpenEntry = onOpenEntry,
-                        onRemove = onRemove,
+                        onOpenDetail = onOpenDetail,
                     )
                 }
             }
@@ -802,10 +785,10 @@ internal fun dayLabel(date: LocalDate): String {
  * Instrument Serif contains no such feature (§8 measured the file), so
  * inheriting the setting would claim tabular digits this face cannot supply.
  */
-private val HeroSerif = TextStyle(fontFamily = Display, fontSize = 54.sp, lineHeight = 1.02.em)
+internal val HeroSerif = TextStyle(fontFamily = Display, fontSize = 54.sp, lineHeight = 1.02.em)
 
 /** The board's `.30`: the sen in a 30px span, in Muted, after the ringgit. */
-private fun heroText(amount: String): AnnotatedString {
+internal fun heroText(amount: String): AnnotatedString {
     val point = amount.lastIndexOf('.')
     if (point < 0) return AnnotatedString(amount)
     return buildAnnotatedString {
