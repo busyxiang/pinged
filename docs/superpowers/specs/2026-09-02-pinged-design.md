@@ -1683,6 +1683,14 @@ entry (section 9.4) names how it reached the ledger in place of the source:
 its small print reads `<category> · Entered by hand`, on every screen that
 draws the row. Search and filter by category, source, date range, amount range.
 
+A control inside a row -- the category line, the chip, the review badge -- is
+laid out at its drawn size, and its touch target is the free space around it:
+never less than WCAG 2.5.8's 24dp, and never the merchant name, whose tap is
+the row's. The design system's 44px target holds everywhere else (#186). Laid
+out at 44dp, a categorised row measured 85dp against 57dp drawn; the category
+line's target is 26dp, its 16dp and the row's 10dp padding below.
+`LedgerRow`'s `rowGestures` records the mechanism.
+
 ### 9.2 Review inbox
 
 Badge-counted entry point. The ways in: a row pinned to the top of the
