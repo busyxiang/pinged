@@ -24,6 +24,7 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -245,7 +246,7 @@ class MerchantSheetTest {
         context.freshLedger()
         insert(scanAndPay, "Yuenkeehometowncafe", 1_250L, at = 1_000L)
         insert(duitNow, "Restoran Yuen Kee Home Town Cafe", 1_500L, at = 2_000L)
-        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
 
         runBlocking { withTimeout(10_000) { viewModel.openMerchant(scanAndPay).join() } }
         val sheet = viewModel.merchantSheet.value!!
@@ -272,7 +273,7 @@ class MerchantSheetTest {
         assertEquals("Restoran Yuen Kee Home Town Cafe", sheet.mergedInto)
         assertEquals(2, sheet.txnCount)
 
-        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
         runBlocking { withTimeout(10_000) { viewModel.openMerchant(scanAndPay).join() } }
         runBlocking { withTimeout(10_000) { viewModel.renameMerchant("Yuen Kee").join() } }
 

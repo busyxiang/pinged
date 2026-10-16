@@ -179,10 +179,17 @@ class QueryPlanTest {
      * as a co-routine over the same scan. So the bare form is a sound proxy
      * for the wrapped ones; it is a proxy all the same, and a future clause
      * that the wrapper interacts with would have to be measured again.
+     *
+     * The `through` bound (#192) is a range on the index's leading column, so
+     * it is a `SEARCH` of the same index, still in its order: bound at a
+     * month's end the feed skips every later day rather than reading past it.
      */
     @Test fun theFeedTakesTheDayOrderedIndex() {
-        val p = plan(bindable(TxnDao.FEED_SQL))
-        assertUsesIndex("index_txn_local_date_occurred_at", p)
+        val p = plan(bindable(TxnDao.FEED_SQL), 20260930)
+        assertTrue(
+            "The feed does not seek its bound:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at (local_date<?)"),
+        )
         assertNoSort(p)
         assertLooksUpByKey(p)
     }

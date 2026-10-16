@@ -46,9 +46,12 @@ internal fun MonthsSheetHost(viewModel: ChartsViewModel, onPick: (YearMonth) -> 
  *
  * [items] is null while the read is in flight, drawn as `READING` rather than
  * as an empty list, which would claim there are no months.
+ *
+ * Public because Spending's header opens it too (#192): `:feature:ledger`
+ * depends on this module, never the other way (#81, Modules).
  */
 @Composable
-internal fun MonthsSheet(items: List<MonthsItem>?, onPick: (YearMonth) -> Unit, onDismiss: () -> Unit) {
+fun MonthsSheet(items: List<MonthsItem>?, onPick: (YearMonth) -> Unit, onDismiss: () -> Unit) {
     ReceiptSheet(onDismissRequest = onDismiss, title = "Jump to") {
         // 4dp on `SheetHeader`'s 14 is the board's 18.
         Column(Modifier.padding(top = 4.dp)) {

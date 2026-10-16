@@ -9,6 +9,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.SavedStateHandle
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -182,7 +183,7 @@ class LedgerRebindTest {
      */
     @Test fun anOpenThatStraddlesAResetDoesNotBindTheClosedDatabase() {
         context.freshLedger()
-        val viewModel = LedgerViewModel(app)
+        val viewModel = LedgerViewModel(app, SavedStateHandle())
         val opened = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         viewModel.afterOpen = {
@@ -228,7 +229,7 @@ class LedgerRebindTest {
     private fun aLedgerShowingOneRow(): LedgerViewModel {
         context.freshLedger()
         insertNow(MERCHANT, 5_000L)
-        return LedgerViewModel(app)
+        return LedgerViewModel(app, SavedStateHandle())
     }
 
     private fun awaitTheOldRow() = assertTrue(

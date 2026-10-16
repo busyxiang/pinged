@@ -141,7 +141,6 @@ class MainActivity : ComponentActivity() {
         // Built once, here, rather than per entry: the factory holds the
         // `Application` itself. See `AppViewModelFactory`.
         val sourcesFactory = AppViewModelFactory(application, ::SourcesViewModel)
-        val ledgerFactory = AppViewModelFactory(application, ::LedgerViewModel)
         val settingsFactory = AppViewModelFactory(application, ::SettingsViewModel)
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
@@ -233,8 +232,12 @@ class MainActivity : ComponentActivity() {
                         ),
                         entryProvider = entryProvider {
                             entry<Ledger> {
-                                val ledger: LedgerViewModel =
-                                    viewModel(factory = ledgerFactory)
+                                // The entry's own `createSavedStateHandle`, as
+                                // Charts': the picked month (#192) survives a
+                                // process death there.
+                                val ledger: LedgerViewModel = viewModel {
+                                    LedgerViewModel(application, createSavedStateHandle())
+                                }
                                 // fillMaxSize, not weight: `Modifier.weight` is
                                 // a `ColumnScope` extension and this lambda is
                                 // not in one. The NavDisplay is, so the weight

@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.SavedStateHandle
 import my.pinged.data.Databases
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
@@ -57,7 +58,7 @@ class LedgerResumeTest {
         val dao = context.freshLedger()
         val category = Databases.categoryDao(context).all().first().id
 
-        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
         compose.setContent {
             PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }
@@ -98,7 +99,7 @@ class LedgerResumeTest {
         val dao = context.freshLedger()
         val category = Databases.categoryDao(context).all().first().id
 
-        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
         compose.setContent {
             PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }
@@ -158,7 +159,7 @@ class LedgerResumeTest {
     @Test fun aLedgerThatCouldNotBeReadIsReadOnTheNextForeground() {
         context.corruptTheDatabase()
 
-        val viewModel = LedgerViewModel(context.applicationContext as Application)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
         compose.setContent {
             PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }

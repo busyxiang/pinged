@@ -2,6 +2,7 @@ package my.pinged.data
 
 import androidx.paging.PagingSource
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import kotlinx.coroutines.runBlocking
@@ -34,12 +35,26 @@ class LedgerFeedTest {
 
     private fun uncategorized() = db.categoryDao().requireUncategorizedId()
 
-    private fun loadFirst(size: Int): List<Txn> = runBlocking {
-        val page = db.txnDao().feed().load(
+    private fun loadFirst(size: Int, through: LocalDate = TxnDao.EVERY_LATER_DAY): List<Txn> = runBlocking {
+        val page = db.txnDao().feed(through).load(
             PagingSource.LoadParams.Refresh(key = null, loadSize = size, placeholdersEnabled = false),
         )
         assertTrue("The feed refused to load: $page", page is PagingSource.LoadResult.Page)
         (page as PagingSource.LoadResult.Page).data.map { it.txn }
+    }
+
+    /**
+     * Spending's picked month (#192): the feed starts at the bound's day,
+     * which is in it, and runs on into older months, never drawing a later day.
+     */
+    @Test fun aBoundFeedStartsAtItsDay() {
+        val cat = uncategorized()
+        db.txnDao().insert(sampleTxn(occurredAt = 1_000L, amountSen = 100L, categoryId = cat, localDate = LocalDate(20_260_831)))
+        db.txnDao().insert(sampleTxn(occurredAt = 2_000L, amountSen = 200L, categoryId = cat, localDate = LocalDate(20_260_930)))
+        db.txnDao().insert(sampleTxn(occurredAt = 3_000L, amountSen = 300L, categoryId = cat, localDate = LocalDate(20_261_001)))
+
+        assertEquals(listOf(200L, 100L), loadFirst(10, through = LocalDate(20_260_930)).map { it.amountSen })
+        assertEquals(listOf(300L, 200L, 100L), loadFirst(10).map { it.amountSen })
     }
 
     @Test fun theFeedIsNewestFirst() {

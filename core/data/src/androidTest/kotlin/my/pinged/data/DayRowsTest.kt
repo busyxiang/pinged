@@ -1,6 +1,7 @@
 package my.pinged.data
 
 import androidx.paging.PagingSource
+import my.pinged.data.dao.TxnDao
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.dao.FeedRow
@@ -28,7 +29,7 @@ class DayRowsTest {
     @After fun tearDown() { db.close() }
 
     private fun feed(): List<FeedRow> = runBlocking {
-        val page = db.txnDao().feed().load(
+        val page = db.txnDao().feed(TxnDao.EVERY_LATER_DAY).load(
             PagingSource.LoadParams.Refresh(key = null, loadSize = 100, placeholdersEnabled = false),
         )
         (page as PagingSource.LoadResult.Page).data

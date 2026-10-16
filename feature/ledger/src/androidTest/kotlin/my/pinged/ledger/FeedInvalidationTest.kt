@@ -1,6 +1,7 @@
 package my.pinged.ledger
 
 import androidx.paging.PagingSource
+import my.pinged.data.dao.TxnDao
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -58,7 +59,7 @@ class FeedInvalidationTest {
     fun aPaymentWrittenBeforeRoomsSourceSubscribesStillInvalidatesTheFeed() = runBlocking<Unit> {
         val category = db.categoryDao().requireUncategorizedId()
         dispatcher.holding = true
-        val room = db.txnDao().feed()
+        val room = db.txnDao().feed(TxnDao.EVERY_LATER_DAY)
         dispatcher.holding = false
         val feed = LeasedFeed(room, db.invalidationTracker)
 
@@ -89,7 +90,7 @@ class FeedInvalidationTest {
                 .copy(merchantKey = "KOKYIMKEI", merchantRaw = "KOKYIMKEI", merchantDisplay = "Kokyimkei"),
         )
         dispatcher.holding = true
-        val room = db.txnDao().feed()
+        val room = db.txnDao().feed(TxnDao.EVERY_LATER_DAY)
         dispatcher.holding = false
         val feed = LeasedFeed(room, db.invalidationTracker)
 
@@ -119,7 +120,7 @@ class FeedInvalidationTest {
      */
     @Test fun aWriteRoomsOwnSourceHearsFirstIsStillReportedAsAWrite() {
         var writes = 0
-        val room = db.txnDao().feed()
+        val room = db.txnDao().feed(TxnDao.EVERY_LATER_DAY)
         val feed = LeasedFeed(room, db.invalidationTracker, onWrite = { writes++ })
 
         room.invalidate()
@@ -140,7 +141,7 @@ class FeedInvalidationTest {
      */
     @Test fun anInvalidationTheFeedStartsIsNotAWrite() {
         var writes = 0
-        val room = db.txnDao().feed()
+        val room = db.txnDao().feed(TxnDao.EVERY_LATER_DAY)
         val feed = LeasedFeed(room, db.invalidationTracker, onWrite = { writes++ })
 
         feed.invalidate()

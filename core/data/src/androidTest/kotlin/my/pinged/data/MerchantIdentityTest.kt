@@ -1,6 +1,7 @@
 package my.pinged.data
 
 import android.database.sqlite.SQLiteConstraintException
+import my.pinged.data.dao.TxnDao
 import androidx.paging.PagingSource
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
@@ -58,7 +59,7 @@ class MerchantIdentityTest {
     private fun ranking(): List<MerchantTotal> = db.txnDao().merchantTotals(sept.first, sept.second, limit = 10)
 
     private fun feed(): List<FeedRow> = runBlocking {
-        val page = db.txnDao().feed().load(PagingSource.LoadParams.Refresh(null, 100, false))
+        val page = db.txnDao().feed(TxnDao.EVERY_LATER_DAY).load(PagingSource.LoadParams.Refresh(null, 100, false))
         (page as PagingSource.LoadResult.Page).data
     }
 
