@@ -49,7 +49,6 @@ import my.pinged.ledger.home.Empty
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.OPEN_SETTINGS
 import my.pinged.ledger.home.SAVE_LABEL
-import my.pinged.ledger.learned.DELETE as LEARNED_DELETE
 import my.pinged.ledger.learned.LearnedContent
 import my.pinged.ledger.learned.LearnedState
 import my.pinged.ledger.licences.LicencesContent
@@ -291,12 +290,12 @@ class TypeRolesTest {
         assertButton(BACK)
     }
 
-    @Test fun aLearnedMerchantsDeleteAndBackAreKarlaButtons() {
+    /** Delete is the board's trash icon, a mark rather than a word, so only Back has a face to read. */
+    @Test fun aLearnedMerchantsBackIsAKarlaButton() {
         val merchant = LearnedMerchant("MR DIY", "Hardware shop", 4L, "Shopping", payments = 3)
         compose.setContent {
             PingedTheme { LearnedContent(LearnedState(loaded = true, items = listOf(merchant)), onBack = {}, onDelete = {}) }
         }
-        assertButton(LEARNED_DELETE)
         assertButton(BACK)
     }
 

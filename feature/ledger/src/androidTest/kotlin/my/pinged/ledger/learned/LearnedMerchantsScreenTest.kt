@@ -3,6 +3,7 @@ package my.pinged.ledger.learned
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -71,7 +72,7 @@ class LearnedMerchantsScreenTest {
         compose.setContent {
             LearnedContent(LearnedState(loaded = true, items = listOf(mrDiy)), onBack = {}, onDelete = { deleted += it.identity })
         }
-        compose.onNodeWithText(DELETE).performClick()
+        compose.onNodeWithContentDescription(DELETE).performClick()
         assertEquals(listOf("MR DIY"), deleted)
     }
 

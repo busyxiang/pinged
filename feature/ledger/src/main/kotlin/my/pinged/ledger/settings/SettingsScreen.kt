@@ -23,7 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -36,6 +38,7 @@ import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.EXPORT_EVERYTHING
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
@@ -45,6 +48,7 @@ import my.pinged.ui.theme.RESCUE
 import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dottedRule
 import my.pinged.ledger.transfer.SalvageReport
 import my.pinged.ledger.transfer.Unreadable
@@ -61,6 +65,9 @@ import my.pinged.ledger.transfer.Unreadable
  * The root of the SETTINGS tab, so no back control: the artboard draws none, and
  * the bar `MainActivity` hosts is the way out.
  */
+/** The torn edge between two sections, as a test finds it. */
+internal const val TORN_EDGE_TAG = "settings-torn-edge"
+
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
@@ -462,7 +469,7 @@ internal fun SettingsRows(
     // leaves nothing. The recovery notice's rescue is the way to a file there.
     val exportable = state.storage == Storage.HEALTHY
 
-    SectionLabel("CAPTURE")
+    SectionLabel("CAPTURE", first = true)
     SettingsRow(
         "Capture sources",
         // No placeholder when the count is unavailable (`SettingsState.sourcesOn`'s
@@ -496,6 +503,7 @@ internal fun SettingsRows(
         divider = false,
     )
 
+    SectionBreak()
     SectionLabel("HOW THINGS GET SORTED")
     // The count is the list's length, so the two cannot disagree; see
     // `SettingsState.learnedCount`. The section's only row, so no divider.
@@ -507,6 +515,7 @@ internal fun SettingsRows(
         divider = false,
     )
 
+    SectionBreak()
     SectionLabel("YOUR DATA")
     if (exportable) {
         SettingsRow(
@@ -544,6 +553,7 @@ internal fun SettingsRows(
         divider = false,
     )
 
+    SectionBreak()
     SectionLabel("ABOUT")
     // Spec 8: the fonts' OFL texts ship with the app, and this row is what
     // opens them. The section's only row, so no divider.
@@ -693,14 +703,24 @@ internal fun ago(at: Long, never: String, now: Long = System.currentTimeMillis()
     }
 }
 
+/**
+ * A section's heading, 8dp over its first row. [first] takes the board's 20dp
+ * under the header; every other section is already spaced by [SectionBreak].
+ */
 @Composable
-private fun SectionLabel(text: String) {
+private fun SectionLabel(text: String, first: Boolean = false) {
     Text(
         text,
         style = MonoLabel,
         color = Muted,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp),
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = if (first) 20.dp else 0.dp, bottom = 8.dp),
     )
+}
+
+/** The board's perforation between two sections: 10dp under the last row, 12dp over the next label. */
+@Composable
+private fun SectionBreak() {
+    TornEdge(Modifier.padding(top = 10.dp, bottom = 12.dp).testTag(TORN_EDGE_TAG))
 }
 
 /**
@@ -737,13 +757,14 @@ private fun SettingsRow(
             .background(Paper)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .then(if (divider) Modifier.dottedRule(atTop = false) else Modifier)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(Modifier.weight(1f)) {
             Text(label, fontFamily = Body, fontSize = 15.sp, color = if (enabled) tint else Muted)
-            if (caption != null) Text(caption, style = MonoLabel, color = Muted)
+            if (caption != null) Text(caption, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 3.dp))
         }
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -755,7 +776,8 @@ private fun SettingsRow(
                     pointsRight = true,
                     size = 17.dp,
                     strokeWidth = 1.7.dp,
-                    tint = if (enabled && tint == Stamp) Stamp else Muted,
+                    // Faint: a mark, not text, so 1.4.11's 3:1 is its bar (`Color.kt`).
+                    tint = if (enabled && tint == Stamp) Stamp else Faint,
                 )
             }
         }
@@ -778,23 +800,31 @@ private fun Header() {
 }
 
 /**
- * The artboard's footer (design 9.2): both halves of the first line are true,
- * and the build and parser pack versions sit beneath it, so a report of a bad
- * parse can say which pack read it.
+ * The artboard's footer (design 9.2), centred under a dotted rule: both
+ * halves of the first line are true, and the build and parser pack versions
+ * sit beneath it, so a report of a bad parse can say which pack read it.
  */
 @Composable
 internal fun Footer(buildVersion: String, packVersion: Int) {
-    Column(Modifier.padding(20.dp)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .dottedRule(atTop = true)
+            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp),
+    ) {
         Text(
             "NO INTERNET PERMISSION" + Separator + "NOTHING LEAVES THIS PHONE",
             style = MonoLabel,
             color = Muted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
         Text(
             "BUILD $buildVersion" + Separator + "PACK $packVersion",
             style = MonoLabel,
             color = Muted,
-            modifier = Modifier.padding(top = 4.dp),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         )
     }
 }

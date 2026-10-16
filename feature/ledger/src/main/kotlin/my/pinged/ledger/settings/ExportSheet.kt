@@ -1,13 +1,24 @@
 package my.pinged.ledger.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.ui.theme.Body
@@ -16,7 +27,9 @@ import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Separator
+import my.pinged.ui.theme.Stamp
 
 /** `design/Export.dc.html`'s title, over the sheet's close X. */
 const val EXPORT_TITLE = "Export"
@@ -42,7 +55,7 @@ fun ExportReceiptSheet(state: SettingsState, onPick: () -> Unit, onCancel: () ->
  * refuses it outright -- the transactions it kept name captures the filter
  * removed. They return with CSV, on its side.
  *
- * The idle state's "Export" is a tap target, not a caption: [onPick] runs
+ * The idle state's "Export" is a button, not a caption: [onPick] runs
  * only when the user asks for it, so backing out of the system document
  * picker leaves this sheet with something to tap again, not nothing at all.
  * Above it, the count of what will be written; nothing where the screen has
@@ -61,15 +74,35 @@ fun ExportReceiptSheet(state: SettingsState, onPick: () -> Unit, onCancel: () ->
  */
 @Composable
 fun ExportSheet(state: SettingsState, onPick: () -> Unit, onCancel: () -> Unit, onDismiss: () -> Unit) {
-    Text("Everything", fontFamily = Body, fontSize = 20.sp, color = Ink)
-    Text(
-        "Transactions, the original notifications, your learned merchants and " +
-            "categories. Enough to rebuild Pinged from scratch.",
-        fontFamily = Body,
-        fontSize = 14.sp,
-        color = Muted,
-        modifier = Modifier.padding(top = 8.dp),
-    )
+    // The board's chosen card, since it is the only one: 1.5dp of Stamp with
+    // its tag in Stamp. 4dp on `SheetHeader`'s 14 is the board's 18.
+    Column(
+        Modifier
+            .padding(top = 4.dp)
+            .fillMaxWidth()
+            .border(1.5.dp, Stamp, RoundedCornerShape(2.dp))
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+    ) {
+        Row {
+            Text(
+                "Everything",
+                fontFamily = Body,
+                fontWeight = FontWeight.Medium,
+                fontSize = 15.5.sp,
+                color = Ink,
+                modifier = Modifier.weight(1f).alignByBaseline(),
+            )
+            Text("JSON", style = MonoLabel, color = Stamp, modifier = Modifier.alignByBaseline())
+        }
+        Text(
+            "Transactions, the original notifications, your learned merchants and " +
+                "categories. Enough to rebuild Pinged from scratch.",
+            fontFamily = Body,
+            fontSize = 14.sp,
+            color = Muted,
+            modifier = Modifier.padding(top = 5.dp),
+        )
+    }
     // The export's own job only: an outcome `Transfers` keeps for another
     // operation is not this sheet's to report, and would hide its button.
     when (val job = state.jobOf(Operation.EXPORT)) {
@@ -92,18 +125,36 @@ fun ExportSheet(state: SettingsState, onPick: () -> Unit, onCancel: () -> Unit, 
             state.exportRows?.let { rows ->
                 Text("${grouped(rows)} ROWS TO WRITE", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 16.dp))
             }
-            TapTarget("Export", onPick)
+            PrimaryButton("Export", onPick)
         }
     }
     Text(
         "YOU CHOOSE WHERE IT GOES" + Separator + "PINGED CANNOT UPLOAD IT ANYWHERE",
         style = MonoLabel,
         color = Muted,
-        modifier = Modifier.padding(top = 24.dp),
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 11.dp),
     )
 }
 
-/** The sheet's one action in each state that has one. */
+/** The board's action: 52dp, margin to margin, filled in Stamp with its label in Paper. */
+@Composable
+private fun PrimaryButton(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .padding(top = 18.dp)
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Stamp)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = ButtonLabel, color = Paper)
+    }
+}
+
+/** The running sheet's Cancel, which the board does not draw. */
 @Composable
 private fun TapTarget(label: String, onClick: () -> Unit) = Text(
     label,

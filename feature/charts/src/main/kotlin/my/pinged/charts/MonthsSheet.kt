@@ -50,7 +50,8 @@ internal fun MonthsSheetHost(viewModel: ChartsViewModel, onPick: (YearMonth) -> 
 @Composable
 internal fun MonthsSheet(items: List<MonthsItem>?, onPick: (YearMonth) -> Unit, onDismiss: () -> Unit) {
     ReceiptSheet(onDismissRequest = onDismiss, title = "Jump to") {
-        Column {
+        // 4dp on `SheetHeader`'s 14 is the board's 18.
+        Column(Modifier.padding(top = 4.dp)) {
             if (items == null) {
                 Text("READING", style = MonoLabel, color = Muted)
             } else {
@@ -69,6 +70,9 @@ internal fun MonthsSheet(items: List<MonthsItem>?, onPick: (YearMonth) -> Unit, 
  * One month: its name, `N DAYS NOT CAPTURED` under it in the accent, the net,
  * and `NOW`. An untrusted month greys its name and total, as the artboard's
  * May does, and the flag says why, so the grey is never colour alone.
+ *
+ * A flagged row is top-aligned, as the board's May is: centred, its total
+ * would sit between the name and the flag and read as belonging to neither.
  */
 @Composable
 private fun MonthRow(row: MonthsItem.Row, onClick: () -> Unit) {
@@ -80,7 +84,7 @@ private fun MonthRow(row: MonthsItem.Row, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .dottedRule()
             .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = if (row.notCaptured != null) Alignment.Top else Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Column(Modifier.weight(1f)) {
