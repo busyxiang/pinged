@@ -38,7 +38,7 @@ class ReviewDuplicateScreenTest {
     @Test fun aDuplicateCardShowsBothRowsSideBySideAndOffersMergeAndKeepBoth() {
         content()
 
-        compose.onNodeWithText("Looks like a payment Pinged already has.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("MAYBE THE SAME PURCHASE TWICE").performScrollTo().assertIsDisplayed()
         listOf(
             DUPLICATE_HELD to listOf(BANK, "15 August 2026, 12:02", "RM12.34"),
             DUPLICATE_PAIR to listOf(SOURCE_LABEL, "15 August 2026, 12:00", "RM12.30"),
@@ -69,9 +69,9 @@ class ReviewDuplicateScreenTest {
     @Test fun aDuplicateCardCannotBeSwiped() {
         content()
 
-        compose.onNodeWithText("Looks like a payment Pinged already has.").performScrollTo()
+        compose.onNodeWithText("MAYBE THE SAME PURCHASE TWICE").performScrollTo()
             .performTouchInput { swipeRight() }
-        compose.onNodeWithText("Looks like a payment Pinged already has.").performScrollTo()
+        compose.onNodeWithText("MAYBE THE SAME PURCHASE TWICE").performScrollTo()
             .performTouchInput { swipeLeft() }
         compose.waitForIdle()
 

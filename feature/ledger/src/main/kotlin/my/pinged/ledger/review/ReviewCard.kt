@@ -93,14 +93,19 @@ enum class ReviewAnswer(val label: String) {
 }
 
 /**
- * The one sentence a card gives for why it is held: the fact the gate saw,
- * not advice.
+ * The label a card gives for why it is held: the fact the gate saw, not
+ * advice, in `design/Inbox.dc.html`'s words. Capitals in the string, so what
+ * TalkBack reads is what is drawn. The board draws no rule-review card; its
+ * line is written in the same voice.
  */
 fun reasonSentence(reason: PendingReason?): String = when (reason) {
-    PendingReason.OVER_THRESHOLD -> "Over ${ringgit(REVIEW_THRESHOLD_SEN)}."
-    PendingReason.MERCHANT_MISSING -> "No merchant in the notification."
-    PendingReason.RULE_REVIEW -> "The rule that read it asks for a check."
-    PendingReason.TRANSFER_SUSPECT -> "Looks like money moving between your own accounts."
-    PendingReason.DUPLICATE_SUSPECT -> "Looks like a payment Pinged already has."
-    null -> "Pinged did not record why."
+    PendingReason.OVER_THRESHOLD -> "OVER YOUR ${limit(REVIEW_THRESHOLD_SEN)} CHECK LIMIT"
+    PendingReason.MERCHANT_MISSING -> "AMOUNT FOUND, NO NAME ATTACHED"
+    PendingReason.RULE_REVIEW -> "THE RULE THAT READ IT ASKS YOU TO CHECK"
+    PendingReason.TRANSFER_SUSPECT -> "LOOKS LIKE MOVING MONEY, NOT SPENDING IT"
+    PendingReason.DUPLICATE_SUSPECT -> "MAYBE THE SAME PURCHASE TWICE"
+    null -> "PINGED DID NOT RECORD WHY"
 }
+
+/** The threshold as the board prints it: `RM500`, sen only when it has any. */
+internal fun limit(sen: Long): String = ringgit(sen).removeSuffix(".00")
