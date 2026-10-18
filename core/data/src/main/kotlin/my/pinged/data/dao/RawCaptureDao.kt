@@ -157,10 +157,9 @@ interface RawCaptureDao : MerchantDecisions {
      * latest would walk a chain of refreshes one link at a time and make
      * `duplicate_of_id` a linked list instead of a pointer at the original.
      *
-     * Deliberately unwindowed, and the **fallback**: `Dedup.layerOne` asks
-     * [findEarlierInSlotSince] first, so a hit here is an older match, which
-     * [my.pinged.data.slotRefreshOutcome] calls a suspect rather than a
-     * refresh.
+     * Unwindowed, and not what `Dedup.layerOne` asks: rule 1 has a ceiling
+     * (`DuplicateWindows.slotSuspect`, #207), so stage two asks
+     * [findEarlierInSlotSince] twice instead.
      *
      * **Read off two indexes and never the table.** The earlier row is the
      * notification this one repeats, and a listener rebind stores a
@@ -189,10 +188,10 @@ interface RawCaptureDao : MerchantDecisions {
      * `postedAt - DuplicateWindows.SLOT_REFRESH_MILLIS`.
      *
      * A match *outside* this window is not nothing -- spec 7.2 makes it a
-     * `PENDING` duplicate suspect -- so a caller that gets null here must still
-     * ask [findEarlierInSlot]. Two queries, because the difference between them
-     * is the difference between silently dropping the money and putting it in
-     * the review inbox.
+     * `PENDING` duplicate suspect -- so a caller that gets null here must ask
+     * again over `DuplicateWindows.slotSuspect`. Two queries, because the
+     * difference between them is the difference between silently dropping the
+     * money and putting it in the review inbox.
      *
      * **Bounded at both ends**, for the reason [findByContentHash] gives: an
      * import preserves `id` and `posted_at` from a file the user can edit, so

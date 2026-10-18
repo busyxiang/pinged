@@ -25,6 +25,21 @@ object DuplicateWindows {
     const val SLOT_REFRESH_MILLIS = 600_000L
 
     /**
+     * Layer 1 rule 1's ceiling: a same-slot, same-content match more than
+     * twelve hours away is an unrelated payment, parsed as an ordinary one.
+     *
+     * Without one, every repeat of a recurring payment -- the same RM8.00 to
+     * the same payee most lunchtimes through Touch 'n Go's reused slots --
+     * matched its first occurrence however long ago and was held as a
+     * suspect whose primary button deletes real money (#207). Twelve hours is
+     * halfway between a refresh re-posted late and a daily recurrence at
+     * about the same time of day: two identical lunches three hours apart
+     * still cost one tap, yesterday's does not. Nothing measured says how late
+     * an app re-posts a refresh; one re-posted past this is counted twice.
+     */
+    const val SLOT_SUSPECT_MILLIS = 12 * 60 * 60_000L
+
+    /**
      * Layer 2: identical `amount_sen` across different packages within ten
      * minutes. Expressed as being the same number as [SLOT_REFRESH_MILLIS],
      * not a second literal, so the two cannot be tuned apart -- spec 7.2 chose
@@ -39,6 +54,15 @@ object DuplicateWindows {
      * two cannot disagree about what "near" is.
      */
     fun layerTwo(at: Long): LongRange = (at - LAYER_TWO_MILLIS)..(at + LAYER_TWO_MILLIS)
+
+    /**
+     * Rule 1's suspect window around [at], both ends inclusive and both ends
+     * [SLOT_SUSPECT_MILLIS]. Symmetric, unlike the refresh window, because a
+     * slot-mate posted *after* the capture is out of order, and out of order
+     * goes to the review inbox (see [slotRefreshOutcome]); past the ceiling
+     * either way it is unrelated.
+     */
+    fun slotSuspect(at: Long): LongRange = (at - SLOT_SUSPECT_MILLIS)..(at + SLOT_SUSPECT_MILLIS)
 }
 
 /**
@@ -51,17 +75,20 @@ enum class SlotRefreshOutcome {
     UPDATE_OF,
 
     /**
-     * Beyond the window. A transaction **is** created, flagged as a duplicate
-     * suspect and therefore `PENDING` (spec 7.1), landing in the review inbox
-     * with Merge / Keep both. This extends layer 2 to the same-package case its
-     * own conditions exclude.
+     * Beyond the window but inside [DuplicateWindows.slotSuspect]. A
+     * transaction **is** created, flagged as a duplicate suspect and therefore
+     * `PENDING` (spec 7.1), landing in the review inbox with Merge / Keep both.
+     * This extends layer 2 to the same-package case its own conditions exclude.
      */
     DUPLICATE_SUSPECT,
 }
 
 /**
  * Rule 1 of spec 7.2's layer 1, given how long ago the earlier row with the
- * same `sbn_key` and `content_hash` was posted.
+ * same `sbn_key` and `content_hash` was posted. Only a row inside
+ * [DuplicateWindows.slotSuspect] is a match at all; the lookup applies the
+ * ceiling, so a chain of identical daily posts is judged against its own day
+ * rather than against its first link.
  *
  * [Arrival.CATCHUP][my.pinged.data.entity.Arrival.CATCHUP] gets no exemption
  * and needs none: a live notification re-delivered on rebind carries its

@@ -836,9 +836,15 @@ class DamagedConnectionTest {
      */
     private fun aCaptureRepeating(damagedId: Long): Long = DatabaseFactory.build(context).let { own ->
         try {
-            val now = System.currentTimeMillis()
+            // An hour on, inside rule 1's twelve-hour ceiling: further away it
+            // would be an unrelated payment, not a repeat.
+            val original = settled((damagedId - 1).toInt())
             own.rawCaptureDao().insert(
-                settled((damagedId - 1).toInt()).copy(parseStatus = ParseStatus.NEW, postedAt = now - 60_000, capturedAt = now),
+                original.copy(
+                    parseStatus = ParseStatus.NEW,
+                    postedAt = original.postedAt + 3_600_000L,
+                    capturedAt = System.currentTimeMillis(),
+                ),
             )
         } finally {
             own.close()
