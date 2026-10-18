@@ -14,6 +14,7 @@ These are the source of truth; the pages below are generated from them.
 | Every day | `Main` `Inbox` `Detail` `DetailExcluded` `Cash` |
 | Looking back | `Charts` `ChartsMonth` `Day` `Search` |
 | When it breaks | `Stopped` `Backup` `Settings` |
+| While it loads | `LoadingSpending` `LoadingWaiting` `LoadingCharts` `LoadingInbox` `LoadingDetail` `LoadingDay` `LoadingList` `LoadingSettings` `LoadingSheet` `LoadingSearch` |
 | Sheets and lists | `Chooser` `Categories` `Category` `Merge` `Months` `MerchantSheet` `Export` `Wipe` `Teach` `PackImport` `Rules` `Unread` |
 | Rejected directions | `Quiet` `Warung` `Dark` |
 

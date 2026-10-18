@@ -265,6 +265,86 @@
       "w": 390,
       "h": 844,
       "page": "page-2"
+    },
+    {
+      "file": "LoadingSpending.dc.html",
+      "x": 0,
+      "y": 7000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingWaiting.dc.html",
+      "x": 490,
+      "y": 7000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingCharts.dc.html",
+      "x": 980,
+      "y": 7000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingInbox.dc.html",
+      "x": 1470,
+      "y": 7000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingDetail.dc.html",
+      "x": 1960,
+      "y": 7000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingDay.dc.html",
+      "x": 0,
+      "y": 8000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingList.dc.html",
+      "x": 490,
+      "y": 8000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingSettings.dc.html",
+      "x": 980,
+      "y": 8000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingSheet.dc.html",
+      "x": 1470,
+      "y": 8000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingSearch.dc.html",
+      "x": 1960,
+      "y": 8000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
     }
   ],
   "annotations": [
