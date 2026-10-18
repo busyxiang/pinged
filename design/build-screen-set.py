@@ -48,6 +48,28 @@ groups = [
   ("Settings", "Settings.dc.html", "Changed, third tab",
    "A tab, not a drawer. In the first weeks this is where you live &mdash; adding banks, checking capture is alive, teaching merchants &mdash; so capture sits at the top and export and delete at the bottom. Redrawn to the rows that shipped. The daily check lives in Android&rsquo;s notification settings, so its row carries an outward arrow instead of a chevron. Check my data says what it found. Corrections from pack updates appears only while a newer pack has something for you to review. Licences moved from its own About section into the footer, the one row nobody needs to find quickly. The footer states the privacy claim as fact, because a missing permission enforces it."),
  ]),
+ ("While it loads", "One treatment for every screen, so the app looks the same whichever door you came in by. Nothing is drawn for the first 200ms: nearly every read on file is measured inside that, so most loads are never seen. After that, each screen draws its own layout with every value an em-dash on a dotted leader, the idiom Day one already uses for a value still to land, and a READING line. A value the app has not read yet is never drawn as 0, NEVER or NONE. Loading is never shown as unreadable.", [
+  ("Spending", "LoadingSpending.dc.html", "A tab opened cold",
+   "The first screen after launch, and the one most likely to wait on the first database open. Month and labels are known at once and drawn. The total, the top three and the rows wait as dashes and leaders."),
+  ("Waiting on a check", "LoadingWaiting.dc.html", "When the open queues",
+   "The first open waits behind a running export or integrity check, measured at up to 1.2s with 50,000 captures. The READING line names the wait in Stamp, so a slow load reads as busy rather than broken."),
+  ("Charts", "LoadingCharts.dc.html", "A tab of aggregates",
+   "The calendar alone draws the month's real grid, so the skeleton is the true shape of the month. Cells are outlined in dots, never hatched: hatching means a day was not captured, which is a fact, and dots mean the day has not been read yet."),
+  ("Awaiting review", "LoadingInbox.dc.html", "A pushed list of cards",
+   "Card outlines with the quote box, a leader and two answer slots. The count in the header is a dash until it is known, so the skeleton claims nothing about how many cards there are."),
+  ("Detail", "LoadingDetail.dc.html", "A pushed record",
+   "Every field as a leader ending in a dash, and the notification box outlined. The same skeleton serves Edit payment, which today looks like an empty new payment until its row loads."),
+  ("Thursday 25 September", "LoadingDay.dc.html", "A day from the grid",
+   "The title comes from the cell tapped, so it is drawn at once. The total and the rows wait."),
+  ("Categories", "LoadingList.dc.html", "Every pushed list",
+   "Rows as icon slots and leaders, with counts as dashes. Could not read, Teach, Things you taught, Corrections and Capture sources take the same skeleton. Capture sources' header shows a dash where it says 0 ENABLED today."),
+  ("Settings", "LoadingSettings.dc.html", "Values still to read",
+   "Every row and caption is known; only the values wait. Today Export reads NEVER and Check reads NEVER CHECKED until the read lands, and that read queues behind a whole export. A check row that is waiting says so in its caption."),
+  ("99 Speedmart", "LoadingSheet.dc.html", "A sheet opens at once",
+   "Today the merchant sheet ignores the long press until its read lands. It opens straight away with the name the row already knows, the counts as dashes, and the suggestions as outlines. Save stays an outline until there is something to save."),
+  ("grab f", "LoadingSearch.dc.html", "A reload in place",
+   "The one place a skeleton would be wrong. While a new query waits for its 300ms pause and its read (3 to 37ms), the old total and rows stay at 45% under UPDATING, and the export count goes to a dash. Charts and Spending after a month pick, and Jump to on reopen, do the same."),
+ ]),
  ("Sheets, pickers and lists", "The layer behind the twelve. I called these derivative before drawing them; three turned out to carry real decisions.", [
   ("What was this?", "Chooser.dc.html", "Assigning a category",
    "The most repeated action in the app. It shows the acquirer string it is deciding about, and the rule it is about to write &mdash; on by default, with the ten past transactions it will retroactively fix. Teaching Pinged is visible, not a side effect."),
@@ -262,7 +284,7 @@ page = f'''<title>Pinged Screen Set</title>
 <style>{css}</style>
 <div class="wrap">
   <p class="eyebrow">Pinged &middot; Receipt direction</p>
-  <h1>Thirty screens, one paper trail</h1>
+  <h1>Forty screens, one paper trail</h1>
   <p class="stand">The whole v1 surface &mdash; every screen, sheet and list &mdash; grouped the way a person meets it. The populated scenario is pinned to <strong>Wednesday 30 September 2026</strong>, month end, so every figure reconciles: RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded, four items awaiting review.</p>
   <p class="stand">The system below is the handoff &mdash; those hex values and type roles become the Compose theme directly.</p>
 
