@@ -123,6 +123,70 @@ class DedupTest {
     }
 
     /**
+     * #207: a recurring payment -- the same RM8.00 to the same payee at about
+     * the same time of day, 17 days apart through TNG's one reused slot -- is
+     * two ordinary transactions, not a duplicate suspect the user has to Keep.
+     */
+    @Test
+    fun theSameSlotAndContentOnDifferentDaysIsTwoOrdinaryTransactions() {
+        val text = "Payment of RM4.58 to RECURRING SHOP successful"
+        val day = 24 * 60 * 60 * 1000L
+        val first = ParseFixtures.insertCapture(
+            context, text = text, title = marker,
+            sbnKey = "$marker-recurring", postedAt = base - 20 * day,
+        )
+        val second = ParseFixtures.insertCapture(
+            context, text = text, title = marker,
+            sbnKey = "$marker-recurring", postedAt = base - 3 * day - 4 * 60_000L,
+        )
+
+        runPass()
+
+        val secondTxn = ParseFixtures.txnForCapture(context, second)
+        assertNotNull(whyNoTransaction(first), ParseFixtures.txnForCapture(context, first))
+        assertNotNull(whyNoTransaction(second), secondTxn)
+        assertNull(
+            "A payment 17 days after an identical one was paired with it",
+            captures.byId(second).duplicateOfId,
+        )
+        assertEquals(
+            "A recurring payment was held for review as a duplicate",
+            null to TxnState.COMMITTED,
+            secondTxn!!.pendingReason to secondTxn.state,
+        )
+    }
+
+    /**
+     * The ceiling is twelve hours, not zero: a repeat 11 hours after a
+     * recurring payment is still held, and against that day's payment, not
+     * the first one 17 days earlier.
+     */
+    @Test
+    fun theSameSlotAndContentInsideTwelveHoursIsStillASuspectOfTheNearerDay() {
+        val text = "Payment of RM4.59 to RECURRING SHOP successful"
+        val day = 24 * 60 * 60 * 1000L
+        val sbnKey = "$marker-recurring-twice"
+        ParseFixtures.insertCapture(context, text = text, title = marker, sbnKey = sbnKey, postedAt = base - 20 * day)
+        val sameDay = ParseFixtures.insertCapture(
+            context, text = text, title = marker, sbnKey = sbnKey, postedAt = base - 3 * day,
+        )
+        val again = ParseFixtures.insertCapture(
+            context, text = text, title = marker, sbnKey = sbnKey, postedAt = base - 3 * day + 11 * 3_600_000L,
+        )
+
+        runPass()
+
+        val againTxn = ParseFixtures.txnForCapture(context, again)
+        assertNotNull(whyNoTransaction(again), againTxn)
+        assertEquals(PendingReason.DUPLICATE_SUSPECT, againTxn!!.pendingReason)
+        assertEquals(
+            "The repeat was paired with the payment 17 days before, not that day's",
+            sameDay,
+            captures.byId(again).duplicateOfId,
+        )
+    }
+
+    /**
      * A live notification re-delivered on rebind is a refresh, and it does not
      * need an exemption to be one: `getActiveNotifications()` hands back the
      * original `postTime`, so the elapsed time against its own earlier row is
@@ -260,8 +324,8 @@ class DedupTest {
      * transaction.
      *
      * `slotRefreshOutcome` read a negative elapsed as inside the ten-minute
-     * window -- `-2592000000 <= 600000` is true -- so a payment matched against
-     * a byte-identical notification posted a month afterwards was recorded
+     * window -- `-3600000 <= 600000` is true -- so a payment matched against
+     * a byte-identical notification posted an hour afterwards was recorded
      * `UPDATE_OF`: no transaction, no review item, the money gone. `id <
      * :selfId` was the stated defence, and it is the one thing that cannot
      * defend it, because a negative elapsed only arises when insertion order
@@ -277,11 +341,11 @@ class DedupTest {
         val postedAt = base - 16_200_000L
         val text = "Payment of $rm to KEDAI RUNCIT successful"
 
-        // Inserted first, posted a month later: the pair the ordering defence
-        // assumed could not exist.
+        // Inserted first, posted an hour later -- inside the twelve-hour
+        // ceiling -- the pair the ordering defence assumed could not exist.
         ParseFixtures.insertCapture(
             context, text = text, title = marker, pkg = ParseFixtures.TNG,
-            sbnKey = "$marker-oo", postedAt = postedAt + 30L * 24 * 60 * 60 * 1000,
+            sbnKey = "$marker-oo", postedAt = postedAt + 3_600_000L,
         )
         val earlier = ParseFixtures.insertCapture(
             context, text = text, title = marker, pkg = ParseFixtures.TNG,
@@ -292,8 +356,8 @@ class DedupTest {
 
         val txn = ParseFixtures.txnForCapture(context, earlier)
         assertNotNull(
-            "The capture was recorded as a refresh of a notification posted a " +
-                "month after it, so the payment is not in the ledger at all",
+            "The capture was recorded as a refresh of a notification posted an " +
+                "hour after it, so the payment is not in the ledger at all",
             txn,
         )
         assertEquals(sen, txn!!.amountSen)

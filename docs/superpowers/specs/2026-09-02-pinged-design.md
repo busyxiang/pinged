@@ -1357,6 +1357,14 @@ in order:
   `PENDING` (section 7.1), landing in the review inbox with Merge / Keep
   both. This extends layer 2 to the same-package case, which its own
   conditions exclude.
+- Same `sbn_key` and same `content_hash` **more than 12 hours** away → no
+  match; an ordinary transaction. Without a ceiling every repeat of a
+  recurring payment — the same RM8.00 to the same payee most lunchtimes —
+  matched its first occurrence however long ago, and was held with Merge,
+  which deletes real money, as the primary button. Twelve hours is halfway
+  between a refresh re-posted late and a daily recurrence at about the same
+  time of day. The window is symmetric, so a slot-mate posted *after* the
+  capture (an import out of order) within it is still a suspect.
 
 **Rule 1 used to have no window, and that was a wrong-money bug.**
 `content_hash` deliberately contains no timestamp (section 4), and

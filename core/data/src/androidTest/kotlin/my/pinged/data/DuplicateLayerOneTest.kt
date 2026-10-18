@@ -151,26 +151,26 @@ class DuplicateLayerOneTest {
      * **The wrong-money bug the window exists to fix.** `content_hash` carries no
      * timestamp (spec 4) and normalization preserves digits, so a wallet posting
      * through one reused slot makes two genuinely separate identical payments
-     * byte-identical *and* same-slot. Monday's RM10 and Wednesday's RM10 were one
+     * byte-identical *and* same-slot. Two RM10s an afternoon apart were one
      * transaction, with no error and no review item.
      *
-     * Two days apart the windowed query finds nothing, so the money is not dropped,
+     * Two hours apart the windowed query finds nothing, so the money is not dropped,
      * while the unwindowed query still sees the pair -- which is what lets the
-     * caller raise a duplicate suspect rather than treating Wednesday as unrelated.
+     * caller raise a duplicate suspect rather than treating the later one as unrelated.
      */
-    @Test fun twoIdenticalPaymentsTwoDaysApartInOneSlotAreNotSilentlyDropped() {
-        val monday = 5_000_000L
-        val wednesday = monday + 2 * 24 * 60 * 60 * 1000L
+    @Test fun twoIdenticalPaymentsTwoHoursApartInOneSlotAreNotSilentlyDropped() {
+        val noon = 5_000_000L
+        val afternoon = noon + 2 * 60 * 60 * 1000L
         val first = dao.insert(
-            sampleCapture(hash = "rm10", postedAt = monday, sbnKey = "tng-reload"),
+            sampleCapture(hash = "rm10", postedAt = noon, sbnKey = "tng-reload"),
         )
         val second = dao.insert(
-            sampleCapture(hash = "rm10", postedAt = wednesday, sbnKey = "tng-reload"),
+            sampleCapture(hash = "rm10", postedAt = afternoon, sbnKey = "tng-reload"),
         )
 
         assertNull(
-            "Wednesday's RM10 was dropped as a refresh of Monday's",
-            earlierInSlotWithin("tng-reload", "rm10", second, wednesday),
+            "The later RM10 was dropped as a refresh of the earlier",
+            earlierInSlotWithin("tng-reload", "rm10", second, afternoon),
         )
         assertEquals(
             "The pair must still be visible, so it can be flagged for review",
@@ -179,7 +179,7 @@ class DuplicateLayerOneTest {
         )
         assertEquals(
             SlotRefreshOutcome.DUPLICATE_SUSPECT,
-            slotRefreshOutcome(wednesday - monday),
+            slotRefreshOutcome(afternoon - noon),
         )
     }
 
@@ -189,7 +189,7 @@ class DuplicateLayerOneTest {
      * The argument was that `getActiveNotifications()` returns only posts that are
      * still live. That is true of the *new* capture and says nothing about the
      * earlier row it is matched against -- and `content_hash` excludes time, so a
-     * byte-identical payment days later has the same identity by construction.
+     * byte-identical payment hours later has the same identity by construction.
      *
      * No exemption is needed: a live notification re-delivered on rebind keeps its
      * original `postTime`, so elapsed time against its own earlier row is zero and
@@ -197,12 +197,12 @@ class DuplicateLayerOneTest {
      */
     @Test fun aCatchUpRedeliveryIsARefreshAndASecondPostingIsNot() {
         val monday = 5_000_000L
-        val muchLater = monday + 3 * 24 * 60 * 60 * 1000L
+        val later = monday + 3 * 60 * 60 * 1000L
         val first = dao.insert(sampleCapture(hash = "live", postedAt = monday, sbnKey = "slot-live"))
         val self = dao.insert(
             sampleCapture(
                 hash = "live",
-                postedAt = muchLater,
+                postedAt = later,
                 sbnKey = "slot-live",
                 arrival = Arrival.CATCHUP,
             ),
@@ -220,9 +220,9 @@ class DuplicateLayerOneTest {
             slotRefreshOutcome(0L),
         )
         assertEquals(
-            "A second posting three days later is money, not a refresh",
+            "A second posting three hours later is money, not a refresh",
             SlotRefreshOutcome.DUPLICATE_SUSPECT,
-            slotRefreshOutcome(muchLater - monday),
+            slotRefreshOutcome(later - monday),
         )
     }
 
@@ -308,6 +308,29 @@ class DuplicateLayerOneTest {
         assertEquals(DuplicateWindows.LAYER_TWO_MILLIS, DuplicateWindows.SLOT_REFRESH_MILLIS)
         assertEquals(600_000L, DuplicateWindows.SLOT_REFRESH_MILLIS)
         assertEquals(60_000L, DuplicateWindows.CONTENT_HASH_MILLIS)
+    }
+
+    /**
+     * Rule 1's ceiling (#207): twelve hours each side, both ends inclusive.
+     * Past it a slot-and-content match is an unrelated payment.
+     */
+    @Test fun theSuspectWindowIsTwelveHoursEachSideInclusive() {
+        val c = DuplicateWindows.SLOT_SUSPECT_MILLIS
+        assertEquals(12 * 3_600_000L, c)
+        val at = 100_000_000L
+        val dao = db.rawCaptureDao()
+        fun matchAt(slot: String, priorAt: Long): Long? {
+            val prior = dao.insert(sampleCapture(hash = slot, postedAt = priorAt, sbnKey = slot))
+            val self = dao.insert(sampleCapture(hash = slot, postedAt = at, sbnKey = slot))
+            val w = DuplicateWindows.slotSuspect(at)
+            return dao.findEarlierInSlotSince(slot, slot, self, w.first, w.last)?.also {
+                assertEquals(prior, it.id)
+            }?.id
+        }
+        assertNotNull("twelve hours before is inside", matchAt("ceil-a", at - c))
+        assertNull("a millisecond past is unrelated", matchAt("ceil-b", at - c - 1))
+        assertNotNull("twelve hours after is inside", matchAt("ceil-c", at + c))
+        assertNull("a millisecond past is unrelated", matchAt("ceil-d", at + c + 1))
     }
 
     // ---- rule 2's upper bound -------------------------------------------

@@ -97,9 +97,16 @@ class BackTransitionTest {
         compose.runOnUiThread { compose.activity.navigationEventDispatcher.addInput(input) }
         // A frame between each event: `NavDisplay` follows the gesture from a
         // collector, which a single burst would collapse into a plain pop.
-        compose.runOnUiThread { input.backStarted(NavigationEvent(NavigationEvent.EDGE_LEFT, 0.02f, 0.5f, 0f)) }
+        //
+        // Progress 0, because the chevron's pop starts from 0: a gesture
+        // released at 0.02 is that far into the same spec, and the offset alone
+        // differed over 5.4% of a 1080x2424 screen of `Day` rows (under 5% at
+        // CI's 320x640). At 0 no pixel differs; with the chevron back on the
+        // library's cross-fade, 17.9% (`Day`) and 10.9% (Sources) do, so the
+        // gesture still takes the predictive path.
+        compose.runOnUiThread { input.backStarted(NavigationEvent(NavigationEvent.EDGE_LEFT, 0f, 0.5f, 0f)) }
         compose.mainClock.advanceTimeBy(16)
-        compose.runOnUiThread { input.backProgressed(NavigationEvent(NavigationEvent.EDGE_LEFT, 0.02f, 0.5f, 0f)) }
+        compose.runOnUiThread { input.backProgressed(NavigationEvent(NavigationEvent.EDGE_LEFT, 0f, 0.5f, 0f)) }
         compose.mainClock.advanceTimeBy(16)
         compose.runOnUiThread { input.backCompleted() }
     }
@@ -184,9 +191,9 @@ class BackTransitionTest {
         val TODAY_TAG = "grid-day-${LocalDate.now()}"
 
         /**
-         * Measured on the API 37 emulator: 2.8% with one spec for both pops, which
-         * is the chevron's pressed highlight and a few ms of timing; 12.2% with the
-         * library defaults (fade against scale).
+         * Measured on the API 37 emulator at 1080x2424: 0% with one spec for both
+         * pops; 10.9% (Sources) and 17.9% (`Day`) with the library defaults (fade
+         * against scale).
          */
         const val MAX_DIFFERING_SHARE = 0.05f
     }

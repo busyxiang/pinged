@@ -76,12 +76,13 @@ internal object Dedup {
     /**
      * Spec 7.2 layer 1, both rules, in the order the spec gives them.
      *
-     * **The windowed query is asked first, the unwindowed one only if it misses.**
-     * A slot may hold a chain of identical posts, and only the windowed query can
+     * **The ten-minute query is asked first, the twelve-hour one only if it misses.**
+     * A slot may hold a chain of identical posts, and only the narrow query can
      * tell that *some* earlier match falls inside ten minutes: with posts at t=0,
-     * t=15min and t=20min, the unwindowed query returns the t=0 row and would call
-     * the t=20min capture a suspect, where spec 7.2 says it is a refresh. The
-     * unwindowed query then catches the genuinely old match, which is a suspect.
+     * t=15min and t=20min, the wide query returns the t=0 row and would call the
+     * t=20min capture a suspect, where spec 7.2 says it is a refresh. The wide
+     * query then catches the older match, which is a suspect; past
+     * [DuplicateWindows.SLOT_SUSPECT_MILLIS] there is no match at all (#207).
      *
      * Rule 2 is only reached when rule 1 found nothing, matching "two rules, in
      * order".
@@ -94,7 +95,7 @@ internal object Dedup {
         // One path for both arrivals; see `slotRefreshOutcome` for what exempting
         // `CATCHUP` from the window dropped.
         //
-        // The windowed query first and the unwindowed only if it misses, so a match
+        // The narrow query first and the wide one only if it misses, so a match
         // inside the window is preferred over an older one outside it -- the difference
         // between silently dropping the money and putting it in the review inbox.
         // Inside the window it returns the *oldest* match, not the nearest; see the DAO
@@ -111,12 +112,7 @@ internal object Dedup {
             sinceMillis = capture.postedAt - DuplicateWindows.SLOT_REFRESH_MILLIS,
             untilMillis = capture.postedAt,
             unreadable = passOver,
-        ) ?: dao.findEarlierInSlot(
-            key = capture.sbnKey,
-            hash = capture.contentHash,
-            selfId = capture.id,
-            unreadable = passOver,
-        )
+        ) ?: earlierInSlotWithinCeiling(dao, capture, passOver)
 
         if (prior != null) {
             // The verdict comes from data's own function rather than from a
@@ -128,7 +124,7 @@ internal object Dedup {
             }
         }
         if (passOver.isNotEmpty()) {
-            dao.findEarlierInSlot(key = capture.sbnKey, hash = capture.contentHash, selfId = capture.id)
+            earlierInSlotWithinCeiling(dao, capture, emptyList())
                 ?.let { return Layer1Verdict.UndecidablePrior(it.id) }
         }
 
@@ -145,6 +141,27 @@ internal object Dedup {
             earlier.isNotEmpty() -> Layer1Verdict.UndecidablePrior(earlier.minWith(EARLIEST_FIRST).id)
             else -> Layer1Verdict.NotADuplicate
         }
+    }
+
+    /**
+     * Rule 1's fallback: the oldest slot-and-content match inside
+     * [DuplicateWindows.slotSuspect]. Past that ceiling a match is an unrelated
+     * payment (#207), so a capture with only such matches falls through to rule 2.
+     */
+    private fun earlierInSlotWithinCeiling(
+        dao: RawCaptureDao,
+        capture: RawCapture,
+        unreadable: List<Long>,
+    ): CaptureRef? {
+        val window = DuplicateWindows.slotSuspect(capture.postedAt)
+        return dao.findEarlierInSlotSince(
+            key = capture.sbnKey,
+            hash = capture.contentHash,
+            selfId = capture.id,
+            sinceMillis = window.first,
+            untilMillis = window.last,
+            unreadable = unreadable,
+        )
     }
 
     /**
