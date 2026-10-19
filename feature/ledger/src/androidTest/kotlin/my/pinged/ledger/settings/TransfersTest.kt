@@ -3,6 +3,7 @@ package my.pinged.ledger.settings
 import android.app.Application
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayInputStream
@@ -12,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -79,25 +81,7 @@ class TransfersTest {
      * before anything notices the cancellation.
      */
     @Test fun aDeleteWhoseScreenWentAwayBeforeItBeganDestroysNothing() = runBlocking {
-        aLiveLedgerOfOneCapture()
-        val (model, store) = screen()
-        val reached = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val first = AtomicBoolean(true)
-        model.beforeEachOperation = {
-            if (first.compareAndSet(true, false)) {
-                reached.complete(Unit)
-                release.await()
-            }
-        }
-
-        model.load()
-        withTimeout(TIMEOUT) { reached.await() }
-        val delete = model.deleteEverything()
-        Thread.sleep(QUEUE_BUDGET)
-        store.clear()
-        release.complete(Unit)
-        withTimeout(TIMEOUT) { delete.join() }
+        abandonWhileQueued { model -> model.deleteEverything() }
         Thread.sleep(ORPHAN_BUDGET)
 
         assertEquals(
@@ -181,23 +165,38 @@ class TransfersTest {
     }
 
     /**
-     * [request] made while a read holds the turn, and its screen cleared
-     * before the read lets go.
+     * [request] made while the screen's own read holds the turn, and the
+     * screen cleared before the read lets go.
+     *
+     * **Clearing cancels the screen's coroutines one at a time, in the order
+     * they were started**, so the read is cancelled before the request is.
+     * The read lets go of the turn on the main thread while the clearing
+     * thread is still on its way to the request, and the request can take
+     * the turn in between. Unaided that gap is microseconds, and the
+     * restore's case failed 1 run in a full suite on 2026-10-19 (#259); a
+     * child of the screen's scope started between the two holds the gap
+     * open until the request has its turn, so every run lands in it.
      */
     private suspend fun abandonWhileQueued(request: (SettingsViewModel) -> Job) {
         aLiveLedgerOfOneCapture()
         val (model, store) = screen()
         val reached = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
+        val tookTurn = CountDownLatch(1)
         val first = AtomicBoolean(true)
         model.beforeEachOperation = {
             if (first.compareAndSet(true, false)) {
                 reached.complete(Unit)
                 release.await()
+            } else {
+                tookTurn.countDown()
             }
         }
         model.load()
         withTimeout(TIMEOUT) { reached.await() }
+        Job(model.viewModelScope.coroutineContext.job).invokeOnCompletion {
+            tookTurn.await(GAP_BUDGET, TimeUnit.MILLISECONDS)
+        }
         val job = request(model)
         Thread.sleep(QUEUE_BUDGET)
         store.clear()
@@ -494,6 +493,10 @@ class TransfersTest {
         // was going to run beside another to have run, measured against a
         // destroy that takes single milliseconds.
         const val ORPHAN_BUDGET = 1_000L
+
+        // How long clearing is held between the read's cancellation and the
+        // request's, waiting for the request to take the turn the read let go.
+        const val GAP_BUDGET = 2_000L
 
         // How long a second screen is given to show the restore it opened
         // over, and then how long it is watched for publishing early.

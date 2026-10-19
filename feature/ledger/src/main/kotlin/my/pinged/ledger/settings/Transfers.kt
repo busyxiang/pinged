@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -732,6 +733,13 @@ object Transfers {
                 // through [beforeStart]: see TransfersTest's
                 // aDeleteWhoseScreenWentAwayAsItTookItsTurnDestroysNothing.
                 currentCoroutineContext().ensureActive()
+                // The screen going away cancels its coroutines one at a time,
+                // so its own read -- holding [turn], and started before the
+                // requester -- can let go of [turn] before [link] has heard.
+                // The screen's scope is marked cancelling before any child is
+                // told, so asking the requester's ancestors closes that gap:
+                // TransfersTest's abandonWhileQueued holds it open (#259).
+                if (!requester.andItsAncestorsActive()) throw CancellationException("Its screen went away")
                 began = true
                 val job = try {
                     body(progress)
@@ -803,6 +811,10 @@ object Transfers {
             }
         }
     }
+
+    /** False once this job or any job above it has begun cancelling. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun Job.andItsAncestorsActive(): Boolean = generateSequence(this) { it.parent }.all { it.isActive }
 
     /** What [TransferState.loss] keeps past a lesser outcome. */
     private val Outcome.lostTheLedger: Boolean get() = (job as? TransferJob.Failed)?.ledgerLost == true
