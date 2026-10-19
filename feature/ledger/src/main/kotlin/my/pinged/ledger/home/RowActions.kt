@@ -12,11 +12,15 @@ import my.pinged.capture.CaptureStorage
 import my.pinged.capture.Graph
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
+import my.pinged.data.LocalDate
+import my.pinged.data.LocalDates
 import my.pinged.data.dao.CategoryNameTakenException
 import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RetroPreview
+import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
 import my.pinged.parse.SameShop
+import java.time.YearMonth
 
 /**
  * What a ledger row lets the user do, for any screen that draws one (#69): the
@@ -176,16 +180,18 @@ class RowActions(
      *
      * One read of everything the sheet shows, published whole, so a sheet
      * never draws a name from one read beside a list from another. A key that
-     * no longer resolves to any transaction opens nothing.
+     * no longer resolves to any transaction opens nothing. [on] is the row's
+     * own `local_date`, whose month the header counts.
      */
-    fun openMerchant(ownKey: String): Job = scope.launch {
+    fun openMerchant(ownKey: String, on: LocalDate): Job = scope.launch {
         CaptureStorage.guarded(
             context(),
             what = "The merchant could not be read",
             unavailable = { unavailable() },
             damageStopsCapture = false,
         ) {
-            _merchantSheet.value = readMerchantSheet(Databases.merchantIdentityDao(context()), ownKey)
+            _merchantSheet.value =
+                readMerchantSheet(Databases.merchantIdentityDao(context()), Databases.txnDao(context()), ownKey, on)
         }
     }
 
@@ -257,8 +263,10 @@ data class ChooserRead(
  * actually carries, not against the merchant it may already be merged into.
  */
 @VisibleForTesting
-internal fun readMerchantSheet(dao: MerchantIdentityDao, ownKey: String): MerchantSheetState? {
+internal fun readMerchantSheet(dao: MerchantIdentityDao, txns: TxnDao, ownKey: String, on: LocalDate): MerchantSheetState? {
     val identity = dao.canonicalOf(ownKey) ?: ownKey
+    val month = YearMonth.from(LocalDates.calendarDay(on))
+    val range = LocalDates.monthRange(month)
     val choices = dao.choices()
     val self = choices.firstOrNull { it.identityKey == identity } ?: return null
     val others = SameShop.suggestionsFirst(ownKey, choices.filter { it.identityKey != identity }) { it.identityKey }
@@ -274,5 +282,10 @@ internal fun readMerchantSheet(dao: MerchantIdentityDao, ownKey: String): Mercha
         suggested = others.filter { SameShop.likely(ownKey, it.identityKey) }.mapTo(HashSet()) { it.identityKey },
         ruleCategory = self.ruleCategory,
         noOwnRule = dao.ownRuleCategory(ownKey) == null,
+        month = month,
+        // Charts' own read, so the header and that month's WHO GOT IT row
+        // cannot disagree about this merchant.
+        monthTotals = txns.merchantTotals(range.start, range.endInclusive, limit = Int.MAX_VALUE)
+            .filter { it.identityKey == identity },
     )
 }

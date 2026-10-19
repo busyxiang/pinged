@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.flowOf
 import my.pinged.data.Databases
+import my.pinged.data.LocalDates
 import my.pinged.data.dao.MerchantChoice
 import my.pinged.data.dao.MerchantMember
 import my.pinged.data.dao.MerchantRuleDao
@@ -18,11 +19,10 @@ import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RuleOrigin
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
-import my.pinged.ledger.home.MERCHANT_HEADING
+import my.pinged.ledger.home.NAME_HEADING
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.SEPARATE_NO_RULE
-import my.pinged.ledger.home.bothHaveRules
 import my.pinged.ledger.home.readMerchantSheet
 import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
@@ -34,7 +34,8 @@ import org.junit.runner.RunWith
 
 /**
  * Issue #51: what the merchant sheet says, before the tap, about the rules a
- * Merge or a Separate is about to combine or give back.
+ * Separate is about to give back. What a merge says is the Card band's,
+ * `MerchantSheetArtboardTest.theBandNamesTheRuleThatFilesTheMergedShop`.
  */
 @RunWith(AndroidJUnit4::class)
 class MerchantSheetRulesTest {
@@ -45,6 +46,9 @@ class MerchantSheetRulesTest {
     @After fun leaveNothingBehind() = context.discardTheDatabase()
 
     private val own = "MR DIY KLCC"
+
+    /** The header's month, which nothing here reads. */
+    private val ANY_DAY = LocalDates.of(0L)
     private val other = "MR D.I.Y."
 
     private fun sheet(
@@ -90,28 +94,10 @@ class MerchantSheetRulesTest {
         // The sheet's own list is up once its heading is. Not a choice row: the
         // list is lazy, and on CI's 320x640 screen the rows below the members
         // are never composed.
-        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText(MERCHANT_HEADING).fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText(NAME_HEADING).fetchSemanticsNodes().isNotEmpty() }
     }
 
     private fun count(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().size
-
-    @Test fun whenBothHalvesHaveRulesTheRowNamesTheCategoryTheMergedShopWillBeFiledUnder() {
-        show(sheet(ruleCategory = "Shopping", otherRule = "Food & Drinks"))
-        assertEquals("The target's category, not the source's", 1, count(bothHaveRules("Food & Drinks")))
-        assertEquals(0, count(bothHaveRules("Shopping")))
-    }
-
-    @Test fun theRowSaysNothingWhenOnlyOneHalfHasARule() {
-        show(sheet(ruleCategory = "Shopping", otherRule = null))
-        assertEquals(0, count(bothHaveRules("Shopping")))
-        compose.waitForIdle()
-        assertEquals("No both-have-rules line of any category", 0, compose.onAllNodesWithText("Both have a rule", substring = true).fetchSemanticsNodes().size)
-    }
-
-    @Test fun theRowSaysNothingWhenTheTargetAloneHasARule() {
-        show(sheet(ruleCategory = null, otherRule = "Food & Drinks"))
-        assertEquals(0, compose.onAllNodesWithText("Both have a rule", substring = true).fetchSemanticsNodes().size)
-    }
 
     @Test fun separateSaysASourceWithNoRuleOfItsOwnGoesBackToUncategorized() {
         show(sheet(mergedInto = "Mr D.I.Y.", ruleCategory = "Food & Drinks", noOwnRule = true))
@@ -174,7 +160,7 @@ class MerchantSheetRulesTest {
         teach(own, "Shopping"); teach(other, "Food & Drinks")
         val dao = Databases.merchantIdentityDao(context)
 
-        val sheet = readMerchantSheet(dao, own)!!
+        val sheet = readMerchantSheet(dao, Databases.txnDao(context), own, ANY_DAY)!!
 
         assertEquals("Shopping", sheet.ruleCategory)
         assertEquals(
@@ -183,10 +169,10 @@ class MerchantSheetRulesTest {
         )
 
         dao.merge(own, other, "Mr D.I.Y.")
-        val merged = readMerchantSheet(dao, own)!!
+        val merged = readMerchantSheet(dao, Databases.txnDao(context), own, ANY_DAY)!!
         assertEquals("Food & Drinks", merged.ruleCategory)
         assertEquals(false, merged.noOwnRule)
-        assertEquals(listOf(false), readMerchantSheet(dao, other)!!.members.map { it.noOwnRule })
+        assertEquals(listOf(false), readMerchantSheet(dao, Databases.txnDao(context), other, ANY_DAY)!!.members.map { it.noOwnRule })
     }
 
     @Test fun aSourceWithNoRuleReadsAsHavingNoneOfItsOwnAfterAMerge() {
@@ -196,7 +182,7 @@ class MerchantSheetRulesTest {
         val dao = Databases.merchantIdentityDao(context)
         dao.merge(own, other, "Mr D.I.Y.")
 
-        assertEquals(true, readMerchantSheet(dao, own)!!.noOwnRule)
-        assertEquals(listOf(true), readMerchantSheet(dao, other)!!.members.map { it.noOwnRule })
+        assertEquals(true, readMerchantSheet(dao, Databases.txnDao(context), own, ANY_DAY)!!.noOwnRule)
+        assertEquals(listOf(true), readMerchantSheet(dao, Databases.txnDao(context), other, ANY_DAY)!!.members.map { it.noOwnRule })
     }
 }

@@ -153,13 +153,26 @@ fun ReceiptSheetFrame(
  * 20dp at a 1.7 stroke, whose 44dp target reaches 12dp past the glyph so the
  * glyph's own edge sits on the 20dp margin.
  *
+ * [subtitle], when given, is the [MonoLabel] line some boards set 4dp under
+ * the title (`design/MerchantSheet.dc.html`'s payments in a month), inside the
+ * header's own bottom margin rather than after it.
+ *
  * Public for `CategoryPicker`, which is drawn in [ReceiptSheetFrame] and so
  * does not get it from [ReceiptSheet]; [modifier] carries the margins that
  * [ReceiptSheet]'s padded `Column` otherwise gives it.
  */
 @Composable
-fun SheetHeader(title: String, onClose: () -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+fun SheetHeader(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, subtitle: String? = null) {
+    Column(modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+        TitleRow(title, onClose)
+        if (subtitle != null) Text(subtitle, style = MonoLabel, color = Faint, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/** [SheetHeader]'s title and close X. */
+@Composable
+private fun TitleRow(title: String, onClose: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(title, fontFamily = Display, fontSize = 23.sp, color = Ink, modifier = Modifier.weight(1f))
         Box(
             Modifier

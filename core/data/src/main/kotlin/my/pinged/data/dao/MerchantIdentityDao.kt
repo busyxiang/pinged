@@ -283,13 +283,19 @@ interface MerchantIdentityDao : MerchantDecisions {
         }
     }
 
-    /** The keys merged into [canonicalKey], each with the name its latest transaction derives. */
+    /**
+     * The keys merged into [canonicalKey], each with the name its latest
+     * transaction derives and its own transaction count, counted as [choices]
+     * counts an identity's, so the sheet's figures add up to the identity's.
+     */
     @Query(
         """
         SELECT merchant_alias.merchant_key AS merchantKey,
                (SELECT COALESCE(txn.merchant_display, txn.merchant_raw) FROM txn
                 WHERE txn.merchant_key = merchant_alias.merchant_key
                 ORDER BY txn.occurred_at DESC LIMIT 1) AS derivedName,
+               (SELECT COUNT(*) FROM txn
+                WHERE txn.merchant_key = merchant_alias.merchant_key AND txn.state != 'REJECTED') AS txnCount,
                NOT EXISTS(SELECT 1 FROM merchant_rule WHERE """ + MerchantSql.LEARNED + """
                   AND merchant_rule.pattern = merchant_alias.merchant_key) AS noOwnRule
         FROM merchant_alias WHERE canonical_key = :canonicalKey ORDER BY merchant_key
@@ -419,6 +425,8 @@ data class MerchantMember(
     val derivedName: String?,
     /** True when [merchantKey] has no learned rule of its own, so Separate leaves it with none. */
     val noOwnRule: Boolean = false,
+    /** The transactions captured under [merchantKey] itself. */
+    val txnCount: Int = 0,
 )
 
 /**

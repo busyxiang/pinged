@@ -111,7 +111,7 @@ class RowTouchTargetTest {
                                 uncategorizedId = uncategorized.id,
                                 canCategorize = canCategorize,
                                 onCategorize = { categorized++ },
-                                onOpenMerchant = {},
+                                onOpenMerchant = { _, _ -> },
                                 onOpenReview = { reviewed++ },
                                 onOpenDetail = { opened++ },
                             )

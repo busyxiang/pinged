@@ -508,7 +508,7 @@ class LedgerViewModel(
         rows.addCategory(name, iconKey) { refresh(shownMonth()).join() }
 
     /** See [RowActions.openMerchant]. */
-    fun openMerchant(ownKey: String): Job = rows.openMerchant(ownKey)
+    fun openMerchant(ownKey: String, on: LocalDate): Job = rows.openMerchant(ownKey, on)
 
     fun closeMerchant() = rows.closeMerchant()
 

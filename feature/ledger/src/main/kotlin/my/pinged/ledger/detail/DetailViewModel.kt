@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import my.pinged.data.LocalDate
 import my.pinged.capture.CaptureStorage
 import my.pinged.data.Databases
 import my.pinged.data.dao.DetailRow
@@ -97,7 +98,7 @@ class DetailViewModel(app: Application, val txnId: Long, val createdAt: Long) : 
         it.removeCaptured(txnId, now())
     }
 
-    fun openMerchant(ownKey: String): Job = rows.openMerchant(ownKey)
+    fun openMerchant(ownKey: String, on: LocalDate): Job = rows.openMerchant(ownKey, on)
 
     fun closeMerchant() = rows.closeMerchant()
 
