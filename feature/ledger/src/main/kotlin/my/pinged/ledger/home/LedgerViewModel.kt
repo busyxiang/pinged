@@ -41,6 +41,7 @@ import my.pinged.data.PingedDatabase
 import my.pinged.data.notCapturedDays
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
+import my.pinged.data.dao.NotInTotalLine
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
 import java.time.YearMonth
@@ -469,6 +470,9 @@ class LedgerViewModel(
                 mergedIdentities = chooser.mergedIdentities,
                 dictionaryFiling = chooser.dictionaryFiling,
                 awaitingReview = txns.awaitingReviewCount(),
+                awaitingReviewInMonth = txns.notInTotal(month.start, month.endInclusive)
+                    .filter { it.line == NotInTotalLine.PENDING }
+                    .sumOf { it.txnCount },
             )
             _storageUnavailable.value = false
         }

@@ -1760,7 +1760,10 @@ Spending list, `N AWAITING REVIEW`, shown only when N > 0; the count on the
 Spending tab while another tab is selected; a held row's own badge (section
 9.1), which opens on that row's card; Charts' *N awaiting review* line; and
 the Day screen's heading, whose *M awaiting review* opens on that day's
-first held row. N counts every `PENDING` row, all currencies. The inbox is
+first held row. N counts every `PENDING` row, all currencies. Charts' count
+is the month's, so where some of N fall outside the month the Spending list
+shows, its row names the month's share, `11 AWAITING REVIEW · 5 IN OCTOBER`,
+read by the query Charts' line reads (#215). The inbox is
 pushed on the current tab's stack, so back returns to wherever it was opened
 from.
 

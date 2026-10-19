@@ -327,6 +327,7 @@ internal fun LedgerScreenContent(
                     onCategorize = { txnId -> categorizing = txnId },
                     onOpenMerchant = merchantActions.open,
                     awaitingReview = read.awaitingReview,
+                    awaitingReviewInMonth = read.awaitingReviewInMonth,
                     onOpenReview = onOpenReview,
                     onOpenEntry = onOpenEntry,
                     onOpenDetail = onOpenDetail,
@@ -684,6 +685,7 @@ private fun Feed(
     onCategorize: (Long) -> Unit,
     onOpenMerchant: (ownKey: String) -> Unit,
     awaitingReview: Int,
+    awaitingReviewInMonth: Int,
     onOpenReview: (focus: Long?) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)?,
     onOpenDetail: ((EditTarget) -> Unit)?,
@@ -711,7 +713,9 @@ private fun Feed(
             // with `performScrollTo`. Absent at zero, so it is never noise.
             if (awaitingReview > 0) {
                 stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
-                    AwaitingReviewRow(awaitingReview) { onOpenReview(null) }
+                    AwaitingReviewRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
+                        onOpenReview(null)
+                    }
                 }
             }
             items(
@@ -757,11 +761,11 @@ private fun Feed(
 }
 
 /**
- * §9.2's way in: `N AWAITING REVIEW`, in the accent, opening the inbox. The
- * count is every currency's, so it can name payments no total here mentions.
+ * §9.2's way in: [label], in the accent, opening the inbox. The count is every
+ * month's and every currency's, so it can name payments no total here mentions.
  */
 @Composable
-private fun AwaitingReviewRow(count: Int, onOpen: () -> Unit) {
+private fun AwaitingReviewRow(label: String, onOpen: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -771,7 +775,7 @@ private fun AwaitingReviewRow(count: Int, onOpen: () -> Unit) {
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(awaitingReviewLabel(count), style = MonoLabel, color = Stamp, modifier = Modifier.weight(1f))
+        Text(label, style = MonoLabel, color = Stamp, modifier = Modifier.weight(1f))
         Chevron(pointsRight = true, size = 17.dp, strokeWidth = 1.7.dp, tint = Stamp)
     }
 }
@@ -910,6 +914,19 @@ private fun DayHeader(date: LocalDate, subtotal: List<CurrencyTotal>?, first: Bo
             }
         }
     }
+}
+
+/**
+ * The pinned row's words: `11 AWAITING REVIEW · 5 IN OCTOBER`. The count is
+ * every month's (§9.2) and Charts' is [month]'s, so where they differ the row
+ * names its share of [month] rather than read as contradicting Charts (#215).
+ * Where every held payment is in [month], or the month has not been read, the
+ * suffix would say nothing and is left off.
+ */
+internal fun pinnedReviewLabel(count: Int, inMonth: Int, month: YearMonth?): String {
+    val all = awaitingReviewLabel(count)
+    if (month == null || inMonth == count) return all
+    return all + Separator + "$inMonth IN " + month.month.getDisplayName(JavaTextStyle.FULL, CALENDAR).uppercase(CALENDAR)
 }
 
 /**

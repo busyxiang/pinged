@@ -531,13 +531,56 @@ class LedgerScreenTest {
 
         screen(onOpenReview = { opened += it })
 
+        // The 1970 row is not in this month, so the row also names this
+        // month's share; `thePinnedRowSaysHowManyOfItsCountAreInTheMonthShown`
+        // spells that suffix against a fixed month.
+        val label = "2 AWAITING REVIEW · 1 IN " + YearMonth.now().month.name
         compose.waitForText(
-            "2 AWAITING REVIEW",
+            label,
             "Two payments await review and the list does not say so, so the " +
                 "month total is short with nothing saying why",
         )
-        compose.onNodeWithText("2 AWAITING REVIEW").performScrollTo().performClick()
+        compose.onNodeWithText(label).performScrollTo().performClick()
         assertEquals("Tapping the pinned row did not open the inbox at its top", listOf<Long?>(null), opened)
+    }
+
+    /**
+     * #215: the pinned count is every month's (§9.2), and Charts' *N awaiting
+     * review* is the month's, so a row that does not say which it is reads as
+     * contradicting Charts on the same month.
+     */
+    @Test fun thePinnedRowSaysHowManyOfItsCountAreInTheMonthShown() {
+        val dao = freshLedger()
+        dao.insert(ledgerTxn(amountSen = 1_100L, occurredAt = SEP_7_NOON, localDate = SEP_7, state = TxnState.PENDING, pendingReason = PendingReason.RULE_REVIEW))
+        dao.insert(ledgerTxn(amountSen = 2_200L, occurredAt = SEP_7_NOON - 60_000L, localDate = SEP_7, state = TxnState.PENDING, pendingReason = PendingReason.OVER_THRESHOLD))
+        val aug18Noon = SEP_7_NOON - 20 * 24 * 60 * 60 * 1_000L
+        dao.insert(ledgerTxn(amountSen = 4_400L, occurredAt = aug18Noon, localDate = AUG_18, state = TxnState.PENDING, pendingReason = PendingReason.RULE_REVIEW))
+
+        screenFor(FIXED_MONTH)
+
+        compose.waitForText(
+            "3 AWAITING REVIEW · 2 IN SEPTEMBER",
+            "The pinned row counts August's payment too without saying so, so " +
+                "it disagrees with Charts' '2 awaiting review' for September",
+        )
+    }
+
+    @Test fun thePinnedRowSaysNothingMoreWhenEveryHeldPaymentIsInTheMonthShown() {
+        val dao = freshLedger()
+        dao.insert(ledgerTxn(amountSen = 1_100L, occurredAt = SEP_7_NOON, localDate = SEP_7, state = TxnState.PENDING, pendingReason = PendingReason.RULE_REVIEW))
+        dao.insert(ledgerTxn(amountSen = 2_200L, occurredAt = SEP_7_NOON - 60_000L, localDate = SEP_7, state = TxnState.PENDING, pendingReason = PendingReason.OVER_THRESHOLD))
+
+        screenFor(FIXED_MONTH)
+
+        // By prefix, so a suffixed row is drawn and fails the assertion below
+        // for what it says rather than timing out here.
+        val pinned = { compose.allText().filter { it.startsWith("2 AWAITING REVIEW") } }
+        compose.waitUntil(TIMEOUT) { pinned().isNotEmpty() }
+        assertEquals(
+            "The pinned row names a month's share that is the whole count, which is noise",
+            listOf("2 AWAITING REVIEW"),
+            pinned(),
+        )
     }
 
     @Test fun thePinnedRowIsAbsentWhenNothingAwaitsReview() {
