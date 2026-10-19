@@ -7,6 +7,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.onChildren
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -219,6 +220,11 @@ class MerchantSheetTest {
         assertEquals(listOf(duitNow), merged)
     }
 
+    /**
+     * Displayed, not only composed: at CI's 320x640 the keyboard leaves the
+     * list 229px with the field at its bottom, so a result is only in view if
+     * typing scrolls the field up.
+     */
     @Test fun theSearchNarrowsTheList() {
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet())
         compose.boundedWaitUntil(5_000) {
@@ -231,6 +237,7 @@ class MerchantSheetTest {
 
         assertEquals(0, compose.onAllNodesWithText("Restoran Yuen Kee Home Town Cafe").fetchSemanticsNodes().size)
         assertEquals(1, compose.onAllNodesWithText("Spades Bakery").fetchSemanticsNodes().size)
+        compose.onNodeWithText("Spades Bakery").assertIsDisplayed()
     }
 
     @Test fun aMergedMerchantOffersToSeparateItsOwnKey() {

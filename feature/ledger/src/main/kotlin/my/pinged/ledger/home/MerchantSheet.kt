@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,6 +105,9 @@ internal const val FILTER_FIELD_TAG = "merchant-filter"
 
 /** The sheet's list, which a test scrolls to reach an item not yet composed. */
 internal const val MERCHANT_LIST_TAG = "merchant-list"
+
+/** The key of the list item holding the search field, which typing scrolls to the top. */
+private const val SEARCH_ITEM = "search"
 
 /**
  * What spec 6.4's merchant sheet shows for one row, read in one piece by
@@ -205,7 +211,18 @@ internal fun MerchantSheet(
             Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
             subtitle = sheet.month?.let { monthLine(it, sheet.monthTotals) },
         )
-        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().testTag(MERCHANT_LIST_TAG)) {
+        val list = rememberLazyListState()
+        // Typing puts the search field at the top of the list, so what it
+        // finds is in view beneath it. At CI's 320x640 with the keyboard up the
+        // list is 229px tall and the field at rest is its bottom 28px, so with
+        // no scroll every result is below the sheet's edge. The field is
+        // focused, so its item is laid out and its offset is known.
+        LaunchedEffect(filter) {
+            if (filter.isBlank()) return@LaunchedEffect
+            val search = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == SEARCH_ITEM } ?: return@LaunchedEffect
+            list.animateScrollBy(search.offset.toFloat())
+        }
+        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().testTag(MERCHANT_LIST_TAG), state = list) {
             item(key = "name") {
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
                     Text(NAME_HEADING, style = MonoLabel, color = Muted)
@@ -259,6 +276,10 @@ internal fun MerchantSheet(
                             color = Muted,
                             modifier = Modifier.padding(top = 6.dp),
                         )
+                    }
+                }
+                item(key = SEARCH_ITEM) {
+                    Column(Modifier.padding(horizontal = 20.dp)) {
                         UnderlinedField(
                             value = filter,
                             onValueChange = { filter = it },
