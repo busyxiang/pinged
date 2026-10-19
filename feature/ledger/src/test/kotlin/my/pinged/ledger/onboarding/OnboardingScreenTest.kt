@@ -8,7 +8,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import my.pinged.ui.theme.CLOSE
-import my.pinged.ui.theme.Separator
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -36,7 +35,7 @@ class OnboardingScreenTest {
         // Not scrolled to: the action band is fixed below the claims, so the
         // button is on screen at CI's 640dp without the user finding it.
         compose.onNodeWithText(ALLOW_ACCESS).assertIsDisplayed().performClick()
-        compose.onNodeWithText("ANDROID ASKS NEXT" + Separator + "PINGED NEVER SEES A PASSWORD").assertIsDisplayed()
+        compose.onNodeWithText(ASKS_NEXT).assertIsDisplayed()
 
         assertEquals("The button did not ask for notification access", 1, asked)
     }

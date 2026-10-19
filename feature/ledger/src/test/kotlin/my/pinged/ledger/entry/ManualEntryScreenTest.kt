@@ -10,9 +10,13 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -26,7 +30,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.pressKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import my.pinged.data.Seed
+import my.pinged.ledger.home.PICKER_HEADING
+import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -55,6 +60,7 @@ class ManualEntryScreenTest {
                     state = state,
                     onAmount = { sen -> state = state.copy(draft = state.draft.copy(amountSen = sen)) },
                     onCategory = { id -> state = state.copy(draft = state.draft.tapped(id)) },
+                    onChooseCategory = { id -> state = state.copy(draft = state.draft.chosen(id)) },
                     onMerchant = { text -> state = state.copy(draft = state.draft.copy(merchant = text)) },
                     onNote = { text -> state = state.copy(draft = state.draft.copy(note = text)) },
                     onSave = { saves++ },
@@ -172,21 +178,66 @@ class ManualEntryScreenTest {
         compose.onNodeWithText("Transport").assertIsSelected()
     }
 
-    @Test fun aFarChipIsReachedByScrollingTheRow() {
+    /** #272, `design/Cash.dc.html`: the four most used, then More; the rest are behind it. */
+    @Test fun aNewPaymentOffersTheFourMostUsedAndMore() {
         state = ManualEntryState(categories = CHIPS)
         draw()
-        val last = compose.onNodeWithText(CHIPS.last().name)
-        last.assertIsNotDisplayed()
-        last.performScrollTo().assertIsDisplayed().performClick()
-        last.assertIsSelected()
-        assertEquals("The far chip's tap did not reach the draft", CHIPS.last().id, state.draft.category?.categoryId)
+        CHIPS.take(4).forEach { chip(it.name).assertExists() }
+        CHIPS.drop(4).forEach { chip(it.name).assertDoesNotExist() }
+        compose.onNodeWithText(MORE).assertExists()
     }
 
+    @Test fun aCategoryPickedThroughMoreIsSelectedInTheRowAndSaved() {
+        state = ManualEntryState(categories = CHIPS)
+        draw()
+        type("500")
+        compose.onNodeWithText(MORE).performScrollTo().performClick()
+        compose.onNodeWithText(PICKER_HEADING).assertExists()
+        compose.onNode(hasText(HEALTH.name) and inChooser).performScrollTo().performClick()
+        compose.onNode(hasText(SAVE_LABEL) and hasClickAction() and inChooser).performClick()
+
+        compose.onNodeWithText(PICKER_HEADING).assertDoesNotExist()
+        chip(HEALTH.name).assertIsSelected()
+        compose.onNodeWithText(SAVE).performScrollTo().performClick()
+        assertEquals("Save did not reach the holder", 1, saves)
+        assertEquals("The draft saved is not the category picked", CategoryChoice(HEALTH.id, ChosenBy.TAPPED), state.draft.category)
+    }
+
+    /** A pick through More selects, whatever was selected: the chooser's Save is not a toggle. */
+    @Test fun pickingTheSelectedCategoryThroughMoreKeepsItSelected() {
+        state = ManualEntryState(categories = CHIPS, draft = ManualDraft(category = CategoryChoice(HEALTH.id, ChosenBy.TAPPED)))
+        draw()
+        compose.onNodeWithText(MORE).performScrollTo().performClick()
+        compose.onNode(hasText(SAVE_LABEL) and hasClickAction() and inChooser).performClick()
+        chip(HEALTH.name).assertIsSelected()
+        assertEquals(HEALTH.id, state.draft.category?.categoryId)
+    }
+
+    @Test fun aCorrectionFiledOutsideTheFourShowsItsCategorySelected() {
+        val draft = ManualDraft(amountSen = 900L, category = CategoryChoice(HEALTH.id, ChosenBy.PRESELECTED))
+        state = ManualEntryState(categories = CHIPS, editing = 7, loaded = draft, draft = draft)
+        draw()
+        chip(HEALTH.name).assertIsSelected()
+    }
+
+    /** #272: a correction opens with no keyboard over Delete; a tap on the amount still brings it. */
+    @Test fun aCorrectionOpensWithTheAmountUnfocused() {
+        val draft = ManualDraft(amountSen = 900L)
+        state = ManualEntryState(categories = CHIPS, editing = 7, loaded = draft, draft = draft)
+        draw()
+        amountField().assertIsNotFocused()
+        amountField().performClick()
+        amountField().assertIsFocused()
+    }
+
+    private fun chip(name: String) = compose.onNode(hasText(name) and isSelectable() and !inChooser)
+
+    /** The chooser's own nodes, told apart from the row's beneath it. */
+    private val inChooser = hasAnyAncestor(hasAnyDescendant(hasText(PICKER_HEADING)))
+
     private companion object {
-        /** The seed's categories as `rankedByUse` hands them on a fresh install, with ids. */
-        val CHIPS = Seed.categories()
-            .mapIndexed { i, c -> c.copy(id = i + 1L) }
-            .filter { it.name != Seed.UNCATEGORIZED }
+        val CHIPS = SEED_CHIPS
         val GROCERIES = CHIPS.first { it.name == "Groceries" }.id
+        val HEALTH = CHIPS.first { it.name == "Health" }
     }
 }

@@ -172,6 +172,10 @@ internal fun conflictLine(count: Int, categoryNames: List<String>): String {
  * the 52dp tile holds. The grid is the part that scrolls, so Save stays on a
  * 640dp screen beside all fifteen (`ChooserArtboardTest`).
  *
+ * With no [teach], [noSwitchNote] is said in the switch's place, or nothing
+ * when it is null: manual entry's More (#272) picks for a draft, which has
+ * nothing to teach and no merchant to say it lacks.
+ *
  * Drawn in [ReceiptSheetFrame], the chrome every sheet shares; not in
  * `ReceiptSheet`, whose scrolling `Column` cannot hold this lazy grid.
  */
@@ -187,6 +191,7 @@ internal fun CategoryPicker(
     modifier: Modifier = Modifier,
     allNames: List<String> = categories.map { it.name },
     onAdd: (suspend (name: String, iconKey: String) -> Long?)? = null,
+    noSwitchNote: String? = NO_MERCHANT_NOTE,
 ) {
     var adding by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -257,9 +262,9 @@ internal fun CategoryPicker(
                     )
                 }
             }
-        } else {
+        } else if (noSwitchNote != null) {
             Text(
-                NO_MERCHANT_NOTE,
+                noSwitchNote,
                 fontFamily = Body,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,

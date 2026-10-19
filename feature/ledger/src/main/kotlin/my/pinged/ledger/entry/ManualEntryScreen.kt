@@ -3,11 +3,11 @@ package my.pinged.ledger.entry
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -69,8 +69,13 @@ import java.util.Locale
 import my.pinged.data.entity.Category
 import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
+import my.pinged.ledger.home.CategoryPicker
+import my.pinged.ledger.home.ChooserSubject
+import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.UnderlinedField
 import my.pinged.ledger.home.categoryIcon
+import my.pinged.ui.RINGGIT
+import my.pinged.ui.money
 import my.pinged.ui.ringgit
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
@@ -85,6 +90,7 @@ import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedRule
 
 /**
@@ -110,6 +116,7 @@ fun ManualEntryScreen(
         state = state,
         onAmount = viewModel::amount,
         onCategory = viewModel::tapCategory,
+        onChooseCategory = viewModel::chooseCategory,
         onDay = viewModel::day,
         onMerchant = viewModel::merchant,
         onNote = viewModel::note,
@@ -143,6 +150,7 @@ internal fun ManualEntryScreenContent(
     modifier: Modifier = Modifier,
     onDay: (LocalDate) -> Unit = {},
     onCategory: (categoryId: Long) -> Unit = {},
+    onChooseCategory: (categoryId: Long) -> Unit = {},
     onAddAnyway: () -> Unit = {},
     onKeepEditing: () -> Unit = {},
     onDelete: () -> Unit = {},
@@ -173,10 +181,24 @@ internal fun ManualEntryScreenContent(
             )
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AmountField(sen = state.draft.amountSen, onAmount = onAmount, modifier = Modifier.weight(1f))
+                AmountField(
+                    sen = state.draft.amountSen,
+                    onAmount = onAmount,
+                    focusOnArrival = state.editing == null,
+                    modifier = Modifier.weight(1f),
+                )
                 DateChip(day = state.draft.day, today = state.today, onDay = onDay)
             }
-            CategoryChips(state.categories, selected = state.draft.category?.categoryId, onTap = onCategory)
+            CategoryChips(
+                state.categories,
+                selected = state.draft.category?.categoryId,
+                subject = ChooserSubject(
+                    bill = state.draft.merchant.ifBlank { ENTERED_BY_HAND },
+                    amount = money(state.draft.amountSen, RINGGIT, symbol = false),
+                ),
+                onTap = onCategory,
+                onChoose = onChooseCategory,
+            )
             OptionalLine(MERCHANT, state.draft.merchant, onMerchant, MERCHANT_FIELD, KeyboardCapitalization.Words)
             OptionalLine(NOTE, state.draft.note, onNote, NOTE_FIELD, KeyboardCapitalization.Sentences)
         }
@@ -308,8 +330,10 @@ private fun Header(title: String, onBack: () -> Unit) {
 }
 
 /**
- * The amount, as a cash register takes it ([Keypad]): focused with the number
- * keyboard open on arrival, so the first tap is a digit.
+ * The amount, as a cash register takes it ([Keypad]). With [focusOnArrival]
+ * -- a new payment -- it is focused with the number keyboard open, so the
+ * first tap is a digit. A correction opens unfocused (#272): the amount is
+ * already there, and the keyboard would cover Delete payment.
  *
  * The field's own text is only ever [Keypad.shown] -- the digits of [sen] --
  * with the cursor held at the end, so every edit an IME can make is an append
@@ -327,9 +351,9 @@ private fun Header(title: String, onBack: () -> Unit) {
  * the whole 58sp line, and no `BasicTextField` parameter sets its height.
  */
 @Composable
-private fun AmountField(sen: Long, onAmount: (Long) -> Unit, modifier: Modifier = Modifier) {
+private fun AmountField(sen: Long, onAmount: (Long) -> Unit, focusOnArrival: Boolean, modifier: Modifier = Modifier) {
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(Unit) { if (focusOnArrival) focus.requestFocus() }
     val shown = Keypad.shown(sen)
     var focused by remember { mutableStateOf(false) }
     var drawn by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -385,27 +409,85 @@ private object CashRegister : VisualTransformation {
 }
 
 /**
- * Spec 9.4's category chips (#100), in the order they are handed -- most used
- * first -- in one row that scrolls sideways, so every category is reachable
- * and a rare one needs no other screen. A tap reports the chip; whether that
- * selects or deselects is the draft's ([ManualDraft.tapped]).
+ * Spec 9.4's category chips (#100), drawn as `design/Cash.dc.html` (#272):
+ * the first [SHOWN] of [categories] in the order they are handed -- most used
+ * first -- wrapped, then a dashed [MORE] chip opening the ledger's own
+ * chooser, [CategoryPicker], over all of them. A tap on a chip reports it,
+ * and whether that selects or deselects is the draft's ([ManualDraft.tapped]);
+ * a pick in the chooser always selects ([ManualDraft.chosen]).
  *
- * A `Row` with its own scroll rather than a `LazyRow`: fifteen chips are
- * cheap to compose, and a composed chip is one `performScrollTo` reaches.
+ * The [selected] category is always drawn: when it is not among the first
+ * [SHOWN] -- picked through More, or a correction filed under a rarer one --
+ * it takes the last place, so the row stays [SHOWN] chips and More.
+ *
+ * The chooser has no New category tile here: manual entry has no write
+ * that makes a category, and Settings' Categories is where one is made.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CategoryChips(categories: List<Category>, selected: Long?, onTap: (Long) -> Unit) {
-    Row(
+private fun CategoryChips(
+    categories: List<Category>,
+    selected: Long?,
+    subject: ChooserSubject,
+    onTap: (Long) -> Unit,
+    onChoose: (Long) -> Unit,
+) {
+    var choosing by rememberSaveable { mutableStateOf(false) }
+    FlowRow(
         Modifier
             .fillMaxWidth()
-            .padding(top = 16.dp)
-            .horizontalScroll(rememberScrollState())
-            .padding(ChipRowPadding),
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        categories.forEach { category ->
+        shownChips(categories, selected).forEach { category ->
             CategoryChip(category, chosen = category.id == selected) { onTap(category.id) }
         }
+        if (categories.size > SHOWN) MoreChip { choosing = true }
+    }
+    if (choosing) {
+        CategoryPicker(
+            categories = categories,
+            subject = subject,
+            teach = null,
+            initial = selected,
+            preview = { null },
+            onSave = { id, _ ->
+                choosing = false
+                onChoose(id)
+            },
+            onDismiss = { choosing = false },
+            noSwitchNote = null,
+        )
+    }
+}
+
+/** The chips [CategoryChips] draws before More: the first [SHOWN], with [selected] in the last place when it is not among them. */
+internal fun shownChips(categories: List<Category>, selected: Long?): List<Category> {
+    val first = categories.take(SHOWN)
+    val chosen = categories.firstOrNull { it.id == selected }
+    return if (chosen == null || chosen in first) first else first.take(SHOWN - 1) + chosen
+}
+
+/** How many category chips the row draws before More: the artboard's four. */
+private const val SHOWN = 4
+
+/**
+ * The artboard's More: a chip outlined in a dashed [Muted], its name in
+ * [Muted], and no icon. A button, not a selectable: it opens the chooser.
+ */
+@Composable
+private fun MoreChip(onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(2.dp))
+            .dashedOutline(Muted)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 13.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(MORE, style = ChipLabel, color = Muted)
     }
 }
 
@@ -434,8 +516,6 @@ private fun CategoryChip(category: Category, chosen: Boolean, onTap: () -> Unit)
         Text(category.name, style = if (chosen) ChipLabel.copy(fontWeight = FontWeight.Medium) else ChipLabel, color = ink)
     }
 }
-
-private val ChipRowPadding = PaddingValues(horizontal = 20.dp)
 
 /**
  * The date chip beside the amount (#103): `Today`, or the past day the entry
@@ -557,6 +637,9 @@ const val ADD_PAYMENT = "Add payment"
 
 /** This screen's title in edit mode (#105): a correction, not an addition. */
 const val EDIT_PAYMENT = "Edit payment"
+
+/** The chip after the first few categories, which opens the chooser over all of them (#272). */
+const val MORE = "More"
 
 /** The button that writes the entry. */
 const val SAVE = "Save"

@@ -118,7 +118,10 @@ internal fun TeachContent(
         }
         if (capture == null || selection == null) return@Column
         val derived = selection.derived()
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+        // `fill = false`: the content's own height, so the save bar sits
+        // directly under a short capture, and at most the room left, so a
+        // tall one scrolls behind the bar pinned at the bottom (#272).
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp)) {
                 Text(stepLabel(selection.step), style = MonoLabel, color = Stamp)
                 Message(selection, onTap, Modifier.padding(top = 11.dp))
@@ -142,7 +145,7 @@ internal fun TeachContent(
                 }
             }
             TornEdge(Modifier.padding(top = 22.dp))
-            Column(Modifier.fillMaxWidth().background(Card).padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 22.dp)) {
+            Column(Modifier.fillMaxWidth().testTag(TEACH_CARD).background(Card).padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 22.dp)) {
                 Text(LOOK_FOR, style = MonoLabel, color = Muted)
                 Text(
                     preview(derived?.preview),
@@ -165,7 +168,7 @@ internal fun TeachContent(
             }
         }
         Column(
-            Modifier.fillMaxWidth().background(Paper).dottedRule(atTop = true).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp),
+            Modifier.fillMaxWidth().testTag(TEACH_SAVE_BAR).background(Paper).dottedRule(atTop = true).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(FIRST_THREE, style = MonoLabel, color = Faint)
@@ -310,6 +313,12 @@ private val Quoted = MonoLabel.copy(letterSpacing = 0.sp, lineHeight = 18.sp, fo
 const val TEACH_TITLE = "Teach Pinged to read this"
 internal const val TEACH_BACK = "Back"
 internal const val TEACH_PREVIEW = "teach-preview"
+
+/** What a test finds the card under the torn edge by: the last of the scrolling content. */
+internal const val TEACH_CARD = "teach-card"
+
+/** What a test finds the save bar by: [FIRST_THREE] and [SAVE] under their dotted rule. */
+internal const val TEACH_SAVE_BAR = "teach-save-bar"
 internal const val AMOUNT_TAPPED = "AMOUNT, TAPPED · TAP AGAIN TO CHANGE"
 internal const val NO_MERCHANT = "This message has no merchant in it"
 internal const val LOOK_FOR = "WHAT PINGED WILL LOOK FOR"
