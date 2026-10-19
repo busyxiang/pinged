@@ -38,6 +38,7 @@ import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.R
 import my.pinged.parse.Direction
+import my.pinged.parse.ExclusionReason
 import my.pinged.ui.money
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Faint
@@ -299,7 +300,7 @@ private fun TxnRow(
                 Badge(awaitingReviewBadge(txn.pendingReason?.name), Stamp, onClick = onOpenReview)
             }
             if (excluded) {
-                Badge("NOT SPENDING" + Separator + words(txn.exclusionReason?.name), Muted)
+                Badge(notSpendingBadge(txn.exclusionReason), Muted)
             }
         }
         Text(
@@ -496,6 +497,20 @@ private fun Badge(text: String, color: Color, onClick: (() -> Unit)? = null) {
 
 /** A held row's badge, §9.1: `AWAITING REVIEW · RULE REVIEW`. */
 internal fun awaitingReviewBadge(reason: String?): String = "AWAITING REVIEW" + Separator + words(reason)
+
+/**
+ * An excluded row's badge, §7.3: `NOT SPENDING · CARD PAYMENT`. Each reason
+ * has its own words rather than its name, because `USER` printed as copy
+ * named a code concept (#214); the wording for it is
+ * `design/DetailExcluded.dc.html`'s.
+ */
+internal fun notSpendingBadge(reason: ExclusionReason?): String = "NOT SPENDING" + Separator + when (reason) {
+    ExclusionReason.TRANSFER -> "TRANSFER"
+    ExclusionReason.CARD_PAYMENT -> "CARD PAYMENT"
+    ExclusionReason.ATM_WITHDRAWAL -> "ATM WITHDRAWAL"
+    ExclusionReason.USER -> "YOU LEFT IT OUT"
+    null -> words(null)
+}
 
 /** What a held row's badge says it does, to a screen reader. */
 internal const val OPEN_REVIEW = "Open the review inbox"

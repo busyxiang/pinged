@@ -62,7 +62,7 @@ class NotInTotalTest {
         insert(10_000L, reason = ExclusionReason.TRANSFER)
         insert(2_000L, reason = ExclusionReason.CARD_PAYMENT)
         insert(300L, reason = ExclusionReason.ATM_WITHDRAWAL)
-        // You excluded.
+        // You left out.
         insert(4_000L, reason = ExclusionReason.USER)
         // Awaiting review, one of them excluded as well.
         insert(500L, state = TxnState.PENDING)
@@ -80,7 +80,7 @@ class NotInTotalTest {
             lines[NotInTotalLine.TRANSFERS],
         )
         assertEquals(
-            "You excluded is not the USER row",
+            "You left out is not the USER row",
             NotInTotal(NotInTotalLine.USER_EXCLUDED, "MYR", 1, 4_000L),
             lines[NotInTotalLine.USER_EXCLUDED],
         )

@@ -40,7 +40,7 @@ class NotInTotalRenderTest {
         draw(
             listOf(
                 KeptOut("Transfers, left out", "450.00"),
-                KeptOut("You excluded", "3,880.00"),
+                KeptOut("You left out", "3,880.00"),
                 KeptOut("7 awaiting review", "341.90"),
             ),
         )
