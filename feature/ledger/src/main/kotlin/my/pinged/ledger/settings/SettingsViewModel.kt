@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import my.pinged.capture.Corrections
 import my.pinged.capture.Graph
 import my.pinged.data.DatabaseKeyUnavailableException
@@ -559,11 +560,25 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
      * past its wipe to finish, and one refused or never started to delete
      * the document it was handed -- so a `join` means the
      * operation is over.
+     *
+     * Internal for SettledRequestTest, which hands it an answer already
+     * complete: the one shape of [start]'s result that timing cannot reach
+     * reliably.
      */
-    private fun request(start: (requester: Job) -> Deferred<Transfers.Answer>): Job =
+    @VisibleForTesting
+    internal fun request(start: (requester: Job) -> Deferred<Transfers.Answer>): Job =
         viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
             val pending = start(coroutineContext.job)
             val answer = try {
+                // Off the caller's thread now the request is made. An answer
+                // already in -- a document that will not open can settle
+                // before this line -- would not suspend [await], and the
+                // re-read below would run on the main thread, where Room
+                // throws; [read]'s own `withContext(Dispatchers.IO)` matches
+                // this context's dispatcher and so does not dispatch either.
+                // Inside the `try`, so a requester cancelled by now still waits
+                // for the operation to let go. See SettledRequestTest.
+                yield()
                 pending.await()
             } catch (cancelled: CancellationException) {
                 withContext(NonCancellable) { pending.await() }
