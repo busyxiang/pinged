@@ -131,7 +131,7 @@ class SearchScreenTest {
     @Test fun aRefundLowersTheTotalAndIsNotAPayment() {
         seed()
         dao().insert(ride(500, THIS.plusHours(4), merchant = GRAB).copy(direction = Direction.REFUND))
-        screen()
+        screen(onPickExport = {})
         compose.onNodeWithTag(SEARCH_FIELD).performTextInput("grab")
 
         // Three rides less a RM5.00 refund: 50.30 - 5.00 = 45.30, over three
@@ -139,6 +139,9 @@ class SearchScreenTest {
         waitForCount("3 PAYMENTS · $THIS_MONTH")
         compose.onNodeWithTag(SEARCH_TOTAL).assertTextEquals("RM45.30")
         compose.onNodeWithText("RM15.10 A PAYMENT").assertExists()
+        // Three payments and the refund are the four rows the button writes (#216).
+        compose.onNodeWithText("1 REFUND IN THE TOTAL").assertExists()
+        compose.onNodeWithText("EXPORT THESE 4 ROWS").assertExists()
     }
 
     @Test fun aCapturedRowOpensItsDetailAndAManualEntryItsEditScreen() {

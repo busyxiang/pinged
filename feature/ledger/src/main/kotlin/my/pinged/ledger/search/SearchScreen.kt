@@ -667,10 +667,15 @@ internal fun heroLines(totals: List<SearchTotal>, month: YearMonth?, shown: Int)
         notes += money(averageSen(lead.netSen, paid), lead.currency, symbol = true) + " A PAYMENT"
     }
     val rows = totals.sumOf { it.rowCount }
+    // Payments, refunds and kept-out rows add up to [rows], the count
+    // "Export these N rows" names (#216): a counted refund is in neither of
+    // the other two, so it has a note of its own.
+    val refunds = totals.sumOf { it.countedCount - it.paymentCount }
     val keptOut = totals.sumOf { it.rowCount - it.countedCount }
     totals.filter { it !== lead && it.countedCount > 0 }.forEach {
         notes += "ALSO " + money(it.netSen, it.currency, symbol = true) + " IN " + payments(it.paymentCount)
     }
+    if (refunds > 0) notes += (if (refunds == 1) "1 REFUND" else "$refunds REFUNDS") + " IN THE TOTAL"
     if (keptOut > 0) notes += "$keptOut MORE NOT IN THE TOTAL"
     if (rows > shown) notes += "SHOWING THE NEWEST $shown OF $rows"
     return HeroLines(label, amount, notes)
