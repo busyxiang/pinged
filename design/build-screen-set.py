@@ -94,7 +94,7 @@ groups = [
   ("A pack of new rules", "PackImport.dc.html", "New, import with a dry run",
    "The payoff for never deleting a raw capture: a pack is tried against your own notifications before you accept it. Thirty-one more would be read; zero of the 112 you already have would change. That second number should always be zero, and it is shown whether or not it is."),
   ("Could not read", "Unread.dc.html", "Changed, the authoring loop",
-   "Its primary action was &ldquo;copy as test case&rdquo;, which is a developer loop, not a user one. It now leads with teaching. The third card still inverts the pair, because an FD maturity notice is genuinely never spending &mdash; and copy-as-fixture survives as the small icon by each timestamp."),
+   "Its primary action was &ldquo;copy as test case&rdquo;, which is a developer loop, not a user one. It now leads with teaching. Teaching leads on every card, the FD maturity notice too: Pinged cannot tell a non-transaction from a wording no pack knows yet, and a wrong &ldquo;Never a transaction&rdquo; silently drops a real payment&rsquo;s shape for good, where a wrong &ldquo;Teach&rdquo; costs one tap. Copy-as-fixture survives as the small icon by each timestamp."),
  ]),
 ]
 
