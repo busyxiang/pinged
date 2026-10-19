@@ -13,8 +13,8 @@ import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.MonthSummary
 import java.time.YearMonth
 
-// The Spending feed as `LedgerScreenContent` is handed it, for the tests in
-// both source sets that draw the screen without a database.
+// The Spending feed as `LedgerScreenContent` is handed it, for the tests
+// that draw the screen without a database.
 
 /** [items] as one fully loaded page, so the feed draws them at once. */
 internal fun loadedFeed(items: List<LedgerItem>): Flow<PagingData<LedgerItem>> = flowOf(

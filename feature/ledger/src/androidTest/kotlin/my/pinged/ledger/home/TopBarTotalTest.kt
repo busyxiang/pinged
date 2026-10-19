@@ -24,6 +24,7 @@ import my.pinged.ledger.septemberSummary
 import my.pinged.ui.money
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -33,7 +34,13 @@ import org.junit.runner.RunWith
 /**
  * The TopBar's total in the cases nothing has to be measured to tell apart
  * (#253): what it says, and in which colour, once the summary has scrolled
- * away. Its place and type against the board are `LedgerArtboardTest`'s, and
+ * away.
+ *
+ * On a device although nothing is measured. paging-compose hands its pages
+ * over on `AndroidUiDispatcher.Main`, which it reads once per process, and
+ * under Robolectric that dispatcher outlives the test that made it: after
+ * some of `src/test`'s classes the feed's first page never arrived, and
+ * every case here failed or passed together with Gradle's class order. Its place and type against the board are `LedgerArtboardTest`'s, and
  * when it appears `SummaryScrollTest`'s, both on a device.
  *
  * Also the scroll position across a tab switch, which `NavDisplay`'s
@@ -148,13 +155,9 @@ class TopBarTotalTest {
         compose.onNodeWithText("SPENT SO FAR", useUnmergedTree = true).assertDoesNotExist()
     }
 
-    /**
-     * Scrolls the feed to [index] once it is drawn. Paging hands over its
-     * first page off the main thread, so `waitForIdle` can return with the
-     * screen still `Reading`: it did in the whole suite's run, never alone.
-     */
+    /** Scrolls the feed to [index] once paging has handed over its first page. */
     private fun scrollTo(index: Int) {
-        compose.waitUntil(FEED_TIMEOUT) { compose.onAllNodes(hasScrollToIndexAction()).fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(FEED_TIMEOUT) { compose.onAllNodes(hasScrollToIndexAction()).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasScrollToIndexAction()).performScrollToIndex(index)
         compose.waitForIdle()
     }
@@ -180,6 +183,6 @@ class TopBarTotalTest {
         /** The summary, then the day's heading, then Row 1: "Row 20" is the list's 22nd item. */
         const val ROW_20 = 21
 
-        const val FEED_TIMEOUT = 5_000L
+        const val FEED_TIMEOUT = 10_000L
     }
 }

@@ -60,11 +60,13 @@ class DetailRouteTest {
             assertTrue("Not spending did not write", compose.waitFor { compose.countOf("Count as spending") == 1 })
             compose.onNodeWithContentDescription(DETAIL_BACK).performScrollTo().performClick()
 
+            assertTrue("Back did not return to the list", compose.waitFor { compose.countOf("WHAT PINGED READ") == 0 && compose.countOf(MERCHANT) > 0 })
+            // The list comes back where it was left, at the row, so the
+            // summary is scrolled back to before it is read.
+            compose.scrollFeedToSummary()
             assertTrue(
                 "Back on the list, the month still counted the payment the user said was not spending",
-                compose.waitFor {
-                    compose.countOf("WHAT PINGED READ") == 0 && compose.countOf(MERCHANT) > 0 && compose.countOf(HERO) == 0
-                },
+                compose.waitFor { compose.countOf("NOTHING COUNTED THIS MONTH") == 1 && compose.countOf(HERO) == 0 },
             )
         }
     }
@@ -84,7 +86,7 @@ class DetailRouteTest {
     }
 
     private fun openTheDetail() {
-        assertTrue("The row never drew", compose.waitFor { compose.countOf(MERCHANT) > 0 })
+        assertTrue("The row never drew", compose.scrollFeedTo(MERCHANT, TIMEOUT))
         compose.onNodeWithText(MERCHANT).performScrollTo().performClick()
         awaitDetail("Tapping the captured row did not open its detail")
     }

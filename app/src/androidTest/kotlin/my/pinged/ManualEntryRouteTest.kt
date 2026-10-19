@@ -72,10 +72,9 @@ class ManualEntryRouteTest {
             awaitTheList("Save did not return to the list")
             assertTrue(
                 "The list does not show the RM12.50 entry reading `Entered by hand`",
-                compose.waitFor {
+                compose.scrollFeedTo(hasText(ENTERED_BY_HAND, substring = true), TIMEOUT) &&
                     compose.countOf("12.50") >= 1 &&
-                        compose.onAllNodes(hasText(ENTERED_BY_HAND, substring = true)).fetchSemanticsNodes().size == 1
-                },
+                    compose.onAllNodes(hasText(ENTERED_BY_HAND, substring = true)).fetchSemanticsNodes().size == 1,
             )
         }
     }
