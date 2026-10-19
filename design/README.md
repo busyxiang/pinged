@@ -11,7 +11,7 @@ These are the source of truth; the pages below are generated from them.
 | Group | Files |
 |---|---|
 | First run | `Onboarding` `Stored` `Battery` `Sources` `Empty` |
-| Every day | `Main` `Inbox` `Detail` `DetailExcluded` `Cash` |
+| Every day | `Main` `MainScrolled` `MainScrolled320` `MainEnd` `Inbox` `Detail` `DetailExcluded` `Cash` |
 | Looking back | `Charts` `ChartsMonth` `Day` `Search` |
 | When it breaks | `Stopped` `Backup` `Settings` |
 | While it loads | `LoadingSpending` `LoadingWaiting` `LoadingCharts` `LoadingInbox` `LoadingDetail` `LoadingDay` `LoadingList` `LoadingSettings` `LoadingSheet` `LoadingSearch` |

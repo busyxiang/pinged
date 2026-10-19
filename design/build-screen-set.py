@@ -20,11 +20,13 @@ groups = [
  ]),
  ("Every day", "The app in ordinary use, a month in. Scenario pinned to Wednesday 30 September 2026 so every figure agrees with every other.", [
   ("Spending", "Main.dc.html", "Home",
-   "Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. The top three are named categories only: Uncategorized is where a payment is filed, not what it bought, so it never takes a slot, and 6 TO SORT under them opens Search on the month&rsquo;s Uncategorized rows to file each in place (#273). Cash sits in its own band above the tabs, and the list stops at its edge rather than scrolling under it: amounts are right-aligned, which is the edge a floating button would cover (#221)."),
+   "Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. The top three are named categories only: Uncategorized is where a payment is filed, not what it bought, so it never takes a slot, and 6 TO SORT under them opens Search on the month&rsquo;s Uncategorized rows to file each in place (#273). Cash floats over the list. It slides away while you scroll down, toward what you are about to read, and comes back when you scroll up or stop."),
   ("Spending, scrolled", "MainScrolled.dc.html", "New, past the summary",
    "The summary is the list&rsquo;s first item and scrolls away with it, so a phone shows rows rather than the same three categories all day. The bar stays. Once the hero total has gone under it, the total cross-fades in on the month&rsquo;s row, abbreviated to SEP so the bar is no wider scrolled than at the top; tapping it brings the summary back. The awaiting-review row scrolls up with the list and pins under the bar (#253)."),
   ("At 320dp", "MainScrolled320.dc.html", "New, the same at CI&rsquo;s size",
    "The narrowest screen Pinged is tested on. The heard chip keeps its own line, as it does at the top, and the total keeps the month&rsquo;s."),
+  ("At the end of the month", "MainEnd.dc.html", "New, where the button stops covering",
+   "Resting part-way down, the floating Cash button covers whatever amount is under it, and a nudge reveals it. At the end there is nothing left to nudge, so the list ends in 86dp of empty space, the button&rsquo;s height and its margins: the last row comes to rest above the button, and the button sits over nothing."),
   ("Needs a look", "Inbox.dc.html", "Review inbox",
    "All four review reasons at once. Every card carries the notification word for word, so the app is never more confident than the evidence it holds. The duplicate card shows both notifications side by side, labelled with which one a merge keeps, so you see what survives before you commit."),
   ("Detail", "Detail.dc.html", "One transaction",
@@ -288,7 +290,7 @@ page = f'''<title>Pinged Screen Set</title>
 <style>{css}</style>
 <div class="wrap">
   <p class="eyebrow">Pinged &middot; Receipt direction</p>
-  <h1>Forty screens, one paper trail</h1>
+  <h1>Forty-two screens, one paper trail</h1>
   <p class="stand">The whole v1 surface &mdash; every screen, sheet and list &mdash; grouped the way a person meets it. The populated scenario is pinned to <strong>Wednesday 30 September 2026</strong>, month end, so every figure reconciles: RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded, four items awaiting review.</p>
   <p class="stand">The system below is the handoff &mdash; those hex values and type roles become the Compose theme directly.</p>
 
