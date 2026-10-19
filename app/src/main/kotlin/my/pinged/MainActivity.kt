@@ -653,7 +653,7 @@ class MainActivity : ComponentActivity() {
 
     /**
      * [heardLine] over [health], re-measured each minute so a ledger left open
-     * does not go on saying "5 MIN AGO" for an hour.
+     * does not go on saying "HEARD 5 MIN" for an hour.
      */
     @Composable
     private fun heardNow(): String? {
@@ -1184,17 +1184,23 @@ internal fun bannerFor(report: CaptureReport, exportOverdue: Boolean): BannerKin
  * `CaptureHealth.THROTTLE_MILLIS`, so every answer is up to five minutes
  * staler than the truth, never fresher, and nothing finer than five minutes
  * is claimed.
+ *
+ * **No "ago".** The chip shares the top bar with the month and the magnifier,
+ * and at CI's 320dp "HEARD IN THE LAST 5 MIN" wrapped to three lines;
+ * `LedgerArtboardTest` holds the widest of these to one. Nor the board's
+ * "LISTENING", or a "LIVE": each claims what [CaptureReport.looksDead] says
+ * this app cannot know.
  */
 internal fun heardLine(report: CaptureReport?, now: Long): String? {
     if (report == null || !report.granted || report.storageUnavailable || report.healthUnreadable) return null
     if (report.lastNotificationAt == 0L) return null
     val minutes = (now - report.lastNotificationAt) / 60_000L
     return when {
-        minutes < 5 -> "HEARD IN THE LAST 5 MIN"
-        minutes < 60 -> "HEARD $minutes MIN AGO"
-        minutes < 24 * 60 -> "HEARD ${minutes / 60} HR AGO"
-        minutes < 2 * 24 * 60 -> "HEARD 1 DAY AGO"
-        else -> "HEARD ${minutes / (24 * 60)} DAYS AGO"
+        minutes < 5 -> "HEARD <5 MIN"
+        minutes < 60 -> "HEARD $minutes MIN"
+        minutes < 24 * 60 -> "HEARD ${minutes / 60} HR"
+        minutes < 2 * 24 * 60 -> "HEARD 1 DAY"
+        else -> "HEARD ${minutes / (24 * 60)} DAYS"
     }
 }
 

@@ -75,9 +75,12 @@ import my.pinged.ui.theme.dottedRule
  * kept and no rule read, newest first, each word for word.
  *
  * Each card offers spec 5.8's "Teach Pinged this", filled, and 5.7's "Never a
- * transaction", outlined. The board fills whichever its sample suits; this
- * cannot tell which a notification is, so it always fills the one that can
- * make money count.
+ * transaction", outlined, in that order on every card, an FD maturity notice
+ * too. Nothing here tells a non-transaction from a wording no pack knows yet,
+ * and the two mistakes do not cost the same: a wrong "Teach" costs a tap, a
+ * wrong "Never" writes a reject rule that drops that shape for good, found
+ * again only under Things you taught. A word list to tell them apart would be
+ * a second parser outside the packs.
  *
  * Read once per foreground, as `LearnedScreen` is, so a capture stage two
  * marked while the user was away is on the list when they come back.

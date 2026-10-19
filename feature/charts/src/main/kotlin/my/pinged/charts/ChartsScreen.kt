@@ -38,6 +38,7 @@ import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.heroFigure
 import java.time.LocalDate
 
 /**
@@ -190,7 +191,7 @@ private fun HeroSection(hero: Hero) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 18.dp)) {
         MonoLine(hero.label, Muted)
         Text(
-            hero.figure,
+            heroFigure(hero.figure, HERO_SEN),
             style = HeroSerif,
             color = if (hero.greyed) Muted else Ink,
             modifier = Modifier.padding(top = 4.dp),
@@ -253,3 +254,6 @@ private fun MonoLine(text: String, colour: Color, modifier: Modifier = Modifier)
  * total; built without `tnum`, which Instrument Serif does not have.
  */
 private val HeroSerif = TextStyle(fontFamily = Display, fontSize = 44.sp, lineHeight = 48.sp)
+
+/** The board's `.30`: 28px under a 50px figure, the same 0.56 of this 44sp one. */
+private val HERO_SEN = 25.sp

@@ -17,22 +17,22 @@ class HeardLineTest {
         CaptureReport(granted = true, lastNotificationAt = now - millis, staleForMillis = millis)
 
     @Test fun underTheHeartbeatsThrottleItClaimsNoFinerAnswer() {
-        assertEquals("HEARD IN THE LAST 5 MIN", heardLine(heardAgo(0L), now))
-        assertEquals("HEARD IN THE LAST 5 MIN", heardLine(heardAgo(4 * minute), now))
+        assertEquals("HEARD <5 MIN", heardLine(heardAgo(0L), now))
+        assertEquals("HEARD <5 MIN", heardLine(heardAgo(4 * minute), now))
     }
 
     @Test fun minutesThenHoursThenDays() {
-        assertEquals("HEARD 5 MIN AGO", heardLine(heardAgo(5 * minute), now))
-        assertEquals("HEARD 59 MIN AGO", heardLine(heardAgo(59 * minute), now))
-        assertEquals("HEARD 1 HR AGO", heardLine(heardAgo(60 * minute), now))
-        assertEquals("HEARD 23 HR AGO", heardLine(heardAgo(23 * 60 * minute + 59 * minute), now))
-        assertEquals("HEARD 1 DAY AGO", heardLine(heardAgo(24 * 60 * minute), now))
-        assertEquals("HEARD 3 DAYS AGO", heardLine(heardAgo(3 * 24 * 60 * minute), now))
+        assertEquals("HEARD 5 MIN", heardLine(heardAgo(5 * minute), now))
+        assertEquals("HEARD 59 MIN", heardLine(heardAgo(59 * minute), now))
+        assertEquals("HEARD 1 HR", heardLine(heardAgo(60 * minute), now))
+        assertEquals("HEARD 23 HR", heardLine(heardAgo(23 * 60 * minute + 59 * minute), now))
+        assertEquals("HEARD 1 DAY", heardLine(heardAgo(24 * 60 * minute), now))
+        assertEquals("HEARD 3 DAYS", heardLine(heardAgo(3 * 24 * 60 * minute), now))
     }
 
     @Test fun measuredAgainstTheTimeOfDrawingNotOfTheReport() {
         val report = heardAgo(0L)
-        assertEquals("HEARD 10 MIN AGO", heardLine(report, now + 10 * minute))
+        assertEquals("HEARD 10 MIN", heardLine(report, now + 10 * minute))
     }
 
     @Test fun nothingHeardIsTheBannersToSay() {
@@ -47,6 +47,6 @@ class HeardLineTest {
     }
 
     @Test fun aClockBehindTheHeartbeatReadsAsJustHeard() {
-        assertEquals("HEARD IN THE LAST 5 MIN", heardLine(heardAgo(-10 * minute), now))
+        assertEquals("HEARD <5 MIN", heardLine(heardAgo(-10 * minute), now))
     }
 }

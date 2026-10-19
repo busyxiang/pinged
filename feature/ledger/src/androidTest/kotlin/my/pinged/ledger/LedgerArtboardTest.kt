@@ -15,12 +15,19 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.paging.LoadState
@@ -35,10 +42,12 @@ import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.entity.Category
 import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.home.ADD_PAYMENT_BUTTON
+import my.pinged.ledger.home.CASH_BAND
 import my.pinged.ledger.home.CASH_OFFER
 import my.pinged.ledger.home.EMPTY_HERO
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.HEARD_CHIP
+import my.pinged.ledger.home.MONTH_BUTTON
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
@@ -49,6 +58,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.HeroFill
+import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
@@ -185,6 +195,59 @@ class LedgerArtboardTest {
         assertEquals("The button is painted mostly in", Stamp, mostOf(node.captureToImage().toPixelMap()))
     }
 
+    /**
+     * The list stops above the button, in a band the button is centred in
+     * (#221): a ledger's amounts and badges are right-aligned, the edge the
+     * button sits on, and room only after the last row left it over every
+     * other row the list scrolled past.
+     */
+    @Test fun theListEndsAboveTheAddButton() {
+        long()
+        val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
+        val button = compose.onNodeWithTag(ADD_PAYMENT_BUTTON).fetchSemanticsNode().boundsInRoot
+        assertTrue("The list runs to ${list.bottom}, under the button's top at ${button.top}", list.bottom <= button.top)
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        assertEquals("The button is not centred in the band", (list.bottom + root.bottom) / 2, button.center.y, 1f)
+        val band = compose.onRoot().captureToImage().toPixelMap()
+        val y = ((list.bottom + button.top) / 2).toInt().coerceAtLeast(list.bottom.toInt() + 2)
+        assertTrue("The band is not Card", ArtboardProbe.close(band[(root.width / 4).toInt(), y], Card))
+    }
+
+    /**
+     * The band is drawn only where the list keeps a 57dp row above it (#221).
+     * In the app at 320x640 the Spending tab is 640 less the 52dp status bar
+     * and the 62dp tab bar, 502dp; the capture-off banner, which every fresh
+     * install draws, takes 226dp of that, leaving this screen 276dp, all but
+     * 56 of it the top bar and the pinned summary (measured in `:app`). A
+     * band there would leave the list nothing, and a list with no height
+     * composes no row.
+     */
+    @Test fun underTheBannerAt320x640TheListKeepsItsRowAndTheButtonFloats() {
+        long(size = DpSize(320.dp, 276.dp))
+        assertEquals("A band is drawn with no room for a row", 0, compose.onAllNodes(hasTestTag(CASH_BAND)).fetchSemanticsNodes().size)
+        val list = listBounds()
+        assertTrue("The list is ${list.height}px tall", list.height > 0f)
+        val day = boundsOf(dayLabel(SEP_30))
+        assertTrue("The first day is not on screen in the list at $list: $day", day.top >= list.top && day.bottom <= list.bottom)
+        compose.onNodeWithTag(ADD_PAYMENT_BUTTON).assertExists()
+    }
+
+    /**
+     * With no banner the same screen is 502dp, and the band leaves the list
+     * 196dp, measured at 320x640/160: the band is drawn.
+     */
+    @Test fun withoutTheBannerAt320x640TheBandIsDrawn() {
+        long(size = DpSize(320.dp, 502.dp))
+        compose.onNodeWithTag(CASH_BAND).assertExists()
+        val density = compose.density.density
+        assertTrue("The list kept ${listBounds().height / density}dp", listBounds().height / density >= 57f)
+    }
+
+    @Test fun at411TheBandIsDrawn() {
+        long(size = DpSize(411.dp, 800.dp))
+        compose.onNodeWithTag(CASH_BAND).assertExists()
+    }
+
     @Test fun theAddButtonIsLabelledCash() {
         populated()
         assertInside(boundsOf(CASH), compose.onNodeWithTag(ADD_PAYMENT_BUTTON).fetchSemanticsNode().boundsInRoot)
@@ -215,6 +278,37 @@ class LedgerArtboardTest {
         assertTrue("No Stamp dot in the heard chip", count(chip, Stamp) > 0)
         assertTrue("No Border frame round the heard chip", distance(chip[chip.width / 2, 0], Border) < 0.08f)
         assertEquals("The board sets the chip's words in Ink", Ink, styleOf(HEARD).color)
+    }
+
+    /**
+     * The board's chip is one line (#221). The widest lines `heardLine` writes,
+     * beside the widest month and with the chevron and the magnifier drawn;
+     * nothing caps the day count, so three digits. At 320dp none fits on the
+     * month's row, so each moves whole to a line of its own rather than wrap.
+     */
+    private fun assertHeardDropsWhole(heard: String) {
+        populated(heard = heard, chrome = true, width = 320.dp)
+        assertEquals("\"$heard\" wraps", 1, layoutOf(heard).lineCount)
+        val chip = compose.onNodeWithTag(HEARD_CHIP).fetchSemanticsNode().boundsInRoot
+        val month = compose.onNodeWithTag(MONTH_BUTTON).fetchSemanticsNode().boundsInRoot
+        assertTrue("\"$heard\" at ${chip.top} is not under the month's row at ${month.bottom}", chip.top >= month.bottom)
+    }
+
+    @Test fun heardUnderFiveMinutesDropsWholeAt320() = assertHeardDropsWhole(HEARD)
+
+    @Test fun heardFiftyNineMinutesDropsWholeAt320() = assertHeardDropsWhole("HEARD 59 MIN")
+
+    @Test fun heardTwentyThreeHoursDropsWholeAt320() = assertHeardDropsWhole("HEARD 23 HR")
+
+    @Test fun heardThreeDigitDaysDropsWholeAt320() = assertHeardDropsWhole("HEARD 999 DAYS")
+
+    /** Where it fits, the chip keeps the board's place on the month's row. */
+    @Test fun heardSitsOnTheMonthsRowAt411() {
+        populated(heard = "HEARD 59 MIN", chrome = true, width = 411.dp)
+        assertEquals(1, layoutOf("HEARD 59 MIN").lineCount)
+        val chip = compose.onNodeWithTag(HEARD_CHIP).fetchSemanticsNode().boundsInRoot
+        val month = compose.onNodeWithTag(MONTH_BUTTON).fetchSemanticsNode().boundsInRoot
+        assertTrue("The chip at ${chip.top}..${chip.bottom} is off the month's row ${month.top}..${month.bottom}", chip.top >= month.top && chip.bottom <= month.bottom)
     }
 
     // ---- Empty ----
@@ -292,7 +386,7 @@ class LedgerArtboardTest {
 
     // ---- Harness ----
 
-    private fun populated(heard: String? = null, fontScale: Float? = null) {
+    private fun populated(heard: String? = null, fontScale: Float? = null, chrome: Boolean = false, width: Dp? = null) {
         val first = ledgerTxn(1_840L, localDate = SEP_30, categoryId = FOOD.id, id = 1L, rawCaptureId = null)
         val second = ledgerTxn(3_200L, localDate = SEP_30, categoryId = GROCERIES.id, id = 2L, rawCaptureId = null)
         val third = ledgerTxn(7_000L, localDate = SEP_29, categoryId = PETROL.id, id = 3L, rawCaptureId = null)
@@ -312,12 +406,45 @@ class LedgerArtboardTest {
             ),
             heard = heard,
             fontScale = fontScale,
+            chrome = chrome,
+            width = width,
+        )
+    }
+
+    /** More rows than a screen holds, so the list scrolls under wherever the button is. */
+    private fun long(size: DpSize? = null) {
+        val rows = (1L..24L).map { ledgerTxn(1_000L * it, localDate = SEP_30, categoryId = FOOD.id, id = it, rawCaptureId = null) }
+        show(
+            items = listOf(LedgerItem.DayHeader(SEP_30, 1L, listOf(CurrencyTotal("MYR", 30_000L)))) +
+                rows.map { LedgerItem.Row(it, displayName = "Row ${it.id}") },
+            summary = MonthSummary(
+                month = YearMonth.of(2026, 9),
+                totals = listOf(CurrencyTotal("MYR", 30_000L)),
+                top = listOf(CategoryTotal(FOOD.id, "MYR", 30_000L)),
+                trustworthy = true,
+            ),
+            heard = null,
+            fontScale = null,
+            size = size,
         )
     }
 
     private fun empty() = show(items = emptyList(), summary = null, heard = null, fontScale = null)
 
-    private fun show(items: List<LedgerItem>, summary: MonthSummary?, heard: String?, fontScale: Float?) {
+    /**
+     * [chrome] draws the month's chevron and the magnifier, which the top bar
+     * shares with the chip; [width], or [size], lays the screen out that big
+     * whatever the device's.
+     */
+    private fun show(
+        items: List<LedgerItem>,
+        summary: MonthSummary?,
+        heard: String?,
+        fontScale: Float?,
+        chrome: Boolean = false,
+        width: Dp? = null,
+        size: DpSize? = null,
+    ) {
         val flow = flowOf(
             PagingData.from(
                 items,
@@ -329,6 +456,11 @@ class LedgerArtboardTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale ?: density.fontScale)) {
                 PingedTheme {
                     LedgerScreenContent(
+                        modifier = when {
+                            size != null -> Modifier.requiredSize(size)
+                            width != null -> Modifier.requiredWidth(width)
+                            else -> Modifier
+                        },
                         items = flow.collectAsLazyPagingItems(),
                         read = LedgerRead(summary = summary, categories = listOf(FOOD, GROCERIES, PETROL)),
                         storageUnavailable = false,
@@ -336,6 +468,8 @@ class LedgerArtboardTest {
                         onOpenSettings = {},
                         onAddPayment = { added++ },
                         heard = heard,
+                        onOpenSearch = if (chrome) ({}) else null,
+                        onOpenMonths = if (chrome) ({}) else null,
                     )
                 }
             }
@@ -347,6 +481,8 @@ class LedgerArtboardTest {
         compose.onNodeWithText(text, substring = substring, useUnmergedTree = true)
 
     private fun boundsOf(text: String): Rect = text(text).fetchSemanticsNode().boundsInRoot
+
+    private fun listBounds(): Rect = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
 
     private fun layoutOf(text: String, substring: Boolean = false): TextLayoutResult {
         val layouts = mutableListOf<TextLayoutResult>()
@@ -399,7 +535,7 @@ class LedgerArtboardTest {
         val TOP_AMOUNT = money(84_250L, "MYR", symbol = false)
         val SUBTOTAL = money(6_840L, "MYR", symbol = false)
         const val CASH = "CASH"
-        const val HEARD = "HEARD IN THE LAST 5 MIN"
+        const val HEARD = "HEARD <5 MIN"
 
         const val HEADLINE = "Nothing is missing. There is just nothing yet."
         const val BODY_START = "Android will not hand over notifications"

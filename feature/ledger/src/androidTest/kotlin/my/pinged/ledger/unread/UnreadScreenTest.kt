@@ -1,7 +1,9 @@
 package my.pinged.ledger.unread
 
 import android.app.Application
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.hasScrollToNodeAction
@@ -17,12 +19,16 @@ import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.data.entity.ParseStatus
+import my.pinged.ledger.ArtboardProbe
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.transfer.bulkCapture
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.Stamp
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -70,6 +76,23 @@ class UnreadScreenTest {
         compose.onNodeWithText("Your FD of RM5,000.00 has matured. View details in MAE.").assertIsDisplayed()
         compose.onNodeWithText("Your FD has matured.").assertDoesNotExist()
         compose.onNodeWithText(NOTHING_UNREAD).assertDoesNotExist()
+    }
+
+    /**
+     * Teach leads, filled, on every card, an FD maturity notice too (#221):
+     * nothing tells a non-transaction from a wording no pack knows yet, and a
+     * wrong "Never" drops a payment's shape for good where a wrong "Teach"
+     * costs a tap.
+     */
+    @Test fun anFdNoticeStillLeadsWithTeachFilledInStamp() {
+        draw(UnreadState(loaded = true, items = listOf(fd)))
+        val teach = compose.onNodeWithText(TEACH_PINGED_THIS).performScrollTo()
+        val never = compose.onNodeWithText(NEVER_A_TRANSACTION)
+        assertTrue("Never a transaction leads", ArtboardProbe.bounds(teach).left < ArtboardProbe.bounds(never).left)
+        val filled = teach.captureToImage().toPixelMap()
+        assertTrue("Teach is not filled in Stamp", ArtboardProbe.close(filled[2, filled.height / 2], Stamp))
+        val outlined = never.captureToImage().toPixelMap()
+        assertFalse("Never a transaction is filled in Stamp", ArtboardProbe.close(outlined[2, outlined.height / 2], Stamp))
     }
 
     @Test fun anAppNoLongerListedIsNamedByItsPackage() {

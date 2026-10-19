@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
@@ -46,10 +49,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -98,6 +98,7 @@ import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedRule
+import my.pinged.ui.theme.heroFigure
 import java.time.YearMonth
 import java.time.format.TextStyle as JavaTextStyle
 
@@ -331,9 +332,7 @@ internal fun LedgerScreenContent(
                     onOpenReview = onOpenReview,
                     onOpenEntry = onOpenEntry,
                     onOpenDetail = onOpenDetail,
-                    // Room under the last row for the button, so it never covers
-                    // the row's amount.
-                    bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,
+                    onAddPayment = onAddPayment,
                     listState = listState,
                     modifier = Modifier.weight(1f),
                 )
@@ -343,8 +342,9 @@ internal fun LedgerScreenContent(
         // entry screen says for itself when it cannot save. `Empty.dc.html`
         // draws no button, because its offer at the foot is the same action.
         // Empty is a ledger with no rows, not a month with none: a quiet month
-        // over a history is the feed, and keeps the button.
-        if (onAddPayment != null && !empty) {
+        // over a history is the feed, and keeps the button. The feed draws its
+        // own, since where it sits depends on the list's room.
+        if (onAddPayment != null && (unreadable || reading)) {
             AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(20.dp))
         }
     }
@@ -406,47 +406,91 @@ internal fun LedgerScreenContent(
  * `Main.dc.html` draws no way in; the screen set's note that every pushed
  * screen carries a back arrow lists search among them, and the header is
  * the one place on this screen above the money rather than among it.
+ *
+ * The chip is on the month's row where its one line fits there, and
+ * otherwise on a line of its own under the magnifier, right-aligned: at
+ * 320dp beside SEPTEMBER 2026 its words get about 51dp, six characters, and
+ * no `heardLine` fits. Decided by measuring the chip, not by a width, so a
+ * longer month or a larger font moves it too.
  */
 @Composable
 private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?, onOpenSearch: (() -> Unit)?) {
-    Row(
-        Modifier
+    Layout(
+        content = {
+            Row(
+                Modifier
+                    .layoutId(BarSlot.MONTH)
+                    .testTag(MONTH_BUTTON)
+                    .heightIn(min = MONTH_TARGET)
+                    .then(
+                        if (onOpenMonths != null) {
+                            Modifier.clickable(role = Role.Button, onClickLabel = CHOOSE_A_MONTH, onClick = onOpenMonths)
+                        } else {
+                            Modifier
+                        },
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(monthName(month), style = MonoLabel, color = Muted)
+                // Only where it opens something: it says "pick a month".
+                if (onOpenMonths != null) DownChevron()
+            }
+            if (heard != null) HeardChip(heard, Modifier.layoutId(BarSlot.CHIP))
+            if (onOpenSearch != null) SearchButton(onOpenSearch, Modifier.layoutId(BarSlot.SEARCH))
+        },
+        modifier = Modifier
             .fillMaxWidth()
             .padding(start = 20.dp, end = 20.dp, top = 26.dp - (MONTH_TARGET - 30.dp) / 2),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Row(
-            Modifier
-                .testTag(MONTH_BUTTON)
-                .heightIn(min = MONTH_TARGET)
-                .then(
-                    if (onOpenMonths != null) {
-                        Modifier.clickable(role = Role.Button, onClickLabel = CHOOSE_A_MONTH, onClick = onOpenMonths)
-                    } else {
-                        Modifier
-                    },
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(monthName(month), style = MonoLabel, color = Muted)
-            // Only where it opens something: it says "pick a month".
-            if (onOpenMonths != null) DownChevron()
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        fun slot(id: BarSlot) = measurables.firstOrNull { it.layoutId == id }?.measure(loose)
+        val monthSlot = slot(BarSlot.MONTH)!!
+        val chip = slot(BarSlot.CHIP)
+        val search = slot(BarSlot.SEARCH)
+        val width = constraints.maxWidth
+        val gap = CHIP_GAP.roundToPx()
+        val rowHeight = maxOf(monthSlot.height, chip?.height ?: 0, search?.height ?: 0)
+        val used = monthSlot.width + (search?.width ?: 0)
+        val inRow = chip == null || used + gap + chip.width <= width
+        val height = if (inRow) rowHeight else maxOf(monthSlot.height, search?.height ?: 0) + CHIP_DROP.roundToPx() + chip!!.height
+        layout(width, height) {
+            val firstRow = if (inRow) rowHeight else maxOf(monthSlot.height, search?.height ?: 0)
+            monthSlot.place(0, (firstRow - monthSlot.height) / 2)
+            search?.let { it.place(width - it.width, (firstRow - it.height) / 2) }
+            if (chip != null) {
+                if (inRow) {
+                    // Where a SpaceBetween row puts it: at the end with no
+                    // magnifier, else centred in what the month and the
+                    // magnifier leave, at least CHIP_GAP after the month.
+                    val free = width - used - gap - chip.width
+                    val x = if (search == null) width - chip.width else monthSlot.width + gap + free / 2
+                    chip.place(x, (rowHeight - chip.height) / 2)
+                } else {
+                    chip.place(width - chip.width, firstRow + CHIP_DROP.roundToPx())
+                }
+            }
         }
-        if (heard != null) HeardChip(heard, Modifier.padding(start = 12.dp).weight(1f, fill = false))
-        if (onOpenSearch != null) SearchButton(onOpenSearch)
     }
 }
+
+/** The top bar's three slots, which [TopBar]'s layout finds by id. */
+private enum class BarSlot { MONTH, CHIP, SEARCH }
+
+/** The least room between the month and the heard chip on one row. */
+private val CHIP_GAP = 12.dp
+
+/** How far below the month's row the heard chip sits when it does not fit on it. */
+private val CHIP_DROP = 8.dp
 
 /**
  * The magnifier, `Search.dc.html`'s glyph at 20dp in Muted, in the design
  * system's 44dp target. Its right edge is the glyph's, on the 20dp margin.
  */
 @Composable
-private fun SearchButton(onClick: () -> Unit) {
+private fun SearchButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        Modifier
+        modifier
             .padding(start = 4.dp)
             .offset(x = 12.dp)
             .clip(RoundedCornerShape(2.dp))
@@ -491,8 +535,8 @@ private fun DownChevron() {
  * [heard]. Never the board's word: the access grant is all this app knows on
  * day one, and granted with nothing ever heard is the OEM-kill signature
  * (`CaptureReport.looksDead`), so a claim to be listening would be the one
- * thing it cannot back. Weighted without fill, so at 320dp it wraps under the
- * month rather than squeezing it.
+ * thing it cannot back. One line always: where that does not fit beside the
+ * month, [TopBar] moves the whole chip.
  */
 @Composable
 private fun HeardChip(heard: String, modifier: Modifier = Modifier) {
@@ -506,7 +550,7 @@ private fun HeardChip(heard: String, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(Modifier.size(7.dp).background(Stamp, CircleShape))
-        Text(heard, style = MonoLabel, color = Ink)
+        Text(heard, style = MonoLabel, color = Ink, maxLines = 1, softWrap = false)
     }
 }
 
@@ -674,7 +718,21 @@ private fun CashOffer(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-/** The pinned summary, then the rows, under the awaiting-review row when there is one. */
+/**
+ * The pinned summary, then the rows, under the awaiting-review row when there
+ * is one, and the add button where [onAddPayment] offers one.
+ *
+ * The button sits in a band under the list, not over it: a ledger's amounts
+ * and badges are right-aligned, the edge the button is on, so over the list it
+ * covered a subtotal or a duplicate badge wherever the list was scrolled
+ * (#221). The band is all or nothing, and only where the list keeps at least
+ * one [LEDGER_ROW] above it: at 320x640 under the capture-off banner, which
+ * every fresh install draws, the list has 56dp in all, and a band would leave
+ * it none, which composes no row. There the list takes the whole area and the
+ * button floats over it as the board draws it, with room after the last row.
+ * Measured, not a breakpoint, so a banner, a font scale or a longer summary
+ * moves it too.
+ */
 @Composable
 private fun Feed(
     items: LazyPagingItems<LedgerItem>,
@@ -691,7 +749,7 @@ private fun Feed(
     onOpenDetail: ((EditTarget) -> Unit)?,
     listState: LazyListState,
     modifier: Modifier = Modifier,
-    bottomRoom: Dp = 0.dp,
+    onAddPayment: (() -> Unit)? = null,
 ) {
     Column(modifier) {
         MonthSummaryBlock(summary, categoriesById)
@@ -700,61 +758,75 @@ private fun Feed(
         // file, and a second copy of its tile geometry is a second thing to
         // keep in step.
         Spacer(Modifier.fillMaxWidth().padding(top = 18.dp).height(1.dp).background(Rule))
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .background(Card)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = bottomRoom),
-        ) {
-            // A sticky header, so it stays at the top of the list as it
-            // scrolls, and inside the list's scroll so a test can reach it
-            // with `performScrollTo`. Absent at zero, so it is never noise.
-            if (awaitingReview > 0) {
-                stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
-                    AwaitingReviewRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
-                        onOpenReview(null)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val banded = onAddPayment != null && maxHeight - ADD_PAYMENT_ROOM >= LEDGER_ROW
+            val floating = onAddPayment != null && !banded
+            Column(Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Card)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = if (floating) ADD_PAYMENT_ROOM else 0.dp),
+                ) {
+                    // A sticky header, so it stays at the top of the list as it
+                    // scrolls, and inside the list's scroll so a test can reach it
+                    // with `performScrollTo`. Absent at zero, so it is never noise.
+                    if (awaitingReview > 0) {
+                        stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
+                            AwaitingReviewRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
+                                onOpenReview(null)
+                            }
+                        }
                     }
+                    items(
+                        count = items.itemCount,
+                        // The header's key names the row it sits above as well as its
+                        // day, because a duplicate key throws out of measure: see
+                        // `LedgerItem.DayHeader.firstRowId`.
+                        key = items.itemKey { item ->
+                            when (item) {
+                                is LedgerItem.Row -> "txn-" + item.txn.id
+                                is LedgerItem.DayHeader ->
+                                    "day-" + item.date.yyyymmdd + "-" + item.firstRowId
+                            }
+                        },
+                        contentType = items.itemContentType { item ->
+                            when (item) {
+                                is LedgerItem.Row -> "row"
+                                is LedgerItem.DayHeader -> "header"
+                            }
+                        },
+                    ) { index ->
+                        when (val item = items[index]) {
+                            // Placeholders are off, so this is only reached if the list
+                            // shrinks under the composition. Nothing is the honest draw
+                            // for a row that is no longer there.
+                            null -> Unit
+                            is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal, first = index == 0)
+                            is LedgerItem.Row -> LedgerRow(
+                                row = item.feedRow,
+                                categoriesById = categoriesById,
+                                uncategorizedId = uncategorizedId,
+                                canCategorize = hasChoices,
+                                onCategorize = onCategorize,
+                                onOpenMerchant = onOpenMerchant,
+                                onOpenReview = onOpenReview,
+                                onOpenEntry = onOpenEntry,
+                                onOpenDetail = onOpenDetail,
+                            )
+                        }
+                    }
+                }
+                // The dotted rule is the screens' footers'.
+                if (banded) {
+                    Spacer(Modifier.testTag(CASH_BAND).fillMaxWidth().height(ADD_PAYMENT_ROOM).background(Card).dottedRule(atTop = true))
                 }
             }
-            items(
-                count = items.itemCount,
-                // The header's key names the row it sits above as well as its
-                // day, because a duplicate key throws out of measure: see
-                // `LedgerItem.DayHeader.firstRowId`.
-                key = items.itemKey { item ->
-                    when (item) {
-                        is LedgerItem.Row -> "txn-" + item.txn.id
-                        is LedgerItem.DayHeader ->
-                            "day-" + item.date.yyyymmdd + "-" + item.firstRowId
-                    }
-                },
-                contentType = items.itemContentType { item ->
-                    when (item) {
-                        is LedgerItem.Row -> "row"
-                        is LedgerItem.DayHeader -> "header"
-                    }
-                },
-            ) { index ->
-                when (val item = items[index]) {
-                    // Placeholders are off, so this is only reached if the list
-                    // shrinks under the composition. Nothing is the honest draw
-                    // for a row that is no longer there.
-                    null -> Unit
-                    is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal, first = index == 0)
-                    is LedgerItem.Row -> LedgerRow(
-                        row = item.feedRow,
-                        categoriesById = categoriesById,
-                        uncategorizedId = uncategorizedId,
-                        canCategorize = hasChoices,
-                        onCategorize = onCategorize,
-                        onOpenMerchant = onOpenMerchant,
-                        onOpenReview = onOpenReview,
-                        onOpenEntry = onOpenEntry,
-                        onOpenDetail = onOpenDetail,
-                    )
-                }
+            if (onAddPayment != null) {
+                val bottom = if (banded) (ADD_PAYMENT_ROOM - ADD_PAYMENT_SIZE) / 2 else 20.dp
+                AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = bottom))
             }
         }
     }
@@ -955,14 +1027,7 @@ internal fun dayLabel(date: LocalDate): String {
 internal val HeroSerif = TextStyle(fontFamily = Display, fontSize = 54.sp, lineHeight = 1.02.em)
 
 /** The board's `.30`: the sen in a 30px span, in Muted, after the ringgit. */
-internal fun heroText(amount: String): AnnotatedString {
-    val point = amount.lastIndexOf('.')
-    if (point < 0) return AnnotatedString(amount)
-    return buildAnnotatedString {
-        append(amount.substring(0, point))
-        withStyle(SpanStyle(fontSize = 30.sp, color = Muted)) { append(amount.substring(point)) }
-    }
-}
+internal fun heroText(amount: String): AnnotatedString = heroFigure(amount, 30.sp)
 
 /** Two or more totals, which have to align. See the note at the call site. */
 private val HeroMono = MonoNumerals.copy(fontSize = 28.sp, lineHeight = 34.sp)
@@ -985,8 +1050,8 @@ private val LEADER_LIFT = 4.5.dp
 
 /**
  * Spec 9.4's **Add payment**, the artboard's cash button: a + over "CASH" at
- * the bottom right of the Spending tab, over the list. Named [ADD_PAYMENT] to
- * TalkBack, since neither the + nor "CASH" says what it does.
+ * the bottom right of the Spending tab, in a band under the list. Named
+ * [ADD_PAYMENT] to TalkBack, since neither the + nor "CASH" says what it does.
  *
  * "CASH" is [MonoLabel] at its 12sp floor, not the board's 8px; the + and the
  * label stack 43dp at a 1.3 font scale, inside the 54dp.
@@ -996,7 +1061,7 @@ private fun AddPaymentButton(onClick: () -> Unit, modifier: Modifier = Modifier)
     Column(
         modifier
             .testTag(ADD_PAYMENT_BUTTON)
-            .size(54.dp)
+            .size(ADD_PAYMENT_SIZE)
             .clip(RoundedCornerShape(2.dp))
             .background(Stamp)
             .clickable(role = Role.Button, onClick = onClick)
@@ -1010,8 +1075,14 @@ private fun AddPaymentButton(onClick: () -> Unit, modifier: Modifier = Modifier)
     }
 }
 
-/** The button's 54dp and its 20dp margin, plus a little air. */
+/** The board's button, 54px square. */
+private val ADD_PAYMENT_SIZE = 54.dp
+
+/** The band under the list: the button and 16dp above and below it. */
 private val ADD_PAYMENT_ROOM = 86.dp
+
+/** A categorised ledger row as drawn, 57dp (#189): the least list the band leaves. */
+private val LEDGER_ROW = 57.dp
 
 /** The empty ledger's way to Settings, under its copy; the offer at its foot is the other. */
 internal const val OPEN_SETTINGS = "Open settings"
@@ -1021,6 +1092,9 @@ internal const val CASH_OFFER_LABEL = "Or start with a cash expense"
 
 /** Test tags, for the elements a test measures the drawing of. */
 const val ADD_PAYMENT_BUTTON = "add-payment-button"
+
+/** The band under the list the add button sits in, where there is room for one. */
+const val CASH_BAND = "cash-band"
 const val CASH_OFFER = "cash-offer"
 const val EMPTY_HERO = "empty-hero"
 const val HEARD_CHIP = "heard-chip"
