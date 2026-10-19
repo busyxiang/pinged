@@ -20,7 +20,7 @@ class FooterVersionTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun footerShowsBuildAndPackVersionBeneathPrivacyLine() {
-        compose.setContent { PingedTheme { Footer(buildVersion = "1.2.3", packVersion = 14) } }
+        compose.setContent { PingedTheme { Footer(buildVersion = "1.2.3", packVersion = 14, onOpenLicences = {}) } }
 
         compose.onNodeWithText("NO INTERNET PERMISSION", substring = true).assertIsDisplayed()
         compose.onNodeWithText("BUILD 1.2.3", substring = true).assertIsDisplayed()

@@ -8,6 +8,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -29,7 +32,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, sourcesOn = 4, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertIsDisplayed()
@@ -47,7 +50,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, lastExportAt = null, lastCheckAt = null, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertIsDisplayed()
@@ -66,7 +69,7 @@ class SettingsScreenTest {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 SettingsRows(
                     state = SettingsState(),
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
                 )
             }
         }
@@ -79,7 +82,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.KEY_GONE, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -97,7 +100,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.DAMAGED, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -109,7 +112,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.UNREADABLE, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Export everything").assertDoesNotExist()
@@ -126,7 +129,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.DAMAGED, sourcesOn = null, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
         compose.onNodeWithText("Capture sources").assertIsDisplayed()
@@ -140,7 +143,7 @@ class SettingsScreenTest {
             Column(Modifier.verticalScroll(rememberScrollState())) {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, learnedCount = 1_230, ignoredCount = 4, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = { opened++ }, onOpenCategories = {}, onOpenLicences = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = { opened++ }, onOpenCategories = {},
                 onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
             }
@@ -158,7 +161,7 @@ class SettingsScreenTest {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 SettingsRows(
                     state = SettingsState(storage = Storage.HEALTHY, categoryCount = 17, loaded = true),
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = { opened++ }, onOpenLicences = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = { opened++ },
                     onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
                 )
             }
@@ -173,7 +176,7 @@ class SettingsScreenTest {
         compose.setContent {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, learnedCount = null, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {},
                 onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
             )
         }
@@ -188,7 +191,7 @@ class SettingsScreenTest {
             Column(Modifier.verticalScroll(rememberScrollState())) {
             SettingsRows(
                 state = SettingsState(storage = Storage.HEALTHY, unreadCount = 1_201, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {},
+                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {},
                 onExport = {}, onRestore = {}, onCheck = {}, onDelete = {}, onOpenUnread = { opened++ },
             )
             }
@@ -199,20 +202,107 @@ class SettingsScreenTest {
         org.junit.Assert.assertEquals(1, opened)
     }
 
-    /** Spec 8: the fonts' licences are one tap from settings. */
-    @Test fun theLicencesRowOpensTheLicences() {
+    /**
+     * Spec 8: the fonts' licences are one tap from settings, from the footer's
+     * LICENCES (#230). The rows have no About section to hold them.
+     */
+    @Test fun theFooterOpensTheLicencesAndNoRowDoes() {
         var opened = 0
         compose.setContent {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-            SettingsRows(
-                state = SettingsState(storage = Storage.HEALTHY, loaded = true),
-                onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = { opened++ },
-                onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
-            )
+                SettingsRows(
+                    state = SettingsState(storage = Storage.HEALTHY, loaded = true),
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {},
+                    onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                )
+                Footer(buildVersion = "1.0", packVersion = 7, onOpenLicences = { opened++ })
             }
         }
-        compose.onNodeWithText("Licences").performScrollTo().performClick()
-        org.junit.Assert.assertEquals(1, opened)
+        compose.onNodeWithText("ABOUT").assertDoesNotExist()
+        compose.onNodeWithText("Licences").assertDoesNotExist()
+        compose.onNodeWithText("BUILD 1.0 · PACK 7 · ", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("LICENCES").performScrollTo().performClick()
+        assertEquals(1, opened)
+    }
+
+    /**
+     * #224: "NONE" names a mechanism nobody asked about, so the row is drawn
+     * only while a correction waits -- and not while the sweep's count is
+     * unknown, for `SettingsState.correctionsPending`'s reason.
+     */
+    @Test fun correctionsAppearOnlyWhileSomethingWaits() {
+        var pending by mutableStateOf<Int?>(0)
+        var opened = 0
+        compose.setContent {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SettingsRows(
+                    state = SettingsState(storage = Storage.HEALTHY, correctionsPending = pending, loaded = true),
+                    onOpenSources = {}, onOpenCorrections = { opened++ }, onOpenLearned = {}, onOpenCategories = {},
+                    onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                )
+            }
+        }
+        compose.onNodeWithText(CORRECTIONS).assertDoesNotExist()
+        compose.onNodeWithText("NONE").assertDoesNotExist()
+        pending = null
+        compose.onNodeWithText(CORRECTIONS).assertDoesNotExist()
+        pending = 3
+        compose.onNodeWithText("3 TO REVIEW").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(CORRECTIONS).performScrollTo().performClick()
+        assertEquals(1, opened)
+    }
+
+    /** The board's captions, word for word (#230). */
+    @Test fun theCaptionsAreTheBoards() {
+        compose.setContent {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SettingsRows(
+                    state = SettingsState(storage = Storage.HEALTHY, loaded = true),
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {},
+                    onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                    alertsOn = true, onAlerts = {},
+                )
+            }
+        }
+        compose.onNodeWithText("A DAILY CHECK, IN ANDROID'S SETTINGS").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("EVERY TRANSACTION AND ITS NOTIFICATION").performScrollTo().assertIsDisplayed()
+    }
+
+    /**
+     * #219, drawn by #230: Check my data says what the last check found, as
+     * "NO PROBLEMS FOUND" beside when. Only on [Storage.HEALTHY] with a time:
+     * there the damage flag is absent, which a check clears and anything that
+     * meets damage after it sets (`IntegrityStore`), so the last check is the
+     * latest word. Never checked has nothing to report, and on
+     * [Storage.DAMAGED] damage may have been met since a clean check -- the
+     * recovery notice says that instead.
+     */
+    @Test fun checkMyDataSaysWhatTheLastCheckFound() {
+        var state by mutableStateOf(SettingsState(storage = Storage.HEALTHY, lastCheckAt = System.currentTimeMillis(), loaded = true))
+        compose.setContent {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SettingsRows(
+                    state = state,
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {},
+                    onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                )
+            }
+        }
+        compose.onNodeWithText(NO_PROBLEMS).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("TODAY").assertIsDisplayed()
+        state = state.copy(lastCheckAt = 0L)
+        compose.onNodeWithText("NEVER CHECKED").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(NO_PROBLEMS).assertDoesNotExist()
+        state = state.copy(lastCheckAt = null)
+        compose.onNodeWithText(NO_PROBLEMS).assertDoesNotExist()
+        state = state.copy(storage = Storage.DAMAGED, lastCheckAt = System.currentTimeMillis())
+        compose.onNodeWithText("Check my data").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(NO_PROBLEMS).assertDoesNotExist()
+    }
+
+    private companion object {
+        const val CORRECTIONS = "Corrections from pack updates"
+        const val NO_PROBLEMS = "NO PROBLEMS FOUND"
     }
 
     /**
@@ -225,7 +315,7 @@ class SettingsScreenTest {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 SettingsRows(
                     state = SettingsState(storage = Storage.HEALTHY, loaded = true),
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
                     alertsOn = false,
                     onAlerts = { asked++ },
                 )

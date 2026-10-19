@@ -9,8 +9,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -125,6 +127,28 @@ fun Chevron(pointsRight: Boolean, size: Dp, strokeWidth: Dp, tint: Color) {
         val tip = if (pointsRight) far else near
         drawLine(tint, Offset(tail, this.size.height * 0.22f), Offset(tip, this.size.height * 0.5f), stroke)
         drawLine(tint, Offset(tip, this.size.height * 0.5f), Offset(tail, this.size.height * 0.78f), stroke)
+    }
+}
+
+/**
+ * The boards' arrow out of the app, `M8 16L16 8M9 8h7v7` in a 24-unit [size]
+ * box: where a row's tap leaves Pinged for Android's own settings, a
+ * [Chevron] would promise a screen of Pinged's that is not there.
+ *
+ * Here beside [Chevron] for its reason.
+ */
+@Composable
+fun OutwardArrow(size: Dp, strokeWidth: Dp, tint: Color) {
+    Canvas(Modifier.size(size)) {
+        val unit = this.size.width / 24f
+        val stroke = Stroke(strokeWidth.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        drawLine(tint, Offset(8 * unit, 16 * unit), Offset(16 * unit, 8 * unit), stroke.width, StrokeCap.Round)
+        val head = Path().apply {
+            moveTo(9 * unit, 8 * unit)
+            lineTo(16 * unit, 8 * unit)
+            lineTo(16 * unit, 15 * unit)
+        }
+        drawPath(head, tint, style = stroke)
     }
 }
 

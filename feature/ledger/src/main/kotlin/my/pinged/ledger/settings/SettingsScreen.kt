@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -46,6 +47,7 @@ import my.pinged.ui.theme.EXPORT_EVERYTHING
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.OutwardArrow
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.RESCUE
 import my.pinged.ui.theme.ReceiptSheet
@@ -56,22 +58,17 @@ import my.pinged.ui.theme.dottedRule
 import my.pinged.ledger.transfer.SalvageReport
 import my.pinged.ledger.transfer.Unreadable
 
+/** The torn edge between two sections, as a test finds it. */
+internal const val TORN_EDGE_TAG = "settings-torn-edge"
+
 /**
- * Spec 9.5, drawn from `design/Settings.dc.html`.
- *
- * **Only the rows with a screen behind them are here.** Capture health is
- * [CAPTURE_ALERTS], spec 10.2's daily check; the artboard's others -- pack
- * import, the review threshold -- belong to milestones that do not exist, and
- * dead rows are worse than a short screen. `HOW THINGS GET SORTED` holds the
- * two that do: what the user taught (#50, spec 5.7), the artboard's "taught
- * rules", and the categories (#155).
+ * Spec 9.5, drawn from `design/Settings.dc.html`: three sections and a footer,
+ * with the fonts' licences a link in the footer rather than a section of their
+ * own (#230).
  *
  * The root of the SETTINGS tab, so no back control: the artboard draws none, and
  * the bar `MainActivity` hosts is the way out.
  */
-/** The torn edge between two sections, as a test finds it. */
-internal const val TORN_EDGE_TAG = "settings-torn-edge"
-
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
@@ -116,7 +113,6 @@ fun SettingsScreen(
             onOpenCorrections = onOpenCorrections,
             onOpenLearned = onOpenLearned,
             onOpenCategories = onOpenCategories,
-            onOpenLicences = onOpenLicences,
             onOpenUnread = onOpenUnread,
             onExport = onExport,
             onRestore = { confirmingRestore = true },
@@ -125,7 +121,7 @@ fun SettingsScreen(
             alertsOn = alertsOn,
             onAlerts = onAlerts,
         )
-        Footer(buildVersion, packVersion)
+        Footer(buildVersion, packVersion, onOpenLicences)
     }
 
     // Named before the picker is ever shown: spec 11.2 discards the device's
@@ -448,12 +444,14 @@ internal fun RunningNotice(running: TransferJob.Running?) {
 /**
  * The rows alone, so a test can drive section 6's states with no database.
  *
- * **A chevron marks where a tap leads, so it is not painted uniformly.**
- * "Capture sources" pushes a screen; export and restore each hand off to a
- * system document picker -- a sheet as much as a screen is -- and deleting
- * everything is irreversible enough that it needs a confirmation surface of
- * its own before it runs. "Check my data" alone finishes on this screen,
- * updating only the value beside its own label, so it alone draws no chevron.
+ * **The mark after a row says where a tap leads, so it is not painted
+ * uniformly.** A chevron where it opens a screen or a sheet of Pinged's --
+ * export and restore each hand off to a system document picker, a sheet as
+ * much as a screen is, and deleting everything needs a confirmation surface
+ * of its own. [OutwardArrow] where it leaves for Android's settings. "Check
+ * my data" alone finishes on this screen, updating only its own caption and
+ * value, so it draws no chevron where the board draws one: a chevron there
+ * promises a screen the tap does not open.
  *
  * **The four transfer rows do nothing while one runs.** `Transfers` would
  * refuse the request anyway; a row that looks live and is not is the
@@ -470,7 +468,6 @@ internal fun SettingsRows(
     onOpenCorrections: () -> Unit,
     onOpenLearned: () -> Unit,
     onOpenCategories: () -> Unit,
-    onOpenLicences: () -> Unit,
     alertsOn: Boolean? = null,
     onAlerts: (() -> Unit)? = null,
     onOpenUnread: () -> Unit = {},
@@ -488,7 +485,6 @@ internal fun SettingsRows(
         // KDoc): a blank value is honest, a substituted one is not.
         value = state.read { state.sourcesOn?.let { "${grouped(it)} ON" } },
         onClick = onOpenSources,
-        chevron = true,
     )
     // Spec 10.2's daily check reaches a user only through a notification, and
     // this is the one place that asks for the permission: a prompt on launch
@@ -496,32 +492,36 @@ internal fun SettingsRows(
     if (onAlerts != null) {
         SettingsRow(
             CAPTURE_ALERTS,
-            caption = "A DAILY CHECK, WHEN YOUR PHONE LETS IT RUN",
+            caption = "A DAILY CHECK, IN ANDROID'S SETTINGS",
             value = alertsOn?.let { if (it) "ON" else "OFF" },
             onClick = onAlerts,
-            chevron = true,
+            mark = Mark.OUTWARD,
         )
     }
-    // Spec 5.6's authoring aid, where the artboard puts it.
+    // Spec 5.5's corrections wait on the user only now and then, and the
+    // board draws no row for them: drawn only while one waits (#224), since
+    // "NONE" names a mechanism nobody asked about. Nothing while the count
+    // is null, for `SettingsState.correctionsPending`'s reason.
+    val corrections = state.correctionsPending?.takeIf { it > 0 }
+    // Spec 5.6's authoring aid, where the artboard puts it: the count in
+    // Stamp, as the board draws it, because each is a notification lost to
+    // the ledger until a rule reads it. Muted at 0, which asks nothing.
     SettingsRow(
         UNREAD_ROW,
         caption = "HELPS ADD SUPPORT FOR NEW BANKS",
         value = state.read { state.unreadCount?.let { grouped(it) } },
+        valueTint = if ((state.unreadCount ?: 0) > 0) Stamp else Muted,
         onClick = onOpenUnread,
-        chevron = true,
+        divider = corrections != null,
     )
-    // The section's last row -- the rest of the artboard's belong to
-    // milestones that do not exist -- so it draws no divider, for the same
-    // reason `Delete everything` draws none below.
-    SettingsRow(
-        "Corrections from pack updates",
-        // Blank, not NONE, while the sweep is unfinished or unreadable; see
-        // `SettingsState.correctionsPending`.
-        value = state.read { state.correctionsPending?.let { if (it == 0) "NONE" else "${grouped(it)} TO REVIEW" } },
-        onClick = onOpenCorrections,
-        chevron = true,
-        divider = false,
-    )
+    if (corrections != null) {
+        SettingsRow(
+            "Corrections from pack updates",
+            value = "${grouped(corrections)} TO REVIEW",
+            onClick = onOpenCorrections,
+            divider = false,
+        )
+    }
 
     SectionBreak()
     SectionLabel("HOW THINGS GET SORTED")
@@ -531,15 +531,13 @@ internal fun SettingsRows(
         TAUGHT,
         value = state.read { state.learnedCount?.let { learned -> state.ignoredCount?.let { grouped(learned + it) } } },
         onClick = onOpenLearned,
-        chevron = true,
     )
-    // The artboard's "Categories · 14": every row the list shows, Uncategorized
+    // The artboard's "Categories · 16": every row the list shows, Uncategorized
     // included. The section's last row, so no divider.
     SettingsRow(
         CATEGORIES,
         value = state.read { state.categoryCount?.let { grouped(it) } },
         onClick = onOpenCategories,
-        chevron = true,
         divider = false,
     )
 
@@ -548,11 +546,10 @@ internal fun SettingsRows(
     if (exportable) {
         SettingsRow(
             label = EXPORT_EVERYTHING,
-            caption = "EVERY TRANSACTION AND THE NOTIFICATIONS BEHIND THEM",
+            caption = "EVERY TRANSACTION AND ITS NOTIFICATION",
             value = state.read { state.lastExportAt?.let { ago(it, never = "NEVER") } },
             onClick = onExport,
             enabled = idle,
-            chevron = true,
         )
     }
     SettingsRow(
@@ -560,14 +557,15 @@ internal fun SettingsRows(
         caption = "DISCARDS WHAT IS HERE FIRST",
         onClick = onRestore,
         enabled = idle,
-        chevron = true,
     )
     if (readable) {
         SettingsRow(
             label = "Check my data",
+            caption = checkResult(state),
             value = state.read { state.lastCheckAt?.let { ago(it, never = "NEVER CHECKED") } },
             onClick = onCheck,
             enabled = idle,
+            mark = Mark.NONE,
         )
     }
     // Always last in this section, so it alone never draws the divider below
@@ -577,16 +575,23 @@ internal fun SettingsRows(
         onClick = onDelete,
         enabled = idle,
         tint = Stamp,
-        chevron = true,
         divider = false,
     )
-
-    SectionBreak()
-    SectionLabel("ABOUT")
-    // Spec 8: the fonts' OFL texts ship with the app, and this row is what
-    // opens them. The section's only row, so no divider.
-    SettingsRow(LICENCES_TITLE, caption = "THE FONTS' OPEN FONT LICENSE", onClick = onOpenLicences, chevron = true, divider = false)
 }
+
+/**
+ * What the last check found, as Check my data's caption (#219), or null for
+ * nothing to say.
+ *
+ * Only on [Storage.HEALTHY] with a check on record. There `IntegrityStore`'s
+ * damage flag is absent, and a check clears it while a check or a read that
+ * meets damage after it sets it, so the last check is still the latest word.
+ * On [Storage.DAMAGED] damage may have been met since a clean check, and the
+ * recovery notice above says what that means; never checked, or a time
+ * nobody could read, has found nothing.
+ */
+internal fun checkResult(state: SettingsState): String? =
+    "NO PROBLEMS FOUND".takeIf { state.storage == Storage.HEALTHY && (state.lastCheckAt ?: 0L) > 0L }
 
 /**
  * What a salvage's sheet says, a sentence each, and only what is true of the
@@ -744,7 +749,7 @@ internal fun ago(at: Long, never: String, now: Long = System.currentTimeMillis()
 }
 
 /**
- * A section's heading, 8dp over its first row. [first] takes the board's 20dp
+ * A section's heading, 6dp over its first row. [first] takes the board's 16dp
  * under the header; every other section is already spaced by [SectionBreak].
  */
 @Composable
@@ -753,15 +758,30 @@ private fun SectionLabel(text: String, first: Boolean = false) {
         text,
         style = MonoLabel,
         color = Muted,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = if (first) 20.dp else 0.dp, bottom = 8.dp),
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = if (first) 16.dp else 0.dp, bottom = 6.dp),
     )
 }
 
-/** The board's perforation between two sections: 10dp under the last row, 12dp over the next label. */
+/** The board's perforation between two sections: 4dp under the last row, 8dp over the next label. */
 @Composable
 private fun SectionBreak() {
-    TornEdge(Modifier.padding(top = 10.dp, bottom = 12.dp).testTag(TORN_EDGE_TAG))
+    TornEdge(Modifier.padding(top = 4.dp, bottom = 8.dp).testTag(TORN_EDGE_TAG))
 }
+
+/** What follows a row's value, by where its tap leads; see [SettingsRows]. */
+private enum class Mark { CHEVRON, OUTWARD, NONE }
+
+/**
+ * The board's 9.5px captions and footer, at 10sp for the reason [MonoLabel]
+ * gives for its own size, with the board's 0.04em of tracking. [MonoLabel]'s
+ * 12sp and 1sp is 8.2dp a character, and the board's longest caption,
+ * "EVERY TRANSACTION AND ITS NOTIFICATION", then needed 312dp beside its
+ * value at the board's 390dp (#230).
+ */
+private val Caption = MonoLabel.copy(fontSize = 10.sp, lineHeight = 13.sp, letterSpacing = 0.4.sp)
+
+/** A row's value: the board's 11px, untracked, which is what lets a caption fit beside it. */
+private val Value = MonoLabel.copy(fontSize = 11.sp, letterSpacing = 0.sp)
 
 /**
  * One settings row, on [Paper] with a [dottedRule] underneath rather than a
@@ -773,6 +793,11 @@ private fun SectionBreak() {
  * signature (see `UpperRow` and `SourceListRow` there). A settings row
  * filled solid in `Card` would be a second screen inventing its own idiom
  * for the same artboard language.
+ *
+ * The board's row: 4dp above and below, 10dp between the label, the value
+ * and the mark, and the caption 2dp under the label. Captions and values are
+ * drawn in [Muted] where the board has Faint, which is 3.55:1 on Paper and
+ * short of the 4.5:1 small text needs.
  *
  * @param tint overrides [Ink] for a destructive label, and the chevron beside
  *   it, so "Delete everything" cannot be mistaken for a row like any other.
@@ -796,7 +821,8 @@ private fun SettingsRow(
     onClick: () -> Unit,
     enabled: Boolean = true,
     tint: Color = Ink,
-    chevron: Boolean = false,
+    valueTint: Color = Muted,
+    mark: Mark = Mark.CHEVRON,
     divider: Boolean = true,
 ) {
     Row(
@@ -806,28 +832,23 @@ private fun SettingsRow(
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .then(if (divider) Modifier.dottedRule(atTop = false) else Modifier)
             .heightIn(min = 44.dp)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = 20.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(label, fontFamily = Body, fontSize = 15.sp, color = if (enabled) tint else Muted)
-            if (caption != null) Text(caption, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 3.dp))
+            // 18sp, Karla's own 1.18 at 15: Material's 24sp body line made a
+            // captioned row 47dp where the board's is 44.
+            Text(label, fontFamily = Body, fontSize = 15.sp, lineHeight = 18.sp, color = if (enabled) tint else Muted)
+            if (caption != null) Text(caption, style = Caption, color = Muted, modifier = Modifier.padding(top = 2.dp))
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (value != null) Text(value, style = MonoLabel, color = Muted)
-            if (chevron) {
-                Chevron(
-                    pointsRight = true,
-                    size = 17.dp,
-                    strokeWidth = 1.7.dp,
-                    // Faint: a mark, not text, so 1.4.11's 3:1 is its bar (`Color.kt`).
-                    tint = if (enabled && tint == Stamp) Stamp else Faint,
-                )
-            }
+        if (value != null) Text(value, style = Value, color = if (enabled) valueTint else Muted, softWrap = false)
+        // Faint: a mark, not text, so 1.4.11's 3:1 is its bar (`Color.kt`).
+        val markTint = if (enabled && tint == Stamp) Stamp else Faint
+        when (mark) {
+            Mark.CHEVRON -> Chevron(pointsRight = true, size = 17.dp, strokeWidth = 1.7.dp, tint = markTint)
+            Mark.OUTWARD -> OutwardArrow(size = 16.dp, strokeWidth = 1.7.dp, tint = markTint)
+            Mark.NONE -> {}
         }
     }
 }
@@ -843,7 +864,7 @@ private fun Header() {
         modifier = Modifier
             .fillMaxWidth()
             .dottedRule(atTop = false)
-            .padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 12.dp),
+            .padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 10.dp),
     )
 }
 
@@ -851,28 +872,42 @@ private fun Header() {
  * The artboard's footer (design 9.2), centred under a dotted rule: both
  * halves of the first line are true, and the build and parser pack versions
  * sit beneath it, so a report of a bad parse can say which pack read it.
+ *
+ * LICENCES ends the second line and opens the fonts' OFL texts (spec 8): the
+ * one thing on this screen nobody needs to find quickly (#230). Underlined,
+ * as the board draws it, and 44dp tall to tap, which `TouchTargetTest` holds
+ * every control to; the board's lines sit closer than that allows.
  */
 @Composable
-internal fun Footer(buildVersion: String, packVersion: Int) {
+internal fun Footer(buildVersion: String, packVersion: Int, onOpenLicences: () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
             .dottedRule(atTop = true)
-            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 9.dp, bottom = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             "NO INTERNET PERMISSION" + Separator + "NOTHING LEAVES THIS PHONE",
-            style = MonoLabel,
+            style = FooterLine,
             color = Muted,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
-        Text(
-            "BUILD $buildVersion" + Separator + "PACK $packVersion",
-            style = MonoLabel,
-            color = Muted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("BUILD $buildVersion" + Separator + "PACK $packVersion" + Separator, style = FooterLine, color = Muted)
+            Text(
+                LICENCES_TITLE.uppercase(Locale.ROOT),
+                style = FooterLine.copy(textDecoration = TextDecoration.Underline),
+                color = Muted,
+                modifier = Modifier
+                    .clickable(role = Role.Button, onClick = onOpenLicences)
+                    .heightIn(min = 44.dp)
+                    .wrapContentHeight(),
+            )
+        }
     }
 }
+
+/** [Caption] at the board's 1.7 line height. */
+private val FooterLine = Caption.copy(lineHeight = 16.sp)
