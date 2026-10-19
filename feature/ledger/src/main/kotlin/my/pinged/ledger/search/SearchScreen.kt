@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -66,6 +67,7 @@ import my.pinged.data.dao.SourceApp
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.entry.EditTarget
+import my.pinged.ledger.home.CheckMark
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.settings.SearchExportSheet
 import my.pinged.ledger.settings.TransferJob
@@ -382,7 +384,10 @@ private fun Cross() {
 
 /**
  * The four chips: filled in the accent when they narrow, outlined when they
- * say ANY. Each is drawn at the artboard's 30dp inside a 44dp target.
+ * do not. An outlined chip names only what it would filter, `CATEGORY`
+ * rather than `ANY CATEGORY`: the outline says it is unset, and the four then
+ * fit on one line at a Pixel's 411dp (#274). Each is drawn at the artboard's
+ * 30dp inside a 44dp target.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -391,17 +396,17 @@ private fun Chips(choice: SearchChoice, categoryName: String?, onOpen: (FilterSh
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        Chip(choice.month?.let(::monthName) ?: ANY_MONTH_CHIP, choice.month != null) { onOpen(FilterSheet.Month) }
+        Chip(choice.month?.let(::monthName) ?: MONTH_CHIP, choice.month != null) { onOpen(FilterSheet.Month) }
         // Set but unnamed is a category no longer in the table, or one not
         // read yet: still a filter, so still drawn on.
         Chip(
             when {
-                choice.categoryId == null -> ANY_CATEGORY_CHIP
+                choice.categoryId == null -> CATEGORY_CHIP
                 else -> categoryName?.uppercase(CALENDAR) ?: SOME_CATEGORY_CHIP
             },
             choice.categoryId != null,
         ) { onOpen(FilterSheet.Category) }
-        Chip(choice.app?.let(::appName)?.uppercase(CALENDAR) ?: ANY_APP_CHIP, choice.app != null) {
+        Chip(choice.app?.let(::appName)?.uppercase(CALENDAR) ?: APP_CHIP, choice.app != null) {
             onOpen(FilterSheet.App)
         }
         Chip(amountChip(choice.minSen, choice.maxSen), choice.minSen != null || choice.maxSen != null) {
@@ -531,7 +536,7 @@ private fun Notice(text: String, color: androidx.compose.ui.graphics.Color) {
  * null is a read in flight, drawn as READING rather than as no options.
  */
 @Composable
-private fun <T> PickSheet(
+internal fun <T> PickSheet(
     title: String,
     any: String,
     options: List<Pair<T, String>>?,
@@ -549,20 +554,25 @@ private fun <T> PickSheet(
     }
 }
 
+/**
+ * One choice, with the board's check in Stamp at its end when it is the one
+ * chosen. The check is drawn and not said: the row's selected state is what
+ * TalkBack announces.
+ */
 @Composable
 private fun PickRow(text: String, on: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 44.dp)
-            .clickable(onClick = onClick)
+            .selectable(selected = on, role = Role.RadioButton, onClick = onClick)
             .testTag(PICK + text)
             .dottedRule()
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text, fontFamily = Body, fontSize = 15.5.sp, color = Ink, modifier = Modifier.weight(1f))
-        if (on) Text("CHOSEN", style = MonoLabel, color = Stamp)
+        if (on) CheckMark(Modifier.testTag(CHOSEN_MARK))
     }
 }
 
@@ -703,12 +713,12 @@ internal fun averageSen(netSen: Long, count: Int): Long {
 internal fun nothingFound(choice: SearchChoice): String =
     "NOTHING FOUND" + (choice.month?.let { " IN " + monthName(it) } ?: "")
 
-/** The amount chip: `ANY AMOUNT`, or the range set. */
+/** The amount chip: [AMOUNT_CHIP], or the range set. */
 internal fun amountChip(minSen: Long?, maxSen: Long?): String = when {
     minSen != null && maxSen != null -> ringgit(minSen) + " – " + ringgit(maxSen)
     minSen != null -> "FROM " + ringgit(minSen)
     maxSen != null -> "UP TO " + ringgit(maxSen)
-    else -> ANY_AMOUNT_CHIP
+    else -> AMOUNT_CHIP
 }
 
 /** An app as the sheet and chip name it: its label, else its package. */
@@ -753,13 +763,17 @@ const val CHIP = "chip:"
 /** A sheet row's test tag is this followed by its text. */
 const val PICK = "pick:"
 
-const val ANY_MONTH_CHIP = "ANY MONTH"
-const val ANY_CATEGORY_CHIP = "ANY CATEGORY"
+/** The check on a sheet's chosen row. */
+const val CHOSEN_MARK = "chosenMark"
+
+// The unset chips, named without ANY: see [Chips].
+const val MONTH_CHIP = "MONTH"
+const val CATEGORY_CHIP = "CATEGORY"
+const val APP_CHIP = "APP"
+const val AMOUNT_CHIP = "AMOUNT"
 
 /** The category chip while its category cannot be named. */
 const val SOME_CATEGORY_CHIP = "ONE CATEGORY"
-const val ANY_APP_CHIP = "ANY APP"
-const val ANY_AMOUNT_CHIP = "ANY AMOUNT"
 const val ANY_CATEGORY = "Any category"
 const val ANY_APP = "Any app"
 const val ANY_AMOUNT = "Any amount"

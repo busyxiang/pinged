@@ -2,7 +2,9 @@ package my.pinged
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
@@ -25,6 +27,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.day.DAY_BACK
+import my.pinged.ledger.review.CARD_READING
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import my.pinged.ui.test.boundedWaitUntil
@@ -83,19 +86,19 @@ class ReviewWaysInTest {
             assertTrue(
                 "The badge did not open the inbox on its own row's card: RM777.77, the last of " +
                     "${FILLERS + 1} cards, never came into view without a scroll",
-                compose.waitFor { compose.countOf(TARGET_BADGE) == 0 && compose.isShown(TARGET_AMOUNT) },
+                compose.waitFor { compose.countOf(TARGET_BADGE) == 0 && compose.isShownOnACard(TARGET_AMOUNT) },
             )
             assertEquals(
                 "The inbox drew its first card as well as the focused one, so it did not scroll to it",
                 0,
-                compose.countOf("RM600.00"),
+                compose.onCards("600.00"),
             )
 
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
 
             assertTrue(
                 "Back from the inbox did not return to the Spending list",
-                compose.waitFor { compose.countOf("${FILLERS + 1} AWAITING REVIEW") == 1 && compose.countOf(TARGET_AMOUNT) == 0 },
+                compose.waitFor { compose.countOf("${FILLERS + 1} AWAITING REVIEW") == 1 && compose.onCards(TARGET_AMOUNT) == 0 },
             )
         }
     }
@@ -185,7 +188,7 @@ class ReviewWaysInTest {
     private fun awaitTheInbox(why: String) {
         assertTrue(
             why,
-            compose.waitFor { compose.countOf(TITLE) == 1 && compose.countOf("RM650.00") == 1 },
+            compose.waitFor { compose.countOf(TITLE) == 1 && compose.onCards("650.00") == 1 },
         )
     }
 
@@ -222,9 +225,15 @@ class ReviewWaysInTest {
     private fun ComposeTestRule.countOf(text: String): Int =
         onAllNodesWithText(text).fetchSemanticsNodes().size
 
-    /** Whether [text] is drawn inside the window, not merely composed. */
-    private fun ComposeTestRule.isShown(text: String): Boolean =
-        runCatching { onNodeWithText(text).assertIsDisplayed() }.isSuccess
+    /** A review card's merchant-and-amount line drawing [text]: the list's rows draw the same figures. */
+    private fun onACard(text: String) = hasText(text) and hasAnyAncestor(hasTestTag(CARD_READING))
+
+    private fun ComposeTestRule.onCards(text: String): Int =
+        onAllNodes(onACard(text), useUnmergedTree = true).fetchSemanticsNodes().size
+
+    /** Whether a card's [text] is drawn inside the window, not merely composed. */
+    private fun ComposeTestRule.isShownOnACard(text: String): Boolean =
+        runCatching { onNode(onACard(text), useUnmergedTree = true).assertIsDisplayed() }.isSuccess
 
     /** Tab badges drawn, of any count. */
     private fun ComposeTestRule.badges(): Int =
@@ -239,7 +248,8 @@ class ReviewWaysInTest {
         const val FILLERS = 24
 
         const val TARGET_SEN = 77_777L
-        const val TARGET_AMOUNT = "RM777.77"
+        /** As a card draws it: the list's rows draw the same figure. */
+        const val TARGET_AMOUNT = "777.77"
         const val TARGET_BADGE = "AWAITING REVIEW · RULE REVIEW"
 
         /** The inbox's title. */

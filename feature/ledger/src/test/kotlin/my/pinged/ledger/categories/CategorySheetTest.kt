@@ -71,13 +71,30 @@ class CategorySheetTest {
         }
     }
 
-    /** The board's "412 TRANSACTIONS WILL SHOW THE NEW NAME", once there is one. */
+    /** The board's "412 TRANSACTIONS WILL SHOW THE NEW NAME", from the moment the sheet opens (#274). */
+    @Test fun theReachIsStatedBeforeAnyEdit() {
+        sheet()
+        compose.onNodeWithText("412 TRANSACTIONS WILL SHOW THE NEW NAME").assertExists()
+        compose.onNodeWithText(REPURPOSE_NOTE).assertDoesNotExist()
+        save.assertIsNotEnabled()
+    }
+
+    @Test fun aCategoryWithNothingFiledStatesNoReach() {
+        sheet(transactions = 0)
+        compose.onNodeWithText("WILL SHOW THE NEW", substring = true).assertDoesNotExist()
+        replaceName("Makan")
+        compose.onNodeWithText("WILL SHOW THE NEW", substring = true).assertDoesNotExist()
+    }
+
+    @Test fun aNewCategoryStatesNoReach() {
+        sheet(existing = null, transactions = 0)
+        replaceName("Kucing")
+        compose.onNodeWithText("WILL SHOW THE NEW", substring = true).assertDoesNotExist()
+    }
+
     @Test fun aRenameStatesItsReachBeforeTheSave() {
         var saved: Pair<String, String>? = null
         sheet(onSave = { n, i -> saved = n to i })
-        compose.onNodeWithText("WILL SHOW THE NEW", substring = true).assertDoesNotExist()
-        save.assertIsNotEnabled()
-
         replaceName("  Makan ")
         compose.onNodeWithText("412 TRANSACTIONS WILL SHOW THE NEW NAME").assertExists()
         // Spec 4: "with a suggestion to create a new category instead".
@@ -93,6 +110,7 @@ class CategorySheetTest {
         compose.onNodeWithTag(iconTag("soup")).performScrollTo().performClick()
         compose.onNodeWithTag(iconTag("soup")).assertIsSelected()
         compose.onNodeWithText("412 TRANSACTIONS WILL SHOW THE NEW ICON").assertExists()
+        compose.onNodeWithText("412 TRANSACTIONS WILL SHOW THE NEW NAME").assertDoesNotExist()
         save.performClick()
         assertEquals("Food & Drinks" to "soup", saved)
     }

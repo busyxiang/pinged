@@ -1,6 +1,9 @@
 package my.pinged
 
 import android.content.Context
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -18,6 +21,7 @@ import my.pinged.data.LocalDates
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.review.CARD_READING
 import my.pinged.ledger.review.REVIEW_BACK
 import my.pinged.ledger.review.ReviewAnswer
 import my.pinged.parse.Confidence
@@ -81,7 +85,8 @@ class ReviewRouteTest {
             "The pinned row did not open the inbox on the held payment's card",
             compose.waitFor {
                 compose.countOf(TITLE) == 1 && compose.countOf(ReviewAnswer.ACCEPT.label) == 1 &&
-                    compose.countOf("RM650.00") == 1
+                    compose.onAllNodes(hasText("650.00") and hasAnyAncestor(hasTestTag(CARD_READING)), useUnmergedTree = true)
+                        .fetchSemanticsNodes().size == 1
             },
         )
         assertTrue("The tab bar is drawn over the inbox", compose.countOf("SPENDING") == 0)

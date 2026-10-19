@@ -16,8 +16,13 @@ class CategorySheetCopyTest {
         assertEquals("1,234 TRANSACTIONS WILL SHOW THE NEW NAME AND ICON", reachLine(1_234, renamed = true, reIconed = true))
     }
 
-    @Test fun thereIsNoReachWithNothingChangedOrNothingFiled() {
-        assertNull(reachLine(412, renamed = false, reIconed = false))
+    /** #274: the board draws the line before any edit, naming the name. */
+    @Test fun withNothingChangedTheReachSpeaksOfTheName() {
+        assertEquals("412 TRANSACTIONS WILL SHOW THE NEW NAME", reachLine(412, renamed = false, reIconed = false))
+    }
+
+    @Test fun thereIsNoReachWithNothingFiled() {
+        assertNull(reachLine(0, renamed = false, reIconed = false))
         assertNull(reachLine(0, renamed = true, reIconed = true))
     }
 

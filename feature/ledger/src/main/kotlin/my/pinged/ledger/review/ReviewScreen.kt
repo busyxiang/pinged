@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -71,6 +70,7 @@ import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Quote
@@ -306,8 +306,12 @@ private fun Header(count: Int?, onBack: () -> Unit, acceptAll: AcceptAll?, enabl
 }
 
 /**
- * One card: the notification as Pinged saw it, Pinged's reading of it, why
- * it is held, and the answers its [ReviewCard.kind] offers.
+ * One card, as `design/Inbox.dc.html` draws it: why it is held, the
+ * notification as Pinged saw it, the merchant and amount Pinged read from it,
+ * and the answers its [ReviewCard.kind] offers. The category, source and time
+ * are not on the card, so that two cards and their answers fit on CI's
+ * 320x640 (#274); a transfer card's question already names the merchant and
+ * amount, so it draws no second line of them.
  */
 @Composable
 private fun ReviewCardView(card: ReviewCard, margin: PaddingValues, enabled: Boolean, onAnswer: (ReviewAnswer) -> Unit) {
@@ -355,13 +359,7 @@ private fun ReviewCardView(card: ReviewCard, margin: PaddingValues, enabled: Boo
             }
         }
 
-        Column(Modifier.padding(top = 12.dp)) {
-            Reading("AMOUNT", amountOf(card))
-            Reading("MERCHANT", card.merchant ?: "No merchant")
-            Reading("CATEGORY", card.category ?: "None")
-            Reading("SOURCE", txn.sourceLabel ?: txn.sourcePackage ?: "Entered by hand")
-            Reading("TIME", timeOf(card))
-        }
+        if (card.kind != CardKind.TRANSFER) MerchantAndAmount(card)
 
         if (card.kind == CardKind.DUPLICATE) card.pair?.let { SideBySide(txn, it) }
 
@@ -412,12 +410,27 @@ private fun SideBySide(held: Txn, pair: Txn) {
     }
 }
 
-/** One line of Pinged's reading: a mono label, then the value. */
+/**
+ * The board's one line of Pinged's reading: the merchant at 15sp medium, and
+ * the amount at its end in the mono, unsymbolled as the list's rows draw it.
+ */
 @Composable
-private fun Reading(label: String, value: String) {
-    Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MonoLabel, color = Muted, modifier = Modifier.width(88.dp))
-        Text(value, fontFamily = Body, fontSize = 14.sp, lineHeight = 19.sp, color = Ink)
+private fun MerchantAndAmount(card: ReviewCard) {
+    Row(
+        Modifier.padding(top = 10.dp).fillMaxWidth().testTag(CARD_READING),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            card.merchant ?: NO_MERCHANT,
+            fontFamily = Body,
+            fontWeight = FontWeight.Medium,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
+            color = if (card.merchant != null) Ink else Muted,
+            modifier = Modifier.weight(1f),
+        )
+        Text(amountOf(card, symbol = false), style = MonoNumerals.copy(fontSize = 15.sp, lineHeight = 20.sp), color = Ink)
     }
 }
 
@@ -472,9 +485,9 @@ private fun Notice(text: String, color: Color) {
     )
 }
 
-/** `RM650.00`, signed `+` for a refund as the list signs it. */
-internal fun amountOf(card: ReviewCard): String =
-    (if (card.txn.direction == Direction.REFUND) "+" else "") + money(card.txn.amountSen, card.txn.currency, symbol = true)
+/** `RM650.00`, or the card's `650.00` without [symbol], signed `+` for a refund as the list signs it. */
+internal fun amountOf(card: ReviewCard, symbol: Boolean = true): String =
+    (if (card.txn.direction == Direction.REFUND) "+" else "") + money(card.txn.amountSen, card.txn.currency, symbol)
 
 /** `3 September 2026, 14:05`: the row's own day, and the clock time here. */
 internal fun timeOf(card: ReviewCard, zone: ZoneId = ZoneId.systemDefault()): String =
@@ -491,6 +504,12 @@ internal fun transferQuestion(card: ReviewCard): String {
     val who = card.merchant ?: card.txn.sourceLabel ?: card.txn.sourcePackage ?: "This payment"
     return "$who ${amountOf(card)}: leave out of spending?"
 }
+
+/** A card's merchant and amount line. */
+const val CARD_READING = "reviewCardReading"
+
+/** The merchant line of a card Pinged read no merchant from. */
+const val NO_MERCHANT = "No merchant"
 
 /**
  * What TalkBack says of a card's primary button, the answer drawn filled:

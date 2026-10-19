@@ -7,13 +7,19 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.filter
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasScrollToKeyAction
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onChildren
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -51,10 +57,16 @@ class ReviewInboxScreenTest {
 
         compose.onNodeWithText(TITLE).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(BODY).performScrollTo().assertIsDisplayed()
-        listOf("RM650.00", MERCHANT, "Rent", SOURCE_LABEL, "15 August 2026, 12:00").forEach {
-            compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
-        }
         compose.onNodeWithText("OVER YOUR RM500 CHECK LIMIT").performScrollTo().assertIsDisplayed()
+
+        // #274, as design/Inbox.dc.html draws it: one line of the merchant
+        // and the amount, and no table of the category, source and time.
+        val reading = compose.onNodeWithTag(CARD_READING, useUnmergedTree = true).performScrollTo()
+        reading.onChildren().filter(hasText(MERCHANT)).assertCountEquals(1)
+        reading.onChildren().filter(hasText("650.00")).assertCountEquals(1)
+        listOf("AMOUNT", "MERCHANT", "CATEGORY", "SOURCE", "TIME", "Rent", SOURCE_LABEL, "15 August 2026, 12:00").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
 
         compose.onNodeWithText(ReviewAnswer.ACCEPT.label).performScrollTo().performClick()
         compose.onNodeWithText(ReviewAnswer.NOT_A_PAYMENT.label).performScrollTo().performClick()
@@ -85,6 +97,8 @@ class ReviewInboxScreenTest {
         compose.onNodeWithText("Maybank Card RM1,200.00: leave out of spending?").performScrollTo().assertIsDisplayed()
         list.performScrollToKey("review-$RENT_ID")
         compose.onNodeWithText("$SOURCE_LABEL RM100.00: leave out of spending?").performScrollTo().assertIsDisplayed()
+        // The question names the merchant and amount; no second line repeats them.
+        compose.onAllNodesWithTag(CARD_READING, useUnmergedTree = true).assertCountEquals(0)
 
         // Reading order on the first card -- by line, then left to right --
         // read in one scroll position.
