@@ -14,17 +14,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.charts.model.CellState
@@ -55,23 +59,26 @@ internal fun RhythmGridSection(grid: RhythmGrid, onDayClick: (LocalDate) -> Unit
     Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
         Text("WHEN IT WENT", style = MonoLabel, color = Muted)
         Row(Modifier.padding(top = 11.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(GAP)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                    "MTWTFSS".forEach {
-                        Text(
-                            it.toString(),
-                            style = Small.copy(fontSize = 8.sp, letterSpacing = 0.sp),
-                            color = Muted,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.size(width = CELL, height = 12.dp),
-                        )
-                    }
-                }
-                val squares: List<GridDay?> = List(grid.leadingBlanks) { null } + grid.days
-                squares.chunked(7).forEach { week ->
+            val viewConfiguration = LocalViewConfiguration.current
+            CompositionLocalProvider(LocalViewConfiguration provides SquareTargets(viewConfiguration)) {
+                Column(verticalArrangement = Arrangement.spacedBy(GAP)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                        week.forEach { day ->
-                            if (day == null) Spacer(Modifier.size(CELL)) else Square(day, onDayClick)
+                        "MTWTFSS".forEach {
+                            Text(
+                                it.toString(),
+                                style = Small.copy(fontSize = 8.sp, letterSpacing = 0.sp),
+                                color = Muted,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.size(width = CELL, height = 12.dp),
+                            )
+                        }
+                    }
+                    val squares: List<GridDay?> = List(grid.leadingBlanks) { null } + grid.days
+                    squares.chunked(7).forEach { week ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
+                            week.forEach { day ->
+                                if (day == null) Spacer(Modifier.size(CELL)) else Square(day, onDayClick)
+                            }
                         }
                     }
                 }
@@ -197,6 +204,19 @@ internal fun dayTag(date: LocalDate): String = "grid-day-$date"
 /** The artboard's 18px squares with 2px gaps, at 1px to the dp. */
 private val CELL = 18.dp
 private val GAP = 2.dp
+
+/**
+ * The squares' touch target: one cell pitch, so neighbouring targets meet in
+ * the gap and never overlap (#212). At the platform's 48dp, an 18dp square's
+ * target overlaps its neighbours', and Compose reports each square's
+ * accessibility bounds as the part no later square's target covers: for an
+ * inner square, a corner centred about 15dp up and left of it, over the
+ * previous week's square. A tap at those bounds' centre, as uiautomator
+ * makes one, opened the day before the week before.
+ */
+private class SquareTargets(platform: ViewConfiguration) : ViewConfiguration by platform {
+    override val minimumTouchTargetSize: DpSize = DpSize(CELL + GAP, CELL + GAP)
+}
 
 /** The artboard's cell outline, `#d5cbb8`; drawn here only, so not a theme entry. */
 private val CellLine = Color(0xFFD5CBB8)
