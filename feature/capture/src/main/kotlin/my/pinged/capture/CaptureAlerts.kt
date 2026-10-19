@@ -23,6 +23,16 @@ object CaptureAlerts {
         return SourcePrompt.mayPost(context, manager)
     }
 
+    /**
+     * Creates the channel ahead of any post, for a caller about to open this
+     * app's notification settings: until something has posted there is no
+     * channel, and that page then has nothing on it to switch (#217).
+     */
+    fun ensureChannel(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        SourcePrompt.ensureChannel(context, manager)
+    }
+
     internal fun post(context: Context, alert: HealthAlert.Alert) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         SourcePrompt.ensureChannel(context, manager)
