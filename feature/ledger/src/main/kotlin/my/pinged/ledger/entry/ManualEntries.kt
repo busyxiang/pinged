@@ -493,6 +493,13 @@ data class ManualDraft(
         copy(category = if (category?.categoryId == categoryId) null else CategoryChoice(categoryId, ChosenBy.TAPPED))
 
     /**
+     * The draft once [categoryId] is picked in the chooser behind More
+     * (#272): selected as [ChosenBy.TAPPED] even when it already was, since
+     * the chooser's Save picks rather than toggles.
+     */
+    fun chosen(categoryId: Long): ManualDraft = copy(category = CategoryChoice(categoryId, ChosenBy.TAPPED))
+
+    /**
      * The entry is dated on a past day, so its time of day is made up (#103):
      * it is the time Save was tapped, not the time it was paid. The nearby-capture
      * check (#104) reads that as "anywhere on that day" rather than "within

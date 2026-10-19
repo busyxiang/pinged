@@ -38,13 +38,20 @@ import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.ReceiptSheet
-import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dottedRule
 
 /** The artboard's one button, which hands the user to Android's own screen. */
 const val ALLOW_ACCESS: String = "Allow notification access"
+
+/**
+ * The line under [ALLOW_ACCESS], which may break only after its `·` (#272):
+ * every other space is a no-break space, so a clause is never split and no
+ * word sits alone on a line. TalkBack reads them as spaces.
+ */
+internal const val ASKS_NEXT: String =
+    "ANDROID\u00A0ASKS\u00A0NEXT\u00A0\u00B7 PINGED\u00A0NEVER\u00A0SEES\u00A0A\u00A0PASSWORD"
 
 /** The artboard's link, which opens [StoredSheet]. */
 const val WHAT_IS_STORED: String = "What exactly gets stored?"
@@ -99,7 +106,10 @@ fun OnboardingScreen(onAllowAccess: () -> Unit, modifier: Modifier = Modifier) {
             }
             TornEdge()
             Column(
-                Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 22.dp),
+                // No bottom padding, as the board has none: step 1 has to fit
+                // the Pixel_10a's 845dp window unscrolled, with about 8dp to
+                // spare (`OnboardingFitTest`).
+                Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 22.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 CLAIMS.forEachIndexed { i, (label, body) ->
@@ -127,7 +137,7 @@ fun OnboardingScreen(onAllowAccess: () -> Unit, modifier: Modifier = Modifier) {
                 Text(ALLOW_ACCESS, style = ButtonLabel, color = Paper)
             }
             Text(
-                "ANDROID ASKS NEXT" + Separator + "PINGED NEVER SEES A PASSWORD",
+                ASKS_NEXT,
                 style = MonoLabel,
                 color = Muted,
                 textAlign = TextAlign.Center,
@@ -141,7 +151,6 @@ fun OnboardingScreen(onAllowAccess: () -> Unit, modifier: Modifier = Modifier) {
                 color = Stamp,
                 textDecoration = TextDecoration.Underline,
                 modifier = Modifier
-                    .padding(top = 4.dp)
                     .clickable(role = Role.Button) { storedOpen = true }
                     .heightIn(min = 44.dp)
                     .wrapContentHeight(),
