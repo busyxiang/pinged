@@ -39,6 +39,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.EXPORT_EVERYTHING
@@ -148,6 +149,7 @@ fun SettingsScreen(
         val copyFirst = copyFirstFor(state.storage, onExport, onRescue)
         WipeSheet(
             counts = state.wipeCounts,
+            loaded = state.loaded,
             onConfirm = {
                 confirmingWipe = false
                 viewModel.deleteEverything()
@@ -484,7 +486,7 @@ internal fun SettingsRows(
         "Capture sources",
         // No placeholder when the count is unavailable (`SettingsState.sourcesOn`'s
         // KDoc): a blank value is honest, a substituted one is not.
-        value = state.sourcesOn?.let { "${grouped(it)} ON" },
+        value = state.read { state.sourcesOn?.let { "${grouped(it)} ON" } },
         onClick = onOpenSources,
         chevron = true,
     )
@@ -504,7 +506,7 @@ internal fun SettingsRows(
     SettingsRow(
         UNREAD_ROW,
         caption = "HELPS ADD SUPPORT FOR NEW BANKS",
-        value = state.unreadCount?.let { grouped(it) },
+        value = state.read { state.unreadCount?.let { grouped(it) } },
         onClick = onOpenUnread,
         chevron = true,
     )
@@ -515,7 +517,7 @@ internal fun SettingsRows(
         "Corrections from pack updates",
         // Blank, not NONE, while the sweep is unfinished or unreadable; see
         // `SettingsState.correctionsPending`.
-        value = state.correctionsPending?.let { if (it == 0) "NONE" else "${grouped(it)} TO REVIEW" },
+        value = state.read { state.correctionsPending?.let { if (it == 0) "NONE" else "${grouped(it)} TO REVIEW" } },
         onClick = onOpenCorrections,
         chevron = true,
         divider = false,
@@ -527,7 +529,7 @@ internal fun SettingsRows(
     // see `SettingsState.learnedCount`. Blank unless both read.
     SettingsRow(
         TAUGHT,
-        value = state.learnedCount?.let { learned -> state.ignoredCount?.let { grouped(learned + it) } },
+        value = state.read { state.learnedCount?.let { learned -> state.ignoredCount?.let { grouped(learned + it) } } },
         onClick = onOpenLearned,
         chevron = true,
     )
@@ -535,7 +537,7 @@ internal fun SettingsRows(
     // included. The section's last row, so no divider.
     SettingsRow(
         CATEGORIES,
-        value = state.categoryCount?.let { grouped(it) },
+        value = state.read { state.categoryCount?.let { grouped(it) } },
         onClick = onOpenCategories,
         chevron = true,
         divider = false,
@@ -547,7 +549,7 @@ internal fun SettingsRows(
         SettingsRow(
             label = EXPORT_EVERYTHING,
             caption = "EVERY TRANSACTION AND THE NOTIFICATIONS BEHIND THEM",
-            value = state.lastExportAt?.let { ago(it, never = "NEVER") },
+            value = state.read { state.lastExportAt?.let { ago(it, never = "NEVER") } },
             onClick = onExport,
             enabled = idle,
             chevron = true,
@@ -563,7 +565,7 @@ internal fun SettingsRows(
     if (readable) {
         SettingsRow(
             label = "Check my data",
-            value = state.lastCheckAt?.let { ago(it, never = "NEVER CHECKED") },
+            value = state.read { state.lastCheckAt?.let { ago(it, never = "NEVER CHECKED") } },
             onClick = onCheck,
             enabled = idle,
         )
@@ -778,6 +780,14 @@ private fun SectionBreak() {
  *   below it to separate from.
  * @param enabled false draws the row [Muted] and ignores taps.
  */
+/**
+ * [value] once this screen's first read has landed, and the loading boards'
+ * dash before it (#237): until then every field holds [SettingsState]'s
+ * default, and a default drawn reads as a fact -- `0L` as "NEVER".
+ */
+private inline fun SettingsState.read(value: () -> String?): String? =
+    if (loaded) value() else NOT_READ_YET
+
 @Composable
 private fun SettingsRow(
     label: String,

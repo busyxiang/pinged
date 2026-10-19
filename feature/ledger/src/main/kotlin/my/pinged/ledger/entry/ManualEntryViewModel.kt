@@ -60,6 +60,12 @@ data class ManualEntryState(
      * question names (#106), not the draft, which may have been retyped.
      */
     val loaded: ManualDraft? = null,
+    /**
+     * [editing]'s entry is not read yet and no process death left a draft:
+     * the draft is [ManualDraft]'s empty default, not the payment, and the
+     * screen draws it as loading rather than as an empty one (#237).
+     */
+    val reading: Boolean = false,
     /** The entry was deleted (#106): the screen's cue to close, as [saved] is. */
     val deleted: Boolean = false,
     /**
@@ -172,11 +178,16 @@ class ManualEntryViewModel internal constructor(
                 nearby = nearby,
                 editing = editing?.id,
                 loaded = loaded,
+                reading = editing != null && loaded == null && restoredDraft == null,
                 deleted = progress == Progress.DELETED,
                 gone = progress == Progress.GONE,
                 today = today,
             )
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, ManualEntryState(editing = editing?.id, today = entries.today.value))
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            ManualEntryState(editing = editing?.id, reading = editing != null && restoredDraft == null, today = entries.today.value),
+        )
 
     init {
         // Every draft the screen holds, whoever set it, is the one a process

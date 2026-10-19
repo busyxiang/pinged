@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.MonoLabel
@@ -46,11 +47,13 @@ import my.pinged.ui.theme.dottedRule
  * padding to be tappable.
  *
  * [awaitingReview] is drawn on Spending as a count beside its label while
- * another tab is selected and the count is above zero (§9.2's ways in). On
- * Spending itself the list's pinned row says it already.
+ * another tab is selected and the count is above zero (§9.2's ways in), and
+ * as the loading boards' dash while it is null, not read yet or unreadable:
+ * no badge would say nothing awaits review (#237). On Spending itself the
+ * list's pinned row says it already.
  */
 @Composable
-internal fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier, awaitingReview: Int = 0) {
+internal fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier, awaitingReview: Int? = 0) {
     Row(
         modifier
             .fillMaxWidth()
@@ -83,9 +86,9 @@ internal fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier =
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(tab.label, style = MonoLabel, color = colour)
-                        if (tab == Tab.Spending && !on && awaitingReview > 0) {
+                        if (tab == Tab.Spending && !on && (awaitingReview == null || awaitingReview > 0)) {
                             Text(
-                                awaitingReview.toString(),
+                                awaitingReview?.toString() ?: NOT_READ_YET,
                                 style = MonoLabel,
                                 color = Paper,
                                 modifier = Modifier
@@ -135,4 +138,5 @@ private fun icon(path: String): ImageVector =
         .build()
 
 /** What the Spending tab's count says to a screen reader, and what a test finds it by. */
-internal fun spendingBadgeDescription(count: Int): String = "$count awaiting review"
+internal fun spendingBadgeDescription(count: Int?): String =
+    if (count == null) "Not known how many are awaiting review" else "$count awaiting review"

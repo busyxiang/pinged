@@ -158,7 +158,7 @@ fun DetailScreen(
 /** What the screen's controls call; [None] for a test that is not about them. */
 internal class DetailActions(
     val assign: (categoryId: Long, teach: Boolean) -> Unit,
-    val retroPreview: suspend (categoryId: Long) -> RetroPreview,
+    val retroPreview: suspend (categoryId: Long) -> RetroPreview?,
     val saveNote: (String) -> Unit,
     val notSpending: () -> Unit,
     val countAsSpending: () -> Unit,

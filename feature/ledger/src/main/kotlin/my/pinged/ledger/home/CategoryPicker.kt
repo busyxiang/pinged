@@ -116,6 +116,12 @@ internal fun fixLine(movable: Int): String =
     "AND FIX THE $movable PAST ${if (movable == 1) "ONE" else "ONES"} FROM THIS MERCHANT"
 
 /**
+ * The line in [fixLine]'s place when the past payments could not be counted
+ * (#237): an unreadable ledger is not one with none of them to fix.
+ */
+internal const val UNCOUNTED_LINE = "THE PAST ONES FROM THIS MERCHANT COULD NOT BE COUNTED"
+
+/**
  * The line that replaces [fixLine] when the user has set past payments of the
  * merchant to another category by hand (#49): it names them, and says the
  * fix is off while the rule is not. [categoryNames] are those categories'.
@@ -175,7 +181,7 @@ internal fun CategoryPicker(
     subject: ChooserSubject,
     teach: TeachOffer?,
     initial: Long?,
-    preview: suspend (categoryId: Long) -> RetroPreview,
+    preview: suspend (categoryId: Long) -> RetroPreview?,
     onSave: (categoryId: Long, teach: Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -188,7 +194,7 @@ internal fun CategoryPicker(
     var selected by remember { mutableStateOf(initial?.takeIf { id -> categories.any { it.id == id } }) }
     // Which selection the answer is for, so a count is never drawn beside a
     // category it was not computed for while the next one is on its way.
-    var answer by remember { mutableStateOf<Pair<Long, RetroPreview>?>(null) }
+    var answer by remember { mutableStateOf<Pair<Long, RetroPreview?>?>(null) }
     val picked = selected
     LaunchedEffect(picked, always, teach != null) {
         answer = null
@@ -232,8 +238,11 @@ internal fun CategoryPicker(
                     modifier = note.padding(bottom = 4.dp),
                 )
             }
-            val shown = answer?.takeIf { it.first == picked }?.second
-            if (always && shown != null) {
+            val answered = answer?.takeIf { it.first == picked }
+            val shown = answered?.second
+            if (always && answered != null && shown == null) {
+                Text(UNCOUNTED_LINE, style = MonoLabel, color = Muted, modifier = note)
+            } else if (always && shown != null) {
                 val names = shown.conflicts.map { c -> categories.firstOrNull { it.id == c.categoryId }?.name ?: "another category" }
                 if (shown.conflicts.isEmpty()) {
                     Text(fixLine(shown.movable), style = MonoLabel, color = Stamp, modifier = note)

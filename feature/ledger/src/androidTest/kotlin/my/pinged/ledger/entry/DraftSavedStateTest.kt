@@ -130,6 +130,7 @@ class DraftSavedStateTest {
             withTimeoutOrNull(LOAD_BUDGET) { restored.state.first { it.draft.amountSen == 500L } },
         )
         assertEquals("The entry being corrected did not survive the process death", id, restored.state.value.editing)
+        assertEquals("A restored correction was drawn as reading, hiding what the user typed", false, restored.state.value.reading)
     }
 
     @Test fun aCorrectionKilledBeforeItsRowWasReadOpensWithTheRow() = runBlocking {

@@ -160,6 +160,24 @@ class MonthPickerTest {
         waitUntilShown(dayLabel(LocalDates.of(today)))
     }
 
+    /**
+     * #237: the sheet reopened draws none of the last read's months and flags
+     * while its own read is in flight. The reset is synchronous on the main
+     * thread, so it is asserted in the same frame the read starts.
+     */
+    @Test fun aReopenedSheetDrawsNothingFromTheLastRead() {
+        compose.runOnUiThread { viewModel.readMonths() }
+        compose.boundedWaitUntil(TIMEOUT) { viewModel.months.value != null }
+
+        var during: Any? = Unit
+        compose.runOnUiThread {
+            viewModel.readMonths()
+            during = viewModel.months.value
+        }
+        assertEquals("A re-read began with the last read's months still published", null, during)
+        compose.boundedWaitUntil(TIMEOUT) { viewModel.months.value != null }
+    }
+
     /** The pick is the entry's saved state, so a process death comes back to it. */
     @Test fun aPickIsKeptInSavedState() {
         val handle = SavedStateHandle()

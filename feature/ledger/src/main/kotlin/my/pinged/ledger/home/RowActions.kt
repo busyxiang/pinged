@@ -159,15 +159,15 @@ class RowActions(
 
     /**
      * What teaching [categoryId] on the row [txnId] would also fix (#49), for the
-     * chooser's count line. An unreadable ledger answers "nothing", which draws
-     * as a count of 0 and is corrected by the save, which re-checks inside its
-     * own transaction.
+     * chooser's count line, or null when the ledger could not be read: not a
+     * count of 0, which the chooser would draw as a fact (#237). The save
+     * re-checks inside its own transaction either way.
      */
-    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview =
+    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? =
         CaptureStorage.guarded(
             context(),
             what = "The past payments could not be counted",
-            unavailable = { RetroPreview(0, emptyList()) },
+            unavailable = { null },
             damageStopsCapture = false,
         ) { Databases.merchantRuleDao(context()).retroPreview(txnId, categoryId) }
 

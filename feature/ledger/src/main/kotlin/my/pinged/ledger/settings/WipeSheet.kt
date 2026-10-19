@@ -44,6 +44,7 @@ import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Mono
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Rule
@@ -105,10 +106,11 @@ fun WipeSheet(
     onExportFirst: () -> Unit,
     onDismiss: () -> Unit,
     exportFirstLabel: String? = EXPORT_FIRST,
+    loaded: Boolean = true,
 ) {
     // `design/Wipe.dc.html`: the only sheet whose edge is the accent.
     ReceiptSheet(onDismissRequest = onDismiss, edge = Stamp) {
-        WipeSheetBody(counts, onConfirm, onExportFirst, onDismiss, exportFirstLabel)
+        WipeSheetBody(counts, onConfirm, onExportFirst, onDismiss, exportFirstLabel, loaded)
     }
 }
 
@@ -159,6 +161,7 @@ internal fun WipeSheetBody(
     onExportFirst: () -> Unit,
     onDismiss: () -> Unit,
     exportFirstLabel: String? = EXPORT_FIRST,
+    loaded: Boolean = true,
 ) {
     var typed by remember { mutableStateOf("") }
     val armed = typed == CONFIRMATION
@@ -181,7 +184,11 @@ internal fun WipeSheetBody(
             .padding(horizontal = 14.dp, vertical = 13.dp),
     ) {
         Text("WHAT GOES", style = MonoLabel, color = Muted)
-        if (counts == null) {
+        // Null [counts] is unreadable only once settings' read has landed;
+        // before it the rows stand with the loading boards' dash, because
+        // telling a user their data cannot be read while it is still being
+        // counted is a false alarm about the ledger they are deleting (#237).
+        if (counts == null && loaded) {
             Text(
                 "Pinged cannot count what it cannot read.",
                 fontFamily = Body,
@@ -194,10 +201,10 @@ internal fun WipeSheetBody(
                 Modifier.padding(top = 11.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                CountRow("Transactions", counts.txns)
-                CountRow("Original notifications", counts.captures)
-                CountRow("Merchants you taught", counts.merchants)
-                CountRow("Months of history", counts.months)
+                CountRow("Transactions", counts?.txns)
+                CountRow("Original notifications", counts?.captures)
+                CountRow("Merchants you taught", counts?.merchants)
+                CountRow("Months of history", counts?.months)
             }
         }
     }
@@ -365,7 +372,7 @@ private fun ConfirmationField(typed: String, onTyped: (String) -> Unit) {
  * separate nodes, swapping two rows' values leaves every assertion true.
  */
 @Composable
-private fun CountRow(label: String, count: Int) {
+private fun CountRow(label: String, count: Int?) {
     Row(
         Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.Bottom,
@@ -390,7 +397,7 @@ private fun CountRow(label: String, count: Int) {
         // the sheet under a locale that groups with a full stop -- the
         // emulator is en-US, so nothing else here can tell the two apart.
         Text(
-            grouped(count),
+            count?.let(::grouped) ?: NOT_READ_YET,
             style = MonoNumerals.copy(fontSize = 13.sp),
             color = Ink,
         )
