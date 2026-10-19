@@ -14,20 +14,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 /** The sheet header's close control, as a screen reader names it. */
 const val CLOSE = "Close"
@@ -101,6 +105,15 @@ fun ReceiptSheet(
  * one direction throw. [content] is a `ColumnScope` so such a body can weight
  * its list.
  *
+ * **A sheet whose content grows re-expands to it** (#213). With the
+ * system's animations off, the show animation runs in a single frame, and
+ * material3 1.4.0 leaves a sheet whose content grew in that frame at the
+ * height it had before: `MonthsSheet` opens on `READING`, its rows land a
+ * frame later, and it stayed at the title and one month. Measured on
+ * emulator-5554: the title's top at 2112px of 2424 against 1520px expanded.
+ * `MonthsSheetOpensExpandedTest` holds it. Only while the sheet is headed for
+ * [SheetValue.Expanded], so content changing under a dismissal cannot undo it.
+ *
  * `@OptIn(ExperimentalMaterial3Api::class)`: required by `ModalBottomSheet`
  * and `rememberModalBottomSheetState` at material3 1.4.0.
  */
@@ -112,16 +125,26 @@ fun ReceiptSheetFrame(
     edge: Color = Ink,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
         shape = RectangleShape,
         containerColor = Paper,
         scrimColor = Scrim,
         dragHandle = null,
     ) {
-        Column(Modifier.fillMaxWidth().dashedEdge(edge), content = content)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .onSizeChanged {
+                    if (sheetState.targetValue == SheetValue.Expanded) scope.launch { sheetState.expand() }
+                }
+                .dashedEdge(edge),
+            content = content,
+        )
     }
 }
 
