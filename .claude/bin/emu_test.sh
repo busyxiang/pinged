@@ -521,6 +521,24 @@ else
     pass "mutation shared-queue: the other emulator's waiter holds it up"
 fi
 
+# With no .front, a waiter polls quietly: every poll and the acquire read it.
+quiet_without_front() {
+    local emu=$1
+    "$emu" -- sh -c "echo A-start >>$log; sleep 2" 2>/dev/null &
+    until_in "$log" A-start
+    "$emu" -- true 2>"$work/$case_n/b.err"
+    wait
+    ! grep -q 'No such file' "$work/$case_n/b.err"
+}
+fresh
+if quiet_without_front "$script"; then pass "a waiter with no .front prints no error"; else fail "a waiter with no .front prints no error: $(head -1 "$work/$case_n/b.err")"; fi
+fresh
+if quiet_without_front "$(mutant loud-front 's/read -r front_pid \([a-z_]*\) 2>\/dev\/null <"\$queue\/.front"/read -r front_pid \1 <"$queue\/.front" 2>\/dev\/null/')"; then
+    fail "mutation loud-front: the waiter was still quiet"
+else
+    pass "mutation loud-front: the missing .front is reported every poll"
+fi
+
 # Run now: C is put first and the holder A makes way. A runs again, as the
 # same process, before B, which queued ahead of C; it exits as its command does.
 run_now_order() {
@@ -541,7 +559,7 @@ run_now_order() {
 fresh
 if run_now_order "$script"; then pass "Run now: the promoted waiter goes next, the holder reruns before the rest"; else fail "Run now: the promoted waiter goes next, the holder reruns before the rest: $(tr '\n' ' ' <"$log")"; fi
 fresh
-if run_now_order "$(mutant no-front 's/^    if read -r front_pid front_start <"\$queue\/.front" 2>\/dev\/null; then$/    if false; then/')"; then
+if run_now_order "$(mutant no-front 's/^    if read -r front_pid front_start 2>\/dev\/null <"\$queue\/.front"; then$/    if false; then/')"; then
     fail "mutation no-front: the promoted waiter still went first"
 else
     pass "mutation no-front: the promoted waiter waits its turn"

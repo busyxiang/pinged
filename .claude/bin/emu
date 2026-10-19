@@ -106,9 +106,11 @@ started() {
 #
 # A waiter named in .front ("pid start", the pane's Run now) goes before
 # every ticket, its own included; a .front whose process is gone is removed.
+# 2>/dev/null goes before the <: redirections apply left to right, so after
+# it the open's own error, when there is no .front, is printed every poll.
 ahead() {
     local t pid start n=0 front_pid= front_start=
-    if read -r front_pid front_start <"$queue/.front" 2>/dev/null; then
+    if read -r front_pid front_start 2>/dev/null <"$queue/.front"; then
         if [ "$front_pid" = "$$" ]; then
             echo 0
             return
@@ -236,7 +238,7 @@ while :; do
             if flock -n 9; then
                 serial=$s
                 rm -f "$ticket"
-                if read -r front_pid _ <"$queue/.front" 2>/dev/null && [ "$front_pid" = "$$" ]; then
+                if read -r front_pid _ 2>/dev/null <"$queue/.front" && [ "$front_pid" = "$$" ]; then
                     rm -f "$queue/.front"
                 fi
                 break 2
