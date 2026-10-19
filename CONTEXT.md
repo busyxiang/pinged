@@ -79,6 +79,10 @@ _Avoid_: install date, first install
 A past day, on or after the history start, with no evidence Pinged was watching. Nothing is known about its spending, which is different from nothing spent.
 _Avoid_: missed day, gap, unbound day
 
+**Not read yet**:
+A figure a screen has not finished reading from the ledger. It says nothing about the money: it is neither zero nor not captured, and it is shown as a dash until the read lands.
+_Avoid_: loading, pending, skeleton, unread (that is an unread capture)
+
 **Untrusted month**:
 A month that contains at least one not-captured day. Every figure drawn from it may be incomplete, in either direction, since a missed refund lowers a total as surely as a missed payment raises it. A month still running is not untrusted merely because it has not ended.
 _Avoid_: do-not-trust month, incomplete month, partial month
