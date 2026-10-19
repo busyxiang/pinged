@@ -96,7 +96,7 @@ class TransferOutcomeScreenTest {
                         loaded = true,
                         running = TransferJob.Running(Operation.RESTORE, 1_200),
                     ),
-                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenLicences = {}, onOpenUnread = {},
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onOpenUnread = {},
                     onExport = { taps.incrementAndGet() },
                     onRestore = { taps.incrementAndGet() },
                     onCheck = { taps.incrementAndGet() },
