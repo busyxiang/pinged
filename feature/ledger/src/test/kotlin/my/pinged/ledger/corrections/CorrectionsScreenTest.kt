@@ -12,11 +12,14 @@ import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runner.RunWith
 
 /**
  * Spec 5.5's list draws both values of what changed, and an answer reaches
  * the correction it was drawn beside.
  */
+@RunWith(AndroidJUnit4::class)
 class CorrectionsScreenTest {
     @get:Rule val compose = createComposeRule()
 

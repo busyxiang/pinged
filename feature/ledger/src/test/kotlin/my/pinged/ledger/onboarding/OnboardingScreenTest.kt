@@ -12,8 +12,11 @@ import my.pinged.ui.theme.Separator
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runner.RunWith
 
 /** `design/Onboarding.dc.html` (#156): what it claims, and where its two controls go. */
+@RunWith(AndroidJUnit4::class)
 class OnboardingScreenTest {
     @get:Rule val compose = createComposeRule()
 

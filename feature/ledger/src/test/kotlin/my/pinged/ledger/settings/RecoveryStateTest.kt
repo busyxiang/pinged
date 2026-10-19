@@ -18,6 +18,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runner.RunWith
 
 /**
  * The states with no artboard, met by a user who is already alarmed.
@@ -26,6 +28,7 @@ import org.junit.Test
  * storage error". The middle one is transient, so that state must not lead
  * with an irreversible action, and must never say the data is gone.
  */
+@RunWith(AndroidJUnit4::class)
 class RecoveryStateTest {
     @get:Rule val compose = createComposeRule()
 

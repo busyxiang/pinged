@@ -12,11 +12,14 @@ import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runner.RunWith
 
 /**
  * The screen offers no row it cannot run: Export on a database that will not
  * open is a button whose only outcome is an error.
  */
+@RunWith(AndroidJUnit4::class)
 class SettingsScreenTest {
     @get:Rule val compose = createComposeRule()
 

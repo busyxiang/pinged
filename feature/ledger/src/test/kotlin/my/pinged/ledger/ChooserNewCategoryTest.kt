@@ -27,12 +27,15 @@ import my.pinged.ledger.home.NEW_CATEGORY
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runner.RunWith
 
 /**
  * `design/Chooser.dc.html`'s "New category" tile (#155): it opens the category
  * sheet over the chooser, and the category it makes is picked for this
  * payment, so making one is not a second trip.
  */
+@RunWith(AndroidJUnit4::class)
 class ChooserNewCategoryTest {
     @get:Rule val compose = createComposeRule()
 
