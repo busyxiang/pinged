@@ -67,3 +67,9 @@ to get the checks on every push without the emulator job.
 subjects; merging it tags `v*`, which builds a signed APK and publishes a
 GitHub release. What each release does is in [CHANGELOG.md](CHANGELOG.md).
 Setup and the signing requirements are in [docs/release.md](docs/release.md).
+
+## Licence
+
+Pinged is free software under the GNU General Public License, version 3 or
+any later version: see [LICENSE](LICENSE). Third-party assets keep their own
+licences, listed in [docs/licenses/](docs/licenses/).
