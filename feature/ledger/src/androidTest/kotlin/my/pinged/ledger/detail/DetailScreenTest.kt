@@ -2,6 +2,12 @@ package my.pinged.ledger.detail
 
 import android.app.Application
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onRoot
+import my.pinged.ledger.ArtboardProbe
+import my.pinged.ledger.SOURCE_LABEL
+import my.pinged.ui.theme.Stamp
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -118,6 +124,54 @@ class DetailScreenTest {
 
         waitFor(MERCHANT)
         compose.onAllNodesWithText(NAME_ON_THE_BILL).assertCountEquals(0)
+    }
+
+    @Test fun aBillThatDiffersOnlyInCaseDrawsNoNameOnTheBill() {
+        val dao = context.freshLedger()
+        val id = dao.insert(row(merchant = "KK Mart", raw = "KK MART").copy(rawCaptureId = capture()))
+        screen(id)
+
+        waitFor("KK Mart")
+        compose.onAllNodesWithText(NAME_ON_THE_BILL).assertCountEquals(0)
+    }
+
+    /**
+     * `Detail.dc.html` sets each value flush right after its leader, so every
+     * value ends on the card's inner margin whatever its length, and "TOUCH 'N
+     * GO EWALLET" fits one line at CI's 320dp (#221). A value given half the
+     * row ends wherever its half does, and wraps there.
+     */
+    @Test fun everyValueEndsOnTheCardsMarginOnOneLine() {
+        val dao = context.freshLedger()
+        val id = dao.insert(row(merchant = MERCHANT, raw = "TNG*KOPIPAGI").copy(rawCaptureId = capture(), categoryId = groceries()))
+        screen(id)
+
+        waitFor(MERCHANT)
+        val values = listOf(SOURCE_LABEL.uppercase(), "TNG*KOPIPAGI", "Groceries")
+        val rights = values.associateWith { ArtboardProbe.bounds(compose.onNodeWithText(it, useUnmergedTree = true).performScrollTo()).right }
+        val margin = ArtboardProbe.bounds(compose.onRoot()).right - ArtboardProbe.px(20f, compose.density.density)
+        rights.forEach { (value, right) ->
+            assertTrue("'$value' ends at $right, not on the card's margin at $margin: $rights", kotlin.math.abs(right - margin) <= 1)
+        }
+        assertEquals(
+            "'${SOURCE_LABEL.uppercase()}' wraps",
+            1,
+            ArtboardProbe.layoutOf(compose.onNodeWithText(SOURCE_LABEL.uppercase(), useUnmergedTree = true)).lineCount,
+        )
+    }
+
+    /** The board's category: a Stamp-outlined chip, and tapping it opens the chooser (#221). */
+    @Test fun theCategoryIsAStampChipThatOpensTheChooser() {
+        val dao = context.freshLedger()
+        val id = dao.insert(row(merchant = MERCHANT).copy(rawCaptureId = capture(), categoryId = groceries()))
+        screen(id)
+
+        waitFor(MERCHANT)
+        val chip = compose.onNodeWithTag(CATEGORY_CHIP).performScrollTo().captureToImage().toPixelMap()
+        assertTrue("No Stamp outline along the chip's top", ArtboardProbe.close(chip[chip.width / 2, 0], Stamp))
+        assertTrue("No Stamp outline along the chip's left", ArtboardProbe.close(chip[0, chip.height / 2], Stamp))
+        compose.onNodeWithTag(CATEGORY_CHIP).performClick()
+        waitFor(PICKER_HEADING)
     }
 
     @Test fun aOneOffCategoryReadsAsEdited() {
@@ -330,6 +384,8 @@ class DetailScreenTest {
     )
 
     private var captures = 0
+
+    private fun groceries(): Long = Databases.categoryDao(context).all().single { it.name == "Groceries" }.id
 
     private fun waitFor(text: String) {
         val appeared = runCatching {

@@ -293,11 +293,11 @@ private fun DetailBody(
     Column(Modifier.fillMaxWidth().background(Card).padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Field(WHEN, whenOf(txn, zone))
-            Field(CATEGORY, row.categoryName ?: NO_CATEGORY)
+            Field(CATEGORY) { CategoryChip(row.categoryName ?: NO_CATEGORY, onCategorize.takeIf { canCategorize }) }
             Field(CAME_FROM, (txn.sourceLabel ?: txn.sourcePackage ?: "").uppercase(CALENDAR))
             // The raw acquirer string, only where it says something the name
-            // above does not.
-            txn.merchantRaw?.takeIf { it != name }?.let { Field(NAME_ON_THE_BILL, it) }
+            // above does not: KK MART under KK Mart says nothing.
+            txn.merchantRaw?.takeIf { !it.equals(name, ignoreCase = true) }?.let { Field(NAME_ON_THE_BILL, it) }
         }
 
         Text(WHAT_PINGED_READ, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 22.dp))
@@ -424,11 +424,46 @@ private fun OutlinedAction(label: String, ink: Color, edge: Color, modifier: Mod
 /** One line of the card: the label, a dotted leader, the value in the mono. */
 @Composable
 private fun Field(label: String, value: String) {
+    Field(label) { Text(value, style = MonoLabel.copy(letterSpacing = 0.sp), color = Ink, textAlign = TextAlign.End) }
+}
+
+/**
+ * The label, a dotted leader, and [value] flush right after it, as the
+ * board's `flex: 1` leader sets it. Only the leader is weighted: a value
+ * weighted beside it took half the row, so each ended where its half did and
+ * "TOUCH 'N GO EWALLET" wrapped at 320dp. A value too long for the line
+ * squeezes the leader to nothing and wraps in what is left.
+ */
+@Composable
+private fun Field(label: String, value: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         Text(label, fontFamily = Body, fontSize = 13.5.sp, lineHeight = 18.sp, color = Muted)
         Box(Modifier.weight(1f).padding(start = 8.dp, end = 8.dp, bottom = 4.dp).height(1.dp).dottedRule())
-        Text(value, style = MonoLabel.copy(letterSpacing = 0.sp), color = Ink, textAlign = TextAlign.End, modifier = Modifier.weight(1f, fill = false))
+        value()
     }
+}
+
+/**
+ * The board's category: [name] in a Stamp outline, opening the chooser where
+ * the row can be filed ([onClick] non-null). Laid out at its drawn size, as a
+ * ledger row's chip is (#186), with Compose's minimum touch target round it.
+ */
+@Composable
+private fun CategoryChip(name: String, onClick: (() -> Unit)?) {
+    val shape = RoundedCornerShape(2.dp)
+    Text(
+        name,
+        fontFamily = Body,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        color = Stamp,
+        modifier = Modifier
+            .testTag(CATEGORY_CHIP)
+            .clip(shape)
+            .border(1.dp, Stamp, shape)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 /** The artboard's pencil, in the accent: a stroke path on the 24-unit grid it is drawn on. */
@@ -513,6 +548,9 @@ const val DETAIL_BACK = "Back"
 
 /** What a test finds the quoted notification by. */
 internal const val VERBATIM = "detail-verbatim"
+
+/** What a test finds the category chip by. */
+internal const val CATEGORY_CHIP = "detail-category"
 
 /** What a test finds the hero amount by. */
 internal const val AMOUNT = "detail-amount"
