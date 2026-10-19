@@ -130,15 +130,29 @@ class GridDayClickTest {
         assertEquals(emptyList<String>(), wrong)
     }
 
-    /** The screen bounds the platform reports for the node whose description starts [describedAs]. */
+    /**
+     * The screen bounds the platform reports for the node whose description
+     * starts [describedAs]. Waited for, because on CI's API 36 emulator the
+     * first lookup found no grid at all; the platform's tree is not yet
+     * filled in when `UiAutomation` first connects.
+     */
     private fun accessibilityBounds(describedAs: String): Rect {
+        var bounds: Rect? = null
+        compose.waitUntil("a node described as $describedAs", 10_000) {
+            bounds = platformBounds(describedAs)
+            bounds != null
+        }
+        return bounds!!
+    }
+
+    private fun platformBounds(describedAs: String): Rect? {
         val nodes = ArrayDeque(listOf(InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow))
         while (nodes.isNotEmpty()) {
             val node = nodes.removeFirst() ?: continue
             if (node.contentDescription?.startsWith(describedAs) == true) return Rect().also(node::getBoundsInScreen)
             for (i in 0 until node.childCount) nodes += node.getChild(i)
         }
-        throw AssertionError("No node is described as $describedAs")
+        return null
     }
 
     /** A touch at screen ([x], [y]), injected as the platform delivers a finger's. */
