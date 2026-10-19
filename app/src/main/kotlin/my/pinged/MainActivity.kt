@@ -874,6 +874,7 @@ class MainActivity : ComponentActivity() {
      * on once the permission prompt will no longer be shown.
      */
     private fun openAlertSettings() {
+        CaptureAlerts.ensureChannel(applicationContext)
         val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
         if (!start(intent)) Log.w(TAG, "This app's notification settings would not open")
