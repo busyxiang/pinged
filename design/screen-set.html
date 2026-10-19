@@ -403,7 +403,7 @@ button.sizer:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <p class="lede">The app in ordinary use, a month in. Scenario pinned to Wednesday 30 September 2026 so every figure agrees with every other.</p>
     <div class="screens">
       <div class="col">
-        <div class="cap"><span class="step">Home</span><h3>Spending</h3><p>Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. Cash sits in its own band above the tabs, and the list stops at its edge rather than scrolling under it: amounts are right-aligned, which is the edge a floating button would cover (#221).</p></div>
+        <div class="cap"><span class="step">Home</span><h3>Spending</h3><p>Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. The top three are named categories only: Uncategorized is where a payment is filed, not what it bought, so it never takes a slot, and 6 TO SORT under them opens Search on the month&rsquo;s Uncategorized rows to file each in place (#273). Cash sits in its own band above the tabs, and the list stops at its edge rather than scrolling under it: amounts are right-aligned, which is the edge a floating button would cover (#221).</p></div>
         <div class="frame"><div style="width: 390px; height: 844px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden; position: relative;">
 
   <div style="padding: 26px 20px 0; display: flex; align-items: center; justify-content: space-between;">
@@ -427,6 +427,14 @@ button.sizer:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <div style="display: flex; align-items: baseline; font-size: 13px;"><span>Food &amp; Drinks</span><span style="flex: 1; border-bottom: 1px dotted #cfc4ae; margin: 0 8px 4px;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;">842.50</span></div>
     <div style="display: flex; align-items: baseline; font-size: 13px;"><span>Groceries</span><span style="flex: 1; border-bottom: 1px dotted #cfc4ae; margin: 0 8px 4px;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;">621.80</span></div>
     <div style="display: flex; align-items: baseline; font-size: 13px;"><span>Bills &amp; utilities</span><span style="flex: 1; border-bottom: 1px dotted #cfc4ae; margin: 0 8px 4px;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;">465.60</span></div>
+  </div>
+
+  <!-- N TO SORT (#273): the month's counted rows still under Uncategorized,
+       which never takes a top-three slot. One button, opening Search on the
+       month and Uncategorized; absent at zero. -->
+  <div style="margin-top: 4px; min-height: 44px; padding: 0 20px; display: flex; align-items: center;">
+    <span style="flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #a03826;">6 TO SORT</span>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a03826" stroke-width="1.7" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
   </div>
 
   <div style="height: 9px; margin-top: 18px; background-image: linear-gradient(45deg, transparent 50%, #efe7d8 50%), linear-gradient(-45deg, transparent 50%, #efe7d8 50%); background-size: 12px 9px; background-repeat: repeat-x;"></div>

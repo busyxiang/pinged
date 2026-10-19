@@ -110,12 +110,17 @@ internal fun dayHeaderBetween(before: LedgerItem?, after: LedgerItem?): LedgerIt
  * asks for the name; the only caller that draws this already holds
  * [LedgerRead.categories] keyed by id. A copy would be a second answer to "what
  * is category 7 called", with nothing to keep the two in step.
+ *
+ * [top] never holds Uncategorized (`TxnDao.monthTopNamed`, #273); [toSort]
+ * is how many of the month's counted rows are filed there, every currency,
+ * and draws `N TO SORT` above zero.
  */
 data class MonthSummary(
     val month: YearMonth,
     val totals: List<CurrencyTotal>,
     val top: List<CategoryTotal>,
     val trustworthy: Boolean,
+    val toSort: Int = 0,
 )
 
 /**

@@ -177,12 +177,15 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
  * the list's header, and drawn by `:feature:ledger`'s `SearchScreen`. Off the
  * stack's root, so the tab bar is hidden.
  *
- * Carries nothing: the words and filters are in the screen's own saved
- * state, so a restored back stack comes back to the same search.
+ * Opened from `N TO SORT` or Charts' Uncategorized bar (#273), it carries
+ * where the search begins: [month] (`YearMonth`'s `2026-09`) and
+ * [categoryId], both null from the magnifier. Only the start: the words and
+ * filters chosen after it are in the screen's own saved state, so a restored
+ * back stack comes back to the same search.
  *
  * See [Ledger] for why it is registered nowhere.
  */
-@Serializable data object Search : NavKey
+@Serializable data class Search(val month: String? = null, val categoryId: Long? = null) : NavKey
 
 /**
  * The Spending stack a first creation starts on: its root, with spec 9.4's

@@ -20,7 +20,7 @@ groups = [
  ]),
  ("Every day", "The app in ordinary use, a month in. Scenario pinned to Wednesday 30 September 2026 so every figure agrees with every other.", [
   ("Spending", "Main.dc.html", "Home",
-   "Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. Cash sits in its own band above the tabs, and the list stops at its edge rather than scrolling under it: amounts are right-aligned, which is the edge a floating button would cover (#221)."),
+   "Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. The top three are named categories only: Uncategorized is where a payment is filed, not what it bought, so it never takes a slot, and 6 TO SORT under them opens Search on the month&rsquo;s Uncategorized rows to file each in place (#273). Cash sits in its own band above the tabs, and the list stops at its edge rather than scrolling under it: amounts are right-aligned, which is the edge a floating button would cover (#221)."),
   ("Spending, scrolled", "MainScrolled.dc.html", "New, past the summary",
    "The summary is the list&rsquo;s first item and scrolls away with it, so a phone shows rows rather than the same three categories all day. The bar stays. Once the hero total has gone under it, the total cross-fades in on the month&rsquo;s row, abbreviated to SEP so the bar is no wider scrolled than at the top; tapping it brings the summary back. The awaiting-review row scrolls up with the list and pins under the bar (#253)."),
   ("At 320dp", "MainScrolled320.dc.html", "New, the same at CI&rsquo;s size",

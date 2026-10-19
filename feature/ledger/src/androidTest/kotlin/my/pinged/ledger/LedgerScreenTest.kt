@@ -961,10 +961,12 @@ class LedgerScreenTest {
 
         screenFor(DEAD_MONTH)
 
+        // Uncategorized takes no top-three slot (#273); the summary counts
+        // the row as to sort instead.
         compose.waitForText(
-            UNCATEGORIZED,
-            "The summary never named the category the row is filed under, so " +
-                "there is nothing for the assignment to move it off",
+            "1 TO SORT",
+            "The summary never counted the row as to sort, so there is " +
+                "nothing for the assignment to move it off",
         )
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForText(
@@ -994,9 +996,9 @@ class LedgerScreenTest {
             compose.onAllNodesWithTextSafely(FOOD),
         )
         assertEquals(
-            "The summary still credits Uncategorized, which no row is in",
+            "The summary still counts a row to sort, and no row is in Uncategorized",
             0,
-            compose.onAllNodesWithTextSafely(UNCATEGORIZED),
+            compose.onAllNodesWithTextSafely("1 TO SORT"),
         )
         assertEquals(
             "A row that already has a category still draws the chip. The chip " +
@@ -1630,6 +1632,8 @@ class LedgerScreenTest {
                         viewModel.assignCategory(txnId, categoryId, teach, month)
                     },
                     onOpenSettings = {},
+                    // Somewhere to lead, so the summary draws `N TO SORT`.
+                    onOpenToSort = { _, _ -> },
                 )
             }
         }

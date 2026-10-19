@@ -2,7 +2,9 @@ package my.pinged.ledger.search
 
 import android.app.Application
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.data.Databases
+import my.pinged.data.SearchFilter
 import my.pinged.ledger.settings.ExportSink
 import my.pinged.ledger.settings.Transfers
 import my.pinged.data.entity.Txn
@@ -32,6 +35,8 @@ import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.freshLedger
+import my.pinged.ledger.home.CATEGORY_CHIP as ROW_CATEGORY_CHIP
+import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.monthName
 import my.pinged.ui.test.boundedWaitUntil
@@ -157,8 +162,10 @@ class SearchScreenTest {
         screen(onOpenDetail = { detail = it }, onOpenEntry = { entry = it })
         waitForCount("2 PAYMENTS · $THIS_MONTH")
 
-        compose.onNodeWithText(GRAB).performScrollTo().performClick()
-        compose.onNodeWithText(KOPI).performScrollTo().performClick()
+        // The names themselves: an Uncategorized row's centre is its
+        // "+ CATEGORY" chip (#273), which opens the chooser instead.
+        compose.onNodeWithText(GRAB, useUnmergedTree = true).performScrollTo().performClick()
+        compose.onNodeWithText(KOPI, useUnmergedTree = true).performScrollTo().performClick()
         compose.waitForIdle()
 
         assertEquals(EditTarget(captured, dao().byId(captured)!!.createdAt), detail)
@@ -288,6 +295,39 @@ class SearchScreenTest {
         }
     }
 
+    /**
+     * #273: a search opened on Uncategorized sorts in place. The three rides
+     * this month are to sort; one given a category leaves the results at
+     * once and the hero counts two, without leaving Search.
+     */
+    @Test fun aRowSortedFromAnUncategorizedSearchLeavesItAndTheCountDrops() {
+        seed()
+        val uncategorized = Databases.categoryDao(context).requireUncategorizedId()
+        screen(start = SearchStart(MONTH, uncategorized))
+        // 18.40 + 22.10 + 9.80; the coffee is filed under Food.
+        waitForCount("3 PAYMENTS · $THIS_MONTH")
+        compose.onNodeWithText(KOPI).assertDoesNotExist()
+
+        // The first row is the newest, GrabCar: its merchant's only row, so
+        // a teaching save files this one row as a one-off would.
+        compose.onAllNodesWithText(ROW_CATEGORY_CHIP, substring = true)[0].performScrollTo().performClick()
+        compose.onNode(isSelectable() and hasText(FOOD)).performScrollTo().performClick()
+        compose.onNode(hasText(SAVE_LABEL) and hasClickAction()).performClick()
+
+        waitForCount("2 PAYMENTS · $THIS_MONTH")
+        assertEquals(
+            "The sorted row is still among the Uncategorized results",
+            2,
+            compose.onAllNodesWithText(ROW_CATEGORY_CHIP, substring = true).fetchSemanticsNodes().size,
+        )
+        val food = Databases.categoryDao(context).all().single { it.name == FOOD }.id
+        assertEquals(
+            "The row was not filed under the category chosen: Food holds the coffee and one ride",
+            2,
+            dao().searchTotals("", SearchFilter(categoryId = food)).sumOf { it.rowCount },
+        )
+    }
+
     // ---- fixture ---------------------------------------------------------
 
     private fun dao() = Databases.txnDao(context)
@@ -328,8 +368,9 @@ class SearchScreenTest {
         onOpenDetail: (EditTarget) -> Unit = {},
         onOpenEntry: (EditTarget) -> Unit = {},
         onPickExport: (() -> Unit)? = null,
+        start: SearchStart? = null,
     ) {
-        val viewModel = SearchViewModel(context.applicationContext as Application, SavedStateHandle())
+        val viewModel = SearchViewModel(context.applicationContext as Application, SavedStateHandle(), start)
         compose.setContent {
             PingedTheme {
                 SearchScreen(viewModel, onBack = {}, onOpenEntry = onOpenEntry, onOpenDetail = onOpenDetail, onPickExport = onPickExport)

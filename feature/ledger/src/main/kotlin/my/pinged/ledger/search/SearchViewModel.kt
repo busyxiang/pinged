@@ -33,7 +33,10 @@ import my.pinged.data.SearchFilter
 import my.pinged.data.SearchTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.SourceApp
+import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
+import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.settings.ExportSink
 import my.pinged.ledger.settings.Transfers
 import java.time.LocalDate
@@ -50,9 +53,17 @@ import java.time.YearMonth
  *
  * The words and filters live in the entry's [SavedStateHandle], so a search
  * comes back after a process death; what was found does not, and is read
- * again.
+ * again. [start] is where a search opened from `N TO SORT` or Charts'
+ * Uncategorized bar begins (#273); see [restoredChoice].
+ *
+ * A result row offers the ledger's category chooser, and a save re-reads the
+ * search, so a row sorted out of an Uncategorized search leaves it at once.
  */
-class SearchViewModel(app: Application, private val handle: SavedStateHandle) : AndroidViewModel(app) {
+class SearchViewModel(
+    app: Application,
+    private val handle: SavedStateHandle,
+    start: SearchStart? = null,
+) : AndroidViewModel(app) {
 
     /** A getter, not a field, for the reason `SourcesViewModel` records. */
     private val context: Context get() = getApplication<Application>()
@@ -62,7 +73,7 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
     /** The field's text as typed, before the debounce. */
     val query: StateFlow<String> = _query.asStateFlow()
 
-    private val _choice = MutableStateFlow(restoreChoice())
+    private val _choice = MutableStateFlow(restoredChoice(handle, start))
 
     /** The four filters. */
     val choice: StateFlow<SearchChoice> = _choice.asStateFlow()
@@ -74,6 +85,13 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
 
     private val _storageUnavailable = MutableStateFlow(false)
     val storageUnavailable: StateFlow<Boolean> = _storageUnavailable.asStateFlow()
+
+    /** The result rows' category chooser, shared with the Ledger. */
+    private val rows = RowActions(
+        context = { context },
+        scope = viewModelScope,
+        unavailable = { _storageUnavailable.value = true },
+    )
 
     private val _months = MutableStateFlow<MonthsRead?>(null)
 
@@ -133,20 +151,15 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
         handle[MAX] = next.maxSen
     }
 
-    private fun restoreChoice(): SearchChoice {
-        val month = handle.get<String>(MONTH)
-        return SearchChoice(
-            month = when (month) {
-                null -> YearMonth.now()
-                ANY -> null
-                else -> YearMonth.parse(month)
-            },
-            categoryId = handle.get<Long>(CATEGORY),
-            app = handle.get<String>(APP)?.let { SourceApp(it, handle.get<String>(APP_LABEL)) },
-            minSen = handle.get<Long>(MIN),
-            maxSen = handle.get<Long>(MAX),
-        )
-    }
+    /** See [RowActions.assignCategory]; the search is re-read after. */
+    fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
+        rows.assignCategory(txnId, categoryId, teach) { refresh().join() }
+
+    /** See [RowActions.retroPreview]. */
+    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
+
+    /** See [RowActions.addCategory]; the search, and so the chooser, is re-read after. */
+    suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey) { refresh().join() }
 
     /**
      * Read the current words and filters: the rows, at most [ROW_LIMIT] of
@@ -181,7 +194,9 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
                         choice = choice,
                         rows = txns.searchRows(text, filter, ROW_LIMIT),
                         totals = txns.searchTotals(text, filter),
-                        categories = db.categoryDao().all(),
+                        // Through `Databases`' DAOs, which inside the
+                        // transaction's monitor are [db]'s, as Day's is.
+                        chooser = rows.readChooser(),
                     )
                 }
                 if (text == _query.value && choice == _choice.value) _read.value = read
@@ -292,6 +307,35 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
 }
 
 /**
+ * Where a search begins when it is opened for something (#273): [month] and
+ * the category [categoryId], every other filter open.
+ */
+data class SearchStart(val month: YearMonth, val categoryId: Long)
+
+/**
+ * The filters a search opens on: those saved in [handle] once the user has
+ * chosen any, since every choice saves the month; else [start]; else [now]
+ * and nothing else. So a search opened for a month and category comes back
+ * to them after a process death until the user changes a filter, and to the
+ * user's own filters after that.
+ */
+internal fun restoredChoice(handle: SavedStateHandle, start: SearchStart?, now: YearMonth = YearMonth.now()): SearchChoice {
+    val month = handle.get<String>(SearchViewModel.MONTH)
+    if (month == null && start != null) return SearchChoice(month = start.month, categoryId = start.categoryId)
+    return SearchChoice(
+        month = when (month) {
+            null -> now
+            SearchViewModel.ANY -> null
+            else -> YearMonth.parse(month)
+        },
+        categoryId = handle.get<Long>(SearchViewModel.CATEGORY),
+        app = handle.get<String>(SearchViewModel.APP)?.let { SourceApp(it, handle.get<String>(SearchViewModel.APP_LABEL)) },
+        minSen = handle.get<Long>(SearchViewModel.MIN),
+        maxSen = handle.get<Long>(SearchViewModel.MAX),
+    )
+}
+
+/**
  * The four filters (`design/Search.dc.html`'s chips), each null when it does
  * not narrow. [month] starts at the current one, as the artboard draws it.
  */
@@ -312,11 +356,17 @@ data class SearchChoice(
     )
 }
 
-/** What one [SearchViewModel.refresh] read, and the question it answers. */
+/**
+ * What one [SearchViewModel.refresh] read, and the question it answers.
+ * [chooser] is the category chooser's half, read in the same transaction,
+ * and its categories are what the rows and the category chip are named from.
+ */
 internal data class SearchRead(
     val text: String,
     val choice: SearchChoice,
     val rows: List<FeedRow>,
     val totals: List<SearchTotal>,
-    val categories: List<Category>,
-)
+    val chooser: ChooserRead,
+) {
+    val categories: List<Category> get() = chooser.categories
+}
