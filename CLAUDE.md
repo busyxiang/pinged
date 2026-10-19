@@ -5,14 +5,20 @@ notifications from Malaysian banking apps and e-wallets. There is no network
 permission and no server.
 
 Design spec: `docs/superpowers/specs/2026-09-02-pinged-design.md`. Section
-numbers in comments and commit messages refer to it.
+numbers in comments and commit messages refer to it. Modules: README's Layout.
 
 ## Commands
 
-    ./gradlew test                        # 321 JVM tests
-    .claude/bin/emu -- ./gradlew connectedDebugAndroidTest   # 792, needs a device
-    .claude/bin/emu -- ./gradlew :smoke:connectedMinifiedAndroidTest   # 1, the R8 build
-    ./gradlew test lint :app:assembleDebug   # what CI runs
+    ./gradlew test                        # JVM tests
+    .claude/bin/emu -- ./gradlew connectedDebugAndroidTest   # needs a device
+    .claude/bin/emu -- ./gradlew :smoke:connectedMinifiedAndroidTest   # the R8 build
+    ./gradlew test verifyRoborazziDebug lint :app:assembleDebug   # CI's checks
+
+`:feature:charts` compares Roborazzi screenshots against goldens committed in
+`src/test/screenshots/`. Plain `test` only renders them; `verifyRoborazziDebug`
+is what compares. Record new goldens with CI's `workflow_dispatch` and its
+`record-screenshots` input, which renders on the same Robolectric image the
+check uses, and commit the PNGs from its artifact.
 
 `:feature:ledger`'s Compose tests that open no database and measure no
 pixels, bounds or type run on the JVM under Robolectric (`src/test`, at CI's
@@ -20,68 +26,13 @@ pixels, bounds or type run on the JVM under Robolectric (`src/test`, at CI's
 and measures stays in `androidTest`, because Robolectric's drawing is not the
 device's. Builders both sets need are in `src/sharedTest`.
 
-Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
-JVM module and has no instrumented source set, so anything device-specific is
-tested from `:feature:capture`.
+**Every device command runs under `.claude/bin/emu`, with
+`run_in_background`.** It leases the one emulator that every worktree's
+session shares, and a lease can wait longer than the Bash timeout. Before
+running or writing an instrumented test, read `docs/agents/device-tests.md`:
+filters, the affected-suites run that precedes calling work done, loops, and
+CI's shorter screen.
 
-**Every device command runs under `.claude/bin/emu`.** Sessions in other
-worktrees share the one emulator and install the same applicationId, so an
-unleased run lands in the middle of theirs. `emu` holds a lock for the
-command, boots the emulator if it is down, and stops one it booted after 15
-idle minutes (it holds 5G). A PreToolUse hook refuses `adb` and connected,
-install or uninstall tasks outside it. A lease waits up to 30 minutes for
-the one before it, longer than the Bash timeout, so run every `emu` command
-with `run_in_background`; `emu --status` names the holder.
-
-Every minute a session holds the emulator, the others wait, so run the
-least that answers the question. While iterating, run the one class:
-`-Pandroid.testInstrumentationRunnerArguments.class=<fully qualified name>`.
-Before calling work done, run the suites the change can reach, which is
-what CI's emulator job runs on a PR:
-
-    .claude/bin/emu -- ./gradlew $({ git diff --name-only $(git merge-base main HEAD); git ls-files --others --exclude-standard; } | python3 .github/scripts/affected_suites.py)
-
-The diff includes uncommitted and untracked files: a branch with no commits
-yet has an empty committed diff, and an empty diff selects every suite.
-An empty selection is the opposite: no suite can be reached, and the bare
-`./gradlew` only prints help.
-The whole `connectedDebugAndroidTest` is for when the selection rules
-themselves are in doubt; main's push runs every suite regardless.
-A local run skips `:core:data`'s `@Measurement` tests, which log a figure and
-assert nothing; CI runs them, and `CI=true` before `./gradlew` runs them here.
-
-A loop that repeats a test, to reproduce a flake or count its rate, takes
-one lease per iteration, never one for the whole loop: the others queue
-behind a lease for as long as it lasts, and on 2026-10-15 a session waited
-27 minutes behind loops held under single leases. Lease each run and let
-the loop wait between them:
-
-    for i in $(seq 10); do .claude/bin/emu -- ./gradlew <task> <filter> || fails=$((fails + 1)); done
-
-not `.claude/bin/emu -- loop.sh`. An `emu` inside a lease's command waits for
-that same lease and never gets it.
-
-A lease that holds the emulator for 20 minutes is stopped, its command's
-whole process group with it, and `emu` exits 124; `--max-hold SECONDS` is for
-the rare run that needs longer. At the start and end of every lease `emu`
-kills shell-user processes left orphaned on the device. A loop backgrounded
-through `adb shell` keeps `adb shell` from returning, redirected or not: on
-2026-10-16 two leases hung on one for 27 minutes each, and so did a third
-that redirected its loop's input and output.
-
-A lease's command can be stopped part-way and run again from the start: the
-user can put a waiter first, and the holder then makes way and reruns after
-it, as the same process. So a lease's command must be safe to run twice; one
-that is not leaves its own state behind it, not only the device's.
-
-A tap in an instrumented test uses `performScrollTo()` first: CI's emulator
-screen is shorter than a dev one, and a new Settings row once pushed "Delete
-everything" off it, so the click missed and two tests failed on CI only.
-`performScrollTo()` cannot reach a row of a lazy list that was never
-composed: scroll the list itself first, with `performScrollToKey` or
-`performScrollToNode`. Before calling an instrumented test done, run it at
-CI's size too, with `emu --ci-size`: it sets 320x640 at density 160 and
-resets both when the command ends, fails or is killed.
 `./gradlew test` needs no worktrees under `.claude/worktrees/`, or
 `RawDatabaseAccessTest` scans their copies and fails.
 
@@ -90,15 +41,13 @@ because it shares the app's process and R8 strips the classes it needs;
 `:smoke` is the only test of what ships. It installs as Touch 'n Go's package,
 so it will not install on a phone that has the real eWallet.
 
-**The repository is public, and a fixture is a real notification.** Copy
-one into `core/parse/src/test/resources/fixtures/` verbatim except for two
-masks. A card's digits become `****`. Every transaction reference (`REF:`,
-`QR…`, `FPX ID`, `Merchant Reference No.`) becomes zeros of the same shape.
-The header says what was masked. No rule reads either value, and a test that
-needs a sample sentence uses the masked one. The header also says `A real …`
-or `Constructed, not observed`; `DictionaryPackTest` reads it. Device
-exports stay outside the repository. Nothing else from them goes in a file or
-on an issue beyond counts.
+**The repository is public, and a fixture is a real notification.** Before
+adding one to `core/parse/src/test/resources/fixtures/`, apply
+CONTRIBUTING.md's two masks exactly and write its header as that file says;
+`DictionaryPackTest` reads the header. No rule reads a masked value, and a
+test that needs a sample sentence uses the masked one. Device exports stay
+outside the repository, and nothing else from them goes in a file or on an
+issue beyond counts.
 
 ## Architecture
 
@@ -115,23 +64,18 @@ loses nothing. Do not move parsing into the listener callback.
 **Never `\d`, `\w` or `\s` in a pattern.** `java.util.regex` reads them as
 ASCII; ICU on Android reads them as Unicode classes. A JVM test cannot see the
 difference, and a full-width amount then parses to a different number on the
-phone than in the tests. `PackLoader` refuses `\d` at load.
+phone than in the tests. `PackLoader` (in `Pack.kt`) refuses `\d` at load.
 
 **Money is `Long` sen.** `BigDecimal` appears only in the string-to-sen step.
 
-**A released schema is frozen.** The current one is v6 (spec 5.8's
-`user_template_rule`, by auto-migration from v5; v5 is spec 5.7's
-`user_reject_rule`, by auto-migration from v4; v4 is spec 4's
-`category.seed_name`, by a hand-written migration from v3, which Room's
-auto-migration would have done by rebuilding the table; v3 is spec 15.2's
-`txn_fts` search index, whose migration also rebuilds it, and v2 is spec
-6.4's two merchant tables, by auto-migration from v1). Changing an entity
-moves Room's identity hash, and CI regenerates the schema and fails on drift,
-so a change is a version bump, a committed `schemas/N.json` and a migration
-`MigrationTest` runs from every released version. Room's hash cannot see a renamed
-enum constant, so the stored strings are frozen separately by
+**A released schema is frozen.** Changing an entity moves Room's identity
+hash, and CI regenerates the schema and fails on drift, so a change is a
+version bump, a committed `core/data/schemas/…/N.json` and a migration
+`MigrationTest` runs from every released version. Room's hash cannot see a
+renamed enum constant, so the stored strings are frozen separately by
 `EnumVocabularyTest`, nor a collation, which `SchemaConstraintTest` asserts off
-`sqlite_master`.
+`sqlite_master`. Room's auto-migration rebuilds a table for some changes:
+v3 to v4 is hand-written because it would have rebuilt `category`.
 
 **No whole-row upserts on `capture_source` or `capture_day`.** SQLite's REPLACE
 deletes and re-inserts, so a partial write reverts `enabled` to false and

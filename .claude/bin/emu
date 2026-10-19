@@ -4,7 +4,7 @@
 # take turns on it instead of interleaving. Every worktree installs the same
 # applicationId, so a second session's install replaces the first's APK
 # mid-run, and `wm size`, the listener grant and :smoke's Touch 'n Go package
-# are global to the device. CLAUDE.md's "Commands" says when to use it, and
+# are global to the device. docs/agents/device-tests.md says when to use it, and
 # .claude/hooks/emu_guard.py refuses device commands that do not.
 #
 #   emu [--ci-size] [--wait SECONDS] [--max-hold SECONDS] [--] COMMAND...
