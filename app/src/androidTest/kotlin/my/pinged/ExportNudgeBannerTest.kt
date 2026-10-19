@@ -21,6 +21,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.transfer.TransferStore
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -332,11 +333,11 @@ class ExportNudgeBannerTest {
     }
 
     /**
-     * [ComposeTestRule.waitUntil] wrapped so a failure is the assertion above
+     * [boundedWaitUntil] wrapped so a failure is the assertion above
      * it and its message, rather than a bare timeout from inside the rule.
      */
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     private fun ComposeTestRule.countOf(text: String, substring: Boolean = false): Int {
         waitForIdle()

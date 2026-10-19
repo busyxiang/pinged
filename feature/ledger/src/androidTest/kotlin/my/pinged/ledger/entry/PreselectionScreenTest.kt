@@ -28,6 +28,7 @@ import my.pinged.data.Databases
 import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -76,7 +77,7 @@ class PreselectionScreenTest {
         compose.setContent {
             PingedTheme { ManualEntryScreen(viewModel, onBack = {}, onSaved = {}) }
         }
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText("Transport").fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText("Transport").fetchSemanticsNodes().isNotEmpty() }
     }
 
     @After fun leaveNothingBehind() {
@@ -96,7 +97,7 @@ class PreselectionScreenTest {
 
     @Test fun aChipTappedAfterAPreselectionIsKeptWhenTheMerchantChanges() {
         typeMerchant("99 Speedmart")
-        compose.waitUntil(TIMEOUT) { isSelected("Groceries") }
+        compose.boundedWaitUntil(TIMEOUT) { isSelected("Groceries") }
 
         chip("Transport").performScrollTo().performClick()
         chip("Transport").assertIsSelected()
@@ -109,11 +110,11 @@ class PreselectionScreenTest {
 
     @Test fun clearingTheMerchantRemovesAPreselection() {
         typeMerchant("99 Speedmart")
-        compose.waitUntil(TIMEOUT) { isSelected("Groceries") }
+        compose.boundedWaitUntil(TIMEOUT) { isSelected("Groceries") }
 
         clearMerchant()
 
-        compose.waitUntil(TIMEOUT) { !isSelected("Groceries") }
+        compose.boundedWaitUntil(TIMEOUT) { !isSelected("Groceries") }
     }
 
     @Test fun clearingTheMerchantKeepsATappedChip() {
@@ -138,7 +139,7 @@ class PreselectionScreenTest {
 
     /** The view model asked about [text], and the main thread has applied the answer. */
     private fun answered(text: String) {
-        compose.waitUntil(TIMEOUT) { asked.lastOrNull() == text }
+        compose.boundedWaitUntil(TIMEOUT) { asked.lastOrNull() == text }
         compose.waitForIdle()
     }
 

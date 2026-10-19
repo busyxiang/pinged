@@ -12,6 +12,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
@@ -62,7 +63,7 @@ class LedgerResumeTest {
         compose.setContent {
             PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithTextSafely("NOTHING CAPTURED YET") > 0
         }
 
@@ -74,7 +75,7 @@ class LedgerResumeTest {
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
 
         val counted = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
         }.isSuccess
         assertEquals(
             "The payment is in the database and the month total does not count " +
@@ -103,14 +104,14 @@ class LedgerResumeTest {
         compose.setContent {
             PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) }
         }
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithTextSafely("NOTHING CAPTURED YET") > 0
         }
 
         val now = System.currentTimeMillis()
         dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = now, categoryId = category))
         val counted = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
         }.isSuccess
         assertEquals(
             "The payment is in the database and the month total does not " +
@@ -130,7 +131,7 @@ class LedgerResumeTest {
             ),
         )
         val awaiting = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("1 AWAITING REVIEW") > 0 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("1 AWAITING REVIEW") > 0 }
         }.isSuccess
         assertEquals(
             "A payment awaiting review committed while the ledger is open " +
@@ -169,7 +170,7 @@ class LedgerResumeTest {
         // reaches the screen there is no failure for the resume to recover
         // from and everything after this point passes vacuously.
         val unreadable = runCatching {
-            compose.waitUntil(TIMEOUT) {
+            compose.boundedWaitUntil(TIMEOUT) {
                 compose.onAllNodesWithTextSafely(CANNOT_READ_YOUR_DATA) > 0
             }
         }.isSuccess
@@ -193,7 +194,7 @@ class LedgerResumeTest {
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
 
         val recovered = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("77.00") > 0 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("77.00") > 0 }
         }.isSuccess
         assertEquals(
             "The ledger still cannot be read on a foreground where the " +

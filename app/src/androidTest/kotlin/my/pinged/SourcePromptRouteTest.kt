@@ -11,6 +11,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.capture.SourcePrompt
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -76,7 +77,7 @@ class SourcePromptRouteTest {
     }
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     private fun ComposeTestRule.countOf(text: String): Int =
         onAllNodesWithText(text).fetchSemanticsNodes().size

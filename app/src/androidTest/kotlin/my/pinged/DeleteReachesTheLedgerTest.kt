@@ -22,6 +22,7 @@ import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -147,7 +148,7 @@ class DeleteReachesTheLedgerTest {
     }
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     private fun ComposeTestRule.countOf(text: String): Int {
         waitForIdle()

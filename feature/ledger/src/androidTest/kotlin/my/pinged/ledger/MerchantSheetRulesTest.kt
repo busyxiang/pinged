@@ -24,6 +24,7 @@ import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.SEPARATE_NO_RULE
 import my.pinged.ledger.home.bothHaveRules
 import my.pinged.ledger.home.readMerchantSheet
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -89,7 +90,7 @@ class MerchantSheetRulesTest {
         // The sheet's own list is up once its heading is. Not a choice row: the
         // list is lazy, and on CI's 320x640 screen the rows below the members
         // are never composed.
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(MERCHANT_HEADING).fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText(MERCHANT_HEADING).fetchSemanticsNodes().isNotEmpty() }
     }
 
     private fun count(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().size

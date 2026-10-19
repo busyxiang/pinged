@@ -30,6 +30,7 @@ import my.pinged.ledger.home.MONTH_CHEVRON
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ui.monthName
 import my.pinged.ui.monthYear
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
@@ -82,7 +83,7 @@ class MonthPickerTest {
 
         viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
         compose.setContent { PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}) } }
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
     }
 
     @After fun leaveAnOpenableDatabase() = context.discardTheDatabase()
@@ -93,9 +94,9 @@ class MonthPickerTest {
 
         pick(lastMonth)
 
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM12.34") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM12.34") > 0 }
         compose.onNodeWithText(monthName(lastMonth)).assertExists()
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(dayLabel(LocalDates.of(today))) == 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(dayLabel(LocalDates.of(today))) == 0 }
         compose.onNodeWithText(dayLabel(LocalDates.of(lastMonthsDay))).performScrollTo().assertExists()
         assertEquals(
             "The summary still names this month's total after another was picked",
@@ -107,7 +108,7 @@ class MonthPickerTest {
     /** The resume's re-read is the picked month's, or a trip away undoes the pick. */
     @Test fun aPickSurvivesAResume() {
         pick(lastMonth)
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM12.34") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM12.34") > 0 }
 
         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
@@ -124,12 +125,12 @@ class MonthPickerTest {
     /** Picking now again is the whole ledger, today's rows first. */
     @Test fun pickingNowComesBack() {
         pick(lastMonth)
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM12.34") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM12.34") > 0 }
 
         pick(thisMonth)
 
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(dayLabel(LocalDates.of(today))) == 1 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM50.00") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(dayLabel(LocalDates.of(today))) == 1 }
     }
 
     /**
@@ -143,11 +144,11 @@ class MonthPickerTest {
             dao.insert(ledgerTxn(amountSen = 100L, occurredAt = noonOf(today) - it - 1, categoryId = category))
             dao.insert(ledgerTxn(amountSen = 100L, occurredAt = noonOf(lastMonthsDay) - it - 1, categoryId = category))
         }
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM80.00") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM80.00") > 0 }
 
         compose.onNode(hasScrollToIndexAction()).performScrollToIndex(40)
         pick(lastMonth)
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM42.34") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM42.34") > 0 }
         waitUntilShown(dayLabel(LocalDates.of(lastMonthsDay)))
 
         compose.onNode(hasScrollToIndexAction()).performScrollToIndex(20)
@@ -155,7 +156,7 @@ class MonthPickerTest {
         // as they do on CI's emulator.
         viewModel.beforePage = { delay(1_500) }
         pick(thisMonth)
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM80.00") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM80.00") > 0 }
         waitUntilShown(dayLabel(LocalDates.of(today)))
     }
 
@@ -177,8 +178,8 @@ class MonthPickerTest {
         val before = thisMonth.minusMonths(3)
         compose.runOnUiThread { viewModel.pick(before) }
 
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(monthName(before)) > 0 }
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("NOTHING COUNTED THIS MONTH") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(monthName(before)) > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("NOTHING COUNTED THIS MONTH") > 0 }
         assertEquals(
             "A month with nothing in it drew day one's copy over a ledger that has rows",
             0,
@@ -214,7 +215,7 @@ class MonthPickerTest {
 
     private fun waitUntilShown(text: String) {
         val shown = runCatching {
-            compose.waitUntil(TIMEOUT) {
+            compose.boundedWaitUntil(TIMEOUT) {
                 runCatching { compose.onNodeWithText(text).assertIsDisplayed() }.isSuccess
             }
         }.isSuccess
@@ -225,7 +226,7 @@ class MonthPickerTest {
     // has no parent to scroll and throws; it is always on screen.
     private fun pick(month: YearMonth) {
         compose.onNodeWithTag(MONTH_BUTTON).performClick()
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(monthYear(month)) > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(monthYear(month)) > 0 }
         compose.onNodeWithText(monthYear(month)).performScrollTo().performClick()
     }
 

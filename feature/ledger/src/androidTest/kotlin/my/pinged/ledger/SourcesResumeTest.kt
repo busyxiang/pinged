@@ -19,6 +19,7 @@ import my.pinged.ledger.settings.TransferJob
 import my.pinged.data.entity.Arrival
 import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesViewModel
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -75,7 +76,7 @@ class SourcesResumeTest {
         val viewModel = SourcesViewModel(context.applicationContext as Application)
         compose.setContent { PingedTheme { SourcesScreen(viewModel, onBack = {}) } }
 
-        compose.waitUntil(TIMEOUT) { viewModel.state.value.loaded }
+        compose.boundedWaitUntil(TIMEOUT) { viewModel.state.value.loaded }
         assertEquals(
             "precondition: nothing has been counted for this package, so no row " +
                 "for it may be drawn yet",
@@ -103,7 +104,7 @@ class SourcesResumeTest {
         // Compose text assertion cannot tell "the screen never read" from
         // "the row is composed but scrolled out of the lazy list".
         val reRead = runCatching {
-            compose.waitUntil(TIMEOUT) {
+            compose.boundedWaitUntil(TIMEOUT) {
                 viewModel.state.value.seenNotCaptured.any { it.pkg == pkg }
             }
         }.isSuccess
@@ -150,7 +151,7 @@ class SourcesResumeTest {
         assertTrue(
             "precondition: the enabled source never reached the allow-list state",
             runCatching {
-                compose.waitUntil(TIMEOUT) {
+                compose.boundedWaitUntil(TIMEOUT) {
                     viewModel.state.value.suggested.any { it.pkg == pkg && it.enabled }
                 }
             }.isSuccess,
@@ -165,7 +166,7 @@ class SourcesResumeTest {
         )
 
         val reRead = runCatching {
-            compose.waitUntil(TIMEOUT) {
+            compose.boundedWaitUntil(TIMEOUT) {
                 viewModel.state.value.suggested.none { it.pkg == pkg && it.enabled }
             }
         }.isSuccess

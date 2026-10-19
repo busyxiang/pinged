@@ -21,6 +21,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.day.DAY_BACK
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -154,7 +155,7 @@ class DayRouteTest {
     }
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     private fun ComposeTestRule.countOf(text: String): Int =
         onAllNodesWithText(text).fetchSemanticsNodes().size

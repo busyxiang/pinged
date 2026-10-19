@@ -28,6 +28,7 @@ import my.pinged.data.IntegrityStore
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.RawCapture
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -163,7 +164,7 @@ class RescueFromSettingsTest {
     )
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     private fun ComposeTestRule.countOf(text: String, substring: Boolean = false): Int {
         waitForIdle()

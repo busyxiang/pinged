@@ -14,6 +14,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -64,7 +65,7 @@ class ReviewUndoTest {
 
         waitForText(RULE)
         compose.onNodeWithText(RULE).performScrollTo().assertIsDisplayed()
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(UNDO).fetchSemanticsNodes().isEmpty() }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText(UNDO).fetchSemanticsNodes().isEmpty() }
         assertEquals(
             "Undo brought the card back but the row is not awaiting review for its reason",
             TxnState.PENDING to PendingReason.RULE_REVIEW,
@@ -78,7 +79,7 @@ class ReviewUndoTest {
     }
 
     private fun waitForText(text: String) =
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
 
     private companion object {
         val OVER = reasonSentence(PendingReason.OVER_THRESHOLD)

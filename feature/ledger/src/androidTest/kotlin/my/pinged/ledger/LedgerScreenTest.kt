@@ -44,6 +44,7 @@ import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.home.MonthSummary
 import my.pinged.ledger.home.PICKER_HEADING
 import my.pinged.ledger.home.SAVE_LABEL
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
@@ -575,7 +576,7 @@ class LedgerScreenTest {
         // By prefix, so a suffixed row is drawn and fails the assertion below
         // for what it says rather than timing out here.
         val pinned = { compose.allText().filter { it.startsWith("2 AWAITING REVIEW") } }
-        compose.waitUntil(TIMEOUT) { pinned().isNotEmpty() }
+        compose.boundedWaitUntil(TIMEOUT) { pinned().isNotEmpty() }
         assertEquals(
             "The pinned row names a month's share that is the whole count, which is noise",
             listOf("2 AWAITING REVIEW"),
@@ -1614,7 +1615,7 @@ class LedgerScreenTest {
                 )
             }
         }
-        compose.waitUntil(TIMEOUT) { loaded.get() > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { loaded.get() > 0 }
         runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(month).join() } }
         return viewModel
     }
@@ -1678,7 +1679,7 @@ class LedgerScreenTest {
      */
     private fun ComposeContentTestRule.waitForText(text: String, why: String) {
         val appeared = runCatching {
-            waitUntil(TIMEOUT) { onAllNodesWithTextSafely(text) > 0 }
+            boundedWaitUntil(TIMEOUT) { onAllNodesWithTextSafely(text) > 0 }
         }.isSuccess
         assertTrue("$why -- waited ${TIMEOUT}ms for '$text'", appeared)
     }

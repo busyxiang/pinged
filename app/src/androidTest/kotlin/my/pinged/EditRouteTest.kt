@@ -33,6 +33,7 @@ import my.pinged.ledger.entry.DELETE_PAYMENT
 import my.pinged.ledger.entry.SAVE_CHANGES
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -175,7 +176,7 @@ class EditRouteTest {
     }
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     /**
      * The list scrolled until [merchant]'s row is composed: on CI's short

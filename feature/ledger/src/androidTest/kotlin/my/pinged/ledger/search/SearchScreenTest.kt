@@ -34,6 +34,7 @@ import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.freshLedger
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.monthName
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -171,7 +172,7 @@ class SearchScreenTest {
         compose.onNodeWithTag(SEARCH_FIELD).performTextInput("rab")
 
         val said = runCatching {
-            compose.waitUntil(TIMEOUT) {
+            compose.boundedWaitUntil(TIMEOUT) {
                 compose.onAllNodes(hasTestTag(SEARCH_NOTICE) and hasText("NOTHING FOUND IN $THIS_MONTH"))
                     .fetchSemanticsNodes().isNotEmpty()
             }
@@ -217,7 +218,7 @@ class SearchScreenTest {
         val footer = "EXPORT THESE $found ROWS"
         assertTrue(
             "Waited ${TIMEOUT}ms for '$footer'",
-            runCatching { compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(footer).fetchSemanticsNodes().isNotEmpty() } }.isSuccess,
+            runCatching { compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText(footer).fetchSemanticsNodes().isNotEmpty() } }.isSuccess,
         )
         // Pinned below the list, outside any scroll: nothing to scroll to.
         compose.onNodeWithText(footer).performClick()
@@ -247,7 +248,7 @@ class SearchScreenTest {
             val footer = "EXPORT THESE 4 ROWS"
             assertTrue(
                 "Waited ${TIMEOUT}ms for '$footer'",
-                runCatching { compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(footer).fetchSemanticsNodes().isNotEmpty() } }.isSuccess,
+                runCatching { compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText(footer).fetchSemanticsNodes().isNotEmpty() } }.isSuccess,
             )
             // Pinned below the list, outside any scroll: nothing to scroll to.
             compose.onNodeWithText(footer).performClick()
@@ -338,7 +339,7 @@ class SearchScreenTest {
 
     private fun waitForCount(text: String) {
         val appeared = runCatching {
-            compose.waitUntil(TIMEOUT) {
+            compose.boundedWaitUntil(TIMEOUT) {
                 compose.onAllNodesWithTag(SEARCH_COUNT).fetchSemanticsNodes().isNotEmpty() &&
                     compose.onAllNodes(hasTestTag(SEARCH_COUNT) and hasText(text)).fetchSemanticsNodes().isNotEmpty()
             }

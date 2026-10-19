@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.Databases
 import my.pinged.ledger.sources.BACK_DESCRIPTION
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -45,7 +46,7 @@ class NavigationTest {
 
         compose.onNodeWithText("SETTINGS").performClick()
         val reachedSettings = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.countOf("Delete everything") == 1 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.countOf("Delete everything") == 1 }
         }.isSuccess
         assertTrue(
             "The SETTINGS tab did not reach settings, so nothing " +
@@ -55,7 +56,7 @@ class NavigationTest {
 
         compose.onNodeWithText("Capture sources").performClick()
         val arrived = runCatching {
-            compose.waitUntil(TIMEOUT) {
+            compose.boundedWaitUntil(TIMEOUT) {
                 compose.countOf("TEXT IS STORED ONLY FOR THESE", substring = true) == 1
             }
         }.isSuccess
@@ -69,7 +70,7 @@ class NavigationTest {
         // `runCatching`, so the failure is this assertion and its message
         // rather than a bare timeout out of `waitUntil`.
         val backAtSettings = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.countOf("Delete everything") == 1 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.countOf("Delete everything") == 1 }
         }.isSuccess
         assertTrue(
             "The chevron did not pop the allow-list back to settings. It is " +
@@ -85,7 +86,7 @@ class NavigationTest {
         // is what says that it did.
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         val backAtLedger = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.countOf("Delete everything") == 0 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.countOf("Delete everything") == 0 }
         }.isSuccess
         assertTrue(
             "Back on settings did not return to the ledger",

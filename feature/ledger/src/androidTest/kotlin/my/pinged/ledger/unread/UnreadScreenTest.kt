@@ -23,6 +23,7 @@ import my.pinged.ledger.ArtboardProbe
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.transfer.bulkCapture
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Stamp
 import org.junit.After
@@ -180,10 +181,10 @@ class UnreadScreenTest {
         unmatched(55)
         val model = UnreadViewModel(app)
         compose.setContent { UnreadScreen(model, onBack = {}, onTeach = {}) }
-        compose.waitUntil(5_000) { model.state.value.items.size == 50 }
+        compose.boundedWaitUntil(5_000) { model.state.value.items.size == 50 }
         compose.onNode(hasScrollToNodeAction())
             .performScrollToNode(hasText(FOOTER))
-        compose.waitUntil(5_000) { model.state.value.items.size == 55 }
+        compose.boundedWaitUntil(5_000) { model.state.value.items.size == 55 }
     }
 
     @Test fun anUnopenableDatabaseIsStorageUnavailableNotEmpty() = runBlocking {

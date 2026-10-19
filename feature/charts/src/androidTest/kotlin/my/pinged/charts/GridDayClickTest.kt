@@ -20,6 +20,7 @@ import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.DayTotal
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.dayMonth
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -138,7 +139,7 @@ class GridDayClickTest {
      */
     private fun accessibilityBounds(describedAs: String): Rect {
         var bounds: Rect? = null
-        compose.waitUntil("a node described as $describedAs", 10_000) {
+        compose.boundedWaitUntil(10_000, "a node described as $describedAs") {
             bounds = platformBounds(describedAs)
             bounds != null
         }

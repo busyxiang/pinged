@@ -18,6 +18,7 @@ import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
 import my.pinged.parse.Direction
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -133,7 +134,7 @@ class AcceptAllTest {
 
         // Pinned outside the scroll; see ReviewUndoTest.
         compose.onNodeWithText(UNDO).performClick()
-        compose.waitUntil(TIMEOUT) { dao.byId(batched)!!.state == TxnState.PENDING }
+        compose.boundedWaitUntil(TIMEOUT) { dao.byId(batched)!!.state == TxnState.PENDING }
         assertEquals(
             "Undo after Accept all did not return its card with its reason, or reached past it to the swipe",
             listOf(TxnState.COMMITTED to null, TxnState.PENDING to PendingReason.RULE_REVIEW),
@@ -142,5 +143,5 @@ class AcceptAllTest {
     }
 
     private fun waitForText(text: String) =
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
 }

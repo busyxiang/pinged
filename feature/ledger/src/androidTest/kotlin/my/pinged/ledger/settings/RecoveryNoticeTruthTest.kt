@@ -22,6 +22,7 @@ import kotlinx.coroutines.withTimeout
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ledger.transfer.exportBytes
 import my.pinged.ledger.transfer.freshDatabase
@@ -177,7 +178,7 @@ class RecoveryNoticeTruthTest {
         compose.onAllNodesWithText(text, substring = true, ignoreCase = true).fetchSemanticsNodes().size
 
     private fun appears(text: String, substring: Boolean = false): Boolean = runCatching {
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
         }
     }.isSuccess

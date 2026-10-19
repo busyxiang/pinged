@@ -23,6 +23,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import kotlinx.coroutines.runBlocking
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -77,7 +78,7 @@ class MonthsSheetTest {
         awaitMonth(now, "RM50.00")
 
         compose.onNodeWithText(header(now)).performScrollTo().performClick()
-        compose.waitUntil(TIMEOUT) { shows(rowName(previous)) }
+        compose.boundedWaitUntil(TIMEOUT) { shows(rowName(previous)) }
         compose.onNodeWithText(rowName(previous)).performScrollTo().performClick()
 
         awaitMonth(previous, "RM123.45")
@@ -91,7 +92,7 @@ class MonthsSheetTest {
 
     /** The header names [month] and the hero prints [figure]. */
     private fun awaitMonth(month: YearMonth, figure: String) {
-        val arrived = runCatching { compose.waitUntil(TIMEOUT) { shows(header(month)) && shows(figure) } }
+        val arrived = runCatching { compose.boundedWaitUntil(TIMEOUT) { shows(header(month)) && shows(figure) } }
         assertEquals(
             "Charts did not show ${header(month)} with $figure",
             true,

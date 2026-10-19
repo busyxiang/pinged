@@ -42,6 +42,7 @@ import my.pinged.ledger.home.NAME_FIELD_TAG
 import my.pinged.ledger.home.SAVE_NAME
 import my.pinged.ledger.home.SUGGESTED
 import my.pinged.ledger.home.readMerchantSheet
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -115,14 +116,14 @@ class MerchantSheetTest {
 
     @Test fun theRowShowsTheResolvedNameAndNotItsOwn() {
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1, name = "Yuen Kee")))
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Yuen Kee").fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Yuen Kee").fetchSemanticsNodes().isNotEmpty() }
         assertEquals(0, compose.onAllNodesWithText("Yuenkeehometowncafe").fetchSemanticsNodes().size)
     }
 
     @Test fun aLongPressOpensTheSheetForTheRowsOwnKey() {
         val opened = mutableListOf<String>()
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), actions = actions(opened = opened))
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Yuenkeehometowncafe").fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Yuenkeehometowncafe").fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithText("Yuenkeehometowncafe").performTouchInput { longClick() }
         compose.waitForIdle()
@@ -139,7 +140,7 @@ class MerchantSheetTest {
             listOf(row(null, "Unknown", id = 1, name = null), row(scanAndPay, "Yuenkeehometowncafe", id = 2)),
             actions = actions(),
         )
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Unknown merchant").fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Unknown merchant").fetchSemanticsNodes().isNotEmpty() }
 
         val offering = compose.onAllNodes(
             SemanticsMatcher("offers $EDIT_MERCHANT") {
@@ -169,7 +170,7 @@ class MerchantSheetTest {
     @Test fun saveIsOfferedOnlyOnceTheNameChangesAndSendsWhatWasTyped() {
         val renamed = mutableListOf<String>()
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet(), actions(renamed = renamed))
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(SAVE_NAME).fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText(SAVE_NAME).fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithText(SAVE_NAME).assertIsNotEnabled()
         compose.onNodeWithTag(NAME_FIELD_TAG, useUnmergedTree = true).performTextReplacementInField("Yuen Kee")
@@ -184,7 +185,7 @@ class MerchantSheetTest {
 
     @Test fun theSheetStatesHowFarARenameReaches() {
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet())
-        compose.waitUntil(5_000) {
+        compose.boundedWaitUntil(5_000) {
             compose.onAllNodesWithText("2 transactions will show the new name").fetchSemanticsNodes().isNotEmpty()
         }
     }
@@ -192,7 +193,7 @@ class MerchantSheetTest {
     @Test fun choosingAMerchantMergesIntoItAndTheSuggestionIsMarked() {
         val merged = mutableListOf<String>()
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet(), actions(merged = merged))
-        compose.waitUntil(5_000) {
+        compose.boundedWaitUntil(5_000) {
             compose.onAllNodesWithText("Restoran Yuen Kee Home Town Cafe").fetchSemanticsNodes().isNotEmpty()
         }
         assertEquals(
@@ -208,7 +209,7 @@ class MerchantSheetTest {
 
     @Test fun theSearchNarrowsTheList() {
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet())
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Spades Bakery").fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Spades Bakery").fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithTag(FILTER_FIELD_TAG, useUnmergedTree = true).performTextReplacementInField("spades")
         compose.waitForIdle()
@@ -225,7 +226,7 @@ class MerchantSheetTest {
             actions(separated = separated),
         )
         val separate = "Separate from Restoran Yuen Kee Home Town Cafe"
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(separate).fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText(separate).fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithText(separate).performClick()
 

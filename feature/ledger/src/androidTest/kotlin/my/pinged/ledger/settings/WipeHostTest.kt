@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.entity.CaptureSource
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ledger.transfer.useDb
 import org.junit.After
@@ -84,7 +85,7 @@ class WipeHostTest {
                 )
             }
         }
-        compose.waitUntil(TIMEOUT) { viewModel.state.value.loaded }
+        compose.boundedWaitUntil(TIMEOUT) { viewModel.state.value.loaded }
     }
 
     /**
@@ -97,7 +98,7 @@ class WipeHostTest {
      * to 19, [aDeleteThatCouldNotFinishSaysSoOnTheScreen] lost that race.
      */
     private fun awaitKeyboard() {
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             var shown = false
             onView(isRoot()).check { root, _ ->
                 shown = ViewCompat.getRootWindowInsets(root)?.isVisible(WindowInsetsCompat.Type.ime()) == true
@@ -147,7 +148,7 @@ class WipeHostTest {
         // Throwable directly, and a timeout that says only "condition not
         // satisfied" cannot tell a dead row from a wipe that failed.
         try {
-            compose.waitUntil(TIMEOUT) { viewModel.state.value.sourcesOn == 0 }
+            compose.boundedWaitUntil(TIMEOUT) { viewModel.state.value.sourcesOn == 0 }
         } catch (thrown: Throwable) {
             throw AssertionError(
                 "The confirmed delete never reached the holder. State is " +
@@ -181,7 +182,7 @@ class WipeHostTest {
         awaitKeyboard()
         compose.onNodeWithText("Delete").performScrollTo().performClick()
 
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithText("YOUR LEDGER IS GONE").fetchSemanticsNodes().isNotEmpty()
         }
     }
@@ -199,7 +200,7 @@ class WipeHostTest {
         compose.onNodeWithText("Delete everything").performScrollTo().performClick()
         compose.onNodeWithText("Export it first").performScrollTo().performClick()
 
-        compose.waitUntil(TIMEOUT) { exports.get() == 1 }
+        compose.boundedWaitUntil(TIMEOUT) { exports.get() == 1 }
         compose.onNodeWithText("THIS CANNOT BE UNDONE").assertDoesNotExist()
     }
 
@@ -230,7 +231,7 @@ class WipeHostTest {
         val offers = AtomicInteger(0)
         val viewModel = SettingsViewModel(app)
         screen(viewModel, onExport = { offers.incrementAndGet() }, onRescue = { offers.incrementAndGet() })
-        compose.waitUntil(TIMEOUT) { viewModel.state.value.storage == storage }
+        compose.boundedWaitUntil(TIMEOUT) { viewModel.state.value.storage == storage }
 
         compose.onNodeWithText("Delete everything").performScrollTo().performClick()
         compose.onNodeWithText("THIS CANNOT BE UNDONE").assertIsDisplayed()

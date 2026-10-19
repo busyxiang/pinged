@@ -17,6 +17,7 @@ import my.pinged.capture.ListenerStatus
 import my.pinged.capture.PingedComponents
 import my.pinged.ledger.onboarding.ALLOW_ACCESS
 import my.pinged.ledger.onboarding.ONBOARDING_HEADLINE
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -174,12 +175,12 @@ class OnboardingTest {
     }
 
     /**
-     * [ComposeTestRule.waitUntil], counting a throw as not yet: while the
+     * [boundedWaitUntil], counting a throw as not yet: while the
      * Activity is behind Android's settings there is no hierarchy to query,
      * and that throws rather than answering false.
      */
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { runCatching(condition).getOrDefault(false) } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { runCatching(condition).getOrDefault(false) } }.isSuccess
 
     private fun ComposeTestRule.countOf(text: String, substring: Boolean = false): Int {
         waitForIdle()

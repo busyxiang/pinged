@@ -20,6 +20,7 @@ import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.settings.SettingsViewModel
 import my.pinged.ledger.settings.Transfers
 import my.pinged.ledger.settings.TransferJob
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ledger.transfer.exportBytes
@@ -278,7 +279,7 @@ class LedgerRebindTest {
         compose.onAllNodes(hasText(text, substring = substring)).fetchSemanticsNodes().size
 
     private fun waitFor(condition: () -> Boolean): Boolean =
-        runCatching { compose.waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { compose.boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     private companion object {
         const val RESTORED = "Kedai Restored"

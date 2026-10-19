@@ -17,6 +17,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -80,7 +81,7 @@ class RestorePickTest {
     }
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     private fun ComposeTestRule.countOf(text: String, substring: Boolean = false): Int {
         waitForIdle()

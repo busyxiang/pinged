@@ -114,6 +114,12 @@ android {
         }
     }
 
+    // `boundedWaitUntil`, which every androidTest `waitUntil` goes through;
+    // :feature:ledger's build file includes the same directory.
+    sourceSets {
+        getByName("androidTest") { kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path) }
+    }
+
     // `BuildConfig.VERSION_NAME` is what Settings' footer prints (design 9.2).
     buildFeatures {
         compose = true
@@ -246,4 +252,13 @@ tasks.withType<Test>().configureEach {
         },
         rootDir,
     )
+    // `BoundedWaitSourceTest`'s subject: every module's instrumented sources,
+    // which `ProductionSources` above skips. Without them as an input, a bare
+    // `waitUntil` added to an androidTest alone leaves that test up to date.
+    inputs.files(
+        rootProject.fileTree(rootDir) {
+            include("**/src/androidTest/**/*.kt", "**/src/sharedTest/**/*.kt")
+            exclude(".*/**", "**/build/**")
+        }
+    ).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("instrumentedSources")
 }
