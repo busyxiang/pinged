@@ -74,6 +74,15 @@ object SourceCounters {
      */
     private fun firstSeen(pkg: String) = longPreferencesKey("$FIRST_PREFIX$pkg")
 
+    /**
+     * Android's own packages, which never post a payment and so are never offered
+     * as a source (#218). Not counted, and not listed if an older build counted one.
+     *
+     * Named rather than `ApplicationInfo.FLAG_SYSTEM`: an OEM image can preinstall
+     * a bank or e-wallet as a system app, and the flag would hide it.
+     */
+    private val NEVER_A_SOURCE = setOf("android", "com.android.systemui")
+
     /** Spec 9.6: how long an untouched package stays in the discovery list. */
     const val DROP_AFTER_MILLIS = 30L * 24 * 60 * 60 * 1000
 
@@ -108,6 +117,7 @@ object SourceCounters {
         postTime: Long,
         now: Long,
     ): Boolean {
+        if (pkg in NEVER_A_SOURCE) return false
         var counted = false
         context.captureStore.edit { prefs ->
             val newest = prefs[NEWEST_COUNTED]
@@ -188,5 +198,6 @@ object SourceCounters {
                 val count = entry.value as? Int ?: return@mapNotNull null
                 entry.key.name.removePrefix(SEEN_PREFIX) to count
             }
+            .filter { it.first !in NEVER_A_SOURCE }
             .toMap()
 }
