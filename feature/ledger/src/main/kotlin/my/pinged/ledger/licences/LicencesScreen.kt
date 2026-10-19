@@ -1,7 +1,6 @@
 package my.pinged.ledger.licences
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,12 +14,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import my.pinged.ledger.BackChevron
+import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.ledger.R
-import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
@@ -73,22 +72,17 @@ internal fun LicencesContent(texts: List<Pair<String, String>>, onBack: () -> Un
     }
 }
 
+/** The chevron beside the serif title, as on every screen Settings opens. */
 @Composable
 private fun Header(onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "Back",
-            style = ButtonLabel.copy(fontSize = 14.sp),
-            color = Muted,
-            modifier = Modifier.clickable(role = Role.Button, onClick = onBack),
-        )
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        BackChevron(SETTINGS_BACK, onBack)
         Text(
             LICENCES_TITLE,
             fontFamily = Display,
             fontWeight = FontWeight.Normal,
             fontSize = 24.sp,
             color = Ink,
-            modifier = Modifier.padding(start = 16.dp),
         )
     }
 }

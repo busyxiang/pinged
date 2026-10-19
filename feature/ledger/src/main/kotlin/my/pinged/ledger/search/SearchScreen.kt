@@ -573,7 +573,7 @@ private fun PickRow(text: String, on: Boolean, onClick: () -> Unit) {
  * here too, in words.
  */
 @Composable
-private fun AmountSheet(minSen: Long?, maxSen: Long?, onApply: (Long?, Long?) -> Unit, onDismiss: () -> Unit) {
+internal fun AmountSheet(minSen: Long?, maxSen: Long?, onApply: (Long?, Long?) -> Unit, onDismiss: () -> Unit) {
     var from by rememberSaveable { mutableStateOf(minSen?.let { money(it, RINGGIT, symbol = false) }.orEmpty()) }
     var to by rememberSaveable { mutableStateOf(maxSen?.let { money(it, RINGGIT, symbol = false) }.orEmpty()) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -612,13 +612,14 @@ private fun AmountField(label: String, value: String, onValue: (String) -> Unit)
     }
 }
 
+/** The amount sheet's two answers: Apply, its primary, filled [Stamp] as every primary is; the other outlined. */
 @Composable
 private fun SheetButton(text: String, filled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         modifier
             .heightIn(min = 46.dp)
             .clip(RoundedCornerShape(2.dp))
-            .then(if (filled) Modifier.background(Ink) else Modifier.border(1.dp, Muted, RoundedCornerShape(2.dp)))
+            .then(if (filled) Modifier.background(Stamp) else Modifier.border(1.dp, Muted, RoundedCornerShape(2.dp)))
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

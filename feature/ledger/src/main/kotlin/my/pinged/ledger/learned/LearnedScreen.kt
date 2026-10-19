@@ -43,10 +43,11 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
 import my.pinged.data.dao.TaughtRuleRow
+import my.pinged.ledger.BackChevron
+import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.parse.Direction
 import my.pinged.ui.CALENDAR
 import my.pinged.ledger.settings.grouped
-import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -301,22 +302,17 @@ private fun DeleteButton(onDelete: () -> Unit) {
     }
 }
 
+/** The chevron beside the serif title, as on every screen Settings opens. */
 @Composable
 private fun Header(onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "Back",
-            style = ButtonLabel.copy(fontSize = 14.sp),
-            color = Muted,
-            modifier = Modifier.clickable(role = Role.Button, onClick = onBack).heightIn(min = 44.dp).wrapContentHeight(),
-        )
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        BackChevron(SETTINGS_BACK, onBack)
         Text(
             TAUGHT,
             fontFamily = Display,
             fontWeight = FontWeight.Normal,
             fontSize = 22.sp,
             color = Ink,
-            modifier = Modifier.padding(start = 16.dp),
         )
     }
 }

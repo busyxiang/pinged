@@ -86,8 +86,8 @@ class TouchTargetTest {
                 )
             }
         }
-        assertTall("Back")
-        // A drawn icon, so found by what a screen reader calls it.
+        // Drawn icons, so found by what a screen reader calls them.
+        compose.onNodeWithContentDescription(SETTINGS_BACK).assertHeightIsAtLeast(44.dp).assertWidthIsAtLeast(44.dp)
         compose.onNodeWithContentDescription(DELETE).assertHeightIsAtLeast(44.dp).assertWidthIsAtLeast(44.dp)
     }
 

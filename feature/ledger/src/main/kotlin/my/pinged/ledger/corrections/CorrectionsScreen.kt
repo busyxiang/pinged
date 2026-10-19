@@ -28,6 +28,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.capture.Corrections
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.BackChevron
+import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ledger.home.words
 import my.pinged.ui.money
@@ -162,22 +164,17 @@ internal fun value(field: Corrections.Field, txn: Txn): String = when (field) {
     }
 }
 
+/** The chevron beside the serif title, as on every screen Settings opens. */
 @Composable
 private fun Header(onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "Back",
-            style = ButtonLabel.copy(fontSize = 14.sp),
-            color = Muted,
-            modifier = Modifier.clickable(role = Role.Button, onClick = onBack),
-        )
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        BackChevron(SETTINGS_BACK, onBack)
         Text(
             "Corrections",
             fontFamily = Display,
             fontWeight = FontWeight.Normal,
             fontSize = 24.sp,
             color = Ink,
-            modifier = Modifier.padding(start = 16.dp),
         )
     }
 }
