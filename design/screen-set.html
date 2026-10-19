@@ -403,7 +403,7 @@ button.sizer:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <p class="lede">The app in ordinary use, a month in. Scenario pinned to Wednesday 30 September 2026 so every figure agrees with every other.</p>
     <div class="screens">
       <div class="col">
-        <div class="cap"><span class="step">Home</span><h3>Spending</h3><p>Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved.</p></div>
+        <div class="cap"><span class="step">Home</span><h3>Spending</h3><p>Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. Cash sits in its own band above the tabs, and the list stops at its edge rather than scrolling under it: amounts are right-aligned, which is the edge a floating button would cover (#221).</p></div>
         <div class="frame"><div style="width: 390px; height: 844px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden; position: relative;">
 
   <div style="padding: 26px 20px 0; display: flex; align-items: center; justify-content: space-between;">
@@ -431,7 +431,7 @@ button.sizer:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
   <div style="height: 9px; margin-top: 18px; background-image: linear-gradient(45deg, transparent 50%, #efe7d8 50%), linear-gradient(-45deg, transparent 50%, #efe7d8 50%); background-size: 12px 9px; background-repeat: repeat-x;"></div>
 
-  <div style="flex: 1; background: #efe7d8; padding: 14px 20px 0; display: flex; flex-direction: column; gap: 14px;">
+  <div style="flex: 1; min-height: 0; overflow: hidden; background: #efe7d8; padding: 14px 20px 0; display: flex; flex-direction: column; gap: 14px;">
 
     <div style="display: flex; flex-direction: column; gap: 11px;">
       <div style="display: flex; justify-content: space-between; align-items: baseline;">
@@ -488,9 +488,11 @@ button.sizer:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
   </div>
 
-  <div style="position: absolute; right: 20px; bottom: 78px; width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+  <div style="flex: none; height: 86px; box-sizing: border-box; background: #efe7d8; border-top: 1px dotted #cfc4ae; padding: 0 20px; display: flex; align-items: center; justify-content: flex-end;">
+  <div style="width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbf6ea" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     <span style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #fbf6ea;">CASH</span>
+  </div>
   </div>
   <div style="border-top: 1px dotted #cfc4ae; background: #fbf6ea; display: flex; align-items: stretch;">
     <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-top: 2px solid #a03826; margin-top: -1px;">
@@ -1154,7 +1156,7 @@ button.sizer:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
   <div style="height: 9px; margin-top: 18px; background-image: linear-gradient(45deg, transparent 50%, #efe7d8 50%), linear-gradient(-45deg, transparent 50%, #efe7d8 50%); background-size: 12px 9px; background-repeat: repeat-x;"></div>
 
-  <div style="flex: 1; background: #efe7d8; padding: 14px 20px 0; display: flex; flex-direction: column; gap: 14px;">
+  <div style="flex: 1; min-height: 0; overflow: hidden; background: #efe7d8; padding: 14px 20px 0; display: flex; flex-direction: column; gap: 14px;">
 
     <div style="display: flex; flex-direction: column; gap: 11px;">
       <div style="display: flex; justify-content: space-between; align-items: baseline;">
@@ -1211,9 +1213,11 @@ button.sizer:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
   </div>
 
-  <div style="position: absolute; right: 20px; bottom: 78px; width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+  <div style="flex: none; height: 86px; box-sizing: border-box; background: #efe7d8; border-top: 1px dotted #cfc4ae; padding: 0 20px; display: flex; align-items: center; justify-content: flex-end;">
+  <div style="width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbf6ea" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     <span style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #fbf6ea;">CASH</span>
+  </div>
   </div>
   <div style="border-top: 1px dotted #cfc4ae; background: #fbf6ea; display: flex; align-items: stretch;">
     <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-top: 2px solid #a03826; margin-top: -1px;">
