@@ -99,9 +99,9 @@ class LedgerScreenTest {
      * gets asked.
      */
     @Test fun theTopBarSaysWhenPingedLastHeardAnything() {
-        content(items = emptyList(), refresh = LoadState.NotLoading(true), heard = "HEARD 12 MIN AGO")
+        content(items = emptyList(), refresh = LoadState.NotLoading(true), heard = "HEARD 12 MIN")
 
-        compose.waitForText("HEARD 12 MIN AGO", "The top bar does not say when Pinged last heard anything")
+        compose.waitForText("HEARD 12 MIN", "The top bar does not say when Pinged last heard anything")
     }
 
     @Test fun theEmptyStateSaysNothingCapturedAndDrawsNoNumber() {

@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +36,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
@@ -329,8 +330,7 @@ internal fun LedgerScreenContent(
                     onOpenReview = onOpenReview,
                     onOpenEntry = onOpenEntry,
                     onOpenDetail = onOpenDetail,
-                    // Room under the last row for the button, so it never covers
-                    // the row's amount.
+                    // A band under the list for the button to sit in.
                     bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,
                     listState = listState,
                     modifier = Modifier.weight(1f),
@@ -343,7 +343,10 @@ internal fun LedgerScreenContent(
         // Empty is a ledger with no rows, not a month with none: a quiet month
         // over a history is the feed, and keeps the button.
         if (onAddPayment != null && !empty) {
-            AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(20.dp))
+            AddPaymentButton(
+                onAddPayment,
+                Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = (ADD_PAYMENT_ROOM - ADD_PAYMENT_SIZE) / 2),
+            )
         }
     }
 
@@ -404,47 +407,91 @@ internal fun LedgerScreenContent(
  * `Main.dc.html` draws no way in; the screen set's note that every pushed
  * screen carries a back arrow lists search among them, and the header is
  * the one place on this screen above the money rather than among it.
+ *
+ * The chip is on the month's row where its one line fits there, and
+ * otherwise on a line of its own under the magnifier, right-aligned: at
+ * 320dp beside SEPTEMBER 2026 its words get about 51dp, six characters, and
+ * no `heardLine` fits. Decided by measuring the chip, not by a width, so a
+ * longer month or a larger font moves it too.
  */
 @Composable
 private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?, onOpenSearch: (() -> Unit)?) {
-    Row(
-        Modifier
+    Layout(
+        content = {
+            Row(
+                Modifier
+                    .layoutId(BarSlot.MONTH)
+                    .testTag(MONTH_BUTTON)
+                    .heightIn(min = MONTH_TARGET)
+                    .then(
+                        if (onOpenMonths != null) {
+                            Modifier.clickable(role = Role.Button, onClickLabel = CHOOSE_A_MONTH, onClick = onOpenMonths)
+                        } else {
+                            Modifier
+                        },
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(monthName(month), style = MonoLabel, color = Muted)
+                // Only where it opens something: it says "pick a month".
+                if (onOpenMonths != null) DownChevron()
+            }
+            if (heard != null) HeardChip(heard, Modifier.layoutId(BarSlot.CHIP))
+            if (onOpenSearch != null) SearchButton(onOpenSearch, Modifier.layoutId(BarSlot.SEARCH))
+        },
+        modifier = Modifier
             .fillMaxWidth()
             .padding(start = 20.dp, end = 20.dp, top = 26.dp - (MONTH_TARGET - 30.dp) / 2),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Row(
-            Modifier
-                .testTag(MONTH_BUTTON)
-                .heightIn(min = MONTH_TARGET)
-                .then(
-                    if (onOpenMonths != null) {
-                        Modifier.clickable(role = Role.Button, onClickLabel = CHOOSE_A_MONTH, onClick = onOpenMonths)
-                    } else {
-                        Modifier
-                    },
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(monthName(month), style = MonoLabel, color = Muted)
-            // Only where it opens something: it says "pick a month".
-            if (onOpenMonths != null) DownChevron()
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        fun slot(id: BarSlot) = measurables.firstOrNull { it.layoutId == id }?.measure(loose)
+        val monthSlot = slot(BarSlot.MONTH)!!
+        val chip = slot(BarSlot.CHIP)
+        val search = slot(BarSlot.SEARCH)
+        val width = constraints.maxWidth
+        val gap = CHIP_GAP.roundToPx()
+        val rowHeight = maxOf(monthSlot.height, chip?.height ?: 0, search?.height ?: 0)
+        val used = monthSlot.width + (search?.width ?: 0)
+        val inRow = chip == null || used + gap + chip.width <= width
+        val height = if (inRow) rowHeight else maxOf(monthSlot.height, search?.height ?: 0) + CHIP_DROP.roundToPx() + chip!!.height
+        layout(width, height) {
+            val firstRow = if (inRow) rowHeight else maxOf(monthSlot.height, search?.height ?: 0)
+            monthSlot.place(0, (firstRow - monthSlot.height) / 2)
+            search?.let { it.place(width - it.width, (firstRow - it.height) / 2) }
+            if (chip != null) {
+                if (inRow) {
+                    // Where a SpaceBetween row puts it: at the end with no
+                    // magnifier, else centred in what the month and the
+                    // magnifier leave, at least CHIP_GAP after the month.
+                    val free = width - used - gap - chip.width
+                    val x = if (search == null) width - chip.width else monthSlot.width + gap + free / 2
+                    chip.place(x, (rowHeight - chip.height) / 2)
+                } else {
+                    chip.place(width - chip.width, firstRow + CHIP_DROP.roundToPx())
+                }
+            }
         }
-        if (heard != null) HeardChip(heard, Modifier.padding(start = 12.dp).weight(1f, fill = false))
-        if (onOpenSearch != null) SearchButton(onOpenSearch)
     }
 }
+
+/** The top bar's three slots, which [TopBar]'s layout finds by id. */
+private enum class BarSlot { MONTH, CHIP, SEARCH }
+
+/** The least room between the month and the heard chip on one row. */
+private val CHIP_GAP = 12.dp
+
+/** How far below the month's row the heard chip sits when it does not fit on it. */
+private val CHIP_DROP = 8.dp
 
 /**
  * The magnifier, `Search.dc.html`'s glyph at 20dp in Muted, in the design
  * system's 44dp target. Its right edge is the glyph's, on the 20dp margin.
  */
 @Composable
-private fun SearchButton(onClick: () -> Unit) {
+private fun SearchButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        Modifier
+        modifier
             .padding(start = 4.dp)
             .offset(x = 12.dp)
             .clip(RoundedCornerShape(2.dp))
@@ -489,8 +536,8 @@ private fun DownChevron() {
  * [heard]. Never the board's word: the access grant is all this app knows on
  * day one, and granted with nothing ever heard is the OEM-kill signature
  * (`CaptureReport.looksDead`), so a claim to be listening would be the one
- * thing it cannot back. Weighted without fill, so at 320dp it wraps under the
- * month rather than squeezing it.
+ * thing it cannot back. One line always: where that does not fit beside the
+ * month, [TopBar] moves the whole chip.
  */
 @Composable
 private fun HeardChip(heard: String, modifier: Modifier = Modifier) {
@@ -504,7 +551,7 @@ private fun HeardChip(heard: String, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(Modifier.size(7.dp).background(Stamp, CircleShape))
-        Text(heard, style = MonoLabel, color = Ink)
+        Text(heard, style = MonoLabel, color = Ink, maxLines = 1, softWrap = false)
     }
 }
 
@@ -704,7 +751,6 @@ private fun Feed(
                 .weight(1f)
                 .background(Card)
                 .fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = bottomRoom),
         ) {
             // A sticky header, so it stays at the top of the list as it
             // scrolls, and inside the list's scroll so a test can reach it
@@ -754,6 +800,14 @@ private fun Feed(
                     )
                 }
             }
+        }
+        // The band the add button sits in, below the list rather than room
+        // after its last row: a ledger's amounts and badges are right-aligned,
+        // the edge the button is on, so over the list it covered a subtotal or
+        // a duplicate badge wherever the list was scrolled (#221). The dotted
+        // rule is the screens' footers'.
+        if (bottomRoom > 0.dp) {
+            Spacer(Modifier.fillMaxWidth().height(bottomRoom).background(Card).dottedRule(atTop = true))
         }
     }
 }
@@ -976,8 +1030,8 @@ private val LEADER_LIFT = 4.5.dp
 
 /**
  * Spec 9.4's **Add payment**, the artboard's cash button: a + over "CASH" at
- * the bottom right of the Spending tab, over the list. Named [ADD_PAYMENT] to
- * TalkBack, since neither the + nor "CASH" says what it does.
+ * the bottom right of the Spending tab, in a band under the list. Named
+ * [ADD_PAYMENT] to TalkBack, since neither the + nor "CASH" says what it does.
  *
  * "CASH" is [MonoLabel] at its 12sp floor, not the board's 8px; the + and the
  * label stack 43dp at a 1.3 font scale, inside the 54dp.
@@ -987,7 +1041,7 @@ private fun AddPaymentButton(onClick: () -> Unit, modifier: Modifier = Modifier)
     Column(
         modifier
             .testTag(ADD_PAYMENT_BUTTON)
-            .size(54.dp)
+            .size(ADD_PAYMENT_SIZE)
             .clip(RoundedCornerShape(2.dp))
             .background(Stamp)
             .clickable(role = Role.Button, onClick = onClick)
@@ -1001,7 +1055,10 @@ private fun AddPaymentButton(onClick: () -> Unit, modifier: Modifier = Modifier)
     }
 }
 
-/** The button's 54dp and its 20dp margin, plus a little air. */
+/** The board's button, 54px square. */
+private val ADD_PAYMENT_SIZE = 54.dp
+
+/** The band under the list: the button and 16dp above and below it. */
 private val ADD_PAYMENT_ROOM = 86.dp
 
 /** The empty ledger's way to Settings, under its copy; the offer at its foot is the other. */
