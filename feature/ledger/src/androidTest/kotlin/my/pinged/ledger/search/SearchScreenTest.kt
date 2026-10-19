@@ -18,7 +18,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.OutputStream
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.data.Databases
 import my.pinged.ledger.settings.ExportSink
 import my.pinged.ledger.settings.Transfers
@@ -36,6 +38,7 @@ import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -171,6 +174,29 @@ class SearchScreenTest {
             }
         }.isSuccess
         assertTrue("Never said nothing was found", said)
+    }
+
+    /**
+     * Words typed inside the first debounce window, after the screen's own
+     * read has landed, are still read. The debounce swallows the opening
+     * empty words when others follow within [SearchViewModel.DEBOUNCE_MS],
+     * so the first question the holder's collector sees can already be the
+     * typed one, and must not be skipped as the opening question. Skips
+     * itself when the words land outside that window, where it tests
+     * nothing.
+     */
+    @Test fun wordsTypedWhileTheFirstReadIsDebouncedAreRead() {
+        seed()
+        val opened = System.nanoTime()
+        val viewModel = SearchViewModel(context.applicationContext as Application, SavedStateHandle())
+        // The screen's resume read, of no words.
+        runBlocking { viewModel.refresh().join() }
+        viewModel.setQuery("grab")
+        val typedAfterMs = (System.nanoTime() - opened) / 1_000_000
+        assumeTrue("typed ${typedAfterMs}ms in, outside the window", typedAfterMs < SearchViewModel.DEBOUNCE_MS)
+
+        val read = runBlocking { withTimeoutOrNull(TIMEOUT) { viewModel.read.first { it?.text == "grab" } } }
+        assertTrue("the words typed ${typedAfterMs}ms in were never read", read != null)
     }
 
     /**

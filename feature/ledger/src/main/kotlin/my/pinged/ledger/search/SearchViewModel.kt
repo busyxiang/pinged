@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -93,13 +93,18 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
     private val reading = Mutex()
 
     init {
-        // The first value is left to the screen's resume, which reads at once.
+        // A question the screen already shows the answer to is not read
+        // again: that is the opening one, which the screen's resume reads at
+        // once. Not `drop(1)`: words typed within DEBOUNCE_MS of opening
+        // swallow the opening empty words, so the first question here can be
+        // the typed one, and dropping it left the screen on the opening read
+        // (SearchScreenTest.wordsTypedWhileTheFirstReadIsDebouncedAreRead).
         // The read runs in `collectLatest` itself, so a newer question
         // cancels it while it waits for the lease or the IO dispatcher.
         @OptIn(FlowPreview::class)
         viewModelScope.launch {
             combine(_query.debounce(DEBOUNCE_MS), _choice) { q, c -> q to c }
-                .drop(1)
+                .filter { (q, c) -> _read.value.let { it == null || it.text != q || it.choice != c } }
                 .collectLatest { read() }
         }
     }
