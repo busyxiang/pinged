@@ -1,10 +1,15 @@
 package my.pinged.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import my.pinged.ui.R
 
@@ -157,3 +162,17 @@ val PingedTypography = Typography(
  * screen's detail lines with nothing failing.
  */
 const val Separator: String = " \u00B7 "
+
+/**
+ * A hero total as the boards draw one: the ringgit at the style's size, and
+ * the sen from the point on at [senSize] in [Muted]. Spending and Charts both
+ * draw it, so one month's total reads alike on each.
+ */
+fun heroFigure(amount: String, senSize: TextUnit): AnnotatedString {
+    val point = amount.lastIndexOf('.')
+    if (point < 0) return AnnotatedString(amount)
+    return buildAnnotatedString {
+        append(amount.substring(0, point))
+        withStyle(SpanStyle(fontSize = senSize, color = Muted)) { append(amount.substring(point)) }
+    }
+}

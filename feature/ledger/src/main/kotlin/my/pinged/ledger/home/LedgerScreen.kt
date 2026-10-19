@@ -46,10 +46,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -98,6 +95,7 @@ import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedRule
+import my.pinged.ui.theme.heroFigure
 import java.time.YearMonth
 import java.time.format.TextStyle as JavaTextStyle
 
@@ -955,14 +953,7 @@ internal fun dayLabel(date: LocalDate): String {
 internal val HeroSerif = TextStyle(fontFamily = Display, fontSize = 54.sp, lineHeight = 1.02.em)
 
 /** The board's `.30`: the sen in a 30px span, in Muted, after the ringgit. */
-internal fun heroText(amount: String): AnnotatedString {
-    val point = amount.lastIndexOf('.')
-    if (point < 0) return AnnotatedString(amount)
-    return buildAnnotatedString {
-        append(amount.substring(0, point))
-        withStyle(SpanStyle(fontSize = 30.sp, color = Muted)) { append(amount.substring(point)) }
-    }
-}
+internal fun heroText(amount: String): AnnotatedString = heroFigure(amount, 30.sp)
 
 /** Two or more totals, which have to align. See the note at the call site. */
 private val HeroMono = MonoNumerals.copy(fontSize = 28.sp, lineHeight = 34.sp)
