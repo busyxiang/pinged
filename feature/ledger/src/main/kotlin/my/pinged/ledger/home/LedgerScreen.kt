@@ -88,6 +88,7 @@ import my.pinged.data.entity.Category
 import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.review.awaitingReviewLabel
+import my.pinged.ledger.settings.grouped
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
 import my.pinged.ui.monthName
@@ -149,6 +150,11 @@ fun LedgerScreen(
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
+    /**
+     * `N TO SORT` (#273): Search over [month] filtered to [uncategorizedId];
+     * null draws no line.
+     */
+    onOpenToSort: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
     heard: String? = null,
     /** The backup reminder (#252), or null for none; see [BackupReminderRow]. */
     backupReminder: BackupReminder? = null,
@@ -201,6 +207,7 @@ fun LedgerScreen(
         onOpenEntry = onOpenEntry,
         onOpenDetail = onOpenDetail,
         onOpenSearch = onOpenSearch,
+        onOpenToSort = onOpenToSort,
         heard = heard,
         backupReminder = backupReminder,
         picked = picked,
@@ -263,6 +270,7 @@ internal fun LedgerScreenContent(
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
+    onOpenToSort: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
     heard: String? = null,
     backupReminder: BackupReminder? = null,
     /** The holder's picked month, null to follow the clock; see [LedgerViewModel.picked]. */
@@ -392,6 +400,13 @@ internal fun LedgerScreenContent(
                     listState = listState,
                     onHeroBottom = { heroBottom = it },
                     modifier = Modifier.weight(1f),
+                    // The summary's own month and the read's own id, so the
+                    // search is over the month the count was taken from.
+                    onOpenToSort = onOpenToSort?.let { open ->
+                        val month = read.summary?.month
+                        val id = read.uncategorizedId
+                        if (month != null && id != null) ({ open(month, id) }) else null
+                    },
                 )
             }
         }
@@ -999,6 +1014,7 @@ private fun Feed(
     modifier: Modifier = Modifier,
     onAddPayment: (() -> Unit)? = null,
     backupReminder: BackupReminder? = null,
+    onOpenToSort: (() -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val banded = onAddPayment != null && maxHeight - ADD_PAYMENT_ROOM >= LEDGER_ROW
@@ -1022,7 +1038,7 @@ private fun Feed(
                 }
                 item(key = SUMMARY_KEY, contentType = SUMMARY_KEY) {
                     Column(Modifier.testTag(MONTH_SUMMARY).fillMaxWidth().background(Paper)) {
-                        MonthSummaryBlock(summary, categoriesById, onHeroBottom)
+                        MonthSummaryBlock(summary, categoriesById, onHeroBottom, onOpenToSort)
                         // A hairline and a change of ground rather than the artboard's
                         // perforation: that is `SourcesScreen`'s `TornEdge`, private to that
                         // file, and a second copy of its tile geometry is a second thing to
@@ -1036,7 +1052,7 @@ private fun Feed(
                 // is never noise.
                 if (awaitingReview > 0) {
                     stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
-                        AwaitingReviewRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
+                        AccentLineRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
                             onOpenReview(null)
                         }
                     }
@@ -1093,11 +1109,13 @@ private fun Feed(
 }
 
 /**
- * §9.2's way in: [label], in the accent, opening the inbox. The count is every
- * month's and every currency's, so it can name payments no total here mentions.
+ * A line in the accent with a chevron, one 44dp button opening [onOpen]:
+ * §9.2's way into the inbox, whose count is every month's and every
+ * currency's, so it can name payments no total here mentions; and the
+ * summary's `N TO SORT` (#273).
  */
 @Composable
-private fun AwaitingReviewRow(label: String, onOpen: () -> Unit) {
+private fun AccentLineRow(label: String, onOpen: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -1125,9 +1143,17 @@ private fun AwaitingReviewRow(label: String, onOpen: () -> Unit) {
  *
  * [onHeroBottom] is where the heading and the totals under it end, from the
  * block's top, in pixels: nothing above them in the block offsets it.
+ *
+ * Under the top three, `N TO SORT` (#273) opens [onOpenToSort], drawn only
+ * above zero and only where there is somewhere to go.
  */
 @Composable
-private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, Category>, onHeroBottom: (Int) -> Unit) {
+internal fun MonthSummaryBlock(
+    summary: MonthSummary?,
+    categoriesById: Map<Long, Category>,
+    onHeroBottom: (Int) -> Unit,
+    onOpenToSort: (() -> Unit)? = null,
+) {
     val leaderLift = with(LocalDensity.current) { LEADER_LIFT.roundToPx() }
     Column(Modifier.fillMaxWidth()) {
         // First in the chain, so its coordinates include the padding.
@@ -1220,8 +1246,18 @@ private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, 
                 }
             }
         }
+        // As the awaiting-review row draws its line: the accent is the
+        // state that wants acting on. Not greyed in an untrusted month,
+        // since a count of rows is not a total.
+        if (summary != null && summary.toSort > 0 && onOpenToSort != null) {
+            Spacer(Modifier.height(4.dp))
+            AccentLineRow(toSortLabel(summary.toSort), onOpenToSort)
+        }
     }
 }
+
+/** `14 TO SORT`; the count is the same word at one. */
+internal fun toSortLabel(count: Int): String = "${grouped(count)} TO SORT"
 
 /**
  * A day, and its subtotal when there is one.

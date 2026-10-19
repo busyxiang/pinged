@@ -43,6 +43,7 @@ import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
 import androidx.navigationevent.NavigationEvent
 import java.io.IOException
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
@@ -58,6 +59,7 @@ import my.pinged.ledger.day.DayViewModel
 import my.pinged.ledger.detail.DetailScreen
 import my.pinged.ledger.detail.DetailViewModel
 import my.pinged.ledger.search.SearchScreen
+import my.pinged.ledger.search.SearchStart
 import my.pinged.ledger.search.SearchViewModel
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.entry.ManualEntryScreen
@@ -310,7 +312,8 @@ class MainActivity : ComponentActivity() {
                                         onAddPayment = { tabs.push(ManualEntry()) },
                                         onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
-                                        onOpenSearch = { tabs.push(Search) },
+                                        onOpenSearch = { tabs.push(Search()) },
+                                        onOpenToSort = { month, id -> tabs.push(Search(month.toString(), id)) },
                                         heard = heardNow(),
                                         // Both lead to settings' root, where the
                                         // export sheet is hosted and the
@@ -325,12 +328,15 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                                entry<Search> {
+                                entry<Search> { key ->
                                     // The entry's own `createSavedStateHandle`:
                                     // the words and filters survive a process
                                     // death there.
+                                    val start = key.month?.let { m ->
+                                        key.categoryId?.let { SearchStart(YearMonth.parse(m), it) }
+                                    }
                                     val search: SearchViewModel = viewModel {
-                                        SearchViewModel(application, createSavedStateHandle())
+                                        SearchViewModel(application, createSavedStateHandle(), start)
                                     }
                                     // "Export these N rows" (#201): the CSV goes
                                     // where the user creates it, as a backup does.
@@ -391,6 +397,9 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.fillMaxSize(),
                                         onDayClick = { date -> tabs.push(Day(date.toString())) },
                                         onOpenReview = { tabs.push(Review()) },
+                                        // Onto Charts' stack, as Day is: Back
+                                        // returns to this month.
+                                        onOpenUncategorized = { month, id -> tabs.push(Search(month.toString(), id)) },
                                     )
                                 }
                                 entry<Day> { key ->

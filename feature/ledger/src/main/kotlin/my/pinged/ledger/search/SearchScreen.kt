@@ -66,7 +66,11 @@ import my.pinged.data.dao.SourceApp
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.entry.EditTarget
+import my.pinged.data.dao.RetroPreview
+import my.pinged.ledger.home.CategoryChip
 import my.pinged.ledger.home.ENTERED_BY_HAND
+import my.pinged.ledger.home.RowCategoryChooser
+import my.pinged.ledger.home.chooserChoices
 import my.pinged.ledger.settings.SearchExportSheet
 import my.pinged.ledger.settings.TransferJob
 import my.pinged.ledger.settings.Transfers
@@ -109,7 +113,8 @@ import java.time.format.TextStyle as JavaTextStyle
  * Matching is by word prefix (spec 15.2's accepted product decision), so the
  * field's placeholder says "starts with". Rows open as the list's do: a
  * manual entry's edit screen through [onOpenEntry], a capture's detail
- * through [onOpenDetail].
+ * through [onOpenDetail]. An Uncategorized row carries the ledger's
+ * "+ CATEGORY", which opens the ledger's chooser over the search (#273).
  *
  * The artboard's "Export these N rows" opens [SearchExportSheet] over every
  * row the search found (#201), and its button hands to the host's
@@ -151,6 +156,9 @@ fun SearchScreen(
         onOpenDetail = onOpenDetail,
         modifier = modifier,
         onExport = onPickExport?.let { { exportOpen = true } },
+        onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
+        retroPreview = viewModel::retroPreview,
+        addCategory = viewModel::addCategory,
     )
 
     if (exportOpen && onPickExport != null) {
@@ -233,7 +241,14 @@ internal fun SearchScreenContent(
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onExport: (() -> Unit)? = null,
+    onAssign: (txnId: Long, categoryId: Long, teach: Boolean) -> Unit = { _, _, _ -> },
+    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
+    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
 ) {
+    // Hoisted out of the list for the reason `LedgerScreenContent` gives.
+    var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
+    val chooser = read?.chooser
+    val choices = remember(chooser) { chooser?.let(::chooserChoices).orEmpty() }
     val categoriesById = remember(read?.categories) { read?.categories.orEmpty().associateBy { it.id } }
     val categoryName = choice.categoryId?.let { categoriesById[it]?.name }
     // The rows the totals count, not the ones drawn: the export has no limit.
@@ -252,12 +267,40 @@ internal fun SearchScreenContent(
                     item { Hero(read) }
                     item { TornEdge(Modifier.padding(top = 20.dp)) }
                     items(read.rows, key = { "txn-" + it.txn.id }) { row ->
-                        ResultRow(row, categoriesById[row.txn.categoryId], onOpenEntry, onOpenDetail)
+                        // As `LedgerRow` offers it: never on an excluded row,
+                        // whose category is a fact about nothing.
+                        val sortable = choices.isNotEmpty() && !row.txn.isExcluded &&
+                            row.txn.categoryId == read.chooser.uncategorizedId
+                        ResultRow(
+                            row,
+                            categoriesById[row.txn.categoryId],
+                            onOpenEntry,
+                            onOpenDetail,
+                            onCategorize = if (sortable) ({ categorizing = row.txn.id }) else null,
+                        )
                     }
                 }
             }
         }
         if (onExport != null && found > 0) ExportFooter(found, onExport)
+    }
+
+    // Found among the rows read rather than saved with the id, for the reason
+    // `LedgerScreenContent` gives; a row not read draws no sheet.
+    val chosen = categorizing
+    val chosenRow = chosen?.let { id -> read?.rows?.firstOrNull { it.txn.id == id } }
+    if (chosen != null && chosenRow != null && chooser != null && choices.isNotEmpty()) {
+        RowCategoryChooser(
+            row = chosenRow,
+            chooser = chooser,
+            retroPreview = retroPreview,
+            onSave = { categoryId, teach ->
+                categorizing = null
+                onAssign(chosen, categoryId, teach)
+            },
+            onDismiss = { categorizing = null },
+            addCategory = addCategory,
+        )
     }
 }
 
@@ -466,7 +509,8 @@ private fun Hero(read: SearchRead) {
  * card's band, with the list's line beneath the name: its [category] and how
  * it reached the ledger, which spec 9.1 asks of every screen that draws a
  * row. A row the total leaves out is greyed and says so in words, excluded
- * rows struck through as the list strikes them.
+ * rows struck through as the list strikes them. [onCategorize] draws the
+ * ledger's "+ CATEGORY" ahead of the line, as `LedgerRow` places it.
  */
 @Composable
 private fun ResultRow(
@@ -474,6 +518,7 @@ private fun ResultRow(
     category: Category?,
     onOpenEntry: ((EditTarget) -> Unit)?,
     onOpenDetail: ((EditTarget) -> Unit)?,
+    onCategorize: (() -> Unit)? = null,
 ) {
     val txn = row.txn
     val open = (if (txn.rawCaptureId == null) onOpenEntry else onOpenDetail)
@@ -500,7 +545,20 @@ private fun ResultRow(
             val source = if (txn.rawCaptureId == null) ENTERED_BY_HAND else txn.sourceLabel ?: txn.sourcePackage
             val line = listOfNotNull(category?.name?.takeUnless { it == Seed.UNCATEGORIZED }, source)
                 .joinToString(Separator)
-            if (line.isNotEmpty()) Text(line, fontFamily = Body, fontSize = 12.sp, lineHeight = 16.sp, color = Muted)
+            if (onCategorize != null || line.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onCategorize != null) CategoryChip(onClick = onCategorize)
+                    if (line.isNotEmpty()) {
+                        Text(
+                            (if (onCategorize != null) Separator else "") + line,
+                            fontFamily = Body,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = Muted,
+                        )
+                    }
+                }
+            }
             if (!counted) {
                 val why = if (txn.state == TxnState.PENDING) "AWAITING REVIEW" else "NOT IN THE TOTAL"
                 Text(why, style = MonoLabel, color = Muted)

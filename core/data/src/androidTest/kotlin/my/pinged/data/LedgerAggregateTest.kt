@@ -250,6 +250,52 @@ class LedgerAggregateTest {
     }
 
     /**
+     * #273: Uncategorized, the month's largest, takes no slot in Spending's
+     * top three, which are the three largest named categories; the month
+     * total still counts it.
+     */
+    @Test fun theTopThreeLeaveOutUncategorizedHoweverLargeAndTheTotalKeepsIt() {
+        val named = db.categoryDao().all().filter { !it.isProtected }.take(4).map { it.id }
+        assertTrue("The seed did not provide four unprotected categories", named.size == 4)
+        db.txnDao().insert(sampleTxn(occurredAt = day1, amountSen = 61_224L, categoryId = uncategorized()))
+        named.forEachIndexed { i, id ->
+            db.txnDao().insert(sampleTxn(occurredAt = day1, amountSen = (i + 1) * 1_000L, categoryId = id))
+        }
+
+        val top = db.txnDao().monthTopNamed(sept.first, sept.second, limit = 3)
+
+        assertEquals(
+            "The top three are not the three largest named categories: $top",
+            listOf(named[3], named[2], named[1]), top.map { it.categoryId },
+        )
+        assertEquals(
+            "Leaving Uncategorized out of the ranking took it out of the total too",
+            61_224L + 10_000L, db.txnDao().monthTotals(sept.first, sept.second).single().netSen,
+        )
+    }
+
+    /**
+     * #273's `N TO SORT`: the month's counted rows under Uncategorized. An
+     * excluded or awaiting-review one is not to sort, a named one is filed,
+     * and another month's is not this month's.
+     */
+    @Test fun toSortCountsTheMonthsCountedUncategorizedRowsOnly() {
+        val cat = uncategorized()
+        val named = db.categoryDao().all().first { !it.isProtected }.id
+        db.txnDao().insert(sampleTxn(occurredAt = day1, categoryId = cat))
+        db.txnDao().insert(sampleTxn(occurredAt = day2, categoryId = cat, currency = "SGD"))
+        db.txnDao().insert(sampleTxn(occurredAt = day1, categoryId = cat, isExcluded = true))
+        db.txnDao().insert(sampleTxn(occurredAt = day1, categoryId = cat, state = TxnState.PENDING))
+        db.txnDao().insert(sampleTxn(occurredAt = day1, categoryId = named))
+        db.txnDao().insert(sampleTxn(occurredAt = day1 + 40 * 86_400_000L, categoryId = cat))
+
+        assertEquals(
+            "N TO SORT is not the month's counted Uncategorized rows, every currency",
+            2, db.txnDao().toSortCount(sept.first, sept.second),
+        )
+    }
+
+    /**
      * The Charts hero's `SPENT RMx · CAME BACK RMy` (#81, The Charts read):
      * the month's gross out and gross back, under the month total's own
      * predicate, so spent less came back is the net the hero prints.

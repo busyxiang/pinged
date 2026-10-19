@@ -14,6 +14,7 @@ import my.pinged.data.SearchCursor
 import my.pinged.data.SearchFilter
 import my.pinged.data.SearchSql
 import my.pinged.data.SearchTotal
+import my.pinged.data.Seed
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
@@ -342,14 +343,34 @@ interface TxnDao {
     fun notInTotal(from: LocalDate, to: LocalDate): List<NotInTotal>
 
     /**
-     * The summary's top categories, largest first.
+     * Every category's period total, Uncategorized included, largest first:
+     * Charts' bars. Spending's top three are [monthTopNamed].
      *
-     * `LIMIT` is a parameter rather than the literal 3 §9.1 asks for, so the
-     * caller states how many it is going to draw and the query cannot silently
-     * disagree with the layout.
+     * `LIMIT` is a parameter, so the caller states how many it is going to
+     * draw and the query cannot silently disagree with the layout.
      */
     @Query(MONTH_BY_CATEGORY_SQL)
     fun monthByCategory(from: LocalDate, to: LocalDate, limit: Int): List<CategoryTotal>
+
+    /**
+     * Spending's top three (§9.1, #273): [monthByCategory] without the
+     * category named [uncategorized], whatever its size. Uncategorized is
+     * where a row is filed, not what it was spent on, so it never takes a
+     * slot; its money is still in [monthTotals], and [toSortCount] is how the
+     * summary names it instead. Left out by name, as
+     * `CategoryDao.rankedByUse` leaves it out.
+     */
+    @Query(MONTH_TOP_NAMED_SQL)
+    fun monthTopNamed(from: LocalDate, to: LocalDate, limit: Int, uncategorized: String = Seed.UNCATEGORIZED): List<CategoryTotal>
+
+    /**
+     * How many transactions dated in `[from, to]` are to sort (CONTEXT.md):
+     * [COUNTED], and filed under the category named [uncategorized]. Every
+     * currency, as Search's Uncategorized filter finds them. Spending's
+     * `N TO SORT` (#273).
+     */
+    @Query(TO_SORT_COUNT_SQL)
+    fun toSortCount(from: LocalDate, to: LocalDate, uncategorized: String = Seed.UNCATEGORIZED): Int
 
     /**
      * Assign a category as a one-off (§9.1's chooser with "Always call this"
@@ -1186,6 +1207,39 @@ interface TxnDao {
             GROUP BY category_id, currency
             ORDER BY netSen DESC
             LIMIT :limit
+            """
+
+        /**
+         * [monthTopNamed]'s query. `IS NOT` rather than `!=`, so a missing
+         * Uncategorized row (the sub-select's NULL) leaves every category in
+         * rather than none.
+         */
+        const val MONTH_TOP_NAMED_SQL =
+            """
+            SELECT category_id AS categoryId, currency,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
+            FROM txn
+            WHERE """ + COUNTED + """
+              AND local_date BETWEEN :from AND :to
+              AND category_id IS NOT (SELECT id FROM category WHERE name = :uncategorized)
+            GROUP BY category_id, currency
+            ORDER BY netSen DESC
+            LIMIT :limit
+            """
+
+        /**
+         * [toSortCount]'s query. `+category_id` for the reason [COUNTED]
+         * carries `+state`: without it the planner took
+         * `index_txn_category_id` (`QueryPlanTest.theTopNamedAndToSortTakeTheMonthRange`),
+         * which walks every Uncategorized row ever captured rather than the
+         * month's rows.
+         */
+        const val TO_SORT_COUNT_SQL =
+            """
+            SELECT COUNT(*) FROM txn
+            WHERE """ + COUNTED + """
+              AND local_date BETWEEN :from AND :to
+              AND +category_id = (SELECT id FROM category WHERE name = :uncategorized)
             """
     }
 }

@@ -40,6 +40,7 @@ import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.heroFigure
 import java.time.LocalDate
+import java.time.YearMonth
 
 /**
  * The Charts tab (spec 9.3, #81): the selected month's header and hero, and
@@ -51,7 +52,9 @@ import java.time.LocalDate
  * [onDayClick] is a grid square's tap (#69); `:app` routes it to `Day`, which
  * this module knows nothing of (#70). [onOpenReview] is the "not in the
  * total" block's *N awaiting review* line, which `:app` routes to the review
- * inbox the same way.
+ * inbox the same way. [onOpenUncategorized] is the Uncategorized bar
+ * (#273): Search over the month drawn, filtered to [uncategorizedId], which
+ * `:app` routes to `:feature:ledger` the same way.
  */
 @Composable
 fun ChartsScreen(
@@ -59,6 +62,7 @@ fun ChartsScreen(
     modifier: Modifier = Modifier,
     onDayClick: (LocalDate) -> Unit = {},
     onOpenReview: () -> Unit = {},
+    onOpenUncategorized: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
 ) {
     val rewrites by Databases.rewrites.collectAsState()
     LifecycleResumeEffect(viewModel, rewrites) {
@@ -78,6 +82,11 @@ fun ChartsScreen(
         onDayClick = onDayClick,
         onOpenMonths = { monthsOpen = true },
         onOpenReview = onOpenReview,
+        // The read's month and id, not the selection's: the bar drawn is
+        // the read's, and a newer selection may not have landed yet.
+        onOpenUncategorized = onOpenUncategorized?.let { open ->
+            read?.let { r -> r.uncategorizedId?.let { id -> { open(r.month, id) } } }
+        },
     )
     if (monthsOpen) {
         MonthsSheetHost(
@@ -108,6 +117,7 @@ internal fun ChartsScreenContent(
     onDayClick: (LocalDate) -> Unit = {},
     onOpenMonths: () -> Unit = {},
     onOpenReview: () -> Unit = {},
+    onOpenUncategorized: (() -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         when {
@@ -139,7 +149,7 @@ internal fun ChartsScreenContent(
                 RhythmGridSection(view.grid, onDayClick)
                 // Category bars, or collecting (#91): one block stands in
                 // for both the bars and the merchants while the gate is shut.
-                if (view.collecting.open) CategoryBars(view.bars) else CollectingBlock(view.collecting)
+                if (view.collecting.open) CategoryBars(view.bars, onOpenUncategorized = onOpenUncategorized) else CollectingBlock(view.collecting)
                 // Top merchants (#92), behind the same gate.
                 if (view.collecting.open) TopMerchants(view.merchants)
                 NotInTotalBlock(view.notInTotal, onOpenReview = onOpenReview)

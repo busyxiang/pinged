@@ -461,8 +461,9 @@ class LedgerViewModel(
             val summary = MonthSummary(
                 month = now,
                 totals = txns.monthTotals(month.start, month.endInclusive),
-                top = txns.monthByCategory(month.start, month.endInclusive, limit = TOP_CATEGORIES),
+                top = txns.monthTopNamed(month.start, month.endInclusive, limit = TOP_CATEGORIES),
                 trustworthy = notCaptured == 0,
+                toSort = txns.toSortCount(month.start, month.endInclusive),
             )
 
             // One assignment, at the end, built from locals: see [LedgerRead]

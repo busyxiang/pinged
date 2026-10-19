@@ -390,6 +390,23 @@ class QueryPlanTest {
     }
 
     /**
+     * Spending's top three without Uncategorized, and its `N TO SORT` (#273),
+     * range over the month as the other aggregates do: the Uncategorized
+     * predicate must not steer the planner onto `category_id`'s index, which
+     * walks that category's every row ever.
+     */
+    @Test fun theTopNamedAndToSortTakeTheMonthRange() {
+        val top = plan(bindable(TxnDao.MONTH_TOP_NAMED_SQL), *MONTH, 3, Seed.UNCATEGORIZED)
+        val toSort = plan(bindable(TxnDao.TO_SORT_COUNT_SQL), *MONTH, Seed.UNCATEGORIZED)
+        for (p in listOf(top, toSort)) {
+            assertTrue(
+                "Does not read txn by a local_date range:\n$p",
+                p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
+            )
+        }
+    }
+
+    /**
      * The Charts hero's split, [TxnDao.MONTH_TOTALS_SQL]'s predicate with two
      * `SUM`s, ranges over the month as the total does. `SEARCH`, not only the
      * index name: a `SCAN` of the same index names it too, and walks every

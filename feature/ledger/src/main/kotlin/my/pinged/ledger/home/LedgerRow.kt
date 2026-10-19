@@ -391,10 +391,11 @@ private fun Modifier.rowBody(): Modifier = pointerInput(Unit) {}
  * acting on, inside the theme's [dashedOutline].
  *
  * [Role.Button] so it reports as one: `SourcesScreen`'s `Header` records what a
- * tappable-looking thing with no semantics cost.
+ * tappable-looking thing with no semantics cost. Search's result rows draw it
+ * too (#273).
  */
 @Composable
-private fun CategoryChip(onClick: () -> Unit) {
+internal fun CategoryChip(onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(2.dp))
