@@ -42,7 +42,7 @@ import java.util.Locale
  * is not the month Charts opens on by default: a back that rebuilt Charts from
  * nothing would land on this month and fail.
  *
- * `createEmptyComposeRule`, for the reason `ExportNudgeBannerTest` gives: the
+ * `createEmptyComposeRule`, for the reason `BackupReminderTest` gives: the
  * rows have to be in the database before the Activity reads it.
  */
 @RunWith(AndroidJUnit4::class)

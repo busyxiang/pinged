@@ -18,14 +18,14 @@ package my.pinged.ui.theme
 const val CANNOT_READ_YOUR_DATA: String = "CANNOT READ YOUR DATA"
 
 /**
- * The damaged ledger's one way to a file: the recovery notice's action, and
- * the home screen's backup nudge in its place on a damaged ledger. Here for
- * [CANNOT_READ_YOUR_DATA]'s reason -- `MainActivity` and the settings screen
- * both say it, and neither package may depend on the other's.
+ * The damaged ledger's one way to a file: the recovery notice's action, which
+ * Spending's backup reminder leads to on a damaged ledger. Here for
+ * [CANNOT_READ_YOUR_DATA]'s reason: the settings screen and `:app`'s tests
+ * both say it.
  */
 const val RESCUE: String = "Rescue what can still be read"
 
-/** The settings row that writes a backup, and the backup nudge's action; see [RESCUE]. */
+/** The settings row that writes a backup; see [RESCUE]. */
 const val EXPORT_EVERYTHING: String = "Export everything"
 
 /**

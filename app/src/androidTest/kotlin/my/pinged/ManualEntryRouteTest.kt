@@ -38,7 +38,7 @@ import org.junit.runner.RunWith
  * entry screen over the list with the tab bar hidden, back returns to the
  * list, and a saved entry is on the list reading `Entered by hand`.
  *
- * `createEmptyComposeRule`, for the reason `ExportNudgeBannerTest` gives: the
+ * `createEmptyComposeRule`, for the reason `BackupReminderTest` gives: the
  * database has to be empty before the Activity reads it.
  */
 @RunWith(AndroidJUnit4::class)
