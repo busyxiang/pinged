@@ -319,9 +319,9 @@ private fun SubjectStrip(subject: ChooserSubject) {
 /**
  * `design/Chooser.dc.html`'s Save: [Stamp] filled, 52dp, a 2dp corner, under
  * the artboards' 24dp bottom margin. Material's `Button` is a full pill
- * whatever the theme's shapes say (#164). [Muted] while there is no pick, as
- * the review cards' answers are while disabled. The category sheet gives it
- * its own [margins].
+ * whatever the theme's shapes say (#164). While it would write nothing it is
+ * outlined in [Muted], label too, as Cash entry's Save is: a solid slab reads
+ * as enabled. The category sheet gives it its own [margins].
  */
 @Composable
 internal fun SaveButton(
@@ -334,12 +334,12 @@ internal fun SaveButton(
             .padding(margins)
             .fillMaxWidth()
             .clip(RoundedCornerShape(2.dp))
-            .background(if (enabled) Stamp else Muted)
+            .then(if (enabled) Modifier.background(Stamp) else Modifier.border(1.dp, Muted, RoundedCornerShape(2.dp)))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 52.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(SAVE_LABEL, fontFamily = Body, fontWeight = FontWeight.Medium, fontSize = 15.5.sp, color = Paper)
+        Text(SAVE_LABEL, fontFamily = Body, fontWeight = FontWeight.Medium, fontSize = 15.5.sp, color = if (enabled) Paper else Muted)
     }
 }
 

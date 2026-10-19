@@ -89,7 +89,6 @@ import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
-import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
 import my.pinged.ui.theme.heroFigure
@@ -397,7 +396,7 @@ private fun NoteField(txn: Txn, save: (String) -> Unit) {
             placeholderColour = Muted,
         )
         if (dirty) {
-            OutlinedAction(SAVE_NOTE, Ink, Border, Modifier.padding(top = 10.dp).fillMaxWidth(), dashed = false, onClick = commit)
+            OutlinedAction(SAVE_NOTE, Ink, Border, Modifier.padding(top = 10.dp).fillMaxWidth(), onClick = commit)
         }
     }
 }
@@ -440,11 +439,11 @@ private fun Actions(
         if (pair.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 pair.forEach { (label, onClick) ->
-                    OutlinedAction(label, Ink, Border, Modifier.weight(1f).fillMaxHeight(), dashed = false, onClick = onClick)
+                    OutlinedAction(label, Ink, Border, Modifier.weight(1f).fillMaxHeight(), onClick = onClick)
                 }
             }
         }
-        if (committed) OutlinedAction(DELETE, Stamp, Stamp, Modifier.fillMaxWidth(), dashed = true, onClick = onRemove)
+        if (committed) OutlinedAction(DELETE, Stamp, Stamp, Modifier.fillMaxWidth(), onClick = onRemove)
     }
 }
 
@@ -465,14 +464,18 @@ private fun FilledAction(label: String, modifier: Modifier, onClick: () -> Unit)
     }
 }
 
-/** An outlined button of the band: [Border] solid, or the accent dashed for Delete as the artboard draws it. */
+/**
+ * An outlined button of the band, its edge solid: Delete's too, in the
+ * accent, as `design/Detail.dc.html` draws it, since `Perforation.kt` keeps
+ * dashes for offers and a delete is not one.
+ */
 @Composable
-private fun OutlinedAction(label: String, ink: Color, edge: Color, modifier: Modifier, dashed: Boolean, onClick: () -> Unit) {
+private fun OutlinedAction(label: String, ink: Color, edge: Color, modifier: Modifier, onClick: () -> Unit) {
     val shape = RoundedCornerShape(2.dp)
     Box(
         modifier
             .clip(shape)
-            .then(if (dashed) Modifier.dashedOutline(edge) else Modifier.border(1.dp, edge, shape))
+            .border(1.dp, edge, shape)
             .clickable(role = Role.Button, onClick = onClick)
             .heightIn(min = 44.dp)
             .padding(horizontal = 8.dp),

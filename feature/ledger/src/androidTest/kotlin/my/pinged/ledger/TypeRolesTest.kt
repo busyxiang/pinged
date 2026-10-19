@@ -24,7 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.capture.Corrections
 import my.pinged.data.dao.FeedRow
-import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.PendingReason
@@ -49,9 +48,6 @@ import my.pinged.ledger.home.Empty
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.OPEN_SETTINGS
 import my.pinged.ledger.home.SAVE_LABEL
-import my.pinged.ledger.learned.LearnedContent
-import my.pinged.ledger.learned.LearnedState
-import my.pinged.ledger.licences.LicencesContent
 import my.pinged.ledger.review.AcceptAll
 import my.pinged.ledger.review.ReviewAnswer
 import my.pinged.ledger.review.ReviewCard
@@ -265,7 +261,7 @@ class TypeRolesTest {
         assertButton(UNDO)
     }
 
-    @Test fun aCorrectionsAnswersAndBackAreKarlaButtons() {
+    @Test fun aCorrectionsAnswersAreKarlaButtons() {
         val before = ledgerTxn(amountSen = 226_276L, state = TxnState.PENDING, pendingReason = PendingReason.OVER_THRESHOLD, id = 7L)
         val correction = Corrections.Correction(
             captureId = 70L,
@@ -287,21 +283,6 @@ class TypeRolesTest {
         }
         assertButton(CORRECTION_ACCEPT)
         assertButton(CORRECTION_KEEP)
-        assertButton(BACK)
-    }
-
-    /** Delete is the board's trash icon, a mark rather than a word, so only Back has a face to read. */
-    @Test fun aLearnedMerchantsBackIsAKarlaButton() {
-        val merchant = LearnedMerchant("MR DIY", "Hardware shop", 4L, "Shopping", payments = 3)
-        compose.setContent {
-            PingedTheme { LearnedContent(LearnedState(loaded = true, items = listOf(merchant)), onBack = {}, onDelete = {}) }
-        }
-        assertButton(BACK)
-    }
-
-    @Test fun theLicencesBackIsAKarlaButton() {
-        compose.setContent { PingedTheme { LicencesContent(emptyList(), onBack = {}) } }
-        assertButton(BACK)
     }
 
     @Test fun aSettledTransfersOkIsAKarlaButton() {
@@ -379,8 +360,6 @@ class TypeRolesTest {
     private companion object {
         const val TITLE = "TNG eWallet"
         const val BODY = "You've reloaded RM100.00 to your eWallet.\nRef: 000000"
-
-        const val BACK = "Back"
 
         val nearby = NearbyCapture(amountSen = 1_250L, source = SOURCE_LABEL, occurredAt = 1_000L, awaitingReview = false)
 
