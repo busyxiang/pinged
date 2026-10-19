@@ -30,7 +30,7 @@ fun notInTotal(rows: List<NotInTotal>): List<KeptOut> {
             add(KeptOut("Transfers, left out", ringgitDigits(it.netSen)))
         }
         ringgit[NotInTotalLine.USER_EXCLUDED]?.takeIf { it.netSen != 0L }?.let {
-            add(KeptOut("You excluded", ringgitDigits(it.netSen)))
+            add(KeptOut("You left out", ringgitDigits(it.netSen)))
         }
         ringgit[NotInTotalLine.PENDING]?.takeIf { it.txnCount != 0 }?.let {
             add(KeptOut("${it.txnCount} awaiting review", ringgitDigits(it.netSen), opensReview = true))

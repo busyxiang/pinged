@@ -587,6 +587,29 @@ class LedgerScreenTest {
         )
     }
 
+    /** Not spending on Detail (#153) leaves `USER`, which the badge says in words (#214). */
+    @Test fun aRowTheUserLeftOutSaysSoInWordsNotTheReasonsName() {
+        val dao = freshLedger()
+        dao.insert(
+            ledgerTxn(
+                amountSen = 10_000L,
+                occurredAt = System.currentTimeMillis(),
+                isExcluded = true,
+                exclusionReason = ExclusionReason.USER,
+            ),
+        )
+
+        screen()
+
+        compose.waitForText("100.00", "The left-out row is not on screen at all")
+        assertEquals(
+            "The badge printed something other than the artboard's words for " +
+                "a row the user left out (design/DetailExcluded.dc.html)",
+            listOf("NOT SPENDING" + Separator + "YOU LEFT IT OUT"),
+            compose.allText().filter { it.startsWith("NOT SPENDING") },
+        )
+    }
+
     /**
      * §7.3 keeps an excluded row and takes it out of every total, so a category
      * assigned to one moves no number on any screen. The chip would take the

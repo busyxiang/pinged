@@ -1856,7 +1856,7 @@ never comparable. (#67)
 **`NOT IN THE TOTAL`.** Last in the scroll, not pinned: the month's ringgit
 money that moved but is in no figure above, as ruled lines with signed
 amounts and no symbol, in this order. `Transfers, left out` (every
-exclusion reason but the user's own), `You excluded`, and `N awaiting
+exclusion reason but the user's own), `You left out`, and `N awaiting
 review` (pending rows; a pending row that is also excluded is counted here
 only). An amount line whose net is zero is dropped; the review line stays
 while any row is pending, whatever it nets to. With no line the block,
