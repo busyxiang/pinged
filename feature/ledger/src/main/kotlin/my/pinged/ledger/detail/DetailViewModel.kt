@@ -75,7 +75,7 @@ class DetailViewModel(app: Application, val txnId: Long, val createdAt: Long) : 
         rows.assignCategory(txnId, categoryId, teach) { refresh().join() }
 
     /** See [RowActions.retroPreview]. */
-    suspend fun retroPreview(categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
+    suspend fun retroPreview(categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
 
     /** `TxnDao.setCapturedNote`. */
     fun saveNote(note: String): Job = write("The note could not be saved") { it.setCapturedNote(txnId, note, now()) }

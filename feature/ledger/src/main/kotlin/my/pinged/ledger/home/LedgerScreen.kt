@@ -185,7 +185,7 @@ fun LedgerScreen(
         onOpenDetail = onOpenDetail,
         onOpenSearch = onOpenSearch,
         heard = heard,
-        monthPicked = picked != null,
+        picked = picked,
         picks = picks,
         onOpenMonths = { monthsOpen = true },
         merchantSheet = merchantSheet,
@@ -235,7 +235,7 @@ internal fun LedgerScreenContent(
     onAssign: (txnId: Long, categoryId: Long, teach: Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
-    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
+    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
     /** The chooser's New category (#155); null draws no tile. */
     addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
     merchantSheet: MerchantSheetState? = null,
@@ -246,7 +246,8 @@ internal fun LedgerScreenContent(
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
-    monthPicked: Boolean = false,
+    /** The holder's picked month, null to follow the clock; see [LedgerViewModel.picked]. */
+    picked: YearMonth? = null,
     onOpenMonths: (() -> Unit)? = null,
     picks: Int = 0,
 ) {
@@ -283,14 +284,16 @@ internal fun LedgerScreenContent(
     val reading = !unreadable && items.loadState.refresh is LoadState.Loading && items.itemCount == 0
     // A picked month with nothing on or before it is the feed, not day one:
     // the sheet listed it, so there is a history, only none of it that old.
-    val empty = !unreadable && !reading && items.itemCount == 0 && !monthPicked
+    val empty = !unreadable && !reading && items.itemCount == 0 && picked == null
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Paper)) {
             // Above the branch: the month being summarised is true in every state,
             // including the two with nothing to show.
             TopBar(
-                month = read.summary?.month ?: YearMonth.now(),
+                // The pick before the clock: it is saved state, so after a
+                // process death it is known before the summary is read (#237).
+                month = read.summary?.month ?: picked ?: YearMonth.now(),
                 heard = heard,
                 onOpenMonths = onOpenMonths,
                 onOpenSearch = onOpenSearch,

@@ -46,6 +46,7 @@ import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Mono
 import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Stamp
@@ -133,7 +134,13 @@ fun SourcesScreenContent(
     val suggested = state.suggested
     val seenNotCaptured = state.seenNotCaptured
     val loaded = state.loaded
-    val enabledCount = suggested.count { it.enabled } + seenNotCaptured.count { it.enabled }
+    // The lists are empty before the first read and on a ledger that would
+    // not open, and neither is "0 ENABLED" (#237).
+    val enabledCount = if (loaded && !state.storageUnavailable) {
+        (suggested.count { it.enabled } + seenNotCaptured.count { it.enabled }).toString()
+    } else {
+        NOT_READ_YET
+    }
 
     Column(modifier.fillMaxSize().background(Paper)) {
         // `LazyColumn`, not a `Column` with `verticalScroll`. The lower list holds one
@@ -242,7 +249,7 @@ fun SourcesScreenContent(
  * `Canvas`: an unlabelled node is one a screen reader can say nothing about.
  */
 @Composable
-private fun Header(enabledCount: Int, onBack: () -> Unit) {
+private fun Header(enabledCount: String, onBack: () -> Unit) {
     Box(
         Modifier
             .padding(start = 8.dp, top = 12.dp)

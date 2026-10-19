@@ -58,6 +58,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.YearMonth
+import my.pinged.ui.monthName
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
@@ -158,6 +159,23 @@ class LedgerScreenTest {
             "A first read in flight did not say READING once, so the state " +
                 "between 'not read yet' and 'nothing there' is not on screen",
             1, compose.onAllNodesWithTextSafely("READING"),
+        )
+    }
+
+    /**
+     * #237: after a process death with another month picked, the pick is
+     * saved state and the summary is not read yet. The top bar names the
+     * pick, not the clock's month, while the read is in flight.
+     */
+    @Test fun beforeTheSummaryLandsTheTopBarNamesThePickedMonth() {
+        val picked = YearMonth.now().minusMonths(2)
+        content(items = emptyList(), refresh = LoadState.Loading, picked = picked)
+        compose.waitForIdle()
+
+        assertEquals("The picked month is not in the top bar", 1, compose.onAllNodesWithTextSafely(monthName(picked)))
+        assertEquals(
+            "The top bar named the clock's month over the pick",
+            0, compose.onAllNodesWithTextSafely(monthName(YearMonth.now())),
         )
     }
 
@@ -1638,6 +1656,7 @@ class LedgerScreenTest {
         onAssign: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
         onOpenSettings: () -> Unit = {},
         heard: String? = null,
+        picked: YearMonth? = null,
     ) {
         // The four read fields stay separate parameters here and are packed at
         // the last moment: each state below is named by the one field it is
@@ -1666,6 +1685,7 @@ class LedgerScreenTest {
                     onAssign = onAssign,
                     onOpenSettings = onOpenSettings,
                     heard = heard,
+                    picked = picked,
                 )
             }
         }

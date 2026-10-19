@@ -162,13 +162,24 @@ internal fun ManualEntryScreenContent(
             .verticalScroll(rememberScrollState()),
     ) {
         Header(if (state.editing != null) EDIT_PAYMENT else ADD_PAYMENT, onBack)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AmountField(sen = state.draft.amountSen, onAmount = onAmount, modifier = Modifier.weight(1f))
-            DateChip(day = state.draft.day, today = state.today, onDay = onDay)
+        if (state.reading) {
+            // Not the fields: they would draw the empty default draft as the
+            // payment, and a field typed into now is overwritten by the read.
+            Text(
+                "READING",
+                style = MonoLabel,
+                color = Muted,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp),
+            )
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AmountField(sen = state.draft.amountSen, onAmount = onAmount, modifier = Modifier.weight(1f))
+                DateChip(day = state.draft.day, today = state.today, onDay = onDay)
+            }
+            CategoryChips(state.categories, selected = state.draft.category?.categoryId, onTap = onCategory)
+            OptionalLine(MERCHANT, state.draft.merchant, onMerchant, MERCHANT_FIELD, KeyboardCapitalization.Words)
+            OptionalLine(NOTE, state.draft.note, onNote, NOTE_FIELD, KeyboardCapitalization.Sentences)
         }
-        CategoryChips(state.categories, selected = state.draft.category?.categoryId, onTap = onCategory)
-        OptionalLine(MERCHANT, state.draft.merchant, onMerchant, MERCHANT_FIELD, KeyboardCapitalization.Words)
-        OptionalLine(NOTE, state.draft.note, onNote, NOTE_FIELD, KeyboardCapitalization.Sentences)
         // One line for what stops Save: the restore or delete running, else
         // a ledger that will not open (#108). The draft above stays as typed.
         val stopped = state.busy?.let { busyLine(it, Withheld.SAVED) }

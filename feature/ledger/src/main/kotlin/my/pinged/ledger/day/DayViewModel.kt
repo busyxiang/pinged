@@ -121,7 +121,7 @@ class DayViewModel(app: Application, val date: LocalDate) : AndroidViewModel(app
         rows.assignCategory(txnId, categoryId, teach) { refresh().join() }
 
     /** See [RowActions.retroPreview]. */
-    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
+    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
 
     /** See [RowActions.addCategory]; the day, and so the chooser, is re-read after. */
     suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey) { refresh().join() }

@@ -144,7 +144,7 @@ internal fun DayScreenContent(
     onAssign: (txnId: Long, categoryId: Long, teach: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     onOpenReview: (focus: Long?) -> Unit = {},
-    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
+    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
     /** The chooser's New category (#155); null draws no tile. */
     addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
     merchantSheet: MerchantSheetState? = null,

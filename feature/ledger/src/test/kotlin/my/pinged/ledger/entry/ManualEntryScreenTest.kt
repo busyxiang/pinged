@@ -69,6 +69,19 @@ class ManualEntryScreenTest {
 
     private fun amountField() = compose.onNodeWithTag(AMOUNT_FIELD)
 
+    /**
+     * #237: a correction whose payment is not read yet has only the empty
+     * default draft, and drawing it is drawing a payment of nothing, today,
+     * filed nowhere. It says it is reading, and offers no field to type in.
+     */
+    @Test fun aCorrectionNotReadYetDrawsNoEmptyPayment() {
+        state = ManualEntryState(editing = 7, reading = true)
+        draw()
+        amountField().assertDoesNotExist()
+        compose.onNodeWithText("READING").assertExists()
+        compose.onNodeWithText(SAVE_CHANGES).assertIsNotEnabled()
+    }
+
     @Test fun theAmountIsFocusedOnArrival() {
         draw()
         amountField().assertIsFocused()

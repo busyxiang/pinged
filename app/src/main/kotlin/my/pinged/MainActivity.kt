@@ -598,7 +598,7 @@ class MainActivity : ComponentActivity() {
                         // counted until one of those; nothing here watches `txn`.
                         val resumed by resumes.collectAsState()
                         val rewrites by Databases.rewrites.collectAsState()
-                        val awaitingReview by produceState(0, tabs.selected, tabs.showsBar, resumed, rewrites) {
+                        val awaitingReview by produceState<Int?>(null, tabs.selected, tabs.showsBar, resumed, rewrites) {
                             value = readAwaitingReview(applicationContext)
                         }
                         if (tabs.showsBar) {
@@ -1077,21 +1077,21 @@ internal suspend fun readExportOverdue(
 
 /**
  * How many transactions await review, for the Spending tab's count (§9.2's
- * ways in), or 0 when the ledger cannot be read: a count the bar cannot back
- * is not drawn, and the storage banner already says why. Never throws, for
- * the reason [readExportOverdue] gives.
+ * ways in), or null when the ledger cannot be read: not 0, which hides the
+ * badge and so says nothing awaits review (#237). Never throws, for the
+ * reason [readExportOverdue] gives.
  */
-internal suspend fun readAwaitingReview(context: Context): Int = try {
+internal suspend fun readAwaitingReview(context: Context): Int? = try {
     CaptureStorage.guarded(
         context,
         what = "The ledger cannot be read",
-        unavailable = { 0 },
+        unavailable = { null },
         damageStopsCapture = false,
     ) { Databases.txnDao(context).awaitingReviewCount() }
 } catch (thrown: SQLException) {
     // As [readExportOverdue]'s: a count past a reset's lease wait.
     Log.w(TAG, "Could not count what awaits review", thrown)
-    0
+    null
 }
 
 /** The backup nudge's second button; see [NUDGE_DISMISSED_FOR_MILLIS]. */

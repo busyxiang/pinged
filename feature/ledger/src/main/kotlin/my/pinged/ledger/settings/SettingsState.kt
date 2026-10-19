@@ -174,7 +174,8 @@ data class SettingsState(
      * `0` for never, and null when the store could not be read -- the row
      * then draws no value, as [sourcesOn]'s does. "NEVER" would be a claim
      * about a file nobody could open, and to a user who exported yesterday a
-     * false one. The same for [lastCheckAt].
+     * false one. The same for [lastCheckAt]. Neither is drawn before
+     * [loaded]: the `0L` default is no read at all (#237).
      */
     val lastExportAt: Long? = 0L,
     val lastCheckAt: Long? = 0L,

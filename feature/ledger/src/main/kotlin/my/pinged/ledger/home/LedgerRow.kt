@@ -137,7 +137,7 @@ internal fun chooserChoices(chooser: ChooserRead): List<Category> =
 internal fun RowCategoryChooser(
     row: FeedRow,
     chooser: ChooserRead,
-    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview,
+    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview?,
     onSave: (categoryId: Long, teach: Boolean) -> Unit,
     onDismiss: () -> Unit,
     addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,

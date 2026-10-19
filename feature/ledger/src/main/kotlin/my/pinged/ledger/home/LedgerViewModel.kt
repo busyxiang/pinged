@@ -409,14 +409,19 @@ class LedgerViewModel(
      * ([monthsRead]), so the two sheets cannot list different months or flag
      * different days. In one transaction, for the reason it gives.
      */
-    fun readMonths(today: java.time.LocalDate = java.time.LocalDate.now()): Job = viewModelScope.launch {
-        CaptureStorage.guarded(
-            context,
-            what = "The months cannot be read",
-            unavailable = { _storageUnavailable.value = true },
-            damageStopsCapture = false,
-        ) {
-            _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today) }
+    fun readMonths(today: java.time.LocalDate = java.time.LocalDate.now()): Job {
+        // The last read's months and flags are not this opening's: the sheet
+        // draws its loading state until the re-read lands (#237).
+        _months.value = null
+        return viewModelScope.launch {
+            CaptureStorage.guarded(
+                context,
+                what = "The months cannot be read",
+                unavailable = { _storageUnavailable.value = true },
+                damageStopsCapture = false,
+            ) {
+                _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today) }
+            }
         }
     }
 
@@ -501,7 +506,7 @@ class LedgerViewModel(
     ): Job = rows.assignCategory(txnId, categoryId, teach) { refresh(now).join() }
 
     /** See [RowActions.retroPreview]. */
-    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview = rows.retroPreview(txnId, categoryId)
+    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
 
     /** See [RowActions.addCategory]; the month, and so the chooser, is re-read after. */
     suspend fun addCategory(name: String, iconKey: String): Long? =

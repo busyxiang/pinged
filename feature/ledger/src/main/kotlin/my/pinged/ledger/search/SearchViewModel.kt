@@ -235,14 +235,19 @@ class SearchViewModel(app: Application, private val handle: SavedStateHandle) : 
     /** See [Transfers.cancelExport]: the export sheet's Cancel. */
     fun cancelExport() = Transfers.cancelExport()
 
-    fun readMonths(today: LocalDate = LocalDate.now()): Job = viewModelScope.launch {
-        CaptureStorage.guarded(
-            context,
-            what = "The months cannot be read",
-            unavailable = { _storageUnavailable.value = true },
-            damageStopsCapture = false,
-        ) {
-            _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today) }
+    fun readMonths(today: LocalDate = LocalDate.now()): Job {
+        // The last read's months and flags are not this opening's: the sheet
+        // draws its loading state until the re-read lands (#237).
+        _months.value = null
+        return viewModelScope.launch {
+            CaptureStorage.guarded(
+                context,
+                what = "The months cannot be read",
+                unavailable = { _storageUnavailable.value = true },
+                damageStopsCapture = false,
+            ) {
+                _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today) }
+            }
         }
     }
 

@@ -40,6 +40,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.EXPORT_EVERYTHING
@@ -144,6 +145,7 @@ fun SettingsScreen(
         val copyFirst = copyFirstFor(state.storage, onExport, onRescue)
         WipeSheet(
             counts = state.wipeCounts,
+            loaded = state.loaded,
             onConfirm = {
                 confirmingWipe = false
                 viewModel.deleteEverything()
@@ -481,7 +483,7 @@ internal fun SettingsRows(
         "Capture sources",
         // No placeholder when the count is unavailable (`SettingsState.sourcesOn`'s
         // KDoc): a blank value is honest, a substituted one is not.
-        value = state.sourcesOn?.let { "${grouped(it)} ON" },
+        value = state.read { state.sourcesOn?.let { "${grouped(it)} ON" } },
         onClick = onOpenSources,
     )
     // Spec 10.2's daily check reaches a user only through a notification, and
@@ -507,7 +509,7 @@ internal fun SettingsRows(
     SettingsRow(
         UNREAD_ROW,
         caption = "HELPS ADD SUPPORT FOR NEW BANKS",
-        value = state.unreadCount?.let { grouped(it) },
+        value = state.read { state.unreadCount?.let { grouped(it) } },
         valueTint = if ((state.unreadCount ?: 0) > 0) Stamp else Muted,
         onClick = onOpenUnread,
         divider = corrections != null,
@@ -527,14 +529,14 @@ internal fun SettingsRows(
     // see `SettingsState.learnedCount`. Blank unless both read.
     SettingsRow(
         TAUGHT,
-        value = state.learnedCount?.let { learned -> state.ignoredCount?.let { grouped(learned + it) } },
+        value = state.read { state.learnedCount?.let { learned -> state.ignoredCount?.let { grouped(learned + it) } } },
         onClick = onOpenLearned,
     )
     // The artboard's "Categories · 16": every row the list shows, Uncategorized
     // included. The section's last row, so no divider.
     SettingsRow(
         CATEGORIES,
-        value = state.categoryCount?.let { grouped(it) },
+        value = state.read { state.categoryCount?.let { grouped(it) } },
         onClick = onOpenCategories,
         divider = false,
     )
@@ -545,7 +547,7 @@ internal fun SettingsRows(
         SettingsRow(
             label = EXPORT_EVERYTHING,
             caption = "EVERY TRANSACTION AND ITS NOTIFICATION",
-            value = state.lastExportAt?.let { ago(it, never = "NEVER") },
+            value = state.read { state.lastExportAt?.let { ago(it, never = "NEVER") } },
             onClick = onExport,
             enabled = idle,
         )
@@ -560,7 +562,7 @@ internal fun SettingsRows(
         SettingsRow(
             label = "Check my data",
             caption = checkResult(state),
-            value = state.lastCheckAt?.let { ago(it, never = "NEVER CHECKED") },
+            value = state.read { state.lastCheckAt?.let { ago(it, never = "NEVER CHECKED") } },
             onClick = onCheck,
             enabled = idle,
             mark = Mark.NONE,
@@ -803,6 +805,14 @@ private val Value = MonoLabel.copy(fontSize = 11.sp, letterSpacing = 0.sp)
  *   below it to separate from.
  * @param enabled false draws the row [Muted] and ignores taps.
  */
+/**
+ * [value] once this screen's first read has landed, and the loading boards'
+ * dash before it (#237): until then every field holds [SettingsState]'s
+ * default, and a default drawn reads as a fact -- `0L` as "NEVER".
+ */
+private inline fun SettingsState.read(value: () -> String?): String? =
+    if (loaded) value() else NOT_READ_YET
+
 @Composable
 private fun SettingsRow(
     label: String,

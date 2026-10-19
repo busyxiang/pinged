@@ -1,6 +1,8 @@
 package my.pinged.ledger.settings
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
+import my.pinged.ui.theme.NOT_READ_YET
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.foundation.layout.Column
@@ -55,6 +57,25 @@ class SettingsScreenTest {
         compose.onNodeWithText("Check my data").assertIsDisplayed()
         compose.onNodeWithText("NEVER").assertDoesNotExist()
         compose.onNodeWithText("NEVER CHECKED").assertDoesNotExist()
+    }
+
+    /**
+     * #237: before the first read lands the two times are not known, and the
+     * rows say so with the loading boards' dash rather than "NEVER", which a
+     * user who exported yesterday would take for an answer.
+     */
+    @Test fun beforeTheReadLandsNoTimeIsClaimed() {
+        compose.setContent {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SettingsRows(
+                    state = SettingsState(),
+                    onOpenSources = {}, onOpenCorrections = {}, onOpenLearned = {}, onOpenCategories = {}, onExport = {}, onRestore = {}, onCheck = {}, onDelete = {},
+                )
+            }
+        }
+        compose.onNodeWithText("NEVER", substring = true).assertDoesNotExist()
+        compose.onNode(hasText("Export everything") and hasText(NOT_READ_YET)).assertExists()
+        compose.onNode(hasText("Check my data") and hasText(NOT_READ_YET)).assertExists()
     }
 
     @Test fun aKeylessLedgerOffersNeitherExportNorCheck() {

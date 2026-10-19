@@ -90,6 +90,21 @@ class ManualEditViewModelTest {
         )
     }
 
+    /**
+     * #237: until the row is read the draft is the empty default, and the
+     * state says so, so the screen does not draw it as the payment.
+     */
+    @Test fun aCorrectionIsReadingUntilItsRowIsRead() = runBlocking {
+        val dao = context.freshLedger()
+        val id = dao.insert(manual(amountSen = 1_250L, occurredAt = System.currentTimeMillis() - MINUTE))
+        val vm = ManualEntryViewModel(context.applicationContext as Application, SavedStateHandle(), EditTarget(id, dao.byId(id)!!.createdAt))
+            .also(viewModels::add)
+
+        assertEquals("A correction not read yet was not marked as reading", true, vm.state.value.reading)
+        val read = withTimeout(TIMEOUT) { vm.state.first { it.loaded != null } }
+        assertEquals("A correction read was still marked as reading", false, read.reading)
+    }
+
     @Test fun deletingAnEntryAlreadyGoneClosesTheScreen() = runBlocking {
         val dao = context.freshLedger()
         val id = dao.insert(manual(amountSen = 1_250L, occurredAt = System.currentTimeMillis() - MINUTE))

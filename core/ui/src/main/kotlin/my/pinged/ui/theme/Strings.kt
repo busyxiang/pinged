@@ -27,3 +27,11 @@ const val RESCUE: String = "Rescue what can still be read"
 
 /** The settings row that writes a backup, and the backup nudge's action; see [RESCUE]. */
 const val EXPORT_EVERYTHING: String = "Export everything"
+
+/**
+ * A value not read yet: the em-dash `design/Loading*.dc.html` draw in its
+ * place. Never 0, NEVER or NONE, which a reader takes for an answer (#237).
+ * Here for [CANNOT_READ_YOUR_DATA]'s reason, and an escape because source
+ * files here are ASCII.
+ */
+const val NOT_READ_YET: String = "\u2014"
