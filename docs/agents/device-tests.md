@@ -1,0 +1,77 @@
+# Device tests
+
+Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
+JVM module and has no instrumented source set, so anything device-specific is
+tested from `:feature:capture`.
+
+## The lease
+
+Sessions in other worktrees share the one emulator and install the same
+applicationId, so an unleased run lands in the middle of theirs.
+`.claude/bin/emu` holds a lock for the command, boots the emulator if it is
+down, and stops one it booted after 15 idle minutes (it holds 5G). A
+PreToolUse hook refuses `adb` and connected, install or uninstall tasks
+outside it. A lease waits up to 30 minutes for the one before it, longer than
+the Bash timeout, so run every `emu` command with `run_in_background`;
+`emu --status` names the holder.
+
+A lease that holds the emulator for 20 minutes is stopped, its command's
+whole process group with it, and `emu` exits 124; `--max-hold SECONDS` is for
+the rare run that needs longer. At the start and end of every lease `emu`
+kills shell-user processes left orphaned on the device.
+
+A lease's command can be stopped part-way and run again from the start: the
+user can put a waiter first, and the holder then makes way and reruns after
+it, as the same process. So a lease's command must be safe to run twice; one
+that is not leaves its own state behind it, not only the device's.
+
+## Running the least
+
+Every minute a session holds the emulator, the others wait, so run the least
+that answers the question. While iterating, run the one class:
+`-Pandroid.testInstrumentationRunnerArguments.class=<fully qualified name>`.
+Gradle's configuration cache can reuse the previous filter, so pass
+`--no-configuration-cache` whenever the filter changes. A comma list in
+`class=` runs only its first class; for several, use
+`-Pandroid.testInstrumentationRunnerArguments.tests_regex='.*(A|B|C).*'`.
+A filter that ran too little looks like a pass: check the result XML's
+`classname`s.
+
+Before calling work done, run the suites the change can reach, which is what
+CI's emulator job runs on a pull request into `main` that is not a draft:
+
+    .claude/bin/emu -- ./gradlew $({ git diff --name-only $(git merge-base main HEAD); git ls-files --others --exclude-standard; } | python3 .github/scripts/affected_suites.py)
+
+The diff includes uncommitted and untracked files: a branch with no commits
+yet has an empty committed diff, and an empty diff selects every suite.
+An empty selection is the opposite: no suite can be reached, and the bare
+`./gradlew` only prints help.
+The whole `connectedDebugAndroidTest` is for when the selection rules
+themselves are in doubt; main's push runs every suite regardless.
+A local run skips `:core:data`'s `@Measurement` tests, which log a figure and
+assert nothing; CI runs them, and `CI=true` before `./gradlew` runs them here.
+
+## Loops
+
+A loop that repeats a test, to reproduce a flake or count its rate, takes one
+lease per iteration: the others queue behind a lease for as long as it lasts.
+Lease each run and let the loop wait between them:
+
+    for i in $(seq 10); do .claude/bin/emu -- ./gradlew <task> <filter> || fails=$((fails + 1)); done
+
+An `emu` inside a lease's command waits for that same lease and never gets
+it, so the loop goes outside `emu`, never inside it.
+
+A loop backgrounded through `adb shell` keeps `adb shell` from returning,
+redirected or not, and its lease hangs until `--max-hold` stops it. Run the
+loop on the host.
+
+## CI's screen
+
+CI's emulator screen is shorter than a dev one. A tap in an instrumented test
+uses `performScrollTo()` first, or a row pushed off the screen is missed on
+CI only. `performScrollTo()` cannot reach a row of a lazy list that was never
+composed: scroll the list itself first, with `performScrollToKey` or
+`performScrollToNode`. Before calling an instrumented test done, run it at
+CI's size too, with `emu --ci-size`: it sets 320x640 at density 160 and
+resets both when the command ends, fails or is killed.
