@@ -5,6 +5,42 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.11.0](https://github.com/busyxiang/pinged/compare/v0.10.0...v0.11.0) (2026-10-19)
+
+
+### Features
+
+* reflow Licences, fit Search's chips, check-mark sheets, show reach on open, drop Review's table ([#277](https://github.com/busyxiang/pinged/issues/277)) ([8eedfea](https://github.com/busyxiang/pinged/commit/8eedfea9ad1acb4e550cbae68b9f7825ac24b626)), closes [#274](https://github.com/busyxiang/pinged/issues/274)
+* scroll Spending's summary away and carry the total in the TopBar ([#253](https://github.com/busyxiang/pinged/issues/253)) ([#269](https://github.com/busyxiang/pinged/issues/269)) ([ed7f257](https://github.com/busyxiang/pinged/commit/ed7f257d7eefd15cfe42898f3ee2a7a967d33526))
+* show the backup reminder as one line on Spending only ([#252](https://github.com/busyxiang/pinged/issues/252)) ([#270](https://github.com/busyxiang/pinged/issues/270)) ([23e0602](https://github.com/busyxiang/pinged/commit/23e0602b46a5aa492977156b65dcf7ed352331d7))
+* take Uncategorized out of Spending's top three and sort it from N TO SORT ([#273](https://github.com/busyxiang/pinged/issues/273)) ([#278](https://github.com/busyxiang/pinged/issues/278)) ([db42ed0](https://github.com/busyxiang/pinged/commit/db42ed0b73517713d3c3c0c5e733fb1f953964cf))
+
+
+### Bug Fixes
+
+* build Settings to its redrawn artboard, with Licences in the footer ([#230](https://github.com/busyxiang/pinged/issues/230)) ([#261](https://github.com/busyxiang/pinged/issues/261)) ([333c642](https://github.com/busyxiang/pinged/commit/333c6426aae7079154cdb2847eb417e1bd9792d1))
+* build the merchant sheet to its artboard, choosing before merging ([#231](https://github.com/busyxiang/pinged/issues/231)) ([#262](https://github.com/busyxiang/pinged/issues/262)) ([c58224a](https://github.com/busyxiang/pinged/commit/c58224a46a024c3eac0d88995b10b58b69564a96))
+* centre each Charts grid square's accessibility bounds on the square ([#240](https://github.com/busyxiang/pinged/issues/240)) ([dc6b009](https://github.com/busyxiang/pinged/commit/dc6b0093185f01013b1bdc000295e37d7ce458fb))
+* count a refund in Search's header so it matches the export button ([#244](https://github.com/busyxiang/pinged/issues/244)) ([0201664](https://github.com/busyxiang/pinged/commit/0201664288cb76ea6cba71fbc2b88f873a0f7ac9)), closes [#216](https://github.com/busyxiang/pinged/issues/216)
+* create the alerts channel before opening its settings page ([#247](https://github.com/busyxiang/pinged/issues/247)) ([1456722](https://github.com/busyxiang/pinged/commit/145672208333119825190df2a26d7729862028b9))
+* draw a running month's Charts as the October-so-far artboard ([#232](https://github.com/busyxiang/pinged/issues/232)) ([#263](https://github.com/busyxiang/pinged/issues/263)) ([dfa438f](https://github.com/busyxiang/pinged/commit/dfa438f9ccdd36dc9bc1e76503ac482215215df5))
+* draw a value not read yet as a dash, and a failed count as unknown ([#237](https://github.com/busyxiang/pinged/issues/237)) ([#264](https://github.com/busyxiang/pinged/issues/264)) ([2719884](https://github.com/busyxiang/pinged/commit/2719884f9b1c616b6ea62ba55b22c210ceda7677))
+* draw Detail for a left-out row as its artboard ([#229](https://github.com/busyxiang/pinged/issues/229)) ([#257](https://github.com/busyxiang/pinged/issues/257)) ([a735df6](https://github.com/busyxiang/pinged/commit/a735df69f6f199ab8466397599c7fd9687b6f384))
+* draw the drifted shared controls as the rest of the app does ([#220](https://github.com/busyxiang/pinged/issues/220)) ([#266](https://github.com/busyxiang/pinged/issues/266)) ([1042d31](https://github.com/busyxiang/pinged/commit/1042d315108928d37f80033b41dfa1ff5a890164))
+* draw the heard chip, Charts hero, Detail rows and CASH band as their artboards ([#221](https://github.com/busyxiang/pinged/issues/221)) ([#251](https://github.com/busyxiang/pinged/issues/251)) ([39d2589](https://github.com/busyxiang/pinged/commit/39d25897bad9e87c28e5485c3642178fee279189))
+* fit Onboarding's footer, wrap Cash entry's chips behind More, and close the gap above Teach's save bar ([#276](https://github.com/busyxiang/pinged/issues/276)) ([f137815](https://github.com/busyxiang/pinged/commit/f137815be4ca1c30a23dce8ffc201e87d7144b99))
+* give the Day screen its steps, split total and capture line ([#228](https://github.com/busyxiang/pinged/issues/228)) ([#258](https://github.com/busyxiang/pinged/issues/258)) ([07b7b38](https://github.com/busyxiang/pinged/commit/07b7b38dd767acaa11ccc5f41f12963dc523a066))
+* list categories most used first, the empty ones folded, as their artboard ([#256](https://github.com/busyxiang/pinged/issues/256)) ([8e3fe4a](https://github.com/busyxiang/pinged/commit/8e3fe4aeb2691a0ac8f1af27d7ebd111ed5eaf86))
+* open Jump to fully expanded when system animations are off ([#241](https://github.com/busyxiang/pinged/issues/241)) ([4555753](https://github.com/busyxiang/pinged/commit/4555753cf237b5ce00cfa83f263960001d444fe0)), closes [#213](https://github.com/busyxiang/pinged/issues/213)
+* read words typed in search's first 300ms instead of dropping them ([#246](https://github.com/busyxiang/pinged/issues/246)) ([7ae605a](https://github.com/busyxiang/pinged/commit/7ae605a037d009630ce1e8b536745b0d68f3fc44))
+* refuse a queued delete or restore once its screen has begun going away ([#260](https://github.com/busyxiang/pinged/issues/260)) ([e47f39a](https://github.com/busyxiang/pinged/commit/e47f39adbc4a30d5946b3d82a49557917bdc246e)), closes [#259](https://github.com/busyxiang/pinged/issues/259)
+* say a left-out row was left out by the user, not USER ([#242](https://github.com/busyxiang/pinged/issues/242)) ([1f42d6d](https://github.com/busyxiang/pinged/commit/1f42d6d50533c8c8316f02611a089c7c73dd06e2)), closes [#214](https://github.com/busyxiang/pinged/issues/214)
+* say how many held payments are in the month Spending shows ([#243](https://github.com/busyxiang/pinged/issues/243)) ([4b54a61](https://github.com/busyxiang/pinged/commit/4b54a6114db35b68697529146b69850a395567dd)), closes [#215](https://github.com/busyxiang/pinged/issues/215)
+* scroll the merchant search to the top so its results show above the keyboard ([#268](https://github.com/busyxiang/pinged/issues/268)) ([2a46ab6](https://github.com/busyxiang/pinged/commit/2a46ab6946c630a1faf0c732ccfe87bacfbc52ea))
+* settle a restore that fails at once off the main thread ([#271](https://github.com/busyxiang/pinged/issues/271)) ([08ccbcc](https://github.com/busyxiang/pinged/commit/08ccbcc1400e2118158f59276a20623b247d3be2))
+* stop holding recurring identical payments as duplicates ([#235](https://github.com/busyxiang/pinged/issues/235)) ([78bc0e0](https://github.com/busyxiang/pinged/commit/78bc0e018c64872d23867877d81b558bea020706))
+* stop offering System UI as a capture source ([#248](https://github.com/busyxiang/pinged/issues/248)) ([af61698](https://github.com/busyxiang/pinged/commit/af616982d9b74ff40bb8ea9d6625a087d5fcb77b)), closes [#218](https://github.com/busyxiang/pinged/issues/218)
+
 ## [0.10.0](https://github.com/busyxiang/pinged/compare/v0.9.0...v0.10.0) (2026-10-16)
 
 
