@@ -41,14 +41,14 @@ class NotInTotalRenderTest {
             listOf(
                 KeptOut("Transfers, left out", "450.00"),
                 KeptOut("You left out", "3,880.00"),
-                KeptOut("7 awaiting review", "341.90"),
+                KeptOut("7 awaiting review", "341.90", opensReview = true),
             ),
         )
         compose.onNodeWithTag(BLOCK).captureRoboImage(golden("not_in_total_three_lines"))
     }
 
     @Test fun oneLine() {
-        draw(listOf(KeptOut("1 awaiting review", "18.00")))
+        draw(listOf(KeptOut("1 awaiting review", "18.00", opensReview = true)))
         compose.onNodeWithTag(BLOCK).captureRoboImage(golden("not_in_total_one_line"))
     }
 

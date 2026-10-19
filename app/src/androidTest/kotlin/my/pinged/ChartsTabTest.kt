@@ -73,6 +73,7 @@ class ChartsTabTest {
         waitForIdle()
         fun count(text: String) = onAllNodesWithText(text).fetchSemanticsNodes().size
         val chartsOnly = count("TOTAL SPENT") + count("NET SPENT") +
+            count("SPENT SO FAR") + count("NET SPENT SO FAR") +
             count("Charts begin on the first day Pinged sees a notification.")
         return count(month) == 1 && chartsOnly == 1
     }

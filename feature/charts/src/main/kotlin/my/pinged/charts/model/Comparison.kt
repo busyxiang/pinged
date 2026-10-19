@@ -33,6 +33,13 @@ fun comparableMonth(month: YearMonth, historyStart: LocalDate?, today: LocalDate
  * untrusted month is never comparable, so this line and the hero's
  * `MAY BE INCOMPLETE` cannot both be drawn.
  *
+ * **A running month** (today's) is not comparable yet, and says when it will
+ * be, `COMPARED WITH SEPTEMBER ONCE OCTOBER ENDS` (`ChartsMonth.dc.html`), so
+ * the missing line reads as deliberate. Only when that is a promise it can
+ * keep: the month before is comparable and this one has no not-captured day
+ * so far. A gap already in it means it never will be, and the hero's
+ * `MAY BE INCOMPLETE` says why.
+ *
  * **The wording** compares the two signed nets, the figures each month's hero
  * shows. The difference is unsigned and the direction word carries the sign;
  * the other month's figure keeps its sign. No percentage: a zero or negative
@@ -50,12 +57,19 @@ fun comparison(
     previousNetSen: Long,
 ): String? {
     val before = month.minusMonths(1)
-    if (!comparableMonth(month, historyStart, today, captured)) return null
     if (!comparableMonth(before, historyStart, today, captured)) return null
-    val previous = monthName(before).substringBefore(' ') + "'S " + ringgit(previousNetSen)
+    if (month == YearMonth.from(today)) {
+        if (notCapturedDays(month, historyStart, today, captured) != 0) return null
+        return "COMPARED WITH ${shortName(before)} ONCE ${shortName(month)} ENDS"
+    }
+    if (!comparableMonth(month, historyStart, today, captured)) return null
+    val previous = shortName(before) + "'S " + ringgit(previousNetSen)
     return when {
         netSen > previousNetSen -> "${ringgit(abs(netSen - previousNetSen))} ABOVE $previous"
         netSen < previousNetSen -> "${ringgit(abs(netSen - previousNetSen))} BELOW $previous"
         else -> "SAME AS $previous"
     }
 }
+
+/** `SEPTEMBER`, the month's name without its year. */
+private fun shortName(month: YearMonth): String = monthName(month).substringBefore(' ')

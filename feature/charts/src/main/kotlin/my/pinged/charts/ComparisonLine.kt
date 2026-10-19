@@ -10,10 +10,11 @@ import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 
 /**
- * The comparison line under the hero (#81, Comparison line; #67). A held-back
- * line is null and draws nothing, with no space kept for it: no reason text,
- * since the incomplete line already explains an untrusted month and a running
- * or first month needs none.
+ * The comparison line under the hero (#81, Comparison line; #67), or in a
+ * running month the line saying when it will come. A held-back line is null
+ * and draws nothing, with no space kept for it: no reason text, since the
+ * incomplete line already explains an untrusted month and a first month needs
+ * none.
  */
 @Composable
 internal fun ComparisonLine(line: String?) {

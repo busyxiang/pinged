@@ -77,9 +77,23 @@ class ComparisonTest {
         assertEquals("RM70.00 BELOW SEPTEMBER'S RM50.00", line(netSen = -2_000L, previousNetSen = 5_000L))
     }
 
-    @Test fun aRunningMonthIsNotCompared() {
+    @Test fun aRunningMonthSaysWhenItWillBeCompared() {
         // The 31st itself: the month has not ended until it has.
-        assertNull(line(today = LocalDate.of(2026, 10, 31)))
+        assertEquals("COMPARED WITH SEPTEMBER ONCE OCTOBER ENDS", line(today = LocalDate.of(2026, 10, 31)))
+    }
+
+    @Test fun aRunningMonthWithAGapPromisesNothing() {
+        val today = LocalDate.of(2026, 10, 14)
+        assertNull(line(today = today, captured = capturedUpTo(today) - october.atDay(3)))
+    }
+
+    @Test fun aRunningMonthAfterAnIncompleteOnePromisesNothing() {
+        val today = LocalDate.of(2026, 10, 14)
+        assertNull(line(today = today, captured = capturedUpTo(today) - september.atDay(3)))
+    }
+
+    @Test fun aRunningMonthAfterTheHistoryStartsPromisesNothing() {
+        assertNull(line(today = LocalDate.of(2026, 10, 14), historyStart = september.atDay(2)))
     }
 
     @Test fun theMonthIsComparedOnTheDayAfterItEnds() {
