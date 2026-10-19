@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.ListenerStatus
 import my.pinged.data.Databases
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -100,11 +101,11 @@ class StorageUnavailableBannerTest {
     private fun report() = runBlocking { ListenerStatus.report(context) }.toString()
 
     /**
-     * [ComposeTestRule.waitUntil] wrapped so a failure is the assertion above
+     * [boundedWaitUntil] wrapped so a failure is the assertion above
      * it and its message, rather than a bare timeout from inside the rule.
      */
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =
-        runCatching { waitUntil(TIMEOUT) { condition() } }.isSuccess
+        runCatching { boundedWaitUntil(TIMEOUT) { condition() } }.isSuccess
 
     private fun ComposeTestRule.countOf(text: String, ignoreCase: Boolean = false): Int {
         waitForIdle()

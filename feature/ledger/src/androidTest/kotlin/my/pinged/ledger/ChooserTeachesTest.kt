@@ -45,6 +45,7 @@ import my.pinged.ledger.home.alwaysNote
 import my.pinged.ledger.home.conflictLine
 import my.pinged.ledger.home.fixLine
 import my.pinged.ledger.home.mergedRuleNote
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.parse.ExclusionReason
 import org.junit.After
@@ -244,7 +245,7 @@ class ChooserTeachesTest {
 
         compose.onNode(isToggleable()).performClick()
         compose.onNode(isToggleable()).assertIsOff()
-        compose.waitUntil(TIMEOUT) { compose.countOf(hasText(fixLine(5))) == 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.countOf(hasText(fixLine(5))) == 0 }
         compose.onNode(isToggleable()).performClick()
         compose.waitForText(fixLine(5))
     }
@@ -389,7 +390,7 @@ class ChooserTeachesTest {
         compose.onNode(isToggleable()).performClick()
         save()
         compose.waitForText("Transport · $SOURCE_LABEL")
-        compose.waitUntil(TIMEOUT) { Databases.merchantRuleDao(context).countAll() == 1 }
+        compose.boundedWaitUntil(TIMEOUT) { Databases.merchantRuleDao(context).countAll() == 1 }
 
         compose.onNodeWithText("Transport · $SOURCE_LABEL").performClick()
         compose.waitForSheet()
@@ -518,7 +519,7 @@ class ChooserTeachesTest {
 
         compose.waitForText(fixLine(2))
         save()
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             Databases.txnDao(context).recent(10).all { it.categoryId == categoryId(FOOD) }
         }
 
@@ -543,7 +544,7 @@ class ChooserTeachesTest {
 
         compose.waitForText("You've set 1 of these to Transport yourself. The rule applies to new payments only.")
         save()
-        compose.waitUntil(TIMEOUT) { Databases.merchantRuleDao(context).countAll() == 1 }
+        compose.boundedWaitUntil(TIMEOUT) { Databases.merchantRuleDao(context).countAll() == 1 }
 
         val rows = Databases.txnDao(context).recent(10)
         assertEquals("Only the tapped row should have left Uncategorized", 1, rows.count { it.categoryId == categoryId(FOOD) })
@@ -650,7 +651,7 @@ class ChooserTeachesTest {
                 )
             }
         }
-        compose.waitUntil(TIMEOUT) { loaded.get() > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { loaded.get() > 0 }
         runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(YearMonth.now()).join() } }
         return viewModel
     }
@@ -660,7 +661,7 @@ class ChooserTeachesTest {
     private fun ComposeContentTestRule.waitForSheet() = waitForText(PICKER_HEADING)
 
     private fun ComposeContentTestRule.waitForText(text: String) {
-        val appeared = runCatching { waitUntil(TIMEOUT) { onAllNodesWithTextSafely(text) > 0 } }.isSuccess
+        val appeared = runCatching { boundedWaitUntil(TIMEOUT) { onAllNodesWithTextSafely(text) > 0 } }.isSuccess
         assertTrue("Waited ${TIMEOUT}ms for '$text'", appeared)
     }
 

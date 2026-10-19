@@ -39,6 +39,7 @@ import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.home.SAVE_NAME
 import my.pinged.ledger.ledgerTxn
 import my.pinged.parse.ExclusionReason
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -251,7 +252,7 @@ class DayScreenTest {
     private fun count(text: String): Int = compose.onAllNodes(hasText(text)).fetchSemanticsNodes().size
 
     private fun waitFor(text: String, why: String) {
-        val appeared = runCatching { compose.waitUntil(TIMEOUT) { count(text) > 0 } }.isSuccess
+        val appeared = runCatching { compose.boundedWaitUntil(TIMEOUT) { count(text) > 0 } }.isSuccess
         assertTrue("$why -- waited ${TIMEOUT}ms for '$text'", appeared)
     }
 

@@ -21,6 +21,7 @@ import my.pinged.ledger.home.CATEGORY_CHIP
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.PICKER_HEADING
 import my.pinged.ledger.ledgerTxn
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.Separator
 import org.junit.After
@@ -111,7 +112,7 @@ class ManualRowTapTest {
     }
 
     private fun waitFor(text: String) {
-        val appeared = runCatching { compose.waitUntil(TIMEOUT) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() } }.isSuccess
+        val appeared = runCatching { compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() } }.isSuccess
         assertTrue("Waited ${TIMEOUT}ms for '$text'", appeared)
     }
 

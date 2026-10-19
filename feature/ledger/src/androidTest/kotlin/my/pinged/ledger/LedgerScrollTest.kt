@@ -29,6 +29,7 @@ import my.pinged.ledger.home.LedgerScreenContent
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.home.PICKER_HEADING
 import my.pinged.ledger.home.SAVE_LABEL
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -78,18 +79,18 @@ class LedgerScrollTest {
 
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         val opened = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(PICKER_HEADING) > 0 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(PICKER_HEADING) > 0 }
         }.isSuccess
         assertTrue("The chooser did not open", opened)
         compose.onNodeWithText("Groceries").performClick()
         compose.onNodeWithText(SAVE_LABEL).performClick()
-        val sent = runCatching { compose.waitUntil(TIMEOUT) { saved.get() != null } }.isSuccess
+        val sent = runCatching { compose.boundedWaitUntil(TIMEOUT) { saved.get() != null } }.isSuccess
         assertTrue("Save reported no assignment", sent)
         runBlocking { withTimeout(TIMEOUT) { saved.get()!!.join() } }
         assertEquals(categoryId("Groceries"), dao.byId(ids[0])?.categoryId)
 
         val shown = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("Groceries · $SOURCE_LABEL") > 0 }
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("Groceries · $SOURCE_LABEL") > 0 }
         }.isSuccess
         assertTrue("The recategorized row is no longer composed: the list moved off it", shown)
         compose.onNodeWithText(shop(0)).assertIsDisplayed()
@@ -161,7 +162,7 @@ class LedgerScrollTest {
                 )
             }
         }
-        compose.waitUntil(TIMEOUT) { loaded.get() > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { loaded.get() > 0 }
         runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(YearMonth.now()).join() } }
     }
 

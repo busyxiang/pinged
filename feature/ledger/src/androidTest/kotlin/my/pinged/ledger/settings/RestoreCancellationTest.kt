@@ -12,6 +12,7 @@ import java.io.OutputStream
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Before
 import org.junit.Rule
@@ -56,7 +57,7 @@ class RestoreCancellationTest {
                 )
             }
         }
-        compose.waitUntil(TIMEOUT) { viewModel.state.value.loaded }
+        compose.boundedWaitUntil(TIMEOUT) { viewModel.state.value.loaded }
 
         compose.onNodeWithText("Replace everything from a backup").performClick()
         compose.onNodeWithText("Continue").performClick()
@@ -64,7 +65,7 @@ class RestoreCancellationTest {
         // A failure on the same holder, from an entirely different action,
         // landing on the one `TransferJob` field the two share.
         runBlocking { viewModel.exportTo(FailingSink()).join() }
-        compose.waitUntil(TIMEOUT) { viewModel.state.value.job is TransferJob.Failed }
+        compose.boundedWaitUntil(TIMEOUT) { viewModel.state.value.job is TransferJob.Failed }
 
         compose.onNodeWithText("RESTORE DID NOT FINISH").assertDoesNotExist()
         compose.onNodeWithText("YOUR LEDGER IS GONE").assertDoesNotExist()

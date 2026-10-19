@@ -25,6 +25,7 @@ import my.pinged.ledger.sources.BACK_DESCRIPTION
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import java.time.LocalDate
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -78,11 +79,11 @@ class BackTransitionTest {
      */
     private fun openToday() {
         compose.onNodeWithText("CHARTS").performClick()
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithTag(TODAY_TAG).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag(TODAY_TAG).performScrollTo().performClick()
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithContentDescription(DAY_BACK).fetchSemanticsNodes().isNotEmpty()
         }
     }

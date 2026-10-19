@@ -38,6 +38,7 @@ import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.home.TeachOffer
 import my.pinged.ledger.home.alwaysLabel
 import my.pinged.ledger.home.fixLine
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CLOSE
@@ -150,7 +151,7 @@ class ChooserArtboardTest {
 
     @Test fun theFixLineIsInStamp() {
         chooser(movable = 10)
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText(fixLine(10))).fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodes(hasText(fixLine(10))).fetchSemanticsNodes().isNotEmpty() }
         assertEquals("The fix line's colour", Stamp, styleOf(fixLine(10)).color)
     }
 

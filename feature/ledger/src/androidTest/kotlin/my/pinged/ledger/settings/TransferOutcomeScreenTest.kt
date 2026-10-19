@@ -26,6 +26,7 @@ import my.pinged.data.IntegrityStore
 import my.pinged.ledger.transfer.exportBytes
 import my.pinged.ledger.transfer.freshDatabase
 import my.pinged.ledger.transfer.seedOneOfEverything
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -246,7 +247,7 @@ class TransferOutcomeScreenTest {
 
     /** Whether [text] is drawn within [TIMEOUT], as an answer rather than a timeout. */
     private fun appears(text: String, substring: Boolean = false): Boolean = runCatching {
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
         }
     }.isSuccess
@@ -265,7 +266,7 @@ class TransferOutcomeScreenTest {
                 )
             }
         }
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithText("RESTORE DID NOT FINISH").fetchSemanticsNodes().isNotEmpty()
         }
     }

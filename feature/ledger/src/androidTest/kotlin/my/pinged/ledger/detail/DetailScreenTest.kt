@@ -41,6 +41,7 @@ import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.home.REMOVE_HEADING
 import my.pinged.ledger.ledgerTxn
 import my.pinged.parse.ExclusionReason
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -142,7 +143,7 @@ class DetailScreenTest {
 
         compose.onNodeWithText(REMOVE_CONFIRM).performClick()
 
-        compose.waitUntil(TIMEOUT) { left == 1 }
+        compose.boundedWaitUntil(TIMEOUT) { left == 1 }
         assertEquals(TxnState.REJECTED, dao.byId(id)?.state)
         assertTrue("The capture is the evidence and must survive", dao.byId(id)?.rawCaptureId != null)
     }
@@ -160,7 +161,7 @@ class DetailScreenTest {
         assertEquals(1, dao.removeCaptured(id, 2_000L))
         compose.onNodeWithText(REMOVE_CONFIRM).performClick()
 
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(DELETE).fetchSemanticsNodes().isEmpty() }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText(DELETE).fetchSemanticsNodes().isEmpty() }
         compose.waitForIdle()
         assertEquals("The screen left over a write that changed nothing", 0, left)
     }
@@ -177,7 +178,7 @@ class DetailScreenTest {
         compose.onNodeWithText(SAVE_LABEL).performClick()
 
         val groceries = Databases.categoryDao(context).all().single { it.name == "Groceries" }.id
-        compose.waitUntil(TIMEOUT) { dao.byId(id)?.categoryId == groceries }
+        compose.boundedWaitUntil(TIMEOUT) { dao.byId(id)?.categoryId == groceries }
         waitFor("Groceries")
     }
 
@@ -249,9 +250,9 @@ class DetailScreenTest {
         compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag(NOTE_FIELD))).performScrollTo().performTextInput("teh tarik with Aisyah")
         compose.onNodeWithText(SAVE_NOTE).performScrollTo().performClick()
 
-        compose.waitUntil(TIMEOUT) { dao.byId(id)?.note == "teh tarik with Aisyah" }
+        compose.boundedWaitUntil(TIMEOUT) { dao.byId(id)?.note == "teh tarik with Aisyah" }
         assertFalse(dao.byId(id)!!.userEdited)
-        compose.waitUntil(TIMEOUT) { compose.onAllNodesWithText(SAVE_NOTE).fetchSemanticsNodes().isEmpty() }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText(SAVE_NOTE).fetchSemanticsNodes().isEmpty() }
     }
 
     @Test fun theKeyboardsDoneSavesTheNote() {
@@ -264,7 +265,7 @@ class DetailScreenTest {
         field.performScrollTo().performTextInput("parking")
         field.performImeAction()
 
-        compose.waitUntil(TIMEOUT) { dao.byId(id)?.note == "parking" }
+        compose.boundedWaitUntil(TIMEOUT) { dao.byId(id)?.note == "parking" }
     }
 
     @Test fun aRowAnotherLedgerGaveTheSameIdReadsAsGone() {
@@ -333,7 +334,7 @@ class DetailScreenTest {
 
     private fun waitFor(text: String) {
         val appeared = runCatching {
-            compose.waitUntil(TIMEOUT) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
         }.isSuccess
         assertTrue("Waited ${TIMEOUT}ms for '$text'", appeared)
     }

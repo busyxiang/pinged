@@ -22,6 +22,7 @@ import my.pinged.ledger.sources.SourceRow
 import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesState
 import my.pinged.ledger.sources.SourcesViewModel
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -91,12 +92,12 @@ class SourcesAllowListTest {
         // The identifier is what is drawn: PackageManager cannot resolve a
         // label for this, and on API 30+ that is the expected case for
         // anything outside <queries> (spec 9.6).
-        compose.waitUntil(TIMEOUT) {
+        compose.boundedWaitUntil(TIMEOUT) {
             compose.onAllNodesWithTextSafely(pkg) > 0
         }
         compose.onNodeWithText(pkg).performClick()
 
-        compose.waitUntil(TIMEOUT) { dao.byPackage(pkg)?.enabled == true }
+        compose.boundedWaitUntil(TIMEOUT) { dao.byPackage(pkg)?.enabled == true }
 
         val row = requireNotNull(dao.byPackage(pkg))
         assertTrue("The row exists but the allow-list gate is still closed", row.enabled)

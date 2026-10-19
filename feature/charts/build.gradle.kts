@@ -32,6 +32,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // `boundedWaitUntil`, which every androidTest `waitUntil` goes through;
+    // :feature:ledger's build file includes the same directory.
+    sourceSets {
+        getByName("androidTest") { kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path) }
+    }
+
     testOptions {
         // The screenshots draw :core:ui's res/font files; without merged
         // resources Robolectric has no R.font to load.

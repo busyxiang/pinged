@@ -30,7 +30,11 @@ android {
     // androidTest, because Robolectric's drawing is not the device's.
     sourceSets {
         getByName("test") { kotlin.directories.add("src/sharedTest/kotlin") }
-        getByName("androidTest") { kotlin.directories.add("src/sharedTest/kotlin") }
+        getByName("androidTest") {
+            kotlin.directories.add("src/sharedTest/kotlin")
+            // `boundedWaitUntil`, which every androidTest `waitUntil` goes through.
+            kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path)
+        }
     }
 
     // R.raw for the licence texts and R.font for the theme.

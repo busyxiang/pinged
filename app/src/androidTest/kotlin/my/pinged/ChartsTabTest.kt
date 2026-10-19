@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.Databases
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -48,7 +49,7 @@ class ChartsTabTest {
 
         assertTrue(
             "The CHARTS tab did not open Charts on $thisMonth",
-            runCatching { compose.waitUntil(TIMEOUT) { compose.showsCharts(thisMonth) } }.isSuccess,
+            runCatching { compose.boundedWaitUntil(TIMEOUT) { compose.showsCharts(thisMonth) } }.isSuccess,
         )
         compose.onNodeWithText("CHARTS").assertIsSelected()
     }
@@ -56,13 +57,13 @@ class ChartsTabTest {
     @Test fun chartsIsStillShowingAfterTheActivityIsRebuilt() {
         Databases.reset()
         compose.onNodeWithText("CHARTS").performClick()
-        compose.waitUntil(TIMEOUT) { compose.showsCharts(thisMonth) }
+        compose.boundedWaitUntil(TIMEOUT) { compose.showsCharts(thisMonth) }
 
         compose.activityRule.scenario.recreate()
 
         assertTrue(
             "Charts did not come back after the Activity was rebuilt",
-            runCatching { compose.waitUntil(TIMEOUT) { compose.showsCharts(thisMonth) } }.isSuccess,
+            runCatching { compose.boundedWaitUntil(TIMEOUT) { compose.showsCharts(thisMonth) } }.isSuccess,
         )
         compose.onNodeWithText("CHARTS").assertIsSelected()
     }

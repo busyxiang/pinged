@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import my.pinged.capture.Graph
 import my.pinged.tracker.BuildConfig
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.Rule
 import org.junit.Test
 
@@ -39,7 +40,7 @@ class SettingsNavigationTest {
     @Test fun settingsReachesTheLearnedMerchantsList() {
         compose.onNodeWithText("SETTINGS").performClick()
         compose.onNodeWithText("Things you taught Pinged").performScrollTo().performClick()
-        compose.waitUntil(5_000) {
+        compose.boundedWaitUntil(5_000) {
             compose.onAllNodesWithText("Nothing taught yet", substring = true).fetchSemanticsNodes().isNotEmpty() ||
                 compose.onAllNodesWithText("PAYMENTS", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
@@ -50,7 +51,7 @@ class SettingsNavigationTest {
     @Test fun settingsReachesTheUnreadList() {
         compose.onNodeWithText("SETTINGS").performClick()
         compose.onNodeWithText("Notifications Pinged could not read").performScrollTo().performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Could not read").fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Could not read").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Replace everything from a backup").assertDoesNotExist()
     }
 

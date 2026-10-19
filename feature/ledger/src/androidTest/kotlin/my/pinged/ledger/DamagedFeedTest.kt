@@ -16,6 +16,7 @@ import my.pinged.data.IntegrityStore
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.settings.Transfers
+import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -131,7 +132,7 @@ class DamagedFeedTest {
     private fun count(text: String): Int = compose.onAllNodes(hasText(text)).fetchSemanticsNodes().size
 
     private fun waitFor(condition: () -> Boolean): Boolean =
-        runCatching { compose.waitUntil(10_000) { condition() } }.isSuccess
+        runCatching { compose.boundedWaitUntil(10_000) { condition() } }.isSuccess
 
     private companion object {
         const val BEFORE = "Kedai Before"
