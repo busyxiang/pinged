@@ -3,10 +3,16 @@ package my.pinged.ledger.day
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -34,6 +41,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.ledger.entry.EditTarget
@@ -48,6 +56,7 @@ import my.pinged.ledger.home.OPEN_REVIEW
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
@@ -57,8 +66,12 @@ import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.TornEdge
+import my.pinged.ui.theme.heroFigure
+import my.pinged.ui.CALENDAR
 import my.pinged.ui.weekdayDate
 import java.time.LocalDate
+import java.time.format.TextStyle as JavaTextStyle
 
 /**
  * One day's transactions, opened from a Charts grid square (#69, #81's `Day`
@@ -74,7 +87,8 @@ import java.time.LocalDate
  * row's id or from the heading's *M awaiting review* with the day's first
  * held row's; `:app` routes it, as it does Charts' `onDayClick`.
  * [onOpenEntry] is a manual entry's edit screen (#105), from its row's body,
- * and [onOpenDetail] a captured row's detail screen (#153).
+ * and [onOpenDetail] a captured row's detail screen (#153). [onStep] opens
+ * the day before or after (#228); null draws no steps.
  */
 @Composable
 fun DayScreen(
@@ -84,6 +98,7 @@ fun DayScreen(
     onOpenReview: (focus: Long?) -> Unit = {},
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
+    onStep: ((LocalDate) -> Unit)? = null,
 ) {
     val rewrites by Databases.rewrites.collectAsState()
     LifecycleResumeEffect(viewModel, rewrites) {
@@ -101,6 +116,7 @@ fun DayScreen(
         onOpenReview = onOpenReview,
         onOpenEntry = onOpenEntry,
         onOpenDetail = onOpenDetail,
+        onStep = onStep,
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
         addCategory = viewModel::addCategory,
@@ -135,6 +151,8 @@ internal fun DayScreenContent(
     merchantActions: MerchantActions = MerchantActions.None,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
+    onStep: ((LocalDate) -> Unit)? = null,
+    today: LocalDate = LocalDate.now(),
 ) {
     // Hoisted out of the list for the reason `LedgerScreenContent` gives.
     var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -142,8 +160,12 @@ internal fun DayScreenContent(
     val choices = remember(chooser) { chooser?.let(::chooserChoices).orEmpty() }
     val categoriesById = remember(chooser) { chooser?.categories.orEmpty().associateBy { it.id } }
 
-    LazyColumn(modifier.fillMaxSize().background(Paper)) {
-        item { Header(date, onBack) }
+    // Card under a read day, its summary items laying Paper over it, so the
+    // board's Card runs from the torn edge to the foot however few rows. A
+    // notice draws no torn edge, and so stays on Paper.
+    val ground = if (read != null && !storageUnavailable) Card else Paper
+    LazyColumn(modifier.fillMaxSize().background(ground)) {
+        item { Header(date, onBack, onStep, today) }
         when {
             // First: stale rows under a ledger that cannot be read would be a
             // claim about money no read supports.
@@ -155,8 +177,10 @@ internal fun DayScreenContent(
                 // the first of this day's cards.
                 val firstHeld = read.rows.firstOrNull { it.txn.state == TxnState.PENDING }?.txn?.id
                 item { Heading(read.heading) { onOpenReview(firstHeld) } }
+                item { TornEdge(Modifier.background(Paper).padding(top = 20.dp).testTag(DAY_TORN_EDGE)) }
+                item { Spacer(Modifier.height(14.dp)) }
                 items(read.rows, key = { "txn-" + it.txn.id }) { row ->
-                    Box(Modifier.background(Card)) {
+                    Box {
                         LedgerRow(
                             row = row,
                             categoriesById = categoriesById,
@@ -194,33 +218,79 @@ internal fun DayScreenContent(
     if (merchantSheet != null) MerchantSheet(merchantSheet, merchantActions)
 }
 
-/** The chevron and the date. */
+/**
+ * The chevron, the steps to the neighbouring days, and the date.
+ *
+ * The steps are [onStep]'s, and drawn only where it is given (#228): a 20dp
+ * grid cell missed costs one tap here rather than a trip back to Charts. No
+ * step leads past [today], into a day that has not happened.
+ */
 @Composable
-private fun Header(date: LocalDate, onBack: () -> Unit) {
-    Box(
-        Modifier
-            .padding(start = 8.dp, top = 12.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .clickable(role = Role.Button, onClick = onBack)
-            .size(44.dp)
-            .semantics { contentDescription = DAY_BACK },
-        contentAlignment = Alignment.Center,
-    ) {
-        Chevron(pointsRight = false, size = 20.dp, strokeWidth = 1.5.dp, tint = Ink)
+private fun Header(date: LocalDate, onBack: () -> Unit, onStep: ((LocalDate) -> Unit)?, today: LocalDate) {
+    Column(Modifier.fillMaxWidth().background(Paper)) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(2.dp))
+                    .clickable(role = Role.Button, onClick = onBack)
+                    .size(44.dp)
+                    .semantics { contentDescription = DAY_BACK },
+                contentAlignment = Alignment.Center,
+            ) {
+                Chevron(pointsRight = false, size = 20.dp, strokeWidth = 1.5.dp, tint = Ink)
+            }
+            Spacer(Modifier.weight(1f))
+            if (onStep != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Step(date.minusDays(1), forward = false, onStep)
+                    if (date < today) Step(date.plusDays(1), forward = true, onStep)
+                }
+            }
+        }
+        Text(
+            weekdayDate(date),
+            fontFamily = Display,
+            fontSize = 25.sp,
+            lineHeight = 1.15.em,
+            color = Ink,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+        )
     }
-    Text(
-        weekdayDate(date),
-        fontFamily = Display,
-        fontSize = 24.sp,
-        lineHeight = 28.sp,
-        color = Ink,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
-    )
 }
 
 /**
- * The total, the kept-out line and the not-watching line, each only when
- * [DayHeading] has it.
+ * One step: the board's 44dp outlined button naming [to] as `WED 24`, the
+ * chevron on the side it leads.
+ */
+@Composable
+private fun Step(to: LocalDate, forward: Boolean, onStep: (LocalDate) -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(2.dp))
+            .clickable(role = Role.Button, onClickLabel = "Open ${weekdayDate(to)}") { onStep(to) }
+            .heightIn(min = 44.dp)
+            .widthIn(min = 44.dp)
+            .border(1.dp, Border, RoundedCornerShape(2.dp))
+            .padding(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!forward) Chevron(pointsRight = false, size = 14.dp, strokeWidth = 1.05.dp, tint = Ink)
+        Text(stepLabel(to), style = MonoLabel, color = Ink)
+        if (forward) Chevron(pointsRight = true, size = 14.dp, strokeWidth = 1.05.dp, tint = Ink)
+    }
+}
+
+/** `WED 24`: a step's name for the day it opens. */
+internal fun stepLabel(date: LocalDate): String =
+    date.dayOfWeek.getDisplayName(JavaTextStyle.SHORT, CALENDAR).uppercase(CALENDAR) + " " + date.dayOfMonth
+
+/**
+ * The total, the capture line, the kept-out line and the not-watching line,
+ * each only when [DayHeading] has it.
  *
  * The kept-out line's *M awaiting review* is a link, in the accent, that
  * calls [onOpenReview] (§9.1); the rest of the line is not, so a tap on
@@ -228,8 +298,14 @@ private fun Header(date: LocalDate, onBack: () -> Unit) {
  */
 @Composable
 private fun Heading(heading: DayHeading, onOpenReview: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 16.dp)) {
-        heading.total?.let { Text(it, style = TotalStyle, color = Ink) }
+    Column(Modifier.fillMaxWidth().background(Paper).padding(start = 20.dp, end = 20.dp, top = 8.dp)) {
+        heading.total?.let { Text(heroFigure(it, senSize = 26.sp), style = TotalStyle, color = Ink) }
+        heading.captureLine?.let {
+            // MonoLabel in Muted, not the board's 10px in Faint: the type
+            // file's overrule for small print, at a size and contrast that
+            // can be read.
+            Text(it, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 6.dp))
+        }
         heading.keptOut?.let { line ->
             val review = heading.awaitingReview
             val text = buildAnnotatedString {
@@ -272,7 +348,11 @@ private fun Notice(text: String, color: androidx.compose.ui.graphics.Color) {
 internal const val NOT_WATCHING =
     "Pinged was not watching on this day. These are only the transactions it has from elsewhere."
 
+/** The torn edge between the summary and the rows, as a test finds it. */
+internal const val DAY_TORN_EDGE = "day-torn-edge"
+
 /** The chevron's description, and what a test finds it by. */
 const val DAY_BACK = "Back to Charts"
 
-private val TotalStyle = TextStyle(fontFamily = Display, fontSize = 36.sp, lineHeight = 40.sp)
+/** The board's 46px serif hero; [heroFigure] sets its sen at 26. */
+private val TotalStyle = TextStyle(fontFamily = Display, fontSize = 46.sp, lineHeight = 1.05.em)

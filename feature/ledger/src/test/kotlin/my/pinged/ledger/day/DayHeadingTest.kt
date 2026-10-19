@@ -81,7 +81,7 @@ class DayHeadingTest {
         val heading = dayHeading(0, emptyList(), emptyList(), notWatching = true)
         assertEquals(
             "A not-captured day with no rows drew a total, which reads as nothing spent",
-            DayHeading(total = null, keptOut = null, notWatching = true),
+            DayHeading(total = null, keptOut = null, notWatching = true, captureLine = null),
             heading,
         )
     }
@@ -89,6 +89,32 @@ class DayHeadingTest {
     @Test fun aDayNotWatchedWithRowsKeepsItsTotalAndTheLine() {
         val heading = dayHeading(1, listOf(CurrencyTotal(MYR, 1_200L)), emptyList(), notWatching = true)
         assertEquals(DayHeading(total = "RM12.00", keptOut = null, notWatching = true), heading)
+    }
+
+    @Test fun aWatchedDaysCaptureLineCountsItsPaymentsAndSaysSo() {
+        assertEquals(
+            "4 PAYMENTS · PINGED WAS WATCHING",
+            dayHeading(4, emptyList(), emptyList(), notWatching = false, payments = 4, watched = true).captureLine,
+        )
+        assertEquals(
+            "1 PAYMENT · PINGED WAS WATCHING",
+            dayHeading(1, emptyList(), emptyList(), notWatching = false, payments = 1, watched = true).captureLine,
+        )
+    }
+
+    @Test fun aDayNeitherWatchedNorMissedCountsAndClaimsNothingMore() {
+        assertEquals(
+            "A day before the history starts claimed Pinged was watching it",
+            "0 PAYMENTS",
+            dayHeading(0, emptyList(), emptyList(), notWatching = false, payments = 0, watched = false).captureLine,
+        )
+    }
+
+    @Test fun aDayNotWatchedHasNoCaptureLine() {
+        assertNull(
+            "A not-captured day counted its payments, as a watched quiet day does",
+            dayHeading(1, emptyList(), emptyList(), notWatching = true, payments = 1, watched = false).captureLine,
+        )
     }
 
     private companion object {

@@ -17,10 +17,12 @@ import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.RetroPreview
+import my.pinged.data.entity.TxnState
 import my.pinged.data.notCaptured
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.RowActions
+import my.pinged.ui.RINGGIT
 import java.time.LocalDate
 
 /**
@@ -101,6 +103,11 @@ class DayViewModel(app: Application, val date: LocalDate) : AndroidViewModel(app
                         counted = counted,
                         notInTotal = keptOut,
                         notWatching = notCaptured(date, historyStart, today, captured),
+                        // [dayTotals]' COUNTED, over the rows already read.
+                        payments = dayRows.count {
+                            it.txn.state == TxnState.COMMITTED && !it.txn.isExcluded && it.txn.currency == RINGGIT
+                        },
+                        watched = date in captured,
                     ),
                     chooser = chooser,
                 )

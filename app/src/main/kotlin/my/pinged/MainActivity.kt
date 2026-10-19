@@ -398,6 +398,9 @@ class MainActivity : ComponentActivity() {
                                         // Review is: back returns to this day.
                                         onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                        // In place of this day, so Back from
+                                        // any day stepped to is Charts.
+                                        onStep = { date -> tabs.replaceTop(Day(date.toString())) },
                                     )
                                 }
                                 entry<Detail> { key ->
