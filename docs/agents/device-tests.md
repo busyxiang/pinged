@@ -38,9 +38,10 @@ A filter that ran too little looks like a pass: check the result XML's
 `classname`s.
 
 Before calling work done, run the suites the change can reach, which is what
-CI's emulator job runs on a pull request into `main` that is not a draft:
+CI's emulator job runs on a pull request into `main` that is not a draft, at
+CI's 320x640 as that job does:
 
-    .claude/bin/emu -- ./gradlew $({ git diff --name-only $(git merge-base main HEAD); git ls-files --others --exclude-standard; } | python3 .github/scripts/affected_suites.py)
+    .claude/bin/emu --ci-size -- ./gradlew $({ git diff --name-only $(git merge-base main HEAD); git ls-files --others --exclude-standard; } | python3 .github/scripts/affected_suites.py)
 
 The diff includes uncommitted and untracked files: a branch with no commits
 yet has an empty committed diff, and an empty diff selects every suite.
@@ -72,6 +73,8 @@ CI's emulator screen is shorter than a dev one. A tap in an instrumented test
 uses `performScrollTo()` first, or a row pushed off the screen is missed on
 CI only. `performScrollTo()` cannot reach a row of a lazy list that was never
 composed: scroll the list itself first, with `performScrollToKey` or
-`performScrollToNode`. Before calling an instrumented test done, run it at
-CI's size too, with `emu --ci-size`: it sets 320x640 at density 160 and
-resets both when the command ends, fails or is killed.
+`performScrollToNode`. Every run that decides done is at CI's size, with
+`emu --ci-size`: it sets 320x640 at density 160 and resets both when the
+command ends, fails or is killed. That includes the suites a change reaches
+and not only the tests it adds: a change to what a screen draws breaks tests
+it never touched, and only on the short screen.
