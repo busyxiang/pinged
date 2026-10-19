@@ -41,9 +41,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -63,7 +67,7 @@ import my.pinged.ledger.home.RemoveSheet
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.UnderlinedField
 import my.pinged.ledger.home.chooserChoices
-import my.pinged.ledger.home.heroText
+import my.pinged.ledger.home.notSpendingBadge
 import my.pinged.parse.Direction
 import my.pinged.parse.ExclusionReason
 import my.pinged.ui.CALENDAR
@@ -74,17 +78,20 @@ import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Quote
 import my.pinged.ui.theme.Rule
+import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
+import my.pinged.ui.theme.heroFigure
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -97,6 +104,10 @@ import java.time.format.TextStyle as JavaTextStyle
  *
  * Captured rows only. A manual entry's tap is its edit screen (§9.4), and it
  * has no notification to quote or rule to name.
+ *
+ * An excluded row is drawn as `design/DetailExcluded.dc.html` (#229): the
+ * eyebrow, hero, badge, Category row and small print all say it is in no
+ * total. One the user left out offers Count as spending, filled, over Delete.
  *
  * Re-read on each foreground and when a delete or restore rewrites the
  * ledger, as the `Day` screen is. [onBack] is also where Delete this entry
@@ -255,12 +266,13 @@ private fun DetailBody(
 ) {
     val txn = row.row.txn
     val name = row.row.displayName
+    val excluded = txn.isExcluded
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp)) {
-        Text(if (txn.direction == Direction.REFUND) CAME_BACK else PAID, style = MonoLabel, color = Muted)
+        val paid = if (txn.direction == Direction.REFUND) CAME_BACK else PAID
+        Text(if (excluded) paid + Separator + NOT_COUNTED else paid, style = MonoLabel, color = Muted)
         Text(
-            heroText(money(txn.amountSen, txn.currency, symbol = true)),
+            detailHero(money(txn.amountSen, txn.currency, symbol = true), counted = !excluded),
             style = HeroSerif,
-            color = Ink,
             modifier = Modifier.padding(top = 4.dp).testTag(AMOUNT),
         )
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -287,13 +299,36 @@ private fun DetailBody(
                 ) { Pencil() }
             }
         }
+        if (excluded) {
+            // The board's 9.5px badge at MonoLabel's 12sp floor, and its text
+            // in Muted: Faint, the board's edge, is 3.55:1 on Paper, short of
+            // text's 4.5:1.
+            Text(
+                notSpendingBadge(txn.exclusionReason),
+                style = MonoLabel,
+                color = Muted,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .border(1.dp, Faint, RoundedCornerShape(2.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            )
+        }
     }
 
     TornEdge(Modifier.padding(top = 16.dp))
     Column(Modifier.fillMaxWidth().background(Card).padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Field(WHEN, whenOf(txn, zone))
-            Field(CATEGORY) { CategoryChip(row.categoryName ?: NO_CATEGORY, onCategorize.takeIf { canCategorize }) }
+            Field(CATEGORY) {
+                // The category an excluded row keeps is filed nowhere while it
+                // is out, so the row says that instead of naming it. Muted
+                // where the board has Faint, which is 3.12:1 on Card.
+                if (excluded) {
+                    Text(NOT_COUNTED_WHILE_LEFT_OUT, fontFamily = Body, fontSize = 12.5.sp, lineHeight = 16.sp, color = Muted)
+                } else {
+                    CategoryChip(row.categoryName ?: NO_CATEGORY, onCategorize.takeIf { canCategorize })
+                }
+            }
             Field(CAME_FROM, (txn.sourceLabel ?: txn.sourcePackage ?: "").uppercase(CALENDAR))
             // The raw acquirer string, only where it says something the name
             // above does not: KK MART under KK Mart says nothing.
@@ -321,6 +356,14 @@ private fun DetailBody(
         Text(provenance(row), style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 8.dp))
 
         NoteField(txn, actions.saveNote)
+        if (excluded) {
+            Text(
+                LEFT_OUT_SMALL_PRINT,
+                style = MonoLabel.copy(lineHeight = 18.sp),
+                color = Muted,
+                modifier = Modifier.padding(top = 14.dp),
+            )
+        }
     }
 
     Actions(txn, canCategorize, onCategorize, onRemove, actions)
@@ -359,8 +402,9 @@ private fun NoteField(txn: Txn, save: (String) -> Unit) {
 }
 
 /**
- * The band at the foot: Change category beside Not spending (or Count as
- * spending), and Delete this entry under them, each a full 44dp.
+ * The band at the foot: Change category beside Not spending, and Delete this
+ * entry under them, each a full 44dp. A row the user left out has Count as
+ * spending in their place, filled, as `design/DetailExcluded.dc.html` draws it.
  *
  * Each is offered only where it can write, as `LedgerRow` gates its own
  * controls: the chooser not on an excluded row, which is in no total;
@@ -378,12 +422,10 @@ private fun Actions(
     actions: DetailActions,
 ) {
     val committed = txn.state == TxnState.COMMITTED
+    val countBack = committed && txn.exclusionReason == ExclusionReason.USER
     val pair = buildList {
         if (canCategorize) add(CHANGE_CATEGORY to onCategorize)
-        when {
-            committed && txn.exclusionReason == ExclusionReason.USER -> add(COUNT_AS_SPENDING to actions.countAsSpending)
-            committed && !txn.isExcluded -> add(NOT_SPENDING to actions.notSpending)
-        }
+        if (committed && !txn.isExcluded) add(NOT_SPENDING to actions.notSpending)
     }
     if (pair.isEmpty() && !committed) return
     Column(
@@ -393,6 +435,7 @@ private fun Actions(
             .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
+        if (countBack) FilledAction(COUNT_AS_SPENDING, Modifier.fillMaxWidth(), actions.countAsSpending)
         if (pair.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 pair.forEach { (label, onClick) ->
@@ -401,6 +444,23 @@ private fun Actions(
             }
         }
         if (committed) OutlinedAction(DELETE, Stamp, Stamp, Modifier.fillMaxWidth(), dashed = true, onClick = onRemove)
+    }
+}
+
+/** The board's primary action: filled [Stamp], its label in [Paper]. */
+@Composable
+private fun FilledAction(label: String, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(2.dp)
+    Box(
+        modifier
+            .clip(shape)
+            .background(Stamp, shape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = ButtonLabel.copy(fontSize = 14.sp, textAlign = TextAlign.Center), color = Paper)
     }
 }
 
@@ -511,6 +571,17 @@ internal fun provenance(ruleId: String?, packVersion: Int?, edited: Boolean): St
     ).joinToString(" · ")
 }
 
+/**
+ * The board's hero figure, its colours carried in the string: Ink with Muted
+ * sen for a counted row, Muted with Faint sen for one in no total. The sen are
+ * 30sp, large text, for which Faint's 3.55:1 on Paper clears the 3:1 floor.
+ */
+internal fun detailHero(amount: String, counted: Boolean): AnnotatedString = buildAnnotatedString {
+    withStyle(SpanStyle(color = if (counted) Ink else Muted)) {
+        append(heroFigure(amount, 30.sp, senColour = if (counted) Muted else Faint))
+    }
+}
+
 /** `30 SEP, 7.42 PM`: the row's own `local_date`, and its time in [zone] as the inbox reads it. */
 internal fun whenOf(txn: Txn, zone: ZoneId): String {
     val day = LocalDates.calendarDay(txn.localDate)
@@ -527,6 +598,9 @@ private val Quoted = MonoLabel.copy(letterSpacing = 0.sp, lineHeight = 18.sp)
 internal const val EYEBROW = "CAPTURED, NOT TYPED"
 internal const val PAID = "PAID"
 internal const val CAME_BACK = "CAME BACK"
+internal const val NOT_COUNTED = "NOT COUNTED"
+internal const val NOT_COUNTED_WHILE_LEFT_OUT = "Not counted while left out"
+internal const val LEFT_OUT_SMALL_PRINT = "KEPT IN THE LIST, GREYED" + Separator + "LEFT OUT OF EVERY TOTAL AND CHART"
 internal const val WHEN = "When"
 internal const val CATEGORY = "Category"
 internal const val CAME_FROM = "Came from"

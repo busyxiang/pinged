@@ -259,6 +259,11 @@ class DetailScreenTest {
             assertFalse("Not spending is no edit of the parse", it.userEdited)
         }
         compose.onAllNodesWithText(CHANGE_CATEGORY).assertCountEquals(0)
+        // design/DetailExcluded.dc.html fills it with Stamp; an eighth of the
+        // way in is clear of the centred label and inside the 1dp an outline
+        // would leave Paper.
+        val count = compose.onNodeWithText(COUNT_AS_SPENDING).performScrollTo().captureToImage().toPixelMap()
+        assertTrue("Count as spending is not filled", ArtboardProbe.close(count[count.width / 8, count.height / 2], Stamp))
 
         compose.onNodeWithText(COUNT_AS_SPENDING).performScrollTo().performClick()
         waitFor(NOT_SPENDING)
