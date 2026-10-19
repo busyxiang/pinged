@@ -287,6 +287,11 @@ class ManualEntryViewModel internal constructor(
         draft.update { it.tapped(categoryId) }
     }
 
+    /** [categoryId] picked in the chooser behind More; see [ManualDraft.chosen]. */
+    fun chooseCategory(categoryId: Long) {
+        draft.update { it.chosen(categoryId) }
+    }
+
     /** The merchant field's text, as typed; see [ManualDraft.merchant]. */
     fun merchant(text: String) {
         draft.update { it.copy(merchant = text) }

@@ -12,7 +12,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.SearchTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
-import my.pinged.ledger.home.CATEGORY_CHIP
+import my.pinged.ledger.home.CATEGORY_CHIP as ROW_CATEGORY_CHIP
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.PICKER_HEADING
 import my.pinged.ledger.ledgerTxn
@@ -70,14 +70,14 @@ class SearchSortTest {
         assertEquals(
             "Not exactly the one Uncategorized, not excluded row carries + CATEGORY",
             1,
-            compose.onAllNodesWithText(CATEGORY_CHIP, substring = true).fetchSemanticsNodes().size,
+            compose.onAllNodesWithText(ROW_CATEGORY_CHIP, substring = true).fetchSemanticsNodes().size,
         )
     }
 
     @Test fun theChipOpensTheChooserForItsRowAndSavesThroughIt() {
         draw()
 
-        compose.onNodeWithText(CATEGORY_CHIP, substring = true).performScrollTo().performClick()
+        compose.onNodeWithText(ROW_CATEGORY_CHIP, substring = true).performScrollTo().performClick()
         compose.onNodeWithText(PICKER_HEADING).assertExists()
         compose.onNode(isSelectable() and hasText(groceries.name)).performClick()
         compose.onNode(hasText("Save") and hasClickAction()).performClick()

@@ -2,8 +2,6 @@ package my.pinged
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.hasAnyChild
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
@@ -86,15 +84,9 @@ class ManualEntryRouteTest {
             // The chip before the merchant: a merchant the dictionary files
             // pre-selects its chip, and a tap on a pre-selected chip clears it.
             assertTrue("The category chips never arrived", compose.waitFor { compose.countOf(FOOD) == 1 })
-            // The chip row into the screen's column first, then the chip into
-            // the row: `performScrollTo` scrolls only the closest scrolling
-            // parent, the row. Measured at CI's 320x640 with the number
-            // keyboard (283px) and the no-access banner up, the column's
-            // viewport is 97px (window y 260 to 357) and the chip sat at
-            // y 373, clipped to nothing, so a touch scrolled to by the row
-            // alone landed on no chip; scrolled this way it is drawn at
-            // y 313 to 357 and the touch selects it.
-            compose.onNode(hasScrollAction() and hasAnyChild(hasText(FOOD))).performScrollTo()
+            // The screen's column is the chip's only scrolling parent, so
+            // `performScrollTo` draws it on screen even at CI's 320x640 with
+            // the number keyboard up.
             compose.onNodeWithText(FOOD).performScrollTo().performClick()
             compose.onNodeWithText(FOOD).assertIsSelected()
             // The amount, then the merchant, then the note.

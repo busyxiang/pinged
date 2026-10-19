@@ -35,7 +35,7 @@ import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.freshLedger
-import my.pinged.ledger.home.CATEGORY_CHIP
+import my.pinged.ledger.home.CATEGORY_CHIP as ROW_CATEGORY_CHIP
 import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.monthName
@@ -95,7 +95,7 @@ class SearchScreenTest {
         // Last month's 15.00 joins: 50.30 + 15.00 = 65.30.
         waitForCount("4 PAYMENTS · ALL TIME")
         compose.onNodeWithTag(SEARCH_TOTAL).assertTextEquals("RM65.30")
-        compose.onNodeWithTag(CHIP + ANY_MONTH_CHIP).assertExists()
+        compose.onNodeWithTag(CHIP + MONTH_CHIP).assertExists()
     }
 
     @Test fun theCategoryAppAndAmountChipsEachNarrow() {
@@ -103,7 +103,7 @@ class SearchScreenTest {
         screen()
         waitForCount("4 PAYMENTS · $THIS_MONTH")
 
-        compose.onNodeWithTag(CHIP + ANY_CATEGORY_CHIP).performClick()
+        compose.onNodeWithTag(CHIP + CATEGORY_CHIP).performClick()
         compose.onNodeWithTag(PICK + FOOD).performScrollTo().performClick()
         // The coffee alone.
         waitForCount("1 PAYMENT · $THIS_MONTH")
@@ -111,12 +111,12 @@ class SearchScreenTest {
         compose.onNodeWithTag(PICK + ANY_CATEGORY).performScrollTo().performClick()
         waitForCount("4 PAYMENTS · $THIS_MONTH")
 
-        compose.onNodeWithTag(CHIP + ANY_APP_CHIP).performClick()
+        compose.onNodeWithTag(CHIP + APP_CHIP).performClick()
         compose.onNodeWithTag(PICK + GRAB_LABEL).performScrollTo().performClick()
         // The three rides; the coffee was paid through Touch 'n Go.
         waitForCount("3 PAYMENTS · $THIS_MONTH")
 
-        compose.onNodeWithTag(CHIP + ANY_AMOUNT_CHIP).performClick()
+        compose.onNodeWithTag(CHIP + AMOUNT_CHIP).performClick()
         compose.onNodeWithContentDescription(FROM_RM).performTextInput("10")
         compose.onNodeWithText(APPLY).performScrollTo().performClick()
         // 18.40 and 22.10; the 9.80 ride is under RM10.
@@ -310,7 +310,7 @@ class SearchScreenTest {
 
         // The first row is the newest, GrabCar: its merchant's only row, so
         // a teaching save files this one row as a one-off would.
-        compose.onAllNodesWithText(CATEGORY_CHIP, substring = true)[0].performScrollTo().performClick()
+        compose.onAllNodesWithText(ROW_CATEGORY_CHIP, substring = true)[0].performScrollTo().performClick()
         compose.onNode(isSelectable() and hasText(FOOD)).performScrollTo().performClick()
         compose.onNode(hasText(SAVE_LABEL) and hasClickAction()).performClick()
 
@@ -318,7 +318,7 @@ class SearchScreenTest {
         assertEquals(
             "The sorted row is still among the Uncategorized results",
             2,
-            compose.onAllNodesWithText(CATEGORY_CHIP, substring = true).fetchSemanticsNodes().size,
+            compose.onAllNodesWithText(ROW_CATEGORY_CHIP, substring = true).fetchSemanticsNodes().size,
         )
         val food = Databases.categoryDao(context).all().single { it.name == FOOD }.id
         assertEquals(

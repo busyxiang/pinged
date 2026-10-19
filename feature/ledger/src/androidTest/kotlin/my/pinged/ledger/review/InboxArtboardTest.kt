@@ -132,6 +132,33 @@ class InboxArtboardTest {
         assertEquals("The answers are ${dp(reject.left - accept.right)}dp apart, not 8", 8f, dp(reject.left - accept.right), 0.5f)
     }
 
+    /**
+     * #274, as the board fits its cards whole: at CI's 320x640 both of
+     * [inbox]'s cards, each quoting a title and a body, have their answers on
+     * the first screen, before any scroll. Only under `emu --ci-size` does
+     * this test the short screen; a dev screen passes it with room to spare.
+     */
+    @Test fun twoCardsAnswersAreOnTheFirstScreen() {
+        inbox()
+        for (id in listOf(FIRST, SECOND)) {
+            for (answer in listOf(ReviewAnswer.ACCEPT, ReviewAnswer.NOT_A_PAYMENT)) {
+                val node = compose.onNode(
+                    androidx.compose.ui.test.hasText(answer.label) and
+                        androidx.compose.ui.test.hasClickAction() and
+                        androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag(reviewSurfaceTag(id))),
+                ).fetchSemanticsNode()
+                // boundsInRoot is clipped to the list, so a button below it
+                // reads 0dp tall rather than off the screen: whole is its
+                // drawn height equal to its laid-out one.
+                val shown = node.boundsInRoot.height
+                assertTrue(
+                    "Card $id's ${answer.label} shows ${dp(shown)}dp of its ${dp(node.size.height.toFloat())}dp before a scroll",
+                    shown >= node.size.height - 1,
+                )
+            }
+        }
+    }
+
     /** A Border outline and Ink lettering: Stamp is the primary answer's alone. */
     @Test fun aSecondaryAnswerIsOutlinedInBorderAndLetteredInInk() {
         inbox()

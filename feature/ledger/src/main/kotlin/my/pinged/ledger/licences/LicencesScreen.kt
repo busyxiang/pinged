@@ -29,8 +29,9 @@ import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.dottedRule
 
 /**
- * The bundled fonts' SIL OFL texts, verbatim (spec 8, "Typefaces, and how they
- * ship"), pushed from settings' Licences row.
+ * The bundled fonts' SIL OFL texts (spec 8, "Typefaces, and how they ship"),
+ * pushed from settings' Licences row: every word as the file has it, through
+ * [reflow].
  *
  * **[LICENCES] is the only reference to `R.raw.ofl_*`, and it is what keeps
  * them in a release APK.** The resource shrinker drops a resource no code
@@ -42,12 +43,12 @@ fun LicencesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val resources = LocalResources.current
     // About 13 KB from the APK, read once per entry on the main thread.
     val texts = remember(resources) {
-        LICENCES.map { (family, id) -> family to resources.openRawResource(id).bufferedReader().use { it.readText() } }
+        LICENCES.map { (family, id) -> family to reflow(resources.openRawResource(id).bufferedReader().use { it.readText() }) }
     }
     LicencesContent(texts, onBack, modifier)
 }
 
-/** [LicencesScreen] with the texts already read, so a test can draw any. */
+/** [LicencesScreen] with the texts already read and reflowed, so a test can draw any. */
 @Composable
 internal fun LicencesContent(texts: List<Pair<String, String>>, onBack: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().background(Paper).verticalScroll(rememberScrollState())) {
@@ -59,8 +60,6 @@ internal fun LicencesContent(texts: List<Pair<String, String>>, onBack: () -> Un
                 color = Muted,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp),
             )
-            // Unwrapped and untrimmed: a licence that has been tidied is no
-            // longer the licence that was granted.
             Text(
                 text,
                 fontFamily = Body,
@@ -86,6 +85,36 @@ private fun Header(onBack: () -> Unit) {
         )
     }
 }
+
+/**
+ * [text] with each paragraph's hard wraps undone, so it wraps to the screen
+ * rather than ending lines mid-sentence where the file's do, at up to 79
+ * columns. The wording is the licence and is kept word for word; the file's
+ * line breaks are not part of it. Blank-line paragraph breaks stay where the
+ * file has them, and a heading or a rule ([isHeading]) keeps its own line
+ * rather than running into the text under it. Trailing spaces go: the preamble has one mid-paragraph.
+ * Lines are split by [lines], so Plex's CRLF file reads as the others do.
+ */
+internal fun reflow(text: String): String {
+    val lines = text.lines().map { it.trimEnd() }
+    return buildString {
+        lines.forEachIndexed { index, line ->
+            if (index > 0) {
+                val before = lines[index - 1]
+                val joined = before.isNotEmpty() && line.isNotEmpty() && !isHeading(before) && !isHeading(line)
+                append(if (joined) ' ' else '\n')
+            }
+            append(line)
+        }
+    }
+}
+
+/**
+ * The OFL's `PREAMBLE` and `PERMISSION & CONDITIONS`, and its rules of
+ * dashes: no lower case and at most three words. The disclaimer is in
+ * capitals too, but every line of it is longer.
+ */
+private fun isHeading(line: String): Boolean = line.none { it.isLowerCase() } && line.split(' ').size <= 3
 
 /** Each bundled family, in `Type.kt`'s order, with its licence. */
 private val LICENCES: List<Pair<String, Int>> = listOf(

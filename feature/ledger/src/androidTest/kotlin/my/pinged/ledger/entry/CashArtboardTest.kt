@@ -43,9 +43,9 @@ import kotlin.math.roundToInt
 
 /**
  * #169: manual entry against `design/Cash.dc.html`, one test per place it had
- * drifted. The board's keypad (spec 9.4 keeps the system keyboard) and its
- * wrapped chips (the screen's chips scroll sideways) are documented
- * departures and are not read. Type off the semantics tree; strokes and fills
+ * drifted. The board's keypad (spec 9.4 keeps the system keyboard) is a
+ * documented departure and is not read; its wrapped chips are
+ * `CashLayoutTest`'s. Type off the semantics tree; strokes and fills
  * off the screen, as `ChooserArtboardTest` reads them and for its reason.
  */
 class CashArtboardTest {

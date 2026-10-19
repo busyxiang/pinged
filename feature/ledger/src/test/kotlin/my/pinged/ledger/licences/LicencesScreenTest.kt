@@ -11,12 +11,12 @@ import org.junit.Test
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.runner.RunWith
 
-/** Spec 8: each bundled family's OFL text, as it is in the file. */
+/** Spec 8: each bundled family's OFL text, every word as the file has it ([reflow]). */
 @RunWith(AndroidJUnit4::class)
 class LicencesScreenTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun eachFamilyIsShownWithItsLicenceVerbatim() {
+    @Test fun eachFamilyIsShownWithItsLicence() {
         compose.setContent { LicencesScreen(onBack = {}) }
         val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         for ((family, id) in listOf(
@@ -26,7 +26,7 @@ class LicencesScreenTest {
         )) {
             val text = resources.openRawResource(id).bufferedReader().use { it.readText() }
             compose.onNodeWithText(family).performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText(text).performScrollTo()
+            compose.onNodeWithText(reflow(text)).performScrollTo()
         }
     }
 }
