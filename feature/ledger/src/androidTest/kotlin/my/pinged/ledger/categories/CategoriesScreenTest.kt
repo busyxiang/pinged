@@ -1,87 +1,35 @@
 package my.pinged.ledger.categories
 
 import android.app.Application
-import androidx.compose.ui.test.assertHasNoClickAction
-import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
-import my.pinged.data.Seed
-import my.pinged.data.dao.CategoryUse
-import my.pinged.data.entity.Category
 import my.pinged.ledger.discardTheDatabase
-import my.pinged.ledger.home.EDIT_CATEGORY
-import my.pinged.ledger.home.NEW_CATEGORY
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.ledgerTxn
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Spec 9.5's Categories list (#155): what it draws, and that its writes reach
- * the database and the rest of the app through the holder.
+ * Spec 9.5's Categories list (#155): that its writes reach the database and
+ * the rest of the app through the holder. What it draws is
+ * `CategoriesListTest`'s, on the JVM.
  */
 @RunWith(AndroidJUnit4::class)
 class CategoriesScreenTest {
-    @get:Rule val compose = createComposeRule()
-
     private val app =
         InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
 
     @Before fun startFromTheSeed() = app.discardTheDatabase()
 
     @After fun leaveNothingBehind() = app.discardTheDatabase()
-
-    private val food = CategoryUse(Category(1, "Food & Drinks", "utensils", 0, seedName = "Food & Drinks"), 412, 0)
-    private val uncategorized =
-        CategoryUse(Category(16, Seed.UNCATEGORIZED, "circle-dashed", 15, isProtected = true, seedName = Seed.UNCATEGORIZED), 3, 0)
-
-    private fun drawn(vararg items: CategoryUse) = compose.setContent {
-        CategoriesContent(
-            state = CategoriesState(loaded = true, items = items.toList()),
-            onBack = {}, onAdd = { _, _ -> }, onEdit = { _, _, _ -> }, onDelete = {},
-        )
-    }
-
-    // ---- the drawing -------------------------------------------------------
-
-    @Test fun aRowShowsItsNameAndHowManyTransactionsAreFiledThere() {
-        drawn(food, uncategorized)
-        compose.onNodeWithText("Food & Drinks").assertExists()
-        compose.onNodeWithText("412 TRANSACTIONS").assertExists()
-    }
-
-    /** Spec 4: Uncategorized opens nothing, and says what it is for instead. */
-    @Test fun uncategorizedOpensNoSheet() {
-        drawn(food, uncategorized)
-        compose.onNodeWithText(PROTECTED_NOTE).assertExists()
-        compose.onNodeWithText(Seed.UNCATEGORIZED).performScrollTo().assertHasNoClickAction()
-    }
-
-    @Test fun aTapOpensTheEditSheet() {
-        drawn(food, uncategorized)
-        compose.onNodeWithText("Food & Drinks").performScrollTo().performClick()
-        compose.onNodeWithText(EDIT_CATEGORY).assertExists()
-    }
-
-    @Test fun theFootOffersANewCategory() {
-        drawn(food, uncategorized)
-        compose.onNodeWithText(NEW_CATEGORY).performScrollTo().performClick()
-        compose.onNodeWithText("What you spend on").assertExists()
-    }
-
-    // ---- the holder, against the real database -------------------------------
 
     /**
      * A rename made here is what the chooser draws on its next read, on a
