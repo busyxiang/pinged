@@ -64,15 +64,17 @@ internal fun iconTag(key: String) = "category-icon-$key"
 /**
  * What a save would change on [count] transactions, before it is made (spec 4,
  * `design/Category.dc.html`): a rename and a new icon both reach every row
- * filed there, in every month, because neither is stored on the row. Null when
- * the save changes neither, or nothing is filed there.
+ * filed there, in every month, because neither is stored on the row. Said
+ * from the moment the sheet opens, as the board draws it, so before any edit
+ * it speaks of the name; ICON once only the icon has changed. Null when
+ * nothing is filed there.
  */
 internal fun reachLine(count: Int, renamed: Boolean, reIconed: Boolean): String? {
-    if (count == 0 || (!renamed && !reIconed)) return null
+    if (count == 0) return null
     val what = when {
         renamed && reIconed -> "NAME AND ICON"
-        renamed -> "NAME"
-        else -> "ICON"
+        reIconed -> "ICON"
+        else -> "NAME"
     }
     val rows = if (count == 1) "1 TRANSACTION" else "${grouped(count)} TRANSACTIONS"
     return "$rows WILL SHOW THE NEW $what"

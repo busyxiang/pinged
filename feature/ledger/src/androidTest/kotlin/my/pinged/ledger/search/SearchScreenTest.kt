@@ -90,7 +90,7 @@ class SearchScreenTest {
         // Last month's 15.00 joins: 50.30 + 15.00 = 65.30.
         waitForCount("4 PAYMENTS · ALL TIME")
         compose.onNodeWithTag(SEARCH_TOTAL).assertTextEquals("RM65.30")
-        compose.onNodeWithTag(CHIP + ANY_MONTH_CHIP).assertExists()
+        compose.onNodeWithTag(CHIP + MONTH_CHIP).assertExists()
     }
 
     @Test fun theCategoryAppAndAmountChipsEachNarrow() {
@@ -98,7 +98,7 @@ class SearchScreenTest {
         screen()
         waitForCount("4 PAYMENTS · $THIS_MONTH")
 
-        compose.onNodeWithTag(CHIP + ANY_CATEGORY_CHIP).performClick()
+        compose.onNodeWithTag(CHIP + CATEGORY_CHIP).performClick()
         compose.onNodeWithTag(PICK + FOOD).performScrollTo().performClick()
         // The coffee alone.
         waitForCount("1 PAYMENT · $THIS_MONTH")
@@ -106,12 +106,12 @@ class SearchScreenTest {
         compose.onNodeWithTag(PICK + ANY_CATEGORY).performScrollTo().performClick()
         waitForCount("4 PAYMENTS · $THIS_MONTH")
 
-        compose.onNodeWithTag(CHIP + ANY_APP_CHIP).performClick()
+        compose.onNodeWithTag(CHIP + APP_CHIP).performClick()
         compose.onNodeWithTag(PICK + GRAB_LABEL).performScrollTo().performClick()
         // The three rides; the coffee was paid through Touch 'n Go.
         waitForCount("3 PAYMENTS · $THIS_MONTH")
 
-        compose.onNodeWithTag(CHIP + ANY_AMOUNT_CHIP).performClick()
+        compose.onNodeWithTag(CHIP + AMOUNT_CHIP).performClick()
         compose.onNodeWithContentDescription(FROM_RM).performTextInput("10")
         compose.onNodeWithText(APPLY).performScrollTo().performClick()
         // 18.40 and 22.10; the 9.80 ride is under RM10.

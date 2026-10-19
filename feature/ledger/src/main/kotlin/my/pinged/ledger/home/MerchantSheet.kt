@@ -451,8 +451,8 @@ private fun ChoiceRow(choice: MerchantChoice, chosen: Boolean, onChoose: () -> U
 
 /** The board's check, `M20 6L9 17l-5-5` in a 24 box at a 2.4 stroke, in [Stamp]. */
 @Composable
-private fun CheckMark() {
-    Canvas(Modifier.size(16.dp)) {
+internal fun CheckMark(modifier: Modifier = Modifier) {
+    Canvas(modifier.size(16.dp)) {
         val u = size.width / 24f
         val path = Path().apply {
             moveTo(20f * u, 6f * u)
