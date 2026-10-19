@@ -126,7 +126,7 @@ class DayViewModel(app: Application, val date: LocalDate) : AndroidViewModel(app
     /** See [RowActions.addCategory]; the day, and so the chooser, is re-read after. */
     suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey) { refresh().join() }
 
-    fun openMerchant(ownKey: String): Job = rows.openMerchant(ownKey)
+    fun openMerchant(ownKey: String, on: my.pinged.data.LocalDate): Job = rows.openMerchant(ownKey, on)
 
     fun closeMerchant() = rows.closeMerchant()
 

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import my.pinged.data.LocalDate
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.RetroPreview
@@ -81,7 +82,7 @@ internal fun LedgerRow(
     uncategorizedId: Long?,
     canCategorize: Boolean,
     onCategorize: (txnId: Long) -> Unit,
-    onOpenMerchant: (ownKey: String) -> Unit,
+    onOpenMerchant: (ownKey: String, on: LocalDate) -> Unit,
     onOpenReview: (txnId: Long) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
@@ -93,7 +94,7 @@ internal fun LedgerRow(
         name = row.displayName,
         onOpen = (if (manual) onOpenEntry else onOpenDetail)?.let { open -> { open(EditTarget(txn.id, txn.createdAt)) } },
         openLabel = if (manual) EDIT_ENTRY else OPEN_DETAIL,
-        onOpenMerchant = txn.merchantKey?.let { key -> { onOpenMerchant(key) } },
+        onOpenMerchant = txn.merchantKey?.let { key -> { onOpenMerchant(key, txn.localDate) } },
         category = categoriesById[txn.categoryId],
         uncategorized = txn.categoryId == uncategorizedId,
         onCategorize = if (canCategorize && !txn.isExcluded) {

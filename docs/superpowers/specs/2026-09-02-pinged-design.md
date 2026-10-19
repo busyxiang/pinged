@@ -1207,7 +1207,10 @@ row. The sheet offers two things.
   exception and keeps that name stored: unnamed, each row falls back to its
   own capture's name, and the two halves would read apart again.
 - **Same shop as…** A searchable list of the other merchants, each with its
-  transaction count. Choosing one merges this merchant into it.
+  transaction count and raw key. Blank, it lists the suggestions, or the
+  five most recently paid when there are none. Choosing one only marks it;
+  a band then says what moves and whose name and rule win, and "Count it as
+  <merchant>" merges this merchant into it.
 
 **Merging is reversible, which a category merge is not.** A category merge
 rewrites `txn.category_id` and destroys the record of where each row came
@@ -1308,10 +1311,11 @@ six.
 - The suggestion ordering puts `RESTORAN YUEN KEE HOME TOWN CAFE` first for
   `YUENKEEHOMETOWNCAFE`, and does not suggest a 7-character key at all.
 
-**Not drawn.** The merchant sheet has no `design/*.dc.html`. It was built
-from the existing sheets' parts (`WipeSheet`'s underlined field and
-bordered buttons, `CategoryPicker`'s list rows), and a drawing should
-replace that when one exists.
+**Drawn.** `design/MerchantSheet.dc.html` (#231): the shared sheet chrome
+titled with the merchant's name, over "N PAYMENTS · RM… IN <MONTH>" for the
+month of the row it was opened from, counted as Charts' `WHO GOT IT` counts
+it. The rename's reach and every merge count stay all-time, because they
+say what the action touches.
 
 ## 7. Confidence, duplicates, transfers
 

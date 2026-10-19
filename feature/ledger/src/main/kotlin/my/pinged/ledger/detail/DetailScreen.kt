@@ -51,6 +51,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import my.pinged.data.LocalDate
 import my.pinged.parse.TaughtTemplate
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
@@ -292,7 +293,7 @@ private fun DetailBody(
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(2.dp))
-                        .clickable(role = Role.Button) { merchantActions.open(key) }
+                        .clickable(role = Role.Button) { merchantActions.open(key, row.row.txn.localDate) }
                         .size(44.dp)
                         .semantics { contentDescription = EDIT_MERCHANT },
                     contentAlignment = Alignment.Center,

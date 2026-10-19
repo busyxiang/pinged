@@ -195,7 +195,7 @@ class ManualMerchantTest {
 
     /** The sheet open on [key], as a long-press on its row leaves it. */
     private suspend fun open(rows: RowActions, key: String) {
-        rows.openMerchant(key).join()
+        rows.openMerchant(key, LocalDates.of(NOON)).join()
         withTimeout(TIMEOUT) { rows.merchantSheet.filterNotNull().first() }
     }
 

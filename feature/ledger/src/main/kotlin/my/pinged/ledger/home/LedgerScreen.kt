@@ -744,7 +744,7 @@ private fun Feed(
     uncategorizedId: Long?,
     hasChoices: Boolean,
     onCategorize: (Long) -> Unit,
-    onOpenMerchant: (ownKey: String) -> Unit,
+    onOpenMerchant: (ownKey: String, on: LocalDate) -> Unit,
     awaitingReview: Int,
     awaitingReviewInMonth: Int,
     onOpenReview: (focus: Long?) -> Unit,

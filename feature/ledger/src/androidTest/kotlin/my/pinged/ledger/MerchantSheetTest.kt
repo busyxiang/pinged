@@ -13,6 +13,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -29,6 +31,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import my.pinged.data.Databases
+import my.pinged.data.LocalDate
+import my.pinged.data.LocalDates
 import my.pinged.data.dao.MerchantChoice
 import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.FILTER_FIELD_TAG
@@ -36,6 +40,7 @@ import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
 import my.pinged.ledger.home.LedgerViewModel
+import my.pinged.ledger.home.MERCHANT_LIST_TAG
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.NAME_FIELD_TAG
@@ -51,6 +56,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.YearMonth
 
 /**
  * Spec 6.4's merchant sheet: how a row opens it, what it offers, and that its
@@ -100,12 +106,12 @@ class MerchantSheetTest {
     }
 
     private fun actions(
-        opened: MutableList<String> = mutableListOf(),
+        opened: MutableList<Pair<String, LocalDate>> = mutableListOf(),
         renamed: MutableList<String> = mutableListOf(),
         merged: MutableList<String> = mutableListOf(),
         separated: MutableList<String> = mutableListOf(),
     ) = MerchantActions(
-        open = { opened += it },
+        open = { key, on -> opened += key to on },
         rename = { renamed += it },
         merge = { merged += it },
         separate = { separated += it },
@@ -121,14 +127,15 @@ class MerchantSheetTest {
     }
 
     @Test fun aLongPressOpensTheSheetForTheRowsOwnKey() {
-        val opened = mutableListOf<String>()
-        content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), actions = actions(opened = opened))
+        val opened = mutableListOf<Pair<String, LocalDate>>()
+        val pressed = row(scanAndPay, "Yuenkeehometowncafe", id = 1)
+        content(listOf(pressed), actions = actions(opened = opened))
         compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Yuenkeehometowncafe").fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithText("Yuenkeehometowncafe").performTouchInput { longClick() }
         compose.waitForIdle()
 
-        assertEquals(listOf(scanAndPay), opened)
+        assertEquals("The row's own key, and its day for the header's month", listOf(scanAndPay to pressed.txn.localDate), opened)
     }
 
     /**
@@ -151,6 +158,8 @@ class MerchantSheetTest {
     }
 
     // ---- the sheet ----------------------------------------------------------
+
+    private val COUNT_IT_AS_YUEN_KEE = "Count it as Restoran Yuen Kee Home Town Cafe"
 
     private fun sheet(mergedInto: String? = null) = MerchantSheetState(
         ownKey = scanAndPay,
@@ -186,11 +195,11 @@ class MerchantSheetTest {
     @Test fun theSheetStatesHowFarARenameReaches() {
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet())
         compose.boundedWaitUntil(5_000) {
-            compose.onAllNodesWithText("2 transactions will show the new name").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText("2 TRANSACTIONS WILL SHOW A NEW NAME").fetchSemanticsNodes().isNotEmpty()
         }
     }
 
-    @Test fun choosingAMerchantMergesIntoItAndTheSuggestionIsMarked() {
+    @Test fun choosingAMerchantThenCountingItMergesIntoItAndTheSuggestionIsMarked() {
         val merged = mutableListOf<String>()
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet(), actions(merged = merged))
         compose.boundedWaitUntil(5_000) {
@@ -203,13 +212,19 @@ class MerchantSheetTest {
         )
 
         compose.onNodeWithText("Restoran Yuen Kee Home Town Cafe").performClick()
+        assertEquals("A tap only chooses", emptyList<String>(), merged)
+        compose.onNodeWithTag(MERCHANT_LIST_TAG).performScrollToNode(hasText(COUNT_IT_AS_YUEN_KEE))
+        compose.onNodeWithText(COUNT_IT_AS_YUEN_KEE).performClick()
 
         assertEquals(listOf(duitNow), merged)
     }
 
     @Test fun theSearchNarrowsTheList() {
         content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet())
-        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Spades Bakery").fetchSemanticsNodes().isNotEmpty() }
+        compose.boundedWaitUntil(5_000) {
+            compose.onAllNodesWithText("Restoran Yuen Kee Home Town Cafe").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals("A blank search lists the suggestions only", 0, compose.onAllNodesWithText("Spades Bakery").fetchSemanticsNodes().size)
 
         compose.onNodeWithTag(FILTER_FIELD_TAG, useUnmergedTree = true).performTextReplacementInField("spades")
         compose.waitForIdle()
@@ -241,6 +256,9 @@ class MerchantSheetTest {
                 .copy(merchantKey = key, merchantRaw = key, merchantDisplay = display),
         )
 
+    /** The day the inserted rows fall on; the sheet's header counts its month. */
+    private val DAY = LocalDates.of(1_000L)
+
     private fun uncategorized(): Long = Databases.categoryDao(context).requireUncategorizedId()
 
     @Test fun theHolderMergesWhatTheSheetWasOpenedOn() {
@@ -249,7 +267,7 @@ class MerchantSheetTest {
         insert(duitNow, "Restoran Yuen Kee Home Town Cafe", 1_500L, at = 2_000L)
         val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
 
-        runBlocking { withTimeout(10_000) { viewModel.openMerchant(scanAndPay).join() } }
+        runBlocking { withTimeout(10_000) { viewModel.openMerchant(scanAndPay, DAY).join() } }
         val sheet = viewModel.merchantSheet.value!!
         assertEquals(listOf(duitNow), sheet.others.map { it.identityKey })
         assertEquals(setOf(duitNow), sheet.suggested)
@@ -269,13 +287,13 @@ class MerchantSheetTest {
         val dao = Databases.merchantIdentityDao(context)
         dao.merge(scanAndPay, duitNow, "Restoran Yuen Kee Home Town Cafe")
 
-        val sheet = readMerchantSheet(dao, scanAndPay)!!
+        val sheet = readMerchantSheet(dao, Databases.txnDao(context), scanAndPay, DAY)!!
         assertEquals(duitNow, sheet.identityKey)
         assertEquals("Restoran Yuen Kee Home Town Cafe", sheet.mergedInto)
         assertEquals(2, sheet.txnCount)
 
         val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
-        runBlocking { withTimeout(10_000) { viewModel.openMerchant(scanAndPay).join() } }
+        runBlocking { withTimeout(10_000) { viewModel.openMerchant(scanAndPay, DAY).join() } }
         runBlocking { withTimeout(10_000) { viewModel.renameMerchant("Yuen Kee").join() } }
 
         assertEquals("Yuen Kee", dao.nameOf(duitNow))
@@ -288,9 +306,15 @@ class MerchantSheetTest {
         val dao = Databases.merchantIdentityDao(context)
         dao.merge(scanAndPay, duitNow, "Restoran Yuen Kee Home Town Cafe")
 
-        val sheet = readMerchantSheet(dao, duitNow)!!
+        val sheet = readMerchantSheet(dao, Databases.txnDao(context), duitNow, DAY)!!
         assertNull(sheet.mergedInto)
-        assertEquals(listOf(scanAndPay), sheet.members.map { it.merchantKey })
+        assertEquals(listOf(scanAndPay to 1), sheet.members.map { it.merchantKey to it.txnCount })
+        assertEquals(YearMonth.from(LocalDates.calendarDay(DAY)), sheet.month)
+        assertEquals(
+            "Both keys' payments, as that month's WHO GOT IT row counts them",
+            listOf(2 to 2_750L),
+            sheet.monthTotals.map { it.txnCount to it.netSen },
+        )
     }
 
     private fun SemanticsNodeInteraction.performTextReplacementInField(text: String) {
