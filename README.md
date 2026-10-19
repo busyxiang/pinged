@@ -7,6 +7,30 @@ entry for digital spending. Offline only: no network permission, no server.
 Design: [docs/superpowers/specs/2026-09-02-pinged-design.md](docs/superpowers/specs/2026-09-02-pinged-design.md).
 Domain terms: [CONTEXT.md](CONTEXT.md).
 
+## Installing
+
+Pinged is not on an app store. Download `pinged-X.Y.Z.apk` from the latest
+[GitHub release](https://github.com/busyxiang/pinged/releases) and sideload
+it; the release notes give its SHA-256. It needs Android 8.1 (API 27) or later.
+
+It reads notifications from these apps today:
+
+- Touch 'n Go eWallet
+- Maybank MAE
+
+Pinged needs notification access. On Android 13 and later that sits behind
+restricted settings for a sideloaded app: open App info, then the overflow
+menu, then **Allow restricted settings**. Capture starts the moment you grant
+access; Android does not hand over notifications from before then.
+
+## Your data
+
+Everything stays on the phone. The app asks for no network permission, so it
+cannot send anything anywhere. The ledger is an encrypted database whose key is
+held by the Android Keystore and never enters a backup, and the app opts out
+of Android's backups. Uninstalling therefore deletes the ledger for good;
+Export in Settings writes a copy you can keep and restore from.
+
 ## Layout
 
     :core:parse       Rules, amounts, merchant normalization. Zero Android
