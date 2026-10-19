@@ -22,6 +22,20 @@ android {
 
     buildFeatures { compose = true }
 
+    // The database-free screen tests run on the JVM under Robolectric, off the
+    // shared emulator: 79 tests took 37.7s of device time there and take a few
+    // seconds here. What they share with the instrumented classes -- plain
+    // Txn and ReviewCard builders, nothing that opens a database -- is in
+    // src/sharedTest. Anything that measures pixels, bounds or type stays in
+    // androidTest, because Robolectric's drawing is not the device's.
+    sourceSets {
+        getByName("test") { kotlin.directories.add("src/sharedTest/kotlin") }
+        getByName("androidTest") { kotlin.directories.add("src/sharedTest/kotlin") }
+    }
+
+    // R.raw for the licence texts and R.font for the theme.
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
     // Bytecode target through compileOptions, not a kotlin{} block: with AGP's
     // built-in Kotlin there is no kotlin extension here. Kept at 17 to match
     // every other module.
@@ -84,6 +98,14 @@ dependencies {
     // The JVM tests here need no device: `DayHeaderRuleTest`, for one, is a
     // comparison of two Ints over a Room entity and a value class.
     testImplementation(libs.junit)
+    // Compose on Robolectric. createComposeRule's ComponentActivity comes from
+    // the debugImplementation `ui-test-manifest` below: this module has only
+    // the debug unit test variant.
+    testImplementation(composeBom)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
 
     androidTestImplementation(composeBom)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

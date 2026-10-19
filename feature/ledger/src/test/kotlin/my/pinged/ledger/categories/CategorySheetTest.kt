@@ -24,6 +24,8 @@ import my.pinged.ledger.home.iconTag
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runner.RunWith
 
 /**
  * Spec 4's category sheet (#155), drawn as `design/Category.dc.html`: the
@@ -42,6 +44,7 @@ import org.junit.Test
  * host-starved at CI's size. Waiting for the keyboard instead, as
  * `WipeHostTest` does, timed out when a starved Gboard never showed.
  */
+@RunWith(AndroidJUnit4::class)
 class CategorySheetTest {
     @get:Rule val compose = createComposeRule()
 

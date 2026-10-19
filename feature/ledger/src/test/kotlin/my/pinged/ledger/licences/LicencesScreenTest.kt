@@ -8,8 +8,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.ledger.R
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runner.RunWith
 
 /** Spec 8: each bundled family's OFL text, as it is in the file. */
+@RunWith(AndroidJUnit4::class)
 class LicencesScreenTest {
     @get:Rule val compose = createComposeRule()
 

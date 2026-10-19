@@ -14,6 +14,12 @@ numbers in comments and commit messages refer to it.
     .claude/bin/emu -- ./gradlew :smoke:connectedMinifiedAndroidTest   # 1, the R8 build
     ./gradlew test lint :app:assembleDebug   # what CI runs
 
+`:feature:ledger`'s Compose tests that open no database and measure no
+pixels, bounds or type run on the JVM under Robolectric (`src/test`, at CI's
+320x640): a test there costs a few milliseconds and no lease. One that draws
+and measures stays in `androidTest`, because Robolectric's drawing is not the
+device's. Builders both sets need are in `src/sharedTest`.
+
 Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
 JVM module and has no instrumented source set, so anything device-specific is
 tested from `:feature:capture`.

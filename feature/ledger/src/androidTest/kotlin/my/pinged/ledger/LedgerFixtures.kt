@@ -3,34 +3,20 @@ package my.pinged.ledger
 import android.content.Context
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
-import my.pinged.data.LocalDate
-import my.pinged.data.LocalDates
 import my.pinged.data.dao.TxnDao
-import my.pinged.data.entity.PendingReason
-import my.pinged.data.entity.Txn
-import my.pinged.data.entity.TxnState
-import my.pinged.parse.Confidence
-import my.pinged.parse.Direction
-import my.pinged.parse.ExclusionReason
 import java.io.RandomAccessFile
-import java.util.concurrent.atomic.AtomicLong
 
-// What the ledger's instrumented classes need of a database and of a
-// transaction, in one place. They are several classes in one package and one
-// source set, so a fixture spelled out per class is a fixture kept in step by
-// hand, with nothing failing when the copies drift.
+// What the ledger's instrumented classes need of a database, in one place.
+// They are several classes in one package and one source set, so a fixture
+// spelled out per class is a fixture kept in step by hand, with nothing failing
+// when the copies drift. The transaction they insert is `ledgerTxn`, in
+// src/sharedTest, which the Robolectric classes draw too.
 
 /** Covers a cold SQLCipher open on a loaded emulator; `OpenTest` measures it. */
 internal const val TIMEOUT = 30_000L
 
 /** SQLite's page size, and so what has to be overwritten to break a file. */
 internal const val FIRST_PAGE = 4_096
-
-/** [ledgerTxn]'s `merchant_display`, which is the row's first line. */
-internal const val MERCHANT = "Warung Pak Ali"
-
-/** [ledgerTxn]'s `source_label`, which the row prints after its category. */
-internal const val SOURCE_LABEL = "Touch 'n Go eWallet"
 
 /**
  * Forget the memoized handle, and delete the file behind it.
@@ -86,60 +72,3 @@ internal fun Context.corruptTheDatabase() {
     }
 }
 
-/**
- * A `raw_capture_id` no other row in the process holds: the column is unique,
- * and these ids name no capture, so they start far above any a test inserts.
- */
-private val captureIds = AtomicLong(1_000_000_000L)
-
-/** The next of those ids, for a fixture that builds its own captured row. */
-internal fun nextCaptureId(): Long = captureIds.getAndIncrement()
-
-/**
- * A captured transaction of the shape the ledger draws. Not `core:data`'s
- * `sampleTxn`, which lives in that module's own androidTest source set and is
- * not on this one's compile path.
- *
- * Captured, because it carries a source: a row with a null `raw_capture_id`
- * is a manual entry (spec 4) and draws as one. Its capture id names no
- * `raw_capture` row -- the column has no foreign key -- so an export of it is
- * one `ImportJson` refuses; `review`'s `manual` is the manual-entry fixture.
- */
-internal fun ledgerTxn(
-    amountSen: Long,
-    occurredAt: Long = 1_000L,
-    localDate: LocalDate = LocalDates.of(occurredAt),
-    categoryId: Long = 1L,
-    state: TxnState = TxnState.COMMITTED,
-    pendingReason: PendingReason? = null,
-    isExcluded: Boolean = false,
-    exclusionReason: ExclusionReason? = null,
-    /**
-     * Left at Room's `autoGenerate` default for the fixtures that get
-     * inserted, and set by the ones that never reach a database: the chip
-     * reports the row it is on, and a callback assertion against 0 would
-     * agree with a screen that reported nothing at all.
-     */
-    id: Long = 0L,
-    rawCaptureId: Long? = nextCaptureId(),
-) = Txn(
-    id = id,
-    rawCaptureId = rawCaptureId,
-    amountSen = amountSen,
-    direction = Direction.EXPENSE,
-    occurredAt = occurredAt,
-    localDate = localDate,
-    merchantRaw = "WARUNG PAK ALI",
-    merchantDisplay = MERCHANT,
-    merchantKey = "WARUNG PAK ALI",
-    categoryId = categoryId,
-    sourcePackage = "my.com.tngdigital.ewallet",
-    sourceLabel = SOURCE_LABEL,
-    confidence = Confidence.HIGH,
-    state = state,
-    pendingReason = pendingReason,
-    isExcluded = isExcluded,
-    exclusionReason = exclusionReason,
-    createdAt = occurredAt,
-    updatedAt = occurredAt,
-)

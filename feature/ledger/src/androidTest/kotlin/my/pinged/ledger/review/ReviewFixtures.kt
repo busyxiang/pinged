@@ -2,23 +2,13 @@ package my.pinged.ledger.review
 
 import android.app.Application
 import androidx.test.platform.app.InstrumentationRegistry
-import java.time.ZoneId
 import kotlinx.coroutines.withTimeout
 import my.pinged.data.Databases
-import my.pinged.data.LocalDate
-import my.pinged.data.LocalDates
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.ledgerTxn
-
-/** Noon on a fixed day, so the day and month totals name one period. */
-internal val NOON: Long = java.time.LocalDate.of(2026, 8, 15).atTime(12, 0)
-    .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-
-/** [NOON]'s day. */
-internal val DAY: LocalDate = LocalDates.of(NOON)
 
 private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
@@ -31,10 +21,6 @@ internal suspend fun settledReview(): ReviewViewModel {
 
 /** [settledReview]'s holder, for a test that drives the holder alone. */
 internal suspend fun inbox(): ReviewInbox = settledReview().inbox
-
-/** Row [id]'s card as [inbox] last read it. */
-internal fun card(inbox: ReviewInbox, id: Long): ReviewCard =
-    inbox.cards.value.orEmpty().single { it.txn.id == id }
 
 /** A row awaiting review for [reason], as the gate holds one. */
 internal fun pending(
