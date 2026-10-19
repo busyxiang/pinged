@@ -21,10 +21,12 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -40,6 +42,7 @@ import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.entity.Category
 import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.home.ADD_PAYMENT_BUTTON
+import my.pinged.ledger.home.CASH_BAND
 import my.pinged.ledger.home.CASH_OFFER
 import my.pinged.ledger.home.EMPTY_HERO
 import my.pinged.ledger.home.ENTERED_BY_HAND
@@ -210,6 +213,41 @@ class LedgerArtboardTest {
         assertTrue("The band is not Card", ArtboardProbe.close(band[(root.width / 4).toInt(), y], Card))
     }
 
+    /**
+     * The band is drawn only where the list keeps a 57dp row above it (#221).
+     * In the app at 320x640 the Spending tab is 640 less the 52dp status bar
+     * and the 62dp tab bar, 502dp; the capture-off banner, which every fresh
+     * install draws, takes 226dp of that, leaving this screen 276dp, all but
+     * 56 of it the top bar and the pinned summary (measured in `:app`). A
+     * band there would leave the list nothing, and a list with no height
+     * composes no row.
+     */
+    @Test fun underTheBannerAt320x640TheListKeepsItsRowAndTheButtonFloats() {
+        long(size = DpSize(320.dp, 276.dp))
+        assertEquals("A band is drawn with no room for a row", 0, compose.onAllNodes(hasTestTag(CASH_BAND)).fetchSemanticsNodes().size)
+        val list = listBounds()
+        assertTrue("The list is ${list.height}px tall", list.height > 0f)
+        val day = boundsOf(dayLabel(SEP_30))
+        assertTrue("The first day is not on screen in the list at $list: $day", day.top >= list.top && day.bottom <= list.bottom)
+        compose.onNodeWithTag(ADD_PAYMENT_BUTTON).assertExists()
+    }
+
+    /**
+     * With no banner the same screen is 502dp, and the band leaves the list
+     * 196dp, measured at 320x640/160: the band is drawn.
+     */
+    @Test fun withoutTheBannerAt320x640TheBandIsDrawn() {
+        long(size = DpSize(320.dp, 502.dp))
+        compose.onNodeWithTag(CASH_BAND).assertExists()
+        val density = compose.density.density
+        assertTrue("The list kept ${listBounds().height / density}dp", listBounds().height / density >= 57f)
+    }
+
+    @Test fun at411TheBandIsDrawn() {
+        long(size = DpSize(411.dp, 800.dp))
+        compose.onNodeWithTag(CASH_BAND).assertExists()
+    }
+
     @Test fun theAddButtonIsLabelledCash() {
         populated()
         assertInside(boundsOf(CASH), compose.onNodeWithTag(ADD_PAYMENT_BUTTON).fetchSemanticsNode().boundsInRoot)
@@ -374,7 +412,7 @@ class LedgerArtboardTest {
     }
 
     /** More rows than a screen holds, so the list scrolls under wherever the button is. */
-    private fun long() {
+    private fun long(size: DpSize? = null) {
         val rows = (1L..24L).map { ledgerTxn(1_000L * it, localDate = SEP_30, categoryId = FOOD.id, id = it, rawCaptureId = null) }
         show(
             items = listOf(LedgerItem.DayHeader(SEP_30, 1L, listOf(CurrencyTotal("MYR", 30_000L)))) +
@@ -387,6 +425,7 @@ class LedgerArtboardTest {
             ),
             heard = null,
             fontScale = null,
+            size = size,
         )
     }
 
@@ -394,8 +433,8 @@ class LedgerArtboardTest {
 
     /**
      * [chrome] draws the month's chevron and the magnifier, which the top bar
-     * shares with the chip; [width] lays the screen out that wide whatever the
-     * device's.
+     * shares with the chip; [width], or [size], lays the screen out that big
+     * whatever the device's.
      */
     private fun show(
         items: List<LedgerItem>,
@@ -404,6 +443,7 @@ class LedgerArtboardTest {
         fontScale: Float?,
         chrome: Boolean = false,
         width: Dp? = null,
+        size: DpSize? = null,
     ) {
         val flow = flowOf(
             PagingData.from(
@@ -416,7 +456,11 @@ class LedgerArtboardTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale ?: density.fontScale)) {
                 PingedTheme {
                     LedgerScreenContent(
-                        modifier = if (width != null) Modifier.requiredWidth(width) else Modifier,
+                        modifier = when {
+                            size != null -> Modifier.requiredSize(size)
+                            width != null -> Modifier.requiredWidth(width)
+                            else -> Modifier
+                        },
                         items = flow.collectAsLazyPagingItems(),
                         read = LedgerRead(summary = summary, categories = listOf(FOOD, GROCERIES, PETROL)),
                         storageUnavailable = false,
@@ -437,6 +481,8 @@ class LedgerArtboardTest {
         compose.onNodeWithText(text, substring = substring, useUnmergedTree = true)
 
     private fun boundsOf(text: String): Rect = text(text).fetchSemanticsNode().boundsInRoot
+
+    private fun listBounds(): Rect = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
 
     private fun layoutOf(text: String, substring: Boolean = false): TextLayoutResult {
         val layouts = mutableListOf<TextLayoutResult>()

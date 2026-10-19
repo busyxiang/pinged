@@ -6,7 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -330,8 +332,7 @@ internal fun LedgerScreenContent(
                     onOpenReview = onOpenReview,
                     onOpenEntry = onOpenEntry,
                     onOpenDetail = onOpenDetail,
-                    // A band under the list for the button to sit in.
-                    bottomRoom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp,
+                    onAddPayment = onAddPayment,
                     listState = listState,
                     modifier = Modifier.weight(1f),
                 )
@@ -341,12 +342,10 @@ internal fun LedgerScreenContent(
         // entry screen says for itself when it cannot save. `Empty.dc.html`
         // draws no button, because its offer at the foot is the same action.
         // Empty is a ledger with no rows, not a month with none: a quiet month
-        // over a history is the feed, and keeps the button.
-        if (onAddPayment != null && !empty) {
-            AddPaymentButton(
-                onAddPayment,
-                Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = (ADD_PAYMENT_ROOM - ADD_PAYMENT_SIZE) / 2),
-            )
+        // over a history is the feed, and keeps the button. The feed draws its
+        // own, since where it sits depends on the list's room.
+        if (onAddPayment != null && (unreadable || reading)) {
+            AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(20.dp))
         }
     }
 
@@ -719,7 +718,21 @@ private fun CashOffer(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-/** The pinned summary, then the rows, under the awaiting-review row when there is one. */
+/**
+ * The pinned summary, then the rows, under the awaiting-review row when there
+ * is one, and the add button where [onAddPayment] offers one.
+ *
+ * The button sits in a band under the list, not over it: a ledger's amounts
+ * and badges are right-aligned, the edge the button is on, so over the list it
+ * covered a subtotal or a duplicate badge wherever the list was scrolled
+ * (#221). The band is all or nothing, and only where the list keeps at least
+ * one [LEDGER_ROW] above it: at 320x640 under the capture-off banner, which
+ * every fresh install draws, the list has 56dp in all, and a band would leave
+ * it none, which composes no row. There the list takes the whole area and the
+ * button floats over it as the board draws it, with room after the last row.
+ * Measured, not a breakpoint, so a banner, a font scale or a longer summary
+ * moves it too.
+ */
 @Composable
 private fun Feed(
     items: LazyPagingItems<LedgerItem>,
@@ -736,7 +749,7 @@ private fun Feed(
     onOpenDetail: ((EditTarget) -> Unit)?,
     listState: LazyListState,
     modifier: Modifier = Modifier,
-    bottomRoom: Dp = 0.dp,
+    onAddPayment: (() -> Unit)? = null,
 ) {
     Column(modifier) {
         MonthSummaryBlock(summary, categoriesById)
@@ -745,69 +758,76 @@ private fun Feed(
         // file, and a second copy of its tile geometry is a second thing to
         // keep in step.
         Spacer(Modifier.fillMaxWidth().padding(top = 18.dp).height(1.dp).background(Rule))
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .background(Card)
-                .fillMaxWidth(),
-        ) {
-            // A sticky header, so it stays at the top of the list as it
-            // scrolls, and inside the list's scroll so a test can reach it
-            // with `performScrollTo`. Absent at zero, so it is never noise.
-            if (awaitingReview > 0) {
-                stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
-                    AwaitingReviewRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
-                        onOpenReview(null)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val banded = onAddPayment != null && maxHeight - ADD_PAYMENT_ROOM >= LEDGER_ROW
+            val floating = onAddPayment != null && !banded
+            Column(Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Card)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = if (floating) ADD_PAYMENT_ROOM else 0.dp),
+                ) {
+                    // A sticky header, so it stays at the top of the list as it
+                    // scrolls, and inside the list's scroll so a test can reach it
+                    // with `performScrollTo`. Absent at zero, so it is never noise.
+                    if (awaitingReview > 0) {
+                        stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
+                            AwaitingReviewRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
+                                onOpenReview(null)
+                            }
+                        }
+                    }
+                    items(
+                        count = items.itemCount,
+                        // The header's key names the row it sits above as well as its
+                        // day, because a duplicate key throws out of measure: see
+                        // `LedgerItem.DayHeader.firstRowId`.
+                        key = items.itemKey { item ->
+                            when (item) {
+                                is LedgerItem.Row -> "txn-" + item.txn.id
+                                is LedgerItem.DayHeader ->
+                                    "day-" + item.date.yyyymmdd + "-" + item.firstRowId
+                            }
+                        },
+                        contentType = items.itemContentType { item ->
+                            when (item) {
+                                is LedgerItem.Row -> "row"
+                                is LedgerItem.DayHeader -> "header"
+                            }
+                        },
+                    ) { index ->
+                        when (val item = items[index]) {
+                            // Placeholders are off, so this is only reached if the list
+                            // shrinks under the composition. Nothing is the honest draw
+                            // for a row that is no longer there.
+                            null -> Unit
+                            is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal, first = index == 0)
+                            is LedgerItem.Row -> LedgerRow(
+                                row = item.feedRow,
+                                categoriesById = categoriesById,
+                                uncategorizedId = uncategorizedId,
+                                canCategorize = hasChoices,
+                                onCategorize = onCategorize,
+                                onOpenMerchant = onOpenMerchant,
+                                onOpenReview = onOpenReview,
+                                onOpenEntry = onOpenEntry,
+                                onOpenDetail = onOpenDetail,
+                            )
+                        }
                     }
                 }
-            }
-            items(
-                count = items.itemCount,
-                // The header's key names the row it sits above as well as its
-                // day, because a duplicate key throws out of measure: see
-                // `LedgerItem.DayHeader.firstRowId`.
-                key = items.itemKey { item ->
-                    when (item) {
-                        is LedgerItem.Row -> "txn-" + item.txn.id
-                        is LedgerItem.DayHeader ->
-                            "day-" + item.date.yyyymmdd + "-" + item.firstRowId
-                    }
-                },
-                contentType = items.itemContentType { item ->
-                    when (item) {
-                        is LedgerItem.Row -> "row"
-                        is LedgerItem.DayHeader -> "header"
-                    }
-                },
-            ) { index ->
-                when (val item = items[index]) {
-                    // Placeholders are off, so this is only reached if the list
-                    // shrinks under the composition. Nothing is the honest draw
-                    // for a row that is no longer there.
-                    null -> Unit
-                    is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal, first = index == 0)
-                    is LedgerItem.Row -> LedgerRow(
-                        row = item.feedRow,
-                        categoriesById = categoriesById,
-                        uncategorizedId = uncategorizedId,
-                        canCategorize = hasChoices,
-                        onCategorize = onCategorize,
-                        onOpenMerchant = onOpenMerchant,
-                        onOpenReview = onOpenReview,
-                        onOpenEntry = onOpenEntry,
-                        onOpenDetail = onOpenDetail,
-                    )
+                // The dotted rule is the screens' footers'.
+                if (banded) {
+                    Spacer(Modifier.testTag(CASH_BAND).fillMaxWidth().height(ADD_PAYMENT_ROOM).background(Card).dottedRule(atTop = true))
                 }
             }
-        }
-        // The band the add button sits in, below the list rather than room
-        // after its last row: a ledger's amounts and badges are right-aligned,
-        // the edge the button is on, so over the list it covered a subtotal or
-        // a duplicate badge wherever the list was scrolled (#221). The dotted
-        // rule is the screens' footers'.
-        if (bottomRoom > 0.dp) {
-            Spacer(Modifier.fillMaxWidth().height(bottomRoom).background(Card).dottedRule(atTop = true))
+            if (onAddPayment != null) {
+                val bottom = if (banded) (ADD_PAYMENT_ROOM - ADD_PAYMENT_SIZE) / 2 else 20.dp
+                AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = bottom))
+            }
         }
     }
 }
@@ -1061,6 +1081,9 @@ private val ADD_PAYMENT_SIZE = 54.dp
 /** The band under the list: the button and 16dp above and below it. */
 private val ADD_PAYMENT_ROOM = 86.dp
 
+/** A categorised ledger row as drawn, 57dp (#189): the least list the band leaves. */
+private val LEDGER_ROW = 57.dp
+
 /** The empty ledger's way to Settings, under its copy; the offer at its foot is the other. */
 internal const val OPEN_SETTINGS = "Open settings"
 
@@ -1069,6 +1092,9 @@ internal const val CASH_OFFER_LABEL = "Or start with a cash expense"
 
 /** Test tags, for the elements a test measures the drawing of. */
 const val ADD_PAYMENT_BUTTON = "add-payment-button"
+
+/** The band under the list the add button sits in, where there is room for one. */
+const val CASH_BAND = "cash-band"
 const val CASH_OFFER = "cash-offer"
 const val EMPTY_HERO = "empty-hero"
 const val HEARD_CHIP = "heard-chip"
