@@ -122,7 +122,7 @@ class StorageUnavailableBannerTest {
 
         const val ACTION = "What can I do about this?"
 
-        /** See `ExportNudgeBannerTest.SETTINGS_ONLY`. */
+        /** See `BackupReminderTest.SETTINGS_ONLY`. */
         const val SETTINGS_ONLY = "Delete everything"
 
         /** `RecoveryNotice`'s label for this state, drawn on settings alone. */

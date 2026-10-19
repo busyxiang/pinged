@@ -39,7 +39,7 @@ import org.junit.runner.RunWith
  * bound to. `LedgerRebindTest` holds the same mechanism with the screen left
  * on; this is the route a user takes, through the real back stack.
  *
- * `createEmptyComposeRule`, for the reason `ExportNudgeBannerTest` gives: the
+ * `createEmptyComposeRule`, for the reason `BackupReminderTest` gives: the
  * row has to be in the database before the Activity reads it.
  */
 @RunWith(AndroidJUnit4::class)

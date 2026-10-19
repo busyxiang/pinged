@@ -70,6 +70,7 @@ import my.pinged.tracker.BuildConfig
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
 import my.pinged.ledger.AppViewModelFactory
+import my.pinged.ledger.home.BackupReminder
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.onboarding.OnboardingScreen
@@ -98,8 +99,6 @@ import my.pinged.ledger.settings.SettingsViewModel
 import my.pinged.ledger.sources.CaptureBanner
 import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesViewModel
-import my.pinged.ui.theme.EXPORT_EVERYTHING
-import my.pinged.ui.theme.RESCUE
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.PingedTheme
@@ -108,8 +107,9 @@ import my.pinged.ledger.transfer.TransferStore
 /**
  * The only Activity. It hosts spec 9.1's ledger, which is home; spec 9.5's
  * settings; and spec 9.6's allow-list, reachable from settings. One banner
- * strip sits above all three: spec 10.2's capture states, and the backup nudge
- * that [bannerFor] ranks below every one of them. The bottom bar sits under the
+ * strip sits above all three, for spec 10.2's capture states; the backup
+ * reminder is Spending's alone, and only where the strip is empty
+ * ([backupReminderShows]). The bottom bar sits under the
  * two tab roots and not under a pushed screen. On first run, until the
  * notification-access grant, onboarding is drawn in place of all of it.
  */
@@ -118,22 +118,22 @@ class MainActivity : ComponentActivity() {
     private val health = MutableStateFlow<CaptureReport?>(null)
 
     /**
-     * [exportIsOverdue]'s answer, alongside [health] because the banner strip
-     * is one decision over both.
+     * [exportIsOverdue]'s answer, alongside [health] because whether the
+     * backup reminder shows is one decision over both ([backupReminderShows]).
      *
-     * Starts false, so the nudge is never the first thing drawn on a resume
-     * that has not yet reached the database. `null` would be a third state the
-     * banner has no wording for.
+     * Starts false, so the reminder is never the first thing drawn on a
+     * resume that has not yet reached the database. `null` would be a third
+     * state the reminder has no wording for.
      *
      * Sampled in [onResume] and kept in step by [watchTheBackup] after that.
      */
     private val exportOverdue = MutableStateFlow(false)
 
     /**
-     * Whether damage is on record, which decides what the backup nudge's
-     * button says ([nudgeAction]). Kept in step by [watchTheBackup]; false
-     * when the store will not read, which leaves the nudge saying what it
-     * always said.
+     * Whether damage is on record, which decides what the backup reminder's
+     * action says and where it leads. Kept in step by [watchTheBackup]; false
+     * when the store will not read, which leaves the reminder offering the
+     * export.
      */
     private val ledgerDamaged = MutableStateFlow(false)
 
@@ -220,6 +220,12 @@ class MainActivity : ComponentActivity() {
                     // Saved, so a process killed while the user is in
                     // Android's settings still takes them on to sources.
                     var granting by rememberSaveable { mutableStateOf(false) }
+                    // The backup reminder's Export (#252): set on Spending,
+                    // cleared by the Settings entry as it opens the export
+                    // sheet, which stays hosted there so Back from it lands
+                    // on Settings. Saved, so a process death between the two
+                    // still opens it.
+                    var exportAsked by rememberSaveable { mutableStateOf(false) }
                     LaunchedEffect(opening, granting) {
                         // The next step: sources, on the tab first run leaves
                         // the user on, so back from it lands on Spending --
@@ -245,15 +251,11 @@ class MainActivity : ComponentActivity() {
                         // The tab stacks live in this composition and not in the
                         // Activity, so the banners with somewhere to go are
                         // handed the destination rather than reaching for it.
-                        // Both buttons lead to settings, from its root: `TabStacks`
+                        // Its button leads to settings, from its root: `TabStacks`
                         // selects the tab and unwinds whatever is pushed over it.
                         // On settings' own root it would do nothing, so there is no
                         // button (ruling R35).
-                        val onSettings = tabs.showingSettingsRoot
-                        GrantBanner(
-                            onExportEverything = tabs::showSettings.takeUnless { onSettings },
-                            onOpenSettings = tabs::showSettings.takeUnless { onSettings },
-                        )
+                        GrantBanner(onOpenSettings = tabs::showSettings.takeUnless { tabs.showingSettingsRoot })
                         NavDisplay(
                             backStack = tabs.entries,
                             // `entries` always holds both tabs' roots, so NavDisplay
@@ -310,6 +312,16 @@ class MainActivity : ComponentActivity() {
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                         onOpenSearch = { tabs.push(Search) },
                                         heard = heardNow(),
+                                        // Both lead to settings' root, where the
+                                        // export sheet is hosted and the
+                                        // recovery notice is drawn.
+                                        backupReminder = backupReminderNow(
+                                            onExport = {
+                                                exportAsked = true
+                                                tabs.showSettings()
+                                            },
+                                            onRescue = tabs::showSettings,
+                                        ),
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
@@ -421,6 +433,12 @@ class MainActivity : ComponentActivity() {
                                     val settings: SettingsViewModel =
                                         viewModel(factory = settingsFactory)
                                     var exportOpen by remember { mutableStateOf(false) }
+                                    LaunchedEffect(exportAsked) {
+                                        if (exportAsked) {
+                                            exportAsked = false
+                                            exportOpen = true
+                                        }
+                                    }
                                     // The banner above says "Settings says more";
                                     // each time settings reads storage, the banner
                                     // reads it again, so the two cannot disagree
@@ -671,13 +689,32 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Spending's backup reminder (#252), or null where [backupReminderShows]
+     * says it may not show. On a damaged ledger its action is [onRescue]: the
+     * export is withdrawn there, and settings' recovery notice offers the
+     * rescue in its place.
+     */
+    @Composable
+    private fun backupReminderNow(onExport: () -> Unit, onRescue: () -> Unit): BackupReminder? {
+        val report = health.collectAsState().value
+        val overdue = exportOverdue.collectAsState().value
+        val damaged = ledgerDamaged.collectAsState().value
+        if (!backupReminderShows(report, overdue)) return null
+        return BackupReminder(
+            damaged = damaged,
+            onAction = if (damaged) onRescue else onExport,
+            onDismiss = ::dismissNudge,
+        )
+    }
+
+    /**
      * Keep [exportOverdue] in step with the store for as long as the app is on
      * screen.
      *
-     * **A watcher and not a second sample, because the one banner that carries
-     * a button is the one whose button settles what it reports.** "Export
-     * everything" pushes settings onto this Activity's own back stack, so the
-     * export that follows happens inside one foreground: popping back is
+     * **A watcher and not a second sample, because the reminder's action is
+     * what settles what it reports.** "Export" shows settings in this
+     * Activity's own tabs, so the export that follows happens inside one
+     * foreground: going back to Spending is
      * navigation, not a resume, and the one resume that does fire -- the
      * save-file picker returning -- is before `Transfers.export`
      * records anything. A flag sampled only in [onResume] would go on telling a
@@ -685,12 +722,12 @@ class MainActivity : ComponentActivity() {
      * of the session.
      *
      * [TransferStore.lastExportAtChanges] and not a callback on the tap,
-     * because the stored timestamp is what the banner is about: an export that
-     * failed never records one, so nothing emits and the nudge stays up.
+     * because the stored timestamp is what the reminder is about: an export that
+     * failed never records one, so nothing emits and the reminder stays up.
      * Nothing polls.
      *
      * **`Databases.rewrites` too, and it re-samples [health] as well.**
-     * The nudge's other half is the ledger's row count: a delete or restore
+     * The reminder's other half is the ledger's row count: a delete or restore
      * that replaces the database and then fails before `TransferStore.forget`
      * -- a Keystore entry that will not delete, an import that does not
      * finish -- changes that count with no store write to announce it. And
@@ -742,7 +779,7 @@ class MainActivity : ComponentActivity() {
                         // nothing the `collect` lambda below throws -- that one
                         // guards itself -- and once it has run, this collection
                         // is over: nothing re-subscribes until the next STARTED,
-                        // so the nudge stays down for the rest of this
+                        // so the reminder stays down for the rest of this
                         // foreground however the store recovers. Acceptable
                         // because the next foreground re-enters
                         // `repeatOnLifecycle` and `onResume` samples again, and
@@ -763,17 +800,14 @@ class MainActivity : ComponentActivity() {
      * property; this half is wording, colour and a tap target, and needs a
      * device to see at all.
      *
-     * [onExportEverything] and [onOpenSettings] are parameters rather than
-     * methods on this class because they navigate, and the back stack belongs
-     * to the composition in `onCreate`. Both go to settings today; they are
-     * two because they answer different banners, and one of them moving
-     * should not move the other. Null draws the banner without its button.
+     * [onOpenSettings] is a parameter rather than a method on this class
+     * because it navigates, and the back stack belongs to the composition in
+     * `onCreate`. Null draws the banner without its button.
      */
     @Composable
-    private fun GrantBanner(onExportEverything: (() -> Unit)?, onOpenSettings: (() -> Unit)?) {
+    private fun GrantBanner(onOpenSettings: (() -> Unit)?) {
         val current = health.collectAsState().value ?: return
-        val damaged = ledgerDamaged.collectAsState().value
-        val kind = bannerFor(current, exportOverdue.collectAsState().value) ?: return
+        val kind = bannerFor(current) ?: return
 
         when (kind) {
             // The button navigates and does not act. Both spec 11.1 remedies --
@@ -835,28 +869,13 @@ class MainActivity : ComponentActivity() {
                 actionLabel = "Check notification access",
                 onAction = ::openListenerSettings,
             )
-            // Settings, not the export sheet: the sheet is hosted there, and a
-            // banner that opened a modal over whatever destination the user was
-            // on would be the only control in the app that does that. Settings
-            // offers the export on a healthy ledger and the rescue on a damaged
-            // one (design 6), so the button names whichever it will find.
-            BannerKind.NUDGE_EXPORT -> CaptureBanner(
-                label = "NO BACKUP" + Separator + "NOTHING SAVED ANYWHERE ELSE",
-                body = "Pinged has no internet permission, so this phone holds the " +
-                    "only copy of what it has recorded. If the phone is lost or " +
-                    "reset, so is all of it.",
-                actionLabel = nudgeAction(damaged),
-                onAction = onExportEverything,
-                dismissLabel = NUDGE_DISMISS,
-                onDismiss = ::dismissNudge,
-            )
         }
     }
 
     /**
-     * Silence the backup nudge for [NUDGE_DISMISSED_FOR_MILLIS].
+     * Silence the backup reminder for [NUDGE_DISMISSED_FOR_MILLIS].
      *
-     * Re-reads rather than setting [exportOverdue] to false, so the banner
+     * Re-reads rather than setting [exportOverdue] to false, so the reminder
      * goes because the stored dismissal says so: a write that failed leaves it
      * up, which is the truth about what the next foreground will show.
      */
@@ -957,8 +976,8 @@ internal const val TAG = "PingedMain"
  * Tests only: run inside `MainActivity.sampleHealth` between its probe and
  * its report -- the moment a capture refused elsewhere can raise the storage
  * flag the probe has just cleared. Also the first moment [MainActivity]'s
- * `exportOverdue` holds what this sample read, which `ExportNudgeBannerTest`
- * waits for before asserting the nudge is absent.
+ * `exportOverdue` holds what this sample read, which `BackupReminderTest`
+ * waits for before asserting the reminder is absent.
  */
 @VisibleForTesting @Volatile internal var betweenProbeAndReport: suspend () -> Unit = {}
 
@@ -974,7 +993,7 @@ internal const val TAG = "PingedMain"
 internal const val EXPORT_STALE_AFTER_MILLIS: Long = 30L * 24 * 60 * 60 * 1000
 
 /**
- * How long dismissing the backup nudge silences it. Seven days because that is
+ * How long the backup reminder's X silences it. Seven days because that is
  * what was asked for; like the thirty above, nothing measured it.
  */
 internal const val NUDGE_DISMISSED_FOR_MILLIS: Long = 7L * 24 * 60 * 60 * 1000
@@ -1094,17 +1113,6 @@ internal suspend fun readAwaitingReview(context: Context): Int? = try {
     null
 }
 
-/** The backup nudge's second button; see [NUDGE_DISMISSED_FOR_MILLIS]. */
-internal const val NUDGE_DISMISS: String = "Remind me in a week"
-
-/**
- * The backup nudge's button, which leads to settings: what settings will
- * offer there, by design 6's table. Export everything is withdrawn on a
- * damaged ledger, whose first damaged page it throws on, and the recovery
- * notice's rescue takes its place.
- */
-internal fun nudgeAction(damaged: Boolean): String = if (damaged) RESCUE else EXPORT_EVERYTHING
-
 /** What the banner strip says, or nothing at all. One is drawn at a time. */
 internal enum class BannerKind {
     STORAGE_UNAVAILABLE,
@@ -1112,31 +1120,24 @@ internal enum class BannerKind {
     HEALTH_UNREADABLE,
     NOTHING_SEEN,
     STOPPED,
-    NUDGE_EXPORT,
 }
 
 /**
  * Which banner the strip shows, as a value so the order can be asserted without
  * a device.
  *
- * Five of the six are about capture, and spec 10.2 -- "Detecting a dead
- * listener, honestly" -- is where they come from.
- * [BannerKind.HEALTH_UNREADABLE] is that section read strictly: a report that
- * could not be taken is not a report of health, and drawing nothing would be
- * the one outcome the section exists to prevent.
+ * All five are about capture, and spec 10.2 -- "Detecting a dead listener,
+ * honestly" -- is where they come from. [BannerKind.HEALTH_UNREADABLE] is that
+ * section read strictly: a report that could not be taken is not a report of
+ * health, and drawing nothing would be the one outcome the section exists to
+ * prevent.
  *
- * [BannerKind.NUDGE_EXPORT] is
- * not one of them and has no section of its own: the spec says nothing about
- * backup staleness, so the threshold behind it ([EXPORT_STALE_AFTER_MILLIS])
- * and the decision to draw it in this strip at all are this file's, not the
- * spec's.
- *
- * The order is the safety property, not a formatting choice, and it is the
- * reason this is a function rather than a `when` inside the composable that
- * draws it: reordered by accident, a user whose listener is dead reads "NO
- * BACKUP" and concludes capture is fine.
+ * The order is not a formatting choice, and it is the reason this is a
+ * function rather than a `when` inside the composable that draws it: a fresh
+ * install told its listener died, or a file that would not read drawn as
+ * either, is a claim about a past that did not happen.
  */
-internal fun bannerFor(report: CaptureReport, exportOverdue: Boolean): BannerKind? {
+internal fun bannerFor(report: CaptureReport): BannerKind? {
     val neverSeen = report.lastNotificationAt == 0L
     return when {
         // First, because it is the only state here where capture is certainly dead
@@ -1164,14 +1165,26 @@ internal fun bannerFor(report: CaptureReport, exportOverdue: Boolean): BannerKin
         // stopped.
         neverSeen -> BannerKind.NOTHING_SEEN
         report.looksDead -> BannerKind.STOPPED
-        // Last, and nothing below it. Every kind above is a statement that capture is
-        // broken now; this one is a statement about the past, and an export can be
-        // taken at any later moment while spending going unrecorded cannot be
-        // recovered. `BannerPriorityTest` is what holds it here.
-        exportOverdue -> BannerKind.NUDGE_EXPORT
         else -> null
     }
 }
+
+/**
+ * Whether Spending's backup reminder (#252) may show: the export is overdue
+ * and the strip above has nothing to say, or nothing yet to say it from.
+ *
+ * **Never beside a capture banner.** Each of those says capture is broken
+ * now; the reminder is about the past, and an export can be taken at any
+ * later moment while spending going unrecorded cannot be recovered. Beside
+ * "CAPTURE STOPPED" it reads as the thing to fix. `BannerPriorityTest` holds
+ * it under each.
+ *
+ * The spec says nothing about backup staleness, so the threshold behind it
+ * ([EXPORT_STALE_AFTER_MILLIS]) and the reminder itself are this file's, not
+ * the spec's.
+ */
+internal fun backupReminderShows(report: CaptureReport?, exportOverdue: Boolean): Boolean =
+    report != null && bannerFor(report) == null && exportOverdue
 
 /**
  * Spec 10.2's always-visible signal, for the ledger's top bar: when Pinged last

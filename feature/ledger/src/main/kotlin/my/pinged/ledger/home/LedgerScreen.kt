@@ -135,6 +135,8 @@ fun LedgerScreen(
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
+    /** The backup reminder (#252), or null for none; see [BackupReminderRow]. */
+    backupReminder: BackupReminder? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
     val read by viewModel.read.collectAsState()
@@ -185,6 +187,7 @@ fun LedgerScreen(
         onOpenDetail = onOpenDetail,
         onOpenSearch = onOpenSearch,
         heard = heard,
+        backupReminder = backupReminder,
         picked = picked,
         picks = picks,
         onOpenMonths = { monthsOpen = true },
@@ -246,6 +249,7 @@ internal fun LedgerScreenContent(
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
+    backupReminder: BackupReminder? = null,
     /** The holder's picked month, null to follow the clock; see [LedgerViewModel.picked]. */
     picked: YearMonth? = null,
     onOpenMonths: (() -> Unit)? = null,
@@ -336,6 +340,7 @@ internal fun LedgerScreenContent(
                     onOpenEntry = onOpenEntry,
                     onOpenDetail = onOpenDetail,
                     onAddPayment = onAddPayment,
+                    backupReminder = backupReminder,
                     listState = listState,
                     modifier = Modifier.weight(1f),
                 )
@@ -753,6 +758,7 @@ private fun Feed(
     listState: LazyListState,
     modifier: Modifier = Modifier,
     onAddPayment: (() -> Unit)? = null,
+    backupReminder: BackupReminder? = null,
 ) {
     Column(modifier) {
         MonthSummaryBlock(summary, categoriesById)
@@ -773,6 +779,14 @@ private fun Feed(
                         .fillMaxWidth(),
                     contentPadding = PaddingValues(bottom = if (floating) ADD_PAYMENT_ROOM else 0.dp),
                 ) {
+                    // An item and not a header: it scrolls away with the list
+                    // rather than holding a line of a 640dp screen for a week.
+                    // Above the review row, so that row's pin is not under it.
+                    if (backupReminder != null) {
+                        item(key = "backup-reminder", contentType = "backup-reminder") {
+                            BackupReminderRow(backupReminder)
+                        }
+                    }
                     // A sticky header, so it stays at the top of the list as it
                     // scrolls, and inside the list's scroll so a test can reach it
                     // with `performScrollTo`. Absent at zero, so it is never noise.

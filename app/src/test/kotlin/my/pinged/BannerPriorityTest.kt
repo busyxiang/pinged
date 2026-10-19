@@ -2,20 +2,25 @@ package my.pinged
 
 import my.pinged.capture.CaptureReport
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * The banner strip shows one thing at a time, so its order is a decision, and
- * this is the test that can see it.
+ * this is the test that can see it. And Spending's backup reminder shows only
+ * where the strip shows nothing, which is the other half of this file.
  *
- * Every case pairs its report with `exportOverdue = true`, because an overdue
- * export is the state that is true *at the same time* as each of the others --
- * a phone whose listener has been dead for a month has not exported for a
- * month either. The nudge speaking over any of them would replace "CAPTURE
- * STOPPED" with "NO BACKUP" for a user whose capture is broken right now.
+ * Every reminder case under a capture banner pairs its report with an overdue
+ * export, because an overdue export is the state that is true *at the same
+ * time* as each of the others -- a phone whose listener has been dead for a
+ * month has not exported for a month either. The reminder beside any of them
+ * would have the user read "NO BACKUP" as the thing wrong, for a user whose
+ * capture is broken right now.
  */
 class BannerPriorityTest {
+    private val now = 1_700_000_000_000L
 
     /**
      * A notification seen this instant: `ListenerStatus.report` computes
@@ -60,70 +65,47 @@ class BannerPriorityTest {
         healthUnreadable = true,
     )
 
-    @Test fun unreadableStorageOutranksTheNudge() {
-        assertEquals(
-            "The database cannot be opened and the user was told about a " +
-                "backup instead. Nothing is being recorded and the banner " +
-                "does not say so",
-            BannerKind.STORAGE_UNAVAILABLE,
-            bannerFor(healthy.copy(storageUnavailable = true), exportOverdue = true),
-        )
-    }
+    /** Seen once, two days ago, and nothing since. */
+    private val dead = healthy.copy(staleForMillis = 2 * 24 * 60 * 60 * 1000L)
 
-    @Test fun anUngrantedListenerOutranksTheNudge() {
-        assertEquals(
-            "Notification access was never granted and the banner asked for " +
-                "an export instead of the grant, which is the one tap that " +
-                "starts capture at all",
-            BannerKind.NOT_GRANTED,
-            bannerFor(healthy.copy(granted = false), exportOverdue = true),
-        )
-    }
-
-    @Test fun aDeadListenerOutranksTheNudge() {
-        assertEquals(
-            "Nothing has reached Pinged for over a day and the banner said " +
-                "\"NO BACKUP\". The user reads that capture is fine and only " +
-                "the backup is missing, when spending is going unrecorded now",
-            BannerKind.STOPPED,
-            bannerFor(
-                healthy.copy(staleForMillis = 2 * 24 * 60 * 60 * 1000L),
-                exportOverdue = true,
-            ),
-        )
-    }
+    /** Each report that puts a capture banner up, by the banner it puts up. */
+    private val captureBanners = mapOf(
+        BannerKind.STORAGE_UNAVAILABLE to healthy.copy(storageUnavailable = true),
+        BannerKind.NOT_GRANTED to healthy.copy(granted = false),
+        BannerKind.HEALTH_UNREADABLE to healthUnreadable,
+        BannerKind.NOTHING_SEEN to freshInstall,
+        BannerKind.STOPPED to dead,
+    )
 
     /**
-     * Both orderings at once, because [freshInstall] is `looksDead` as well as
-     * never-seen: the nudge below it, and "CAPTURE STOPPED" above it. A phone
+     * The ordering this fixture exists for: [freshInstall] is `looksDead` as
+     * well as never-seen, and "CAPTURE STOPPED" is the branch below. A phone
      * granted access five minutes ago with nothing yet arrived would otherwise
      * read that its own phone shut Pinged down and that spending since then was
      * not recorded -- three claims about a past that does not exist.
      */
-    @Test fun aFreshInstallOutranksTheNudgeAndTheDeadListenerWording() {
+    @Test fun aFreshInstallOutranksTheDeadListenerWording() {
         assertEquals(
             "A grant with nothing ever seen was told its capture has stopped, " +
-                "or shown the backup nudge, rather than the fresh-install " +
-                "wording",
+                "rather than the fresh-install wording",
             BannerKind.NOTHING_SEEN,
-            bannerFor(freshInstall, exportOverdue = true),
+            bannerFor(freshInstall),
         )
     }
 
     /**
-     * Three orderings at once, and each is a different sentence the user would
+     * Two orderings at once, and each is a different sentence the user would
      * otherwise read off a file that was never opened: the fresh-install
-     * wording, the dead-listener wording, and the nudge. All three are claims
-     * about a heartbeat, and the heartbeat is precisely what could not be read.
+     * wording and the dead-listener wording. Both are claims about a
+     * heartbeat, and the heartbeat is precisely what could not be read.
      */
     @Test fun anUnreadableHealthStoreOutranksEveryClaimMadeFromIt() {
         assertEquals(
             "`capture_health` would not read and the banner spoke as if it " +
                 "had: a phone that has captured for months was told it is a " +
-                "new install, or that its listener died, or that the only " +
-                "thing wrong is a missing backup",
+                "new install, or that its listener died",
             BannerKind.HEALTH_UNREADABLE,
-            bannerFor(healthUnreadable, exportOverdue = true),
+            bannerFor(healthUnreadable),
         )
     }
 
@@ -137,23 +119,64 @@ class BannerPriorityTest {
             "Notification access is gone, which is known and has a button, " +
                 "and the banner said only that Pinged cannot tell",
             BannerKind.NOT_GRANTED,
-            bannerFor(healthUnreadable.copy(granted = false), exportOverdue = true),
+            bannerFor(healthUnreadable.copy(granted = false)),
         )
     }
 
-    @Test fun aWorkingCaptureWithAnOverdueExportGetsTheNudge() {
-        assertEquals(
+    @Test fun aWorkingCaptureGetsNoBanner() {
+        assertNull("A banner was drawn over a working capture", bannerFor(healthy))
+    }
+
+    /**
+     * Over every kind, so a sixth capture state added to [BannerKind] without
+     * a fixture here fails rather than going unchecked.
+     */
+    @Test fun theFixturesCoverEveryBanner() {
+        assertEquals(BannerKind.entries.toSet(), captureBanners.keys)
+        captureBanners.forEach { (kind, report) -> assertEquals(kind, bannerFor(report)) }
+    }
+
+    @Test fun theReminderNeverShowsUnderACaptureBanner() {
+        captureBanners.forEach { (kind, report) ->
+            assertFalse(
+                "The backup reminder showed beside $kind with an overdue " +
+                    "export. Capture is broken now, and the user reads \"NO " +
+                    "BACKUP\" as the thing to fix",
+                backupReminderShows(report, exportOverdue = true),
+            )
+        }
+    }
+
+    @Test fun aWorkingCaptureWithAnOverdueExportShowsTheReminder() {
+        assertTrue(
             "Nothing is wrong with capture and the export is overdue, which " +
-                "is the only state the nudge has to itself. It said nothing",
-            BannerKind.NUDGE_EXPORT,
-            bannerFor(healthy, exportOverdue = true),
+                "is the one state the reminder is for. It did not show",
+            backupReminderShows(healthy, exportOverdue = exportIsOverdue(txns = 12, lastExportAt = 0L, now = now)),
         )
     }
 
-    @Test fun aWorkingCaptureWithARecentExportGetsNoBanner() {
-        assertNull(
-            "A banner was drawn over a working app with a recent export",
-            bannerFor(healthy, exportOverdue = false),
+    @Test fun aRecentExportHidesTheReminder() {
+        assertFalse(
+            "The reminder showed a second after an export",
+            backupReminderShows(healthy, exportOverdue = exportIsOverdue(txns = 12, lastExportAt = now - 1_000, now = now)),
+        )
+    }
+
+    @Test fun theSnoozeHidesTheReminder() {
+        assertFalse(
+            "The reminder showed a minute after \"Remind me in a week\"",
+            backupReminderShows(
+                healthy,
+                exportOverdue = exportIsOverdue(txns = 12, lastExportAt = 0L, now = now, nudgeDismissedAt = now - 60_000),
+            ),
+        )
+    }
+
+    /** Before the first sample, nothing is known about capture, so nothing is said. */
+    @Test fun noReportYetShowsNoReminder() {
+        assertFalse(
+            "The reminder showed before capture was first sampled, when a capture banner may yet be due",
+            backupReminderShows(null, exportOverdue = true),
         )
     }
 }

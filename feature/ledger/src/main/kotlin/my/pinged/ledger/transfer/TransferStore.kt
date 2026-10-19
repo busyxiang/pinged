@@ -62,15 +62,15 @@ object TransferStore {
      * Every change [recordExport] or [forget] makes to [lastExportAt] in this
      * process, and nothing on subscription.
      *
-     * For a reader that is on screen while the export happens. `MainActivity`'s
-     * backup nudge is the case -- its own button leads to the export that
+     * For a reader that is on screen while the export happens. Spending's
+     * backup reminder is the case -- its own action leads to the export that
      * settles it, and that export takes place inside one foreground, so a
      * reader that only sampled at `onResume` would go on saying nothing is
      * saved for the rest of the session.
      *
      * DataStore emits on a write rather than on a poll, and only for a write
      * that happened: an export that failed never reaches [recordExport], so
-     * nothing here emits and the nudge stays up.
+     * nothing here emits and the reminder stays up.
      *
      * **The stored value is dropped here rather than by the reader**, so that
      * [forgotten]'s tick can never be the emission a reader's own `drop(1)`
