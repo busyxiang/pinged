@@ -9,10 +9,16 @@ numbers in comments and commit messages refer to it.
 
 ## Commands
 
-    ./gradlew test                        # 321 JVM tests
-    .claude/bin/emu -- ./gradlew connectedDebugAndroidTest   # 792, needs a device
-    .claude/bin/emu -- ./gradlew :smoke:connectedMinifiedAndroidTest   # 1, the R8 build
-    ./gradlew test lint :app:assembleDebug   # what CI runs
+    ./gradlew test                        # JVM tests
+    .claude/bin/emu -- ./gradlew connectedDebugAndroidTest   # needs a device
+    .claude/bin/emu -- ./gradlew :smoke:connectedMinifiedAndroidTest   # the R8 build
+    ./gradlew test verifyRoborazziDebug lint :app:assembleDebug   # CI's checks
+
+`:feature:charts` compares Roborazzi screenshots against goldens committed in
+`src/test/screenshots/`. Plain `test` only renders them; `verifyRoborazziDebug`
+is what compares. Record new goldens with CI's `workflow_dispatch` and its
+`record-screenshots` input, which renders on the same Robolectric image the
+check uses, and commit the PNGs from its artifact.
 
 `:feature:ledger`'s Compose tests that open no database and measure no
 pixels, bounds or type run on the JVM under Robolectric (`src/test`, at CI's
