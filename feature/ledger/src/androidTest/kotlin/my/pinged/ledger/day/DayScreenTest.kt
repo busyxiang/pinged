@@ -97,6 +97,11 @@ class DayScreenTest {
         assertEquals("Another day's row is on this day", 0, count("9.99"))
         assertEquals("A captured day said Pinged was not watching", 0, count(NOT_WATCHING))
         assertEquals(
+            "The capture line does not count the one row in the total, or does not say Pinged was watching a bound day",
+            1,
+            count("1 PAYMENT · PINGED WAS WATCHING"),
+        )
+        assertEquals(
             "The excluded amount is not struck through",
             TextDecoration.LineThrough,
             decorationOf("100.00"),

@@ -73,6 +73,28 @@ class BackStackRuleTest {
         )
     }
 
+    @Test fun aStepToAnotherDayReplacesTheDayItLeaves() {
+        val stack = mutableListOf<NavKey>(Charts, Day("2026-09-25"))
+
+        stack.replaceTop(Day("2026-09-24"))
+        stack.replaceTop(Day("2026-09-23"))
+
+        assertEquals(
+            "A step between days stacked them, so Back walks every day " +
+                "stepped through before it reaches Charts (#228)",
+            listOf(Charts, Day("2026-09-23")),
+            stack.toList(),
+        )
+    }
+
+    @Test fun replaceTopWillNotReplaceTheRoot() {
+        val stack = mutableListOf<NavKey>(Charts)
+
+        stack.replaceTop(Day("2026-09-24"))
+
+        assertEquals("A tab's root was replaced", listOf(Charts), stack.toList())
+    }
+
     private fun tabs(
         spending: List<NavKey> = listOf(Ledger),
         settings: List<NavKey> = listOf(Settings),

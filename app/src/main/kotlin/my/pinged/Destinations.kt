@@ -285,6 +285,9 @@ internal class TabStacks(
     /** Pop the shown tab's top screen; see [pop]. */
     fun pop() = current.pop()
 
+    /** Replace the shown tab's top screen; see [replaceTop]. */
+    fun replaceTop(key: NavKey) = current.replaceTop(key)
+
     /**
      * The system Back gesture: pop a pushed screen, else leave a tab for
      * Spending, else say it is not handled.
@@ -313,4 +316,15 @@ internal class TabStacks(
  */
 internal fun MutableList<NavKey>.pop() {
     if (size > 1) removeAt(lastIndex)
+}
+
+/**
+ * Put [key] in place of the top entry, unless the top is the root.
+ *
+ * The `Day` screen's steps (#228): a day stepped to replaces the one left, so
+ * Back from any day returns to Charts in one press, as it does from the day
+ * the grid opened.
+ */
+internal fun MutableList<NavKey>.replaceTop(key: NavKey) {
+    if (size > 1) set(lastIndex, key)
 }

@@ -5,6 +5,7 @@ import my.pinged.data.dao.NotInTotal
 import my.pinged.data.dao.NotInTotalLine
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.ringgit
+import my.pinged.ui.theme.Separator
 
 /**
  * The `Day` screen's header below the date (#69, #81's `Day` screen).
@@ -15,13 +16,15 @@ import my.pinged.ui.ringgit
  * [awaitingReview] is the *M awaiting review* that ends [keptOut] and opens
  * the review inbox (§9.1), or null when M is zero and there is nothing to open.
  * [keptOut] ends with it whenever it is non-null; the screen relies on that to
- * make only that part tappable.
+ * make only that part tappable. [captureLine] is the board's line under the
+ * total (#228), or null on a day [notWatching] already speaks for.
  */
 internal data class DayHeading(
     val total: String?,
     val keptOut: String?,
     val notWatching: Boolean,
     val awaitingReview: String? = null,
+    val captureLine: String? = null,
 )
 
 /**
@@ -41,12 +44,21 @@ internal data class DayHeading(
  * is N + M above zero, where N is #89's two excluded lines and M its pending
  * line. Not on a non-zero net: an excluded RM50 purchase and a pending RM50
  * refund net to zero, and would hide each other.
+ *
+ * The capture line counts [payments], the ringgit rows in the total, and says
+ * Pinged was watching only when [watched], the day is in `capturedDates`. A
+ * day neither watched nor [notWatching] -- before the history starts, or
+ * today before a bind -- gets the count alone, a claim about neither. The
+ * board's "WATCHED ALL DAY" is not drawn: `capture_day` records that the
+ * listener was bound at some point in the day, not for all of it.
  */
 internal fun dayHeading(
     rowCount: Int,
     counted: List<CurrencyTotal>,
     notInTotal: List<NotInTotal>,
     notWatching: Boolean,
+    payments: Int = 0,
+    watched: Boolean = false,
 ): DayHeading {
     val total = if (notWatching && rowCount == 0) {
         null
@@ -63,5 +75,13 @@ internal fun dayHeading(
     } else {
         ringgit(keptOutSen) + " kept out of the total: $excluded excluded, " + awaitingReview
     }
-    return DayHeading(total, keptOut, notWatching, awaitingReview.takeIf { pending > 0 })
+    val captureLine = if (notWatching) {
+        null
+    } else {
+        (if (payments == 1) "1 PAYMENT" else "$payments PAYMENTS") + (if (watched) Separator + WATCHED else "")
+    }
+    return DayHeading(total, keptOut, notWatching, awaitingReview.takeIf { pending > 0 }, captureLine)
 }
+
+/** The capture line's second half on a day `capture_day` holds. */
+internal const val WATCHED = "PINGED WAS WATCHING"
