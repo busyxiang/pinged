@@ -36,7 +36,8 @@ import kotlinx.serialization.Serializable
 
 /**
  * Spec 5.5's reviewable list of corrections a newer pack offers, pushed from
- * its row in settings (`SettingsScreen`'s `onOpenCorrections`).
+ * its row in settings, drawn while one waits (`SettingsScreen`'s
+ * `onOpenCorrections`).
  *
  * See [Ledger] for why these are `@Serializable` objects registered nowhere.
  */
@@ -75,8 +76,8 @@ import kotlinx.serialization.Serializable
 @Serializable data object Categories : NavKey
 
 /**
- * The bundled fonts' licences (spec 8), pushed from their row in settings
- * (`SettingsScreen`'s `onOpenLicences`).
+ * The bundled fonts' licences (spec 8), pushed from the LICENCES link in
+ * settings' footer (`SettingsScreen`'s `onOpenLicences`).
  *
  * See [Ledger] for why these are `@Serializable` objects registered nowhere.
  */

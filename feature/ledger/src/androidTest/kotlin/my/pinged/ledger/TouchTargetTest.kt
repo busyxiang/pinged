@@ -27,6 +27,7 @@ import my.pinged.ledger.learned.DELETE
 import my.pinged.ledger.learned.LearnedContent
 import my.pinged.ledger.learned.LearnedState
 import my.pinged.ledger.settings.ExportSheet
+import my.pinged.ledger.settings.Footer
 import my.pinged.ledger.settings.RecoveryNotice
 import my.pinged.ledger.settings.SettingsScreen
 import my.pinged.ledger.settings.SettingsState
@@ -95,6 +96,12 @@ class TouchTargetTest {
     @Test fun exportSheetsAction() {
         scrolled { ExportSheet(SettingsState(loaded = true), onPick = {}, onCancel = {}, onDismiss = {}) }
         assertTall("Export")
+    }
+
+    /** #230: the licences are a link in the footer, and still a control. */
+    @Test fun footersLicences() {
+        scrolled { Footer(buildVersion = "1.0", packVersion = 7, onOpenLicences = {}) }
+        assertTall("LICENCES")
     }
 
     @Test fun rescue() {
