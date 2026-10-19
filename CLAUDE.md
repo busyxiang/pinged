@@ -31,7 +31,7 @@ device's. Builders both sets need are in `src/sharedTest`.
 session shares, and a lease can wait longer than the Bash timeout. Before
 running or writing an instrumented test, read `docs/agents/device-tests.md`:
 filters, the affected-suites run that precedes calling work done, loops, and
-CI's shorter screen.
+CI's shorter screen. That run is under `emu --ci-size`, as CI's is.
 
 `./gradlew test` needs no worktrees under `.claude/worktrees/`, or
 `RawDatabaseAccessTest` scans their copies and fails.

@@ -10,14 +10,17 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +51,7 @@ import my.pinged.ledger.home.EMPTY_HERO
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.HEARD_CHIP
 import my.pinged.ledger.home.MONTH_BUTTON
+import my.pinged.ledger.home.TOP_BAR_TOTAL
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
@@ -60,6 +64,7 @@ import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.HeroFill
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.Mono
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.PingedTheme
@@ -75,7 +80,8 @@ import kotlin.math.abs
 
 /**
  * Spending and day one against `design/Main.dc.html` and `design/Empty.dc.html`
- * (#170), each value read off what was laid out or drawn rather than off the
+ * (#170), and Spending scrolled against `design/MainScrolled.dc.html` and
+ * `MainScrolled320.dc.html` (#253), each value read off what was laid out or drawn rather than off the
  * source, and each with the board's figure in its message.
  *
  * Where a board value is overruled -- 12sp rather than 11 or 8 under
@@ -217,18 +223,25 @@ class LedgerArtboardTest {
      * The band is drawn only where the list keeps a 57dp row above it (#221).
      * In the app at 320x640 the Spending tab is 640 less the 52dp status bar
      * and the 62dp tab bar, 502dp; the capture-off banner, which every fresh
-     * install draws, takes 226dp of that, leaving this screen 276dp, all but
-     * 56 of it the top bar and the pinned summary (measured in `:app`). A
-     * band there would leave the list nothing, and a list with no height
-     * composes no row.
+     * install draws, takes 226dp of that, leaving this screen 276dp
+     * (measured in `:app`). The summary is the list's first item (#253), so
+     * all of it but the top bar is the list's, and the band fits under it.
      */
-    @Test fun underTheBannerAt320x640TheListKeepsItsRowAndTheButtonFloats() {
+    @Test fun underTheBannerAt320x640TheBandFits() {
         long(size = DpSize(320.dp, 276.dp))
+        compose.onNodeWithTag(CASH_BAND).assertExists()
+        val density = compose.density.density
+        assertTrue("The list kept ${listBounds().height / density}dp", listBounds().height / density >= 57f)
+    }
+
+    /**
+     * Where the band would leave no 57dp row, the list takes the whole
+     * height and the button floats over it, as the board draws it.
+     */
+    @Test fun whereTheBandLeavesNoRowTheButtonFloats() {
+        long(size = DpSize(320.dp, 180.dp))
         assertEquals("A band is drawn with no room for a row", 0, compose.onAllNodes(hasTestTag(CASH_BAND)).fetchSemanticsNodes().size)
-        val list = listBounds()
-        assertTrue("The list is ${list.height}px tall", list.height > 0f)
-        val day = boundsOf(dayLabel(SEP_30))
-        assertTrue("The first day is not on screen in the list at $list: $day", day.top >= list.top && day.bottom <= list.bottom)
+        assertTrue("The list is ${listBounds().height}px tall", listBounds().height > 0f)
         compose.onNodeWithTag(ADD_PAYMENT_BUTTON).assertExists()
     }
 
@@ -309,6 +322,45 @@ class LedgerArtboardTest {
         val chip = compose.onNodeWithTag(HEARD_CHIP).fetchSemanticsNode().boundsInRoot
         val month = compose.onNodeWithTag(MONTH_BUTTON).fetchSemanticsNode().boundsInRoot
         assertTrue("The chip at ${chip.top}..${chip.bottom} is off the month's row ${month.top}..${month.bottom}", chip.top >= month.top && chip.bottom <= month.bottom)
+    }
+
+    // ---- Scrolled, `design/MainScrolled.dc.html` ----
+
+    /** A row's amount type, the board's 15px Plex, in Ink. */
+    private fun assertTheTotalIsARowsAmount(width: Dp) {
+        scrolled(width)
+        val style = styleOf(BAR_TOTAL, inTotal = true)
+        assertEquals("The total's family", Mono, style.fontFamily)
+        assertEquals("The board's total is 15px", 15.sp, style.fontSize)
+        assertEquals("The board's total is Ink", Ink, style.color)
+    }
+
+    /** `align-items: baseline`: the abbreviated month and the total on one line. */
+    private fun assertTheTotalSharesTheMonthsBaseline(width: Dp) {
+        scrolled(width)
+        val month = boundsOf(SHORT_MONTH).top + layoutOf(SHORT_MONTH).firstBaseline
+        val total = boundsOf(BAR_TOTAL, inTotal = true).top + layoutOf(BAR_TOTAL, inTotal = true).firstBaseline
+        assertTrue("The month's baseline at $month px, the total's at $total px", abs(month - total) <= 0.5f)
+        assertTrue(
+            "The total does not follow the month on its row",
+            boundsOf(BAR_TOTAL, inTotal = true).left > compose.onNodeWithTag(MONTH_BUTTON).fetchSemanticsNode().boundsInRoot.right,
+        )
+    }
+
+    @Test fun theTotalIsARowsAmountAt411() = assertTheTotalIsARowsAmount(411.dp)
+
+    @Test fun theTotalIsARowsAmountAt320() = assertTheTotalIsARowsAmount(320.dp)
+
+    @Test fun theTotalSharesTheMonthsBaselineAt411() = assertTheTotalSharesTheMonthsBaseline(411.dp)
+
+    @Test fun theTotalSharesTheMonthsBaselineAt320() = assertTheTotalSharesTheMonthsBaseline(320.dp)
+
+    /** At 320 the chip keeps its own line, under the month's, scrolled as at the top. */
+    @Test fun at320TheChipKeepsItsOwnLineUnderTheTotal() {
+        scrolled(320.dp)
+        val chip = compose.onNodeWithTag(HEARD_CHIP).fetchSemanticsNode().boundsInRoot
+        val total = compose.onNodeWithTag(TOP_BAR_TOTAL).fetchSemanticsNode().boundsInRoot
+        assertTrue("The chip at ${chip.top} is not under the total's row at ${total.bottom}", chip.top >= total.bottom)
     }
 
     // ---- Empty ----
@@ -411,20 +463,27 @@ class LedgerArtboardTest {
         )
     }
 
+    /** [long] at [width], with the TopBar's chevron, magnifier and chip, scrolled past its summary. */
+    private fun scrolled(width: Dp) {
+        long(size = DpSize(width, 640.dp), heard = HEARD, chrome = true)
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(PAST_THE_SUMMARY)
+        compose.waitForIdle()
+        compose.onNodeWithTag(TOP_BAR_TOTAL).assertExists()
+    }
+
     /** More rows than a screen holds, so the list scrolls under wherever the button is. */
-    private fun long(size: DpSize? = null) {
-        val rows = (1L..24L).map { ledgerTxn(1_000L * it, localDate = SEP_30, categoryId = FOOD.id, id = it, rawCaptureId = null) }
+    private fun long(size: DpSize? = null, heard: String? = null, chrome: Boolean = false) {
         show(
-            items = listOf(LedgerItem.DayHeader(SEP_30, 1L, listOf(CurrencyTotal("MYR", 30_000L)))) +
-                rows.map { LedgerItem.Row(it, displayName = "Row ${it.id}") },
+            items = longFeed(),
             summary = MonthSummary(
                 month = YearMonth.of(2026, 9),
                 totals = listOf(CurrencyTotal("MYR", 30_000L)),
                 top = listOf(CategoryTotal(FOOD.id, "MYR", 30_000L)),
                 trustworthy = true,
             ),
-            heard = null,
+            heard = heard,
             fontScale = null,
+            chrome = chrome,
             size = size,
         )
     }
@@ -477,22 +536,31 @@ class LedgerArtboardTest {
         compose.waitForIdle()
     }
 
-    private fun text(text: String, substring: Boolean = false): SemanticsNodeInteraction =
-        compose.onNodeWithText(text, substring = substring, useUnmergedTree = true)
+    /**
+     * [inTotal] finds [text] inside the TopBar's total as it shows: the
+     * total is laid out while faded out too, and the unmerged tree lists it.
+     */
+    private fun text(text: String, substring: Boolean = false, inTotal: Boolean = false): SemanticsNodeInteraction =
+        if (inTotal) {
+            compose.onNode(hasText(text, substring = substring) and hasAnyAncestor(hasTestTag(TOP_BAR_TOTAL)), useUnmergedTree = true)
+        } else {
+            compose.onNodeWithText(text, substring = substring, useUnmergedTree = true)
+        }
 
-    private fun boundsOf(text: String): Rect = text(text).fetchSemanticsNode().boundsInRoot
+    private fun boundsOf(text: String, inTotal: Boolean = false): Rect = text(text, inTotal = inTotal).fetchSemanticsNode().boundsInRoot
 
     private fun listBounds(): Rect = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
 
-    private fun layoutOf(text: String, substring: Boolean = false): TextLayoutResult {
+    private fun layoutOf(text: String, substring: Boolean = false, inTotal: Boolean = false): TextLayoutResult {
         val layouts = mutableListOf<TextLayoutResult>()
-        requireNotNull(text(text, substring).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action) {
+        requireNotNull(text(text, substring, inTotal).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action) {
             "\"$text\" exposes no text-layout action"
         }(layouts)
         return layouts.single()
     }
 
-    private fun styleOf(text: String, substring: Boolean = false): TextStyle = layoutOf(text, substring).layoutInput.style
+    private fun styleOf(text: String, substring: Boolean = false, inTotal: Boolean = false): TextStyle =
+        layoutOf(text, substring, inTotal).layoutInput.style
 
     /** [text]'s first baseline, in root pixels. */
     private fun baselineOf(text: String): Float = boundsOf(text).top + layoutOf(text).firstBaseline
@@ -535,6 +603,11 @@ class LedgerArtboardTest {
         val TOP_AMOUNT = money(84_250L, "MYR", symbol = false)
         val SUBTOTAL = money(6_840L, "MYR", symbol = false)
         const val CASH = "CASH"
+        val BAR_TOTAL = money(30_000L, "MYR", symbol = true)
+        const val SHORT_MONTH = "SEP"
+
+        /** An index of [long]'s list well past its summary, the first item. */
+        const val PAST_THE_SUMMARY = 20
         const val HEARD = "HEARD <5 MIN"
 
         const val HEADLINE = "Nothing is missing. There is just nothing yet."

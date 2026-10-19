@@ -60,7 +60,7 @@ class DeleteReachesTheLedgerTest {
             assertTrue(
                 "The fixture row never reached the ledger, so there is nothing " +
                     "for the delete to take away",
-                compose.waitFor { compose.countOf(MERCHANT) == 1 },
+                compose.scrollFeedTo(MERCHANT, TIMEOUT) && compose.countOf(MERCHANT) == 1,
             )
 
             compose.onNodeWithText("SETTINGS").performClick()

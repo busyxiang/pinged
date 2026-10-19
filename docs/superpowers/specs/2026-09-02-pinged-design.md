@@ -1731,8 +1731,15 @@ a `PagingSource` for the rows, an aggregate keyed by `local_date` for the
 day subtotals, and a separate month aggregate for the pinned summary. Day
 subtotals cannot be summed inside a paged list, because a page boundary can
 fall mid-day; Paging's separator support inserts the day header, and the
-subtotal is joined in from the aggregate. Compact month summary
-pinned at top (total + top three categories). Each row shows merchant
+subtotal is joined in from the aggregate. A compact month summary (total +
+top three categories) is the list's first item and scrolls away with it
+(#253); the top bar, which stays pinned, takes over the total once the
+hero's total line has scrolled under it: the month abbreviated and the
+total on its baseline, `SEP · RM2,847.30`, at every width. Several
+currencies show the first in the summary's order and `+N`; a month that
+cannot be trusted greys it as the hero is; a summary still being read, or
+a month with nothing counted, shows none. Tapping it scrolls back to the
+summary. The scroll position is kept across tab switches. Each row shows merchant
 display name, category icon, source app, amount. Uncategorized rows carry a
 tappable chip. Excluded rows are greyed with an exclusion badge. A row
 awaiting review carries `AWAITING REVIEW · <reason>`, and tapping that badge
@@ -1760,7 +1767,8 @@ exactly, which `RowTouchTargetTest` holds (#170).
 ### 9.2 Review inbox
 
 Badge-counted entry point. The ways in: a row pinned to the top of the
-Spending list, `N AWAITING REVIEW`, shown only when N > 0; the count on the
+Spending list, `N AWAITING REVIEW`, shown only when N > 0, right after the
+summary, pinning under the top bar once the summary has gone; the count on the
 Spending tab while another tab is selected; a held row's own badge (section
 9.1), which opens on that row's card; Charts' *N awaiting review* line; and
 the Day screen's heading, whose *M awaiting review* opens on that day's

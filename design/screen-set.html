@@ -511,6 +511,263 @@ button.sizer:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </div></div>
       </div>
       <div class="col">
+        <div class="cap"><span class="step">New, past the summary</span><h3>Spending, scrolled</h3><p>The summary is the list&rsquo;s first item and scrolls away with it, so a phone shows rows rather than the same three categories all day. The bar stays. Once the hero total has gone under it, the total cross-fades in on the month&rsquo;s row, abbreviated to SEP so the bar is no wider scrolled than at the top; tapping it brings the summary back. The awaiting-review row scrolls up with the list and pins under the bar (#253).</p></div>
+        <div class="frame"><div style="width: 390px; height: 844px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+
+  <!-- Main, scrolled past its summary (#253). The top bar is the one thing
+       that does not scroll. Once the hero total has gone under it, the month
+       abbreviates and the total cross-fades in on the month's row, on its
+       baseline: tapping it brings the summary back. Abbreviated at every
+       width, so the bar is never wider scrolled than at the top, and the
+       chip never changes line as the list moves. -->
+  <div style="padding: 26px 20px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+    <div style="display: flex; align-items: baseline; gap: 6px;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #6b6459;">SEP</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.8" stroke-linecap="round" style="align-self: center;"><path d="M6 9l6 6 6-6"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b6459;">&middot;</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: #1a1714;">RM2,847.30</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 7px; border: 1px solid #ded5c4; border-radius: 2px; padding: 7px 10px; min-height: 30px; box-sizing: border-box;">
+      <span style="width: 7px; height: 7px; border-radius: 4px; background: #a03826;"></span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; color: #1a1714;">HEARD &lt;5 MIN</span>
+    </div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+  </div>
+
+  <!-- The awaiting-review row, pinned: it scrolled up under the summary and
+       stopped under the bar. -->
+  <div style="margin-top: 7px; min-height: 44px; padding: 0 20px; display: flex; align-items: center; background: #fbf6ea;">
+    <span style="flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #a03826;">4 AWAITING REVIEW</span>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a03826" stroke-width="1.7" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+  </div>
+
+  <div style="flex: 1; min-height: 0; overflow: hidden; background: #efe7d8; padding: 6px 20px 0; display: flex; flex-direction: column; gap: 14px;">
+
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.6 9H5.6L4 9z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">99 Speedmart</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Groceries &middot; Touch 'n Go</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">32.00</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a03826" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 8.5v7M8.5 12h7"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Restoran Nasi Kandar</div>
+          <div style="display: inline-flex; align-items: center; margin-top: 4px; border: 1px dashed #a03826; border-radius: 2px; padding: 3px 7px; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: #a03826;">+ CATEGORY</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">18.00</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8a8175;">TUE 29 SEP</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b6459; font-variant-numeric: tabular-nums;">233.50</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="16" rx="1.5"/><path d="M7 8h5"/><path d="M14 10h2.5a1.5 1.5 0 0 1 1.5 1.5V16a1.5 1.5 0 0 0 3 0v-4"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Shell Jalan Ampang</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Petrol &middot; Setel</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">70.00</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; opacity: 0.45;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h9l-3-3M16 17H7l3 3"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Touch 'n Go reload</div>
+          <div style="display: inline-flex; margin-top: 4px; border: 1px solid #8a8175; border-radius: 2px; padding: 2px 6px; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; color: #6b6459;">NOT SPENDING</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; text-decoration: line-through;">100.00</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11h14v8H5z"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">TNB</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Bills &amp; utilities &middot; Maybank</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">163.50</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8a8175;">MON 28 SEP</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b6459; font-variant-numeric: tabular-nums;">41.20</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M12 14v6M8 20h8"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">ZUS Coffee</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Food &amp; Drinks &middot; GrabPay</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">12.90</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l1.8-5A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1L20 13v4h-2m-12 0H4v-4"/><circle cx="7.5" cy="16.8" r="1.7"/><circle cx="16.5" cy="16.8" r="1.7"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Grab</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Transport &middot; GrabPay</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">28.30</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: none; height: 86px; box-sizing: border-box; background: #efe7d8; border-top: 1px dotted #cfc4ae; padding: 0 20px; display: flex; align-items: center; justify-content: flex-end;">
+  <div style="width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbf6ea" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #fbf6ea;">CASH</span>
+  </div>
+  </div>
+  <div style="border-top: 1px dotted #cfc4ae; background: #fbf6ea; display: flex; align-items: stretch;">
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-top: 2px solid #a03826; margin-top: -1px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #1a1714;">SPENDING</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a8175" stroke-width="1.6" stroke-linecap="round"><path d="M5 19V10M12 19V5M19 19v-6"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #8a8175;">CHARTS</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a8175" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h6M14 7h6M4 12h10M18 12h2M4 17h3M11 17h9"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #8a8175;">SETTINGS</span>
+    </div>
+  </div>
+</div></div>
+      </div>
+      <div class="col">
+        <div class="cap"><span class="step">New, the same at CI&rsquo;s size</span><h3>At 320dp</h3><p>The narrowest screen Pinged is tested on. The heard chip keeps its own line, as it does at the top, and the total keeps the month&rsquo;s.</p></div>
+        <div class="frame"><div style="width: 320px; height: 640px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+
+  <!-- MainScrolled at CI's 320x640. The heard chip never fits beside the
+       month here, so it keeps its own line under the magnifier, scrolled or
+       not; the total takes the month's row with the month abbreviated. -->
+  <div style="padding: 26px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex; align-items: baseline; gap: 6px;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #6b6459;">SEP</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.8" stroke-linecap="round" style="align-self: center;"><path d="M6 9l6 6 6-6"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b6459;">&middot;</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: #1a1714;">RM2,847.30</span>
+    </div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+  </div>
+  <div style="padding: 8px 20px 0; display: flex; justify-content: flex-end;">
+    <div style="display: flex; align-items: center; gap: 7px; border: 1px solid #ded5c4; border-radius: 2px; padding: 7px 10px; min-height: 30px; box-sizing: border-box;">
+      <span style="width: 7px; height: 7px; border-radius: 4px; background: #a03826;"></span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; color: #1a1714;">HEARD &lt;5 MIN</span>
+    </div>
+  </div>
+
+  <!-- The awaiting-review row, pinned: it scrolled up under the summary and
+       stopped under the bar. -->
+  <div style="margin-top: 7px; min-height: 44px; padding: 0 20px; display: flex; align-items: center; background: #fbf6ea;">
+    <span style="flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #a03826;">4 AWAITING REVIEW</span>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a03826" stroke-width="1.7" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+  </div>
+
+  <div style="flex: 1; min-height: 0; overflow: hidden; background: #efe7d8; padding: 6px 20px 0; display: flex; flex-direction: column; gap: 14px;">
+
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.6 9H5.6L4 9z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">99 Speedmart</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Groceries &middot; Touch 'n Go</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">32.00</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a03826" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 8.5v7M8.5 12h7"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Restoran Nasi Kandar</div>
+          <div style="display: inline-flex; align-items: center; margin-top: 4px; border: 1px dashed #a03826; border-radius: 2px; padding: 3px 7px; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; color: #a03826;">+ CATEGORY</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">18.00</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8a8175;">TUE 29 SEP</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b6459; font-variant-numeric: tabular-nums;">233.50</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="9" height="16" rx="1.5"/><path d="M7 8h5"/><path d="M14 10h2.5a1.5 1.5 0 0 1 1.5 1.5V16a1.5 1.5 0 0 0 3 0v-4"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Shell Jalan Ampang</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Petrol &middot; Setel</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">70.00</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; opacity: 0.45;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h9l-3-3M16 17H7l3 3"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Touch 'n Go reload</div>
+          <div style="display: inline-flex; margin-top: 4px; border: 1px solid #8a8175; border-radius: 2px; padding: 2px 6px; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; color: #6b6459;">NOT SPENDING</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; text-decoration: line-through;">100.00</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11h14v8H5z"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">TNB</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Bills &amp; utilities &middot; Maybank</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">163.50</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8a8175;">MON 28 SEP</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b6459; font-variant-numeric: tabular-nums;">41.20</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M12 14v6M8 20h8"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">ZUS Coffee</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Food &amp; Drinks &middot; GrabPay</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">12.90</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l1.8-5A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1L20 13v4h-2m-12 0H4v-4"/><circle cx="7.5" cy="16.8" r="1.7"/><circle cx="16.5" cy="16.8" r="1.7"/></svg>
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">Grab</div>
+          <div style="font-size: 11.5px; color: #8a8175; margin-top: 1px;">Transport &middot; GrabPay</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums;">28.30</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: none; height: 86px; box-sizing: border-box; background: #efe7d8; border-top: 1px dotted #cfc4ae; padding: 0 20px; display: flex; align-items: center; justify-content: flex-end;">
+  <div style="width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbf6ea" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #fbf6ea;">CASH</span>
+  </div>
+  </div>
+  <div style="border-top: 1px dotted #cfc4ae; background: #fbf6ea; display: flex; align-items: stretch;">
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-top: 2px solid #a03826; margin-top: -1px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #1a1714;">SPENDING</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a8175" stroke-width="1.6" stroke-linecap="round"><path d="M5 19V10M12 19V5M19 19v-6"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #8a8175;">CHARTS</span>
+    </div>
+    <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a8175" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h6M14 7h6M4 12h10M18 12h2M4 17h3M11 17h9"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #8a8175;">SETTINGS</span>
+    </div>
+  </div>
+</div></div>
+      </div>
+      <div class="col">
         <div class="cap"><span class="step">Review inbox</span><h3>Needs a look</h3><p>All four review reasons at once. Every card carries the notification word for word, so the app is never more confident than the evidence it holds. The duplicate card shows both notifications side by side, labelled with which one a merge keeps, so you see what survives before you commit.</p></div>
         <div class="frame"><div style="width: 390px; height: 844px; background: #efe7d8; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden;">
 
