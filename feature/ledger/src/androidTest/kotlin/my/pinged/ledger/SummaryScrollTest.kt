@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import my.pinged.ledger.home.BackupReminder
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
 import my.pinged.ledger.home.MONTH_BUTTON
@@ -52,8 +53,18 @@ class SummaryScrollTest {
      * two past it, the total. The hero's foot rather than the summary's: the
      * top three are still on screen when the total takes over.
      */
-    @Test fun theTotalAppearsOnlyOnceTheHeroHasGone() {
-        show()
+    @Test fun theTotalAppearsOnlyOnceTheHeroHasGone() = assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder = null)
+
+    /**
+     * The same under the backup reminder, the list's first item there
+     * (#252): the summary is the second, and the reminder scrolling away is
+     * not the hero going.
+     */
+    @Test fun underTheBackupReminderTheTotalAppearsOnlyOnceTheHeroHasGone() =
+        assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder = BackupReminder(damaged = false, onAction = {}, onDismiss = {}))
+
+    private fun assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder: BackupReminder?) {
+        show(reminder)
         val toFoot = boundsOf(HERO).bottom - list().fetchSemanticsNode().boundsInRoot.top
         scrollBy(toFoot - 2f)
         compose.onNodeWithTag(TOP_BAR_TOTAL).assertDoesNotExist()
@@ -95,7 +106,7 @@ class SummaryScrollTest {
         assertEquals("The pinned review row is not at the list's top", top, rowTop, 2f)
     }
 
-    private fun show() {
+    private fun show(reminder: BackupReminder? = null) {
         val feed = loadedFeed(longFeed())
         compose.setContent {
             PingedTheme {
@@ -106,6 +117,7 @@ class SummaryScrollTest {
                     onAssign = { _, _, _ -> },
                     onOpenSettings = {},
                     onOpenMonths = {},
+                    backupReminder = reminder,
                 )
             }
         }

@@ -356,7 +356,7 @@ class StorageBannerFollowsTheLedgerTest {
         const val KEY_GONE = "THE KEY IS GONE"
         const val RESTORED = "BACKUP RESTORED"
 
-        /** See `ExportNudgeBannerTest.SETTINGS_ONLY`. */
+        /** See `BackupReminderTest.SETTINGS_ONLY`. */
         const val SETTINGS_ONLY = "Delete everything"
 
         /** The bottom bar's settings tab; see `SettingsNavigationTest`. */

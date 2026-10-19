@@ -48,7 +48,7 @@ import org.junit.runner.RunWith
  * opens its detail (#153) rather than the entry screen. On the Ledger and on
  * the Day screen, which draw the same row.
  *
- * `createEmptyComposeRule`, for the reason `ExportNudgeBannerTest` gives: the
+ * `createEmptyComposeRule`, for the reason `BackupReminderTest` gives: the
  * rows have to be in the database before the Activity reads it.
  */
 @RunWith(AndroidJUnit4::class)

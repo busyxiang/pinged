@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -149,6 +150,8 @@ fun LedgerScreen(
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
+    /** The backup reminder (#252), or null for none; see [BackupReminderRow]. */
+    backupReminder: BackupReminder? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
     val read by viewModel.read.collectAsState()
@@ -199,6 +202,7 @@ fun LedgerScreen(
         onOpenDetail = onOpenDetail,
         onOpenSearch = onOpenSearch,
         heard = heard,
+        backupReminder = backupReminder,
         picked = picked,
         picks = picks,
         onOpenMonths = { monthsOpen = true },
@@ -260,6 +264,7 @@ internal fun LedgerScreenContent(
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
     heard: String? = null,
+    backupReminder: BackupReminder? = null,
     /** The holder's picked month, null to follow the clock; see [LedgerViewModel.picked]. */
     picked: YearMonth? = null,
     onOpenMonths: (() -> Unit)? = null,
@@ -304,13 +309,18 @@ internal fun LedgerScreenContent(
     val chooser = remember(read) { read.chooser }
     val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
 
-    // Where the hero's last line ends inside the summary, the list's first
-    // item: the TopBar takes the total over once that much of the item has
-    // scrolled under it. The offset rather than the index alone, which only
-    // turns once the whole summary, top three and all, has gone.
+    // Where the hero's last line ends inside the summary item: the TopBar
+    // takes the total over once that much of the item has scrolled under it.
+    // The offset rather than the index alone, which only turns once the
+    // whole summary, top three and all, has gone. The summary is the list's
+    // first item, or its second under the backup reminder.
     var heroBottom by remember { mutableIntStateOf(Int.MAX_VALUE) }
+    val summaryIndex by rememberUpdatedState(if (backupReminder != null) 1 else 0)
     val pastHero by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset >= heroBottom }
+        derivedStateOf {
+            listState.firstVisibleItemIndex > summaryIndex ||
+                (listState.firstVisibleItemIndex == summaryIndex && listState.firstVisibleItemScrollOffset >= heroBottom)
+        }
     }
     val scope = rememberCoroutineScope()
 
@@ -378,6 +388,7 @@ internal fun LedgerScreenContent(
                     onOpenEntry = onOpenEntry,
                     onOpenDetail = onOpenDetail,
                     onAddPayment = onAddPayment,
+                    backupReminder = backupReminder,
                     listState = listState,
                     onHeroBottom = { heroBottom = it },
                     modifier = Modifier.weight(1f),
@@ -987,6 +998,7 @@ private fun Feed(
     onHeroBottom: (Int) -> Unit,
     modifier: Modifier = Modifier,
     onAddPayment: (() -> Unit)? = null,
+    backupReminder: BackupReminder? = null,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val banded = onAddPayment != null && maxHeight - ADD_PAYMENT_ROOM >= LEDGER_ROW
@@ -1000,6 +1012,14 @@ private fun Feed(
                     .fillMaxWidth(),
                 contentPadding = PaddingValues(bottom = if (floating) ADD_PAYMENT_ROOM else 0.dp),
             ) {
+                // An item and not a header: it scrolls away with the list
+                // rather than holding a line of a 640dp screen for a week.
+                // First, above the summary, as `Backup.dc.html` draws it (#222).
+                if (backupReminder != null) {
+                    item(key = "backup-reminder", contentType = "backup-reminder") {
+                        BackupReminderRow(backupReminder)
+                    }
+                }
                 item(key = SUMMARY_KEY, contentType = SUMMARY_KEY) {
                     Column(Modifier.testTag(MONTH_SUMMARY).fillMaxWidth().background(Paper)) {
                         MonthSummaryBlock(summary, categoriesById, onHeroBottom)

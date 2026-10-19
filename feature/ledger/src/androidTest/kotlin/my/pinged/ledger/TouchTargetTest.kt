@@ -23,6 +23,10 @@ import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
 import my.pinged.data.dao.LearnedMerchant
+import my.pinged.ledger.home.BackupReminder
+import my.pinged.ledger.home.BackupReminderRow
+import my.pinged.ledger.home.REMINDER_EXPORT
+import my.pinged.ledger.home.REMIND_ME_IN_A_WEEK
 import my.pinged.ledger.learned.DELETE
 import my.pinged.ledger.learned.LearnedContent
 import my.pinged.ledger.learned.LearnedState
@@ -89,6 +93,18 @@ class TouchTargetTest {
         // Drawn icons, so found by what a screen reader calls them.
         compose.onNodeWithContentDescription(SETTINGS_BACK).assertHeightIsAtLeast(44.dp).assertWidthIsAtLeast(44.dp)
         compose.onNodeWithContentDescription(DELETE).assertHeightIsAtLeast(44.dp).assertWidthIsAtLeast(44.dp)
+    }
+
+    // ---- spending --------------------------------------------------------------
+
+    /**
+     * #252: the backup reminder's X is a 15dp glyph, and its box is the 48dp
+     * the issue asks for, above the system's 44.
+     */
+    @Test fun backupRemindersXAndAction() {
+        scrolled { BackupReminderRow(BackupReminder(damaged = false, onAction = {}, onDismiss = {})) }
+        compose.onNodeWithContentDescription(REMIND_ME_IN_A_WEEK).assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
+        assertTall(REMINDER_EXPORT)
     }
 
     // ---- settings ------------------------------------------------------------

@@ -127,7 +127,7 @@ fun ExportReceiptSheet(
  * under the chosen one what it will write.
  *
  * **Opens on the backup card, not the spreadsheet the board draws chosen.**
- * The backup nudge sends a user here by way of Settings to make the one file
+ * Spending's backup reminder sends a user here by way of Settings to make the one file
  * that rebuilds Pinged; a sheet that opened on CSV would hand them a
  * spreadsheet. Search's export opens on CSV instead ([SearchExportSheet]).
  * An export of either kind running, or one settled and not yet dismissed,
