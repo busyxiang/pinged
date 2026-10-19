@@ -59,6 +59,22 @@
       "page": "page-1"
     },
     {
+      "file": "MainScrolled.dc.html",
+      "x": 2450,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "MainScrolled320.dc.html",
+      "x": 2940,
+      "y": 1000,
+      "w": 320,
+      "h": 640,
+      "page": "page-1"
+    },
+    {
       "file": "Inbox.dc.html",
       "x": 490,
       "y": 1000,

@@ -1,5 +1,6 @@
 package my.pinged.ledger.home
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,28 +30,39 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -62,6 +74,7 @@ import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.charts.MonthsSheet
 import my.pinged.charts.model.monthsSheet
@@ -101,6 +114,7 @@ import my.pinged.ui.theme.dottedRule
 import my.pinged.ui.theme.heroFigure
 import java.time.YearMonth
 import java.time.format.TextStyle as JavaTextStyle
+import kotlin.math.roundToInt
 
 /**
  * Spec 9.1's transaction list, drawn from `design/Main.dc.html`.
@@ -251,6 +265,9 @@ internal fun LedgerScreenContent(
     onOpenMonths: (() -> Unit)? = null,
     picks: Int = 0,
 ) {
+    // Saveable, and above the branch below, so the position outlives both a
+    // tab switch (`NavDisplay`'s saveable-state decorator) and a first read
+    // drawn as `Reading` on the way back.
     val listState = rememberLazyListState()
     // A pick starts the feed at its month, so the list goes to its top: at
     // once, over the rows still drawn, and again when the first row changes.
@@ -259,8 +276,15 @@ internal fun LedgerScreenContent(
     // `MonthPickerTest`'s slowed pages -- a pick back to now follows last
     // month's header deep into the new list. Bounded by [PICK_SETTLE], since
     // a pick that leaves the first row as it was never changes it.
+    //
+    // Only a pick not yet acted on: `picks` is saved state, so this screen
+    // composed again after a tab switch starts with the last pick's count,
+    // and taking it for a new pick would throw away where the user had
+    // scrolled to (#253).
+    var seenPicks by rememberSaveable { mutableIntStateOf(picks) }
     LaunchedEffect(picks) {
-        if (picks == 0) return@LaunchedEffect
+        if (picks == seenPicks) return@LaunchedEffect
+        seenPicks = picks
         listState.scrollToItem(0)
         withTimeoutOrNull(PICK_SETTLE) {
             snapshotFlow { items.itemSnapshotList.firstOrNull() }.drop(1).first()
@@ -280,11 +304,22 @@ internal fun LedgerScreenContent(
     val chooser = remember(read) { read.chooser }
     val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
 
+    // Where the hero's last line ends inside the summary, the list's first
+    // item: the TopBar takes the total over once that much of the item has
+    // scrolled under it. The offset rather than the index alone, which only
+    // turns once the whole summary, top three and all, has gone.
+    var heroBottom by remember { mutableIntStateOf(Int.MAX_VALUE) }
+    val pastHero by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset >= heroBottom }
+    }
+    val scope = rememberCoroutineScope()
+
     val unreadable = storageUnavailable || items.loadState.refresh is LoadState.Error
     val reading = !unreadable && items.loadState.refresh is LoadState.Loading && items.itemCount == 0
     // A picked month with nothing on or before it is the feed, not day one:
     // the sheet listed it, so there is a history, only none of it that old.
     val empty = !unreadable && !reading && items.itemCount == 0 && picked == null
+    val feed = !unreadable && !reading && !empty
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Paper)) {
@@ -297,6 +332,13 @@ internal fun LedgerScreenContent(
                 heard = heard,
                 onOpenMonths = onOpenMonths,
                 onOpenSearch = onOpenSearch,
+                total = remember(read.summary) { barTotal(read.summary) },
+                // Only over the feed: the other states draw no summary to
+                // have scrolled past, whatever position was saved.
+                showTotal = feed && pastHero,
+                // The month pick's way back to the top, animated: the user is
+                // asking for the summary rather than for another month.
+                onShowSummary = { scope.launch { listState.animateScrollToItem(0) } },
             )
 
             when {
@@ -337,6 +379,7 @@ internal fun LedgerScreenContent(
                     onOpenDetail = onOpenDetail,
                     onAddPayment = onAddPayment,
                     listState = listState,
+                    onHeroBottom = { heroBottom = it },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -415,29 +458,55 @@ internal fun LedgerScreenContent(
  * 320dp beside SEPTEMBER 2026 its words get about 51dp, six characters, and
  * no `heardLine` fits. Decided by measuring the chip, not by a width, so a
  * longer month or a larger font moves it too.
+ *
+ * [total] is the summary's, carried here once it has scrolled away (#253),
+ * `design/MainScrolled.dc.html`: while [showTotal] the month cross-fades to
+ * its abbreviation and the total fades in after it on its baseline, as a
+ * button back to the summary. Abbreviated at every width, and the chip's
+ * line decided by the wider of the two forms, so the bar is the same height
+ * scrolled or not: a bar that grew as the list moved would move the list.
+ * A form is composed only while it is drawn, so neither the accessibility
+ * tree nor a test finds the one faded out; the width the other would take
+ * is measured from its words ([leadWidths]) rather than laid out.
  */
 @Composable
-private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?, onOpenSearch: (() -> Unit)?) {
+private fun TopBar(
+    month: YearMonth,
+    heard: String?,
+    onOpenMonths: (() -> Unit)?,
+    onOpenSearch: (() -> Unit)?,
+    total: BarTotal?,
+    showTotal: Boolean,
+    onShowSummary: () -> Unit,
+) {
+    val scrolled = total != null && showTotal
+    val fade = animateFloatAsState(if (scrolled) 1f else 0f, label = "top-bar-total")
+    val fullDrawn by remember { derivedStateOf { fade.value < 1f } }
+    val shortDrawn by remember { derivedStateOf { fade.value > 0f } }
+    val full = monthName(month)
+    val short = month.month.getDisplayName(JavaTextStyle.SHORT, CALENDAR).uppercase(CALENDAR)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val widths = remember(full, short, total, onOpenMonths != null, density) {
+        leadWidths(measurer, density, full, short, total?.text, chevron = onOpenMonths != null)
+    }
+    val totalShift = remember(total?.text, density) { total?.let { baselineShift(measurer, it.text) } ?: 0 }
     Layout(
         content = {
-            Row(
-                Modifier
-                    .layoutId(BarSlot.MONTH)
-                    .testTag(MONTH_BUTTON)
-                    .heightIn(min = MONTH_TARGET)
-                    .then(
-                        if (onOpenMonths != null) {
-                            Modifier.clickable(role = Role.Button, onClickLabel = CHOOSE_A_MONTH, onClick = onOpenMonths)
-                        } else {
-                            Modifier
-                        },
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(monthName(month), style = MonoLabel, color = Muted)
-                // Only where it opens something: it says "pick a month".
-                if (onOpenMonths != null) DownChevron()
+            if (total == null || fullDrawn) {
+                MonthButton(full, showing = !scrolled, onOpenMonths = onOpenMonths, modifier = Modifier.layoutId(BarSlot.MONTH))
+            }
+            if (total != null && shortDrawn) {
+                MonthButton(
+                    label = short,
+                    showing = scrolled,
+                    onOpenMonths = onOpenMonths,
+                    // The month's whole name to TalkBack, as the full label says it.
+                    description = full,
+                    trailing = MIDDLE_DOT,
+                    modifier = Modifier.layoutId(BarSlot.SHORT_MONTH),
+                )
+                TotalButton(total, showing = scrolled, shift = totalShift, onClick = onShowSummary, modifier = Modifier.layoutId(BarSlot.TOTAL))
             }
             if (heard != null) HeardChip(heard, Modifier.layoutId(BarSlot.CHIP))
             if (onOpenSearch != null) SearchButton(onOpenSearch, Modifier.layoutId(BarSlot.SEARCH))
@@ -448,18 +517,29 @@ private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?
     ) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
         fun slot(id: BarSlot) = measurables.firstOrNull { it.layoutId == id }?.measure(loose)
-        val monthSlot = slot(BarSlot.MONTH)!!
+        val monthSlot = slot(BarSlot.MONTH)
+        val shortMonth = slot(BarSlot.SHORT_MONTH)
+        val totalSlot = slot(BarSlot.TOTAL)
         val chip = slot(BarSlot.CHIP)
         val search = slot(BarSlot.SEARCH)
         val width = constraints.maxWidth
         val gap = CHIP_GAP.roundToPx()
-        val rowHeight = maxOf(monthSlot.height, chip?.height ?: 0, search?.height ?: 0)
-        val used = monthSlot.width + (search?.width ?: 0)
+        val totalGap = TOTAL_GAP.roundToPx()
+        val drawnLead = maxOf(monthSlot?.width ?: 0, (shortMonth?.width ?: 0) + totalGap + (totalSlot?.width ?: 0))
+        val lead = maxOf(drawnLead, widths.full, if (total != null) widths.scrolled else 0)
+        // Every month form is the 44dp target, whichever is drawn.
+        val leadHeight = maxOf(monthSlot?.height ?: 0, shortMonth?.height ?: 0, totalSlot?.height ?: 0, MONTH_TARGET.roundToPx())
+        val rowHeight = maxOf(leadHeight, chip?.height ?: 0, search?.height ?: 0)
+        val used = lead + (search?.width ?: 0)
         val inRow = chip == null || used + gap + chip.width <= width
-        val height = if (inRow) rowHeight else maxOf(monthSlot.height, search?.height ?: 0) + CHIP_DROP.roundToPx() + chip!!.height
+        val height = if (inRow) rowHeight else maxOf(leadHeight, search?.height ?: 0) + CHIP_DROP.roundToPx() + chip!!.height
         layout(width, height) {
-            val firstRow = if (inRow) rowHeight else maxOf(monthSlot.height, search?.height ?: 0)
-            monthSlot.place(0, (firstRow - monthSlot.height) / 2)
+            val firstRow = if (inRow) rowHeight else maxOf(leadHeight, search?.height ?: 0)
+            monthSlot?.placeWithLayer(0, (firstRow - monthSlot.height) / 2) { alpha = 1f - fade.value }
+            shortMonth?.placeWithLayer(0, (firstRow - shortMonth.height) / 2) { alpha = fade.value }
+            if (shortMonth != null && totalSlot != null) {
+                totalSlot.placeWithLayer(shortMonth.width + totalGap, (firstRow - totalSlot.height) / 2) { alpha = fade.value }
+            }
             search?.let { it.place(width - it.width, (firstRow - it.height) / 2) }
             if (chip != null) {
                 if (inRow) {
@@ -467,7 +547,7 @@ private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?
                     // magnifier, else centred in what the month and the
                     // magnifier leave, at least CHIP_GAP after the month.
                     val free = width - used - gap - chip.width
-                    val x = if (search == null) width - chip.width else monthSlot.width + gap + free / 2
+                    val x = if (search == null) width - chip.width else lead + gap + free / 2
                     chip.place(x, (rowHeight - chip.height) / 2)
                 } else {
                     chip.place(width - chip.width, firstRow + CHIP_DROP.roundToPx())
@@ -477,8 +557,152 @@ private fun TopBar(month: YearMonth, heard: String?, onOpenMonths: (() -> Unit)?
     }
 }
 
-/** The top bar's three slots, which [TopBar]'s layout finds by id. */
-private enum class BarSlot { MONTH, CHIP, SEARCH }
+/** The widths, in pixels, of the bar's month at the top ([full]) and scrolled. */
+private class LeadWidths(val full: Int, val scrolled: Int)
+
+/**
+ * What [MonthButton] and [TotalButton] lay out, from their words: the label,
+ * then the chevron where there is one, then for the scrolled form the
+ * separator and the total, each [MONTH_GAP] or [TOTAL_GAP] apart. In step
+ * with those two by hand; `LedgerArtboardTest`'s chip tests read the result.
+ */
+private fun leadWidths(measurer: TextMeasurer, density: Density, full: String, short: String, total: String?, chevron: Boolean): LeadWidths =
+    with(density) {
+        fun label(text: String) = measurer.measure(text, MonoLabel).size.width
+        val chevronWidth = if (chevron) (MONTH_GAP + CHEVRON_SIZE).roundToPx() else 0
+        val fullWidth = label(full) + chevronWidth
+        val scrolled = if (total == null) {
+            0
+        } else {
+            label(short) + chevronWidth + MONTH_GAP.roundToPx() + label(MIDDLE_DOT) +
+                TOTAL_GAP.roundToPx() + measurer.measure(total, BarTotalStyle).size.width
+        }
+        LeadWidths(fullWidth, scrolled)
+    }
+
+/**
+ * How far down the total's words move so their baseline is the month's,
+ * where both are centred in the 44dp target: their sizes differ, and so do
+ * where centring puts their baselines.
+ */
+private fun baselineShift(measurer: TextMeasurer, total: String): Int {
+    fun fromCentre(layout: TextLayoutResult) = layout.firstBaseline - layout.size.height / 2f
+    return (fromCentre(measurer.measure(MIDDLE_DOT, MonoLabel)) - fromCentre(measurer.measure(total, BarTotalStyle))).roundToInt()
+}
+
+/**
+ * The month's label and the board's chevron, as one button with the design
+ * system's 44dp target where [onOpenMonths] opens something, then
+ * [trailing] in the label's voice. Not [showing], it is fading out: nothing
+ * to TalkBack, nothing to a tap.
+ */
+@Composable
+private fun MonthButton(
+    label: String,
+    showing: Boolean,
+    onOpenMonths: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    description: String? = null,
+    trailing: String? = null,
+) {
+    Row(
+        modifier.heightIn(min = MONTH_TARGET),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(MONTH_GAP),
+    ) {
+        Row(
+            Modifier
+                .then(
+                    if (!showing) {
+                        Modifier.clearAndSetSemantics {}
+                    } else {
+                        Modifier
+                            .testTag(MONTH_BUTTON)
+                            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier)
+                            .then(
+                                if (onOpenMonths != null) {
+                                    Modifier.clickable(role = Role.Button, onClickLabel = CHOOSE_A_MONTH, onClick = onOpenMonths)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                    },
+                )
+                .heightIn(min = MONTH_TARGET),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MONTH_GAP),
+        ) {
+            Text(label, style = MonoLabel, color = Muted)
+            // Only where it opens something: it says "pick a month".
+            if (onOpenMonths != null) DownChevron()
+        }
+        if (trailing != null) Text(trailing, style = MonoLabel, color = Muted, modifier = Modifier.clearAndSetSemantics {})
+    }
+}
+
+/**
+ * The summary's total in the TopBar, in a row's amount type and the hero's
+ * colour, moved [shift] pixels onto the month's baseline. A button back to
+ * the summary, named by what it does ([SHOW_SUMMARY]), in the 44dp target.
+ * Not [showing], it is fading out: no semantics, no tap.
+ */
+@Composable
+private fun TotalButton(total: BarTotal, showing: Boolean, shift: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .then(
+                if (!showing) {
+                    Modifier.clearAndSetSemantics {}
+                } else {
+                    Modifier
+                        .testTag(TOP_BAR_TOTAL)
+                        .clickable(role = Role.Button, onClick = onClick)
+                        .semantics { contentDescription = SHOW_SUMMARY }
+                },
+            )
+            .heightIn(min = MONTH_TARGET),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            total.text,
+            style = BarTotalStyle,
+            color = if (total.trustworthy) Ink else Muted,
+            modifier = Modifier.offset { IntOffset(0, shift) },
+        )
+    }
+}
+
+/** What the TopBar says of the month's total: see [barTotal]. */
+internal data class BarTotal(val text: String, val trustworthy: Boolean)
+
+/**
+ * The TopBar's total for [summary] (#253): the first currency in the
+ * summary's order, then `+N` for the rest, since the bar has room for one
+ * figure and the summary is one tap away. Null while the summary is read and
+ * for a month with nothing counted: the hero says those in words, and a bar
+ * with no currency has no zero to show.
+ */
+internal fun barTotal(summary: MonthSummary?): BarTotal? {
+    val first = summary?.totals?.firstOrNull() ?: return null
+    val rest = summary.totals.size - 1
+    val amount = money(first.netSen, first.currency, symbol = true)
+    return BarTotal(if (rest > 0) "$amount +$rest" else amount, summary.trustworthy)
+}
+
+/** A ledger row's amount type, the board's 15px Plex: the bar's one figure. */
+private val BarTotalStyle = MonoNumerals.copy(fontSize = 15.sp)
+
+/** The board's `gap: 6px` between the month's abbreviation, its separator and the total. */
+private val TOTAL_GAP = 6.dp
+
+/** The board's `gap: 6px` between the month's label and its chevron. */
+private val MONTH_GAP = 6.dp
+
+/** The separator between the scrolled month and its total. */
+private const val MIDDLE_DOT = "\u00B7"
+
+/** The top bar's slots, which [TopBar]'s layout finds by id. */
+private enum class BarSlot { MONTH, SHORT_MONTH, TOTAL, CHIP, SEARCH }
 
 /** The least room between the month and the heard chip on one row. */
 private val CHIP_GAP = 12.dp
@@ -516,6 +740,9 @@ const val OPEN_SEARCH = "Search"
  */
 private const val PICK_SETTLE = 10_000L
 
+/** The board's month chevron, 14px square. */
+private val CHEVRON_SIZE = 14.dp
+
 /** The month button's height: the design system's 44px target. */
 private val MONTH_TARGET = 44.dp
 
@@ -525,7 +752,7 @@ private val MONTH_TARGET = 44.dp
  */
 @Composable
 private fun DownChevron() {
-    Canvas(Modifier.testTag(MONTH_CHEVRON).size(14.dp)) {
+    Canvas(Modifier.testTag(MONTH_CHEVRON).size(CHEVRON_SIZE)) {
         val unit = size.width / 24f
         val stroke = 1.8f * unit
         drawLine(Muted, Offset(6 * unit, 9 * unit), Offset(12 * unit, 15 * unit), stroke, StrokeCap.Round)
@@ -722,19 +949,25 @@ private fun CashOffer(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * The pinned summary, then the rows, under the awaiting-review row when there
- * is one, and the add button where [onAddPayment] offers one.
+ * The summary, then the rows under the awaiting-review row when there is one,
+ * all in one list, and the add button where [onAddPayment] offers one.
+ *
+ * The summary is the list's first item, so it scrolls away and leaves the
+ * screen to the rows (#253); the TopBar carries the total once it has gone.
+ * [onHeroBottom] reports where the hero's last line ends inside that item,
+ * in pixels from its top. The review row is a sticky header right after it:
+ * it scrolls up under the summary and then pins under the TopBar.
  *
  * The button sits in a band under the list, not over it: a ledger's amounts
  * and badges are right-aligned, the edge the button is on, so over the list it
  * covered a subtotal or a duplicate badge wherever the list was scrolled
  * (#221). The band is all or nothing, and only where the list keeps at least
- * one [LEDGER_ROW] above it: at 320x640 under the capture-off banner, which
- * every fresh install draws, the list has 56dp in all, and a band would leave
- * it none, which composes no row. There the list takes the whole area and the
- * button floats over it as the board draws it, with room after the last row.
- * Measured, not a breakpoint, so a banner, a font scale or a longer summary
- * moves it too.
+ * one [LEDGER_ROW] above it: a band that left it less would leave a list
+ * that composes no row. There the list takes the whole area and the button
+ * floats over it as the board draws it, with room after the last row. With
+ * the summary inside the list the band fits even at 320x640 under the
+ * capture-off banner, which every fresh install draws (`LedgerArtboardTest`).
+ * Measured, not a breakpoint, so a banner or a font scale moves it too.
  */
 @Composable
 private fun Feed(
@@ -751,86 +984,90 @@ private fun Feed(
     onOpenEntry: ((EditTarget) -> Unit)?,
     onOpenDetail: ((EditTarget) -> Unit)?,
     listState: LazyListState,
+    onHeroBottom: (Int) -> Unit,
     modifier: Modifier = Modifier,
     onAddPayment: (() -> Unit)? = null,
 ) {
-    Column(modifier) {
-        MonthSummaryBlock(summary, categoriesById)
-        // A hairline and a change of ground rather than the artboard's
-        // perforation: that is `SourcesScreen`'s `TornEdge`, private to that
-        // file, and a second copy of its tile geometry is a second thing to
-        // keep in step.
-        Spacer(Modifier.fillMaxWidth().padding(top = 18.dp).height(1.dp).background(Rule))
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val banded = onAddPayment != null && maxHeight - ADD_PAYMENT_ROOM >= LEDGER_ROW
-            val floating = onAddPayment != null && !banded
-            Column(Modifier.fillMaxSize()) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .background(Card)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(bottom = if (floating) ADD_PAYMENT_ROOM else 0.dp),
-                ) {
-                    // A sticky header, so it stays at the top of the list as it
-                    // scrolls, and inside the list's scroll so a test can reach it
-                    // with `performScrollTo`. Absent at zero, so it is never noise.
-                    if (awaitingReview > 0) {
-                        stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
-                            AwaitingReviewRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
-                                onOpenReview(null)
-                            }
-                        }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val banded = onAddPayment != null && maxHeight - ADD_PAYMENT_ROOM >= LEDGER_ROW
+        val floating = onAddPayment != null && !banded
+        Column(Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .background(Card)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(bottom = if (floating) ADD_PAYMENT_ROOM else 0.dp),
+            ) {
+                item(key = SUMMARY_KEY, contentType = SUMMARY_KEY) {
+                    Column(Modifier.testTag(MONTH_SUMMARY).fillMaxWidth().background(Paper)) {
+                        MonthSummaryBlock(summary, categoriesById, onHeroBottom)
+                        // A hairline and a change of ground rather than the artboard's
+                        // perforation: that is `SourcesScreen`'s `TornEdge`, private to that
+                        // file, and a second copy of its tile geometry is a second thing to
+                        // keep in step.
+                        Spacer(Modifier.fillMaxWidth().padding(top = 18.dp).height(1.dp).background(Rule))
                     }
-                    items(
-                        count = items.itemCount,
-                        // The header's key names the row it sits above as well as its
-                        // day, because a duplicate key throws out of measure: see
-                        // `LedgerItem.DayHeader.firstRowId`.
-                        key = items.itemKey { item ->
-                            when (item) {
-                                is LedgerItem.Row -> "txn-" + item.txn.id
-                                is LedgerItem.DayHeader ->
-                                    "day-" + item.date.yyyymmdd + "-" + item.firstRowId
-                            }
-                        },
-                        contentType = items.itemContentType { item ->
-                            when (item) {
-                                is LedgerItem.Row -> "row"
-                                is LedgerItem.DayHeader -> "header"
-                            }
-                        },
-                    ) { index ->
-                        when (val item = items[index]) {
-                            // Placeholders are off, so this is only reached if the list
-                            // shrinks under the composition. Nothing is the honest draw
-                            // for a row that is no longer there.
-                            null -> Unit
-                            is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal, first = index == 0)
-                            is LedgerItem.Row -> LedgerRow(
-                                row = item.feedRow,
-                                categoriesById = categoriesById,
-                                uncategorizedId = uncategorizedId,
-                                canCategorize = hasChoices,
-                                onCategorize = onCategorize,
-                                onOpenMerchant = onOpenMerchant,
-                                onOpenReview = onOpenReview,
-                                onOpenEntry = onOpenEntry,
-                                onOpenDetail = onOpenDetail,
-                            )
+                }
+                // A sticky header, so once the summary has gone it stays at the
+                // top of the list as it scrolls, and inside the list's scroll so a
+                // test can reach it with `performScrollTo`. Absent at zero, so it
+                // is never noise.
+                if (awaitingReview > 0) {
+                    stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
+                        AwaitingReviewRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
+                            onOpenReview(null)
                         }
                     }
                 }
-                // The dotted rule is the screens' footers'.
-                if (banded) {
-                    Spacer(Modifier.testTag(CASH_BAND).fillMaxWidth().height(ADD_PAYMENT_ROOM).background(Card).dottedRule(atTop = true))
+                items(
+                    count = items.itemCount,
+                    // The header's key names the row it sits above as well as its
+                    // day, because a duplicate key throws out of measure: see
+                    // `LedgerItem.DayHeader.firstRowId`.
+                    key = items.itemKey { item ->
+                        when (item) {
+                            is LedgerItem.Row -> "txn-" + item.txn.id
+                            is LedgerItem.DayHeader ->
+                                "day-" + item.date.yyyymmdd + "-" + item.firstRowId
+                        }
+                    },
+                    contentType = items.itemContentType { item ->
+                        when (item) {
+                            is LedgerItem.Row -> "row"
+                            is LedgerItem.DayHeader -> "header"
+                        }
+                    },
+                ) { index ->
+                    when (val item = items[index]) {
+                        // Placeholders are off, so this is only reached if the list
+                        // shrinks under the composition. Nothing is the honest draw
+                        // for a row that is no longer there.
+                        null -> Unit
+                        is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal, first = index == 0)
+                        is LedgerItem.Row -> LedgerRow(
+                            row = item.feedRow,
+                            categoriesById = categoriesById,
+                            uncategorizedId = uncategorizedId,
+                            canCategorize = hasChoices,
+                            onCategorize = onCategorize,
+                            onOpenMerchant = onOpenMerchant,
+                            onOpenReview = onOpenReview,
+                            onOpenEntry = onOpenEntry,
+                            onOpenDetail = onOpenDetail,
+                        )
+                    }
                 }
             }
-            if (onAddPayment != null) {
-                val bottom = if (banded) (ADD_PAYMENT_ROOM - ADD_PAYMENT_SIZE) / 2 else 20.dp
-                AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = bottom))
+            // The dotted rule is the screens' footers'.
+            if (banded) {
+                Spacer(Modifier.testTag(CASH_BAND).fillMaxWidth().height(ADD_PAYMENT_ROOM).background(Card).dottedRule(atTop = true))
             }
+        }
+        if (onAddPayment != null) {
+            val bottom = if (banded) (ADD_PAYMENT_ROOM - ADD_PAYMENT_SIZE) / 2 else 20.dp
+            AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = bottom))
         }
     }
 }
@@ -856,7 +1093,7 @@ private fun AwaitingReviewRow(label: String, onOpen: () -> Unit) {
 }
 
 /**
- * Spec 9.1's pinned month summary: the total, and the top three categories.
+ * Spec 9.1's month summary: the total, and the top three categories.
  *
  * Three states, none of which is a zero. A null [summary] is "the aggregate has
  * not landed"; an empty `totals` is "the month has nothing that counts", which
@@ -865,90 +1102,102 @@ private fun AwaitingReviewRow(label: String, onOpen: () -> Unit) {
  *
  * [categoriesById] resolves `CategoryTotal`'s `category_id` to the name §9.1
  * asks for -- see [MonthSummary] for why the summary does not carry it.
+ *
+ * [onHeroBottom] is where the heading and the totals under it end, from the
+ * block's top, in pixels: nothing above them in the block offsets it.
  */
 @Composable
-private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, Category>) {
+private fun MonthSummaryBlock(summary: MonthSummary?, categoriesById: Map<Long, Category>, onHeroBottom: (Int) -> Unit) {
     val leaderLift = with(LocalDensity.current) { LEADER_LIFT.roundToPx() }
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
-        Text("SPENT SO FAR", style = MonoLabel, color = Muted)
+    Column(Modifier.fillMaxWidth()) {
+        // First in the chain, so its coordinates include the padding.
+        Column(
+            Modifier
+                .onPlaced { onHeroBottom(it.positionInParent().y.toInt() + it.size.height) }
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 20.dp),
+        ) {
+            Text("SPENT SO FAR", style = MonoLabel, color = Muted)
 
-        when {
-            summary == null -> Text(
-                "READING",
-                style = MonoLabel,
-                color = Muted,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-
-            summary.totals.isEmpty() -> Text(
-                "NOTHING COUNTED THIS MONTH",
-                style = MonoLabel,
-                color = Muted,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-
-            else -> summary.totals.forEach { total ->
-                val amount = money(total.netSen, total.currency, symbol = true)
-                Text(
-                    if (summary.totals.size == 1) heroText(amount) else AnnotatedString(amount),
-                    // The serif for a single display figure, the mono the
-                    // moment there are two: §8's typography note measures
-                    // Instrument Serif's digits at 249-460 units per 1000 em
-                    // with no `tnum` feature, so two serif figures stacked
-                    // cannot align. A second currency is exactly that stack.
-                    style = if (summary.totals.size == 1) HeroSerif else HeroMono,
-                    // Greyed, not hidden, when the month has gaps: see
-                    // [MonthSummary.trustworthy].
-                    color = if (summary.trustworthy) Ink else Muted,
-                    modifier = Modifier.padding(top = 2.dp),
+            when {
+                summary == null -> Text(
+                    "READING",
+                    style = MonoLabel,
+                    color = Muted,
+                    modifier = Modifier.padding(top = 6.dp),
                 )
+
+                summary.totals.isEmpty() -> Text(
+                    "NOTHING COUNTED THIS MONTH",
+                    style = MonoLabel,
+                    color = Muted,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+
+                else -> summary.totals.forEach { total ->
+                    val amount = money(total.netSen, total.currency, symbol = true)
+                    Text(
+                        if (summary.totals.size == 1) heroText(amount) else AnnotatedString(amount),
+                        // The serif for a single display figure, the mono the
+                        // moment there are two: §8's typography note measures
+                        // Instrument Serif's digits at 249-460 units per 1000 em
+                        // with no `tnum` feature, so two serif figures stacked
+                        // cannot align. A second currency is exactly that stack.
+                        style = if (summary.totals.size == 1) HeroSerif else HeroMono,
+                        // Greyed, not hidden, when the month has gaps: see
+                        // [MonthSummary.trustworthy].
+                        color = if (summary.trustworthy) Ink else Muted,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
         }
-
-        // Drawn over a worded zero as well as over a real total, and never
-        // suppressed by either: §8's rule is that a gap in capture is never
-        // drawn as a zero, and "NOTHING COUNTED THIS MONTH" is a zero in words
-        // -- the state a reader is most likely to read as "nothing spent". A
-        // null summary has no trust answer yet and so is not one of them.
-        if (summary != null && !summary.trustworthy) {
-            Text(
-                "DO NOT TRUST" + Separator + "CAPTURE HAS GAPS THIS MONTH",
-                style = MonoLabel,
-                color = Stamp,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-
-        summary?.top?.forEach { category ->
-            // On one baseline, as the board's `align-items: baseline` sets
-            // them: a Karla name and a Plex amount centred apart measured 3px
-            // between their baselines.
-            Row(Modifier.fillMaxWidth().padding(top = 7.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            // Drawn over a worded zero as well as over a real total, and never
+            // suppressed by either: §8's rule is that a gap in capture is never
+            // drawn as a zero, and "NOTHING COUNTED THIS MONTH" is a zero in words
+            // -- the state a reader is most likely to read as "nothing spent". A
+            // null summary has no trust answer yet and so is not one of them.
+            if (summary != null && !summary.trustworthy) {
                 Text(
-                    // The id is not a name, and a category the seed does not
-                    // hold is a row pointing at a category that has been merged
-                    // away -- named as unknown rather than printed as a number.
-                    categoriesById[category.categoryId]?.name ?: "Unknown category",
-                    fontFamily = Body,
-                    fontSize = 13.sp,
-                    color = Ink,
-                    modifier = Modifier.alignByBaseline(),
+                    "DO NOT TRUST" + Separator + "CAPTURE HAS GAPS THIS MONTH",
+                    style = MonoLabel,
+                    color = Stamp,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
-                Spacer(
-                    Modifier
-                        .weight(1f)
-                        .height(1.dp)
-                        .alignBy { it.measuredHeight + leaderLift }
-                        .dottedRule(inset = LEADER_INSET),
-                )
-                Text(
-                    money(category.netSen, category.currency, symbol = false),
-                    style = MonoNumerals.copy(fontSize = 13.sp),
-                    modifier = Modifier.alignByBaseline(),
-                    // Greyed with the total above it: the breakdown of a
-                    // number §8 says not to trust is not itself trustworthy.
-                    color = if (summary.trustworthy) Ink else Muted,
-                )
+            }
+
+            summary?.top?.forEach { category ->
+                // On one baseline, as the board's `align-items: baseline` sets
+                // them: a Karla name and a Plex amount centred apart measured 3px
+                // between their baselines.
+                Row(Modifier.fillMaxWidth().padding(top = 7.dp)) {
+                    Text(
+                        // The id is not a name, and a category the seed does not
+                        // hold is a row pointing at a category that has been merged
+                        // away -- named as unknown rather than printed as a number.
+                        categoriesById[category.categoryId]?.name ?: "Unknown category",
+                        fontFamily = Body,
+                        fontSize = 13.sp,
+                        color = Ink,
+                        modifier = Modifier.alignByBaseline(),
+                    )
+                    Spacer(
+                        Modifier
+                            .weight(1f)
+                            .height(1.dp)
+                            .alignBy { it.measuredHeight + leaderLift }
+                            .dottedRule(inset = LEADER_INSET),
+                    )
+                    Text(
+                        money(category.netSen, category.currency, symbol = false),
+                        style = MonoNumerals.copy(fontSize = 13.sp),
+                        modifier = Modifier.alignByBaseline(),
+                        // Greyed with the total above it: the breakdown of a
+                        // number §8 says not to trust is not itself trustworthy.
+                        color = if (summary.trustworthy) Ink else Muted,
+                    )
+                }
             }
         }
     }
@@ -1103,6 +1352,18 @@ const val EMPTY_HERO = "empty-hero"
 const val HEARD_CHIP = "heard-chip"
 const val MONTH_BUTTON = "month-button"
 const val MONTH_CHEVRON = "month-chevron"
+
+/** The summary, the list's first item. */
+const val MONTH_SUMMARY = "month-summary"
+
+/** The TopBar's total, there only while it shows (#253). */
+const val TOP_BAR_TOTAL = "top-bar-total"
+
+/** The TopBar total's name to TalkBack: what a tap on it does. */
+const val SHOW_SUMMARY = "Show the month's summary"
+
+/** The summary item's key and content type. */
+private const val SUMMARY_KEY = "summary"
 
 /** The month button's action, to TalkBack; Charts' header says the same. */
 internal const val CHOOSE_A_MONTH = "Choose a month"

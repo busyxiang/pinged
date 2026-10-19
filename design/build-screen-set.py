@@ -21,6 +21,10 @@ groups = [
  ("Every day", "The app in ordinary use, a month in. Scenario pinned to Wednesday 30 September 2026 so every figure agrees with every other.", [
   ("Spending", "Main.dc.html", "Home",
    "Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. Cash sits in its own band above the tabs, and the list stops at its edge rather than scrolling under it: amounts are right-aligned, which is the edge a floating button would cover (#221)."),
+  ("Spending, scrolled", "MainScrolled.dc.html", "New, past the summary",
+   "The summary is the list&rsquo;s first item and scrolls away with it, so a phone shows rows rather than the same three categories all day. The bar stays. Once the hero total has gone under it, the total cross-fades in on the month&rsquo;s row, abbreviated to SEP so the bar is no wider scrolled than at the top; tapping it brings the summary back. The awaiting-review row scrolls up with the list and pins under the bar (#253)."),
+  ("At 320dp", "MainScrolled320.dc.html", "New, the same at CI&rsquo;s size",
+   "The narrowest screen Pinged is tested on. The heard chip keeps its own line, as it does at the top, and the total keeps the month&rsquo;s."),
   ("Needs a look", "Inbox.dc.html", "Review inbox",
    "All four review reasons at once. Every card carries the notification word for word, so the app is never more confident than the evidence it holds. The duplicate card shows both notifications side by side, labelled with which one a merge keeps, so you see what survives before you commit."),
   ("Detail", "Detail.dc.html", "One transaction",
