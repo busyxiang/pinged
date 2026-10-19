@@ -60,6 +60,10 @@ _Avoid_: pending (the stored state), held, flagged, needs review
 The one place every transaction awaiting review is answered.
 _Avoid_: review queue, inbox (alone), corrections (that is the re-parse list)
 
+**To sort**:
+A counted transaction still filed under Uncategorized, waiting for the user to give it a category. Unlike one awaiting review, it is already in every total; only where it is filed is unknown.
+_Avoid_: unsorted, uncategorised, needs a category
+
 
 ### Capture
 
