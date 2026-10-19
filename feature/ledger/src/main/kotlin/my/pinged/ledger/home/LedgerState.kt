@@ -181,6 +181,14 @@ data class LedgerRead(
      * `N AWAITING REVIEW` row, drawn only above zero (§9.2).
      */
     val awaitingReview: Int = 0,
+    /**
+     * How many of [awaitingReview] are dated in [summary]'s month, every
+     * currency, by `TxnDao.notInTotal`'s `PENDING` line: the query Charts'
+     * *N awaiting review* reads, so the two screens cannot disagree on a month
+     * (#215). Charts draws only ringgit, so a held foreign payment is counted
+     * here and not there.
+     */
+    val awaitingReviewInMonth: Int = 0,
 ) {
     /** The chooser's half of this read, for `RowCategoryChooser`. */
     val chooser: ChooserRead
