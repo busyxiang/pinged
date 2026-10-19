@@ -137,15 +137,16 @@ private fun Legend(legend: GridLegend, showsToday: Boolean) {
         if (legend.moreCameBack) {
             Key("MORE CAME BACK", dot = true) { Modifier.border(1.dp, CellLine) }
         }
-        Key("NOT CAPTURED") { Modifier.hatched().border(1.dp, CellLine) }
-        if (showsToday) Key("TODAY") { Modifier.border(1.dp, CellLine).todayMark() }
-        Text(
-            "A DAY PINGED DID NOT WATCH IS HATCHED, NEVER EMPTY.",
-            style = Small,
-            color = Muted,
-            modifier = Modifier.padding(top = 1.dp),
-        )
+        if (legend.notCaptured) Key("NOT CAPTURED") { Modifier.hatched().border(1.dp, CellLine) }
+        if (showsToday) Key("TODAY, STILL GOING") { Modifier.border(1.dp, CellLine).todayMark() }
+        if (legend.notCaptured) Note("A DAY PINGED DID NOT WATCH IS HATCHED, NEVER EMPTY.")
+        if (legend.toCome) Note("DAYS STILL TO COME ARE LEFT BLANK.")
     }
+}
+
+@Composable
+private fun Note(text: String) {
+    Text(text, style = Small, color = Muted, modifier = Modifier.padding(top = 1.dp))
 }
 
 @Composable

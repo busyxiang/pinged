@@ -12,14 +12,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.charts.model.KeptOut
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.dottedRule
 
 /**
@@ -49,8 +52,9 @@ internal fun NotInTotalBlock(lines: List<KeptOut>, modifier: Modifier = Modifier
 
 /**
  * A label, a dotted leader to the right edge, and the amount, as the merchants
- * are ruled. With [onClick] the whole line is one button, drawn as the others
- * are so the block's goldens hold.
+ * are ruled. With [onClick] the whole line is one button, its label in the
+ * accent and a chevron after its amount, as `ChartsMonth.dc.html` draws the
+ * way into review.
  */
 @Composable
 private fun KeptOutLine(line: KeptOut, onClick: (() -> Unit)?) {
@@ -60,8 +64,16 @@ private fun KeptOutLine(line: KeptOut, onClick: (() -> Unit)?) {
             .then(if (onClick == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = "Open the review inbox", onClick = onClick)),
         verticalAlignment = Alignment.Bottom,
     ) {
-        Text(line.label, fontFamily = Body, fontSize = 14.sp, lineHeight = 20.sp, color = Muted)
+        Text(line.label, fontFamily = Body, fontSize = 14.sp, lineHeight = 20.sp, color = if (onClick == null) Muted else Stamp)
         Box(Modifier.weight(1f).padding(start = 8.dp, end = 8.dp, bottom = 5.dp).height(1.dp).dottedRule())
         Text(line.amount, style = MonoNumerals.copy(fontSize = 14.sp, lineHeight = 20.sp), color = Muted)
+        if (onClick != null) {
+            Box(Modifier.testTag(REVIEW_CHEVRON).padding(start = 6.dp).align(Alignment.CenterVertically)) {
+                Chevron(pointsRight = true, size = 17.dp, strokeWidth = 1.7.dp, tint = Stamp)
+            }
+        }
     }
 }
+
+/** The test tag of the review line's chevron. */
+internal const val REVIEW_CHEVRON = "not-in-total-review-chevron"

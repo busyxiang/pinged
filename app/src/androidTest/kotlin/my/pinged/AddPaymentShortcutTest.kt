@@ -82,7 +82,7 @@ class AddPaymentShortcutTest {
             compose.onNodeWithText(CHARTS).performClick()
             assertTrue(
                 "Charts never showed",
-                compose.waitFor { compose.countOf(TOTAL_SPENT) + compose.countOf(CHARTS_EMPTY) == 1 },
+                compose.waitFor { compose.countOf(TOTAL_SPENT) + compose.countOf(SPENT_SO_FAR) + compose.countOf(CHARTS_EMPTY) == 1 },
             )
 
             val intent = declaredIntent()
@@ -156,6 +156,7 @@ class AddPaymentShortcutTest {
 
         /** Lines only Charts draws, with data and without; see `ChartsTabTest`. */
         const val TOTAL_SPENT = "TOTAL SPENT"
+        const val SPENT_SO_FAR = "SPENT SO FAR"
         const val CHARTS_EMPTY = "Charts begin on the first day Pinged sees a notification."
     }
 }

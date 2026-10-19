@@ -61,8 +61,20 @@ sealed interface CellState {
  *   one swatch; null with no spent day.
  * @property moreCameBack whether `MORE CAME BACK` is listed, which is only
  *   when a day nets negative.
+ * @property toCome whether the month has days after today, which the legend
+ *   says are left blank (`ChartsMonth.dc.html`).
+ * @property notCaptured whether the `NOT CAPTURED` key and the hatch's
+ *   sentence are listed. A running month's board gives their room to today's
+ *   and the blank days' lines, so there they are listed only while a day is
+ *   hatched, which is never left unexplained (spec 8).
  */
-data class GridLegend(val steps: List<Int>, val range: String?, val moreCameBack: Boolean)
+data class GridLegend(
+    val steps: List<Int>,
+    val range: String?,
+    val moreCameBack: Boolean,
+    val toCome: Boolean = false,
+    val notCaptured: Boolean = true,
+)
 
 /**
  * The grid for [month] seen on [today].
@@ -89,6 +101,7 @@ fun rhythmGrid(
         val stepped = if (state is CellState.Spent) state.copy(step = ramp.step(state.netSen)) else state
         GridDay(date, stepped, date == today)
     }
+    val toCome = month.atEndOfMonth() > today
     return RhythmGrid(
         leadingBlanks = month.atDay(1).dayOfWeek.value - 1,
         days = days,
@@ -96,6 +109,8 @@ fun rhythmGrid(
             steps = days.mapNotNull { (it.state as? CellState.Spent)?.step }.distinct().sorted(),
             range = ramp.range(),
             moreCameBack = days.any { it.state is CellState.NetNegative },
+            toCome = toCome,
+            notCaptured = !toCome || days.any { it.state == CellState.NotCaptured },
         ),
         footer = historyStart
             ?.takeIf { YearMonth.from(it) == month }

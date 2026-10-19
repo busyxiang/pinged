@@ -86,7 +86,7 @@ class ChartsStateTest {
     @Test fun aMonthWithNoRinggitIsZeroNotAbsent() {
         val state = chartsState(read(totals = emptyList(), split = emptyList())) as ChartsState.Month
 
-        assertEquals("NET SPENT", state.view.hero.label)
+        assertEquals("NET SPENT SO FAR", state.view.hero.label)
         assertEquals("RM0.00", state.view.hero.figure)
         assertEquals("SPENT RM0.00 · CAME BACK RM0.00", state.view.hero.split)
         assertNull(state.view.hero.incomplete)

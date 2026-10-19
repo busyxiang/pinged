@@ -3,6 +3,7 @@ package my.pinged.charts.model
 import my.pinged.charts.ChartsRead
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.monthName
+import java.time.YearMonth
 
 /** What the Charts screen draws, from its last read. */
 sealed interface ChartsState {
@@ -68,6 +69,7 @@ fun monthView(read: ChartsRead): MonthView {
             spentSen = split?.spentSen ?: 0L,
             cameBackSen = split?.cameBackSen ?: 0L,
             trust = trust,
+            running = read.month == YearMonth.from(read.today),
         ),
         comparison = comparison(
             read.month,

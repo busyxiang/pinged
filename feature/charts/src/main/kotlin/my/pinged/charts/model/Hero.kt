@@ -25,12 +25,18 @@ data class Hero(
  *
  * Above zero the figure is spending and reads `TOTAL SPENT`. At or below zero
  * it is not, so it reads `NET SPENT`, keeps its sign, and says what went out
- * and what came back (#68).
+ * and what came back (#68). In a [running] month either is only a figure so
+ * far, and says so: `SPENT SO FAR`, `NET SPENT SO FAR` (`ChartsMonth.dc.html`).
  */
-fun hero(netSen: Long, spentSen: Long, cameBackSen: Long, trust: MonthTrust): Hero {
+fun hero(netSen: Long, spentSen: Long, cameBackSen: Long, trust: MonthTrust, running: Boolean = false): Hero {
     val spending = netSen > 0
     return Hero(
-        label = if (spending) "TOTAL SPENT" else "NET SPENT",
+        label = when {
+            running && spending -> "SPENT SO FAR"
+            running -> "NET SPENT SO FAR"
+            spending -> "TOTAL SPENT"
+            else -> "NET SPENT"
+        },
         figure = ringgit(netSen),
         split = if (spending) null else "SPENT ${ringgit(spentSen)}${Separator}CAME BACK ${ringgit(cameBackSen)}",
         incomplete = if (trust.untrusted) "MAY BE INCOMPLETE$Separator${notCapturedLabel(trust.notCaptured)}" else null,

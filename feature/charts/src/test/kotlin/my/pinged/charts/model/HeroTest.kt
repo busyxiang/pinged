@@ -18,6 +18,20 @@ class HeroTest {
         assertNull("A positive month has nothing to explain: ${hero.split}", hero.split)
     }
 
+    @Test fun aRunningMonthIsSpentSoFar() {
+        val hero = hero(netSen = 110_140L, spentSen = 110_140L, cameBackSen = 0L, trust = whole, running = true)
+
+        assertEquals("SPENT SO FAR", hero.label)
+        assertEquals("RM1,101.40", hero.figure)
+    }
+
+    @Test fun aRunningMonthAtOrBelowZeroIsNetSpentSoFar() {
+        val hero = hero(netSen = -1_000L, spentSen = 0L, cameBackSen = 1_000L, trust = whole, running = true)
+
+        assertEquals("NET SPENT SO FAR", hero.label)
+        assertEquals("SPENT RM0.00 · CAME BACK RM10.00", hero.split)
+    }
+
     @Test fun aZeroNetIsNetSpentWithTheSplit() {
         val hero = hero(netSen = 0L, spentSen = 4_500L, cameBackSen = 4_500L, trust = whole)
 

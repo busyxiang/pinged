@@ -1840,7 +1840,8 @@ month still running.
 
 **Hero.** The month's ringgit net, labelled `TOTAL SPENT` while it is above
 zero. At or below zero it reads `NET SPENT`, keeps its sign, and a mono line
-under it gives the two halves: `SPENT RMx · CAME BACK RMy`. An untrusted
+under it gives the two halves: `SPENT RMx · CAME BACK RMy`. In the month
+still running the labels are `SPENT SO FAR` and `NET SPENT SO FAR`. An untrusted
 month greys the figure and adds `MAY BE INCOMPLETE · N DAYS NOT CAPTURED`,
 never "at least", since a missed refund makes the real figure lower.
 
@@ -1852,16 +1853,24 @@ shows: `RM87.20 ABOVE AUGUST'S RM2,760.10`, `… BELOW …`, or
 difference is unsigned and the direction word carries the sign; the other
 month's figure is signed when it nets negative (`ABOVE AUGUST'S −RM20.00`).
 There is no percentage, since a zero or negative base makes one
-meaningless. Held back, nothing renders and no space is kept. The line and
+meaningless. Held back, nothing renders and no space is kept, except in the
+month still running: while the month before is comparable and this one has
+no not-captured day yet, the line says when it will come,
+`COMPARED WITH SEPTEMBER ONCE OCTOBER ENDS`. The line and
 `MAY BE INCOMPLETE` never appear together, because an untrusted month is
-never comparable. (#67)
+never comparable. (#67, #232)
+
+**Grid legend in the month still running.** Today's key reads
+`TODAY, STILL GOING`, and `DAYS STILL TO COME ARE LEFT BLANK.` takes the place
+of the `NOT CAPTURED` key and the hatch's sentence, which stay while any day of
+the month is hatched. (#232)
 
 **`NOT IN THE TOTAL`.** Last in the scroll, not pinned: the month's ringgit
 money that moved but is in no figure above, as ruled lines with signed
 amounts and no symbol, in this order. `Transfers, left out` (every
 exclusion reason but the user's own), `You left out`, and `N awaiting
 review` (pending rows; a pending row that is also excluded is counted here
-only). An amount line whose net is zero is dropped; the review line stays
+only), in the accent with a chevron, since it opens the review inbox. An amount line whose net is zero is dropped; the review line stays
 while any row is pending, whatever it nets to. With no line the block,
 heading included, is not drawn. (#89)
 
