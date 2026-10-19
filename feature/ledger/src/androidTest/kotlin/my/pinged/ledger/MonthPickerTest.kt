@@ -43,6 +43,9 @@ import org.junit.runner.RunWith
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlin.math.abs
 
 /**
@@ -164,15 +167,22 @@ class MonthPickerTest {
      * #237: the sheet reopened draws none of the last read's months and flags
      * while its own read is in flight. The reset is synchronous on the main
      * thread, so it is asserted in the same frame the read starts.
+     *
+     * Under [withTheDatabaseHeld], because the re-read publishes from IO and
+     * could otherwise land before the main thread reads the value back: with
+     * the emulator pinned to one host core beside a busy loop, 23 of 200
+     * unheld re-reads had already landed (CI's ledger-1, run 39242301864).
      */
     @Test fun aReopenedSheetDrawsNothingFromTheLastRead() {
         compose.runOnUiThread { viewModel.readMonths() }
         compose.boundedWaitUntil(TIMEOUT) { viewModel.months.value != null }
 
         var during: Any? = Unit
-        compose.runOnUiThread {
-            viewModel.readMonths()
-            during = viewModel.months.value
+        withTheDatabaseHeld {
+            compose.runOnUiThread {
+                viewModel.readMonths()
+                during = viewModel.months.value
+            }
         }
         assertEquals("A re-read began with the last read's months still published", null, during)
         compose.boundedWaitUntil(TIMEOUT) { viewModel.months.value != null }
@@ -229,6 +239,33 @@ class MonthPickerTest {
             "The chevron's turn is $turn, not Muted",
             abs(turn.red - Muted.red) + abs(turn.green - Muted.green) + abs(turn.blue - Muted.blue) < 0.25f,
         )
+    }
+
+    /**
+     * Runs [block] while another thread holds the database in a transaction,
+     * so no read [block] starts can land before it returns: the holder keeps
+     * `Databases`' monitor and Room 2.8's one connection, and
+     * `Databases.inOneTransaction` needs both. Released on the way out, pass
+     * or fail.
+     */
+    private fun withTheDatabaseHeld(block: () -> Unit) {
+        val held = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val holder = thread {
+            Databases.leasing {
+                Databases.inOneTransaction(context) {
+                    held.countDown()
+                    release.await(TIMEOUT, TimeUnit.MILLISECONDS)
+                }
+            }
+        }
+        try {
+            assertTrue("precondition: the holder never took the database", held.await(TIMEOUT, TimeUnit.MILLISECONDS))
+            block()
+        } finally {
+            release.countDown()
+            holder.join(TIMEOUT)
+        }
     }
 
     private fun waitUntilShown(text: String) {
