@@ -20,7 +20,7 @@ groups = [
  ]),
  ("Every day", "The app in ordinary use, a month in. Scenario pinned to Wednesday 30 September 2026 so every figure agrees with every other.", [
   ("Spending", "Main.dc.html", "Home",
-   "Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved."),
+   "Day subtotals, a row waiting for a category, and an excluded Touch &rsquo;n Go reload struck through rather than deleted &mdash; you still get to see that the money moved. Cash sits in its own band above the tabs, and the list stops at its edge rather than scrolling under it: amounts are right-aligned, which is the edge a floating button would cover (#221)."),
   ("Needs a look", "Inbox.dc.html", "Review inbox",
    "All four review reasons at once. Every card carries the notification word for word, so the app is never more confident than the evidence it holds. The duplicate card shows both notifications side by side, labelled with which one a merge keeps, so you see what survives before you commit."),
   ("Detail", "Detail.dc.html", "One transaction",
