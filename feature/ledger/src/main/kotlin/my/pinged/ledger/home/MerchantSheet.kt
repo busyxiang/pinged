@@ -4,7 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +52,10 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.launch
 import my.pinged.data.LocalDate
 import my.pinged.data.dao.MerchantChoice
 import my.pinged.data.dao.MerchantMember
@@ -215,12 +220,26 @@ internal fun MerchantSheet(
         // Typing puts the search field at the top of the list, so what it
         // finds is in view beneath it. At CI's 320x640 with the keyboard up the
         // list is 229px tall and the field at rest is its bottom 28px, so with
-        // no scroll every result is below the sheet's edge. The field is
-        // focused, so its item is laid out and its offset is known.
+        // no scroll every result is below the sheet's edge.
+        //
+        // Once per height, not once per keystroke: the first letter can land
+        // while the keyboard is still rising. A run measured the list at 373px
+        // then, with nothing below to scroll, so a single scroll moved 0px
+        // and the keyboard then shrank the list to 229px, the field at its
+        // bottom again: 4 runs of 17 at CI's size. The field leaves the viewport
+        // for a frame as the list shrinks, so a height it is not laid out at
+        // waits for the next layout. A drag ends it, so closing the keyboard
+        // does not undo the user's own scroll.
         LaunchedEffect(filter) {
             if (filter.isBlank()) return@LaunchedEffect
-            val search = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == SEARCH_ITEM } ?: return@LaunchedEffect
-            list.animateScrollBy(search.offset.toFloat())
+            val dragged = launch { list.interactionSource.interactions.first { it is DragInteraction.Start } }
+            snapshotFlow {
+                val search = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == SEARCH_ITEM }
+                search?.let { list.layoutInfo.viewportSize.height to it.index }
+            }
+                .filterNotNull()
+                .takeWhile { dragged.isActive }
+                .collect { (_, index) -> list.scrollToItem(index) }
         }
         LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().testTag(MERCHANT_LIST_TAG), state = list) {
             item(key = "name") {
