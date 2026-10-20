@@ -42,7 +42,8 @@ class ReviewSwipeScreenTest {
     /**
      * The duplicate here has no pair, so it is drawn as a plain card with
      * Accept on it (#116); it is still not plain to a swipe. A paired one is
-     * `ReviewDuplicateScreenTest.aDuplicateCardCannotBeSwiped`'s.
+     * `ReviewDuplicateScreenTest.aDuplicateCardCannotBeSwiped`'s. The plain
+     * card is over the check limit: out of Accept all, and still swiped (#223).
      */
     @Test fun aSwipeAcceptsAPlainCardAndDoesNothingOnATransferOrAnUnpairedDuplicateCard() {
         content(listOf(card(PLAIN, PendingReason.OVER_THRESHOLD), card(TRANSFER, PendingReason.TRANSFER_SUSPECT), card(DUPLICATE, PendingReason.DUPLICATE_SUSPECT)))
@@ -72,13 +73,13 @@ class ReviewSwipeScreenTest {
     @Test fun acceptAllNamesTheCountAndTheRinggitNetAndReportsATap() {
         content(
             listOf(
-                card(PLAIN, PendingReason.OVER_THRESHOLD, amountSen = 65_000L),
+                card(PLAIN, PendingReason.MERCHANT_MISSING, amountSen = 45_000L),
                 card(REFUND, PendingReason.RULE_REVIEW, amountSen = 5_000L).let { it.copy(txn = it.txn.copy(direction = Direction.REFUND)) },
                 card(TRANSFER, PendingReason.TRANSFER_SUSPECT, amountSen = 10_000L),
             ),
         )
 
-        compose.onNodeWithText("Accept 2 · RM600.00").performScrollTo().performClick()
+        compose.onNodeWithText("Accept 2 · RM400.00").performScrollTo().performClick()
 
         assertEquals("Accept all was not reported once for one tap", 1, acceptAlls)
         assertEquals("Accept all reported as a card's own answer", emptyList<Any>(), answers)
@@ -87,7 +88,7 @@ class ReviewSwipeScreenTest {
     @Test fun acceptAllDropsTheSumWhenAPlainCardIsNotInRinggit() {
         content(
             listOf(
-                card(PLAIN, PendingReason.OVER_THRESHOLD, amountSen = 65_000L),
+                card(PLAIN, PendingReason.RULE_REVIEW, amountSen = 45_000L),
                 card(REFUND, PendingReason.MERCHANT_MISSING, amountSen = 1_200L).let { it.copy(txn = it.txn.copy(currency = "USD")) },
             ),
         )
@@ -118,14 +119,14 @@ class ReviewSwipeScreenTest {
             compose.onAllNodesWithText("Accept ", substring = true).fetchSemanticsNodes().size,
         )
 
-        cards.value = cards.value + card(PLAIN, PendingReason.OVER_THRESHOLD)
+        cards.value = cards.value + card(PLAIN, PendingReason.RULE_REVIEW, amountSen = 45_000L)
         busy.value = Operation.DELETE
-        compose.onNodeWithText("Accept 1 · RM650.00").performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNodeWithText("Accept 1 · RM450.00").performScrollTo().assertIsNotEnabled().performClick()
         assertEquals("Accept all was tapped through while the ledger was being replaced", 0, acceptAlls)
     }
 
     @Test fun aFocusedCardOpensAtTheTopWithAcceptAllAboveTheCards() {
-        val cards = (1L..20L).map { card(it, PendingReason.OVER_THRESHOLD) }
+        val cards = (1L..20L).map { card(it, PendingReason.RULE_REVIEW, amountSen = 45_000L) }
         compose.setContent {
             PingedTheme {
                 ReviewInboxScreenContent(

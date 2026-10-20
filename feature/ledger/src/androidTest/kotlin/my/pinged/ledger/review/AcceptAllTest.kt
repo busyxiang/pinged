@@ -12,6 +12,7 @@ import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
+import my.pinged.capture.REVIEW_THRESHOLD_SEN
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.TIMEOUT
@@ -40,41 +41,54 @@ class AcceptAllTest {
 
     @After fun leaveNothingBehind() = context.discardTheDatabase()
 
-    @Test fun acceptAllCommitsEveryPlainCardAndNoOtherAndOneUndoReturnsThemAll() = runBlocking {
+    @Test fun acceptAllCommitsEveryPlainCardWithinTheLimitAndNoOtherAndOneUndoReturnsThemAll() = runBlocking {
         val dao = context.freshLedger()
-        val plain = listOf(
-            dao.insert(pending(PendingReason.OVER_THRESHOLD, at = NOON)),
-            dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON + 1)),
-            dao.insert(pending(PendingReason.MERCHANT_MISSING, at = NOON + 2)),
+        // RM500.00 exactly is within it: the gate's test is strictly greater than.
+        val batched = listOf(
+            dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON, amountSen = REVIEW_THRESHOLD_SEN)),
+            dao.insert(pending(PendingReason.MERCHANT_MISSING, at = NOON + 1, amountSen = 12_000L)),
+            dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON + 2, amountSen = 3_000L)),
         )
-        val transfer = dao.insert(pending(PendingReason.TRANSFER_SUSPECT, at = NOON + 3))
+        // Over the limit whatever the stored reason (#223): the gate stores
+        // rule review over over threshold, so the reason alone cannot say.
+        val overLimit = listOf(
+            dao.insert(pending(PendingReason.OVER_THRESHOLD, at = NOON + 3, amountSen = 129_900L)),
+            dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON + 4, amountSen = REVIEW_THRESHOLD_SEN + 1)),
+        )
+        val transfer = dao.insert(pending(PendingReason.TRANSFER_SUSPECT, at = NOON + 5))
         // No capture, and an amount no other row has, so no manual entry
         // pairs with it: drawn as a plain card (#116), and still never in
         // the batch.
-        val duplicate = dao.insert(pending(PendingReason.DUPLICATE_SUSPECT, at = NOON + 4, amountSen = 7_700L))
-        val before = (plain + transfer + duplicate).associateWith { dao.byId(it)!! }
+        val duplicate = dao.insert(pending(PendingReason.DUPLICATE_SUSPECT, at = NOON + 6, amountSen = 7_700L))
+        val left = overLimit + transfer + duplicate
+        val before = (batched + left).associateWith { dao.byId(it)!! }
         val inbox = inbox()
         assertEquals(
             "precondition: the pairless duplicate is not drawn as a plain card",
             CardKind.PLAIN,
             inbox.cards.value!!.single { it.txn.id == duplicate }.kind,
         )
+        assertEquals(
+            "The button does not name the batch alone and the two cards it leaves to check",
+            "Accept 3 · RM650.00 · 2 over RM500 left to check",
+            AcceptAll.of(inbox.cards.value!!)?.label,
+        )
 
         inbox.acceptAll().join()
 
         assertEquals(
-            "Accept all did not count every plain card",
-            plain.map { TxnState.COMMITTED to null },
-            plain.map { id -> dao.byId(id)!!.let { it.state to it.pendingReason } },
+            "Accept all did not count every plain card within the limit",
+            batched.map { TxnState.COMMITTED to null },
+            batched.map { id -> dao.byId(id)!!.let { it.state to it.pendingReason } },
         )
         assertEquals(
-            "Accept all touched a transfer or an unpaired duplicate card, counting a reload as spending or a payment twice",
-            listOf(transfer, duplicate).map { before.getValue(it) },
-            listOf(transfer, duplicate).map { dao.byId(it)!! },
+            "Accept all touched a card over the check limit, a transfer or an unpaired duplicate card",
+            left.map { before.getValue(it) },
+            left.map { dao.byId(it)!! },
         )
         assertEquals(
-            "The batch's Undo does not name it",
-            "ACCEPTED 3 · RM1,950.00",
+            "The batch's Undo does not name it, or names the cards it left out",
+            "ACCEPTED 3 · RM650.00",
             inbox.undoable.value?.said,
         )
 
@@ -89,7 +103,7 @@ class AcceptAllTest {
 
     @Test fun theNetCountsMyrPlainCardsOnlyAndRefundsSubtract() = runBlocking {
         val dao = context.freshLedger()
-        dao.insert(pending(PendingReason.OVER_THRESHOLD, at = NOON, amountSen = 65_000L))
+        dao.insert(pending(PendingReason.MERCHANT_MISSING, at = NOON, amountSen = 45_000L))
         dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON + 1, amountSen = 5_000L).copy(direction = Direction.REFUND))
         dao.insert(pending(PendingReason.TRANSFER_SUSPECT, at = NOON + 2, amountSen = 10_000L))
         dao.insert(pending(PendingReason.DUPLICATE_SUSPECT, at = NOON + 3, amountSen = 2_000L))
@@ -97,8 +111,8 @@ class AcceptAllTest {
         val inbox = inbox()
 
         assertEquals(
-            "The net is not RM650.00 less the RM50.00 refund, over the two plain cards alone",
-            "Accept 2 · RM600.00",
+            "The net is not RM450.00 less the RM50.00 refund, over the two plain cards alone",
+            "Accept 2 · RM400.00",
             AcceptAll.of(inbox.cards.value!!)?.label,
         )
 
@@ -119,7 +133,8 @@ class AcceptAllTest {
         val transfer = dao.insert(pending(PendingReason.TRANSFER_SUSPECT, at = NOON))
         val viewModel = ReviewViewModel(context.applicationContext as Application)
         compose.setContent { PingedTheme { ReviewScreen(viewModel, onBack = {}) } }
-        waitForText("Accept 2 · RM662.00")
+        // The swiped card is over the limit: out of the batch, and a swipe still takes it (#223).
+        waitForText("Accept 1 · RM12.00 · 1 over RM500 left to check")
 
         compose.onNodeWithTag(reviewCardTag(swiped)).performScrollTo().performTouchInput { swipeRight() }
         waitForText("ACCEPTED · RM650.00")

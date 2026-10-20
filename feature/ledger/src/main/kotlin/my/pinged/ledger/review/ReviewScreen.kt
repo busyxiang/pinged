@@ -138,7 +138,7 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
  * the list back to a card the user has scrolled away from.
  *
  * [onAcceptAll] is the Accept all button, drawn at the header's right while any is
- * batchable ([AcceptAll.of]); a swipe on a batchable card reports [ReviewAnswer.ACCEPT]
+ * batchable ([AcceptAll.of]); a swipe on a plain card ([isSwipeable]) reports [ReviewAnswer.ACCEPT]
  * through [onAnswer], as its button does.
  */
 @Composable
@@ -566,7 +566,7 @@ private fun AcceptAllOffer(acceptAll: AcceptAll, enabled: Boolean, onClick: () -
 }
 
 /**
- * A swipe to the right accepts [card] when it is batchable ([isBatchable]);
+ * A swipe to the right accepts [card] when it is plain ([isSwipeable]), over the check limit or not;
  * any other card is drawn as it is, with nothing to swipe. Off while
  * [enabled] is false, as the buttons are.
  *
@@ -577,7 +577,7 @@ private fun AcceptAllOffer(acceptAll: AcceptAll, enabled: Boolean, onClick: () -
 @Composable
 private fun SwipeToAccept(card: ReviewCard, margin: PaddingValues, enabled: Boolean, onAccept: () -> Unit, content: @Composable () -> Unit) {
     val tagged = Modifier.testTag(reviewCardTag(card.txn.id))
-    if (!card.isBatchable) {
+    if (!card.isSwipeable) {
         Box(tagged) { content() }
         return
     }
