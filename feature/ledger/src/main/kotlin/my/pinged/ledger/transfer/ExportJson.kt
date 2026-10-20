@@ -79,7 +79,7 @@ object ExportJson {
         out: OutputStream,
         onProgress: (Int) -> Unit = {},
         isCancelled: () -> Boolean = { false },
-    ): Int = Databases.whileLive(db) {
+    ): Int = Databases.whileLive(db, Databases.Holder.Export) {
         db.runInTransaction(
             Callable {
                 writeDocument(out, db.openHelper.readableDatabase.version, everyRowOf(db), onProgress, isCancelled)
