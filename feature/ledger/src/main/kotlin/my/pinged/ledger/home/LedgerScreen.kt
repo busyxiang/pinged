@@ -1,5 +1,6 @@
 package my.pinged.ledger.home
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -7,7 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -48,6 +48,9 @@ import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
@@ -415,9 +418,9 @@ internal fun LedgerScreenContent(
         // draws no button, because its offer at the foot is the same action.
         // Empty is a ledger with no rows, not a month with none: a quiet month
         // over a history is the feed, and keeps the button. The feed draws its
-        // own, since where it sits depends on the list's room.
+        // own, since it slides with the list's scroll.
         if (onAddPayment != null && (unreadable || reading)) {
-            AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(20.dp))
+            AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = ADD_PAYMENT_GAP))
         }
     }
 
@@ -984,16 +987,13 @@ private fun CashOffer(onClick: () -> Unit, modifier: Modifier = Modifier) {
  * in pixels from its top. The review row is a sticky header right after it:
  * it scrolls up under the summary and then pins under the TopBar.
  *
- * The button sits in a band under the list, not over it: a ledger's amounts
- * and badges are right-aligned, the edge the button is on, so over the list it
- * covered a subtotal or a duplicate badge wherever the list was scrolled
- * (#221). The band is all or nothing, and only where the list keeps at least
- * one [LEDGER_ROW] above it: a band that left it less would leave a list
- * that composes no row. There the list takes the whole area and the button
- * floats over it as the board draws it, with room after the last row. With
- * the summary inside the list the band fits even at 320x640 under the
- * capture-off banner, which every fresh install draws (`LedgerArtboardTest`).
- * Measured, not a breakpoint, so a banner or a font scale moves it too.
+ * The button floats over the list, which runs to the tab bar (#287). It sits
+ * on the edge a ledger's amounts and badges are aligned to, so it slides away
+ * while the list scrolls down, toward older days, and back on a scroll up or
+ * once the list comes to rest. The list ends in [ADD_PAYMENT_ROOM], so at the
+ * end its last row rests above the button (`MainEnd.dc.html`). Resting
+ * part-way down, the button covers whatever amount is under it, and a nudge
+ * of the list reveals it.
  */
 @Composable
 private fun Feed(
@@ -1016,9 +1016,22 @@ private fun Feed(
     backupReminder: BackupReminder? = null,
     onOpenToSort: (() -> Unit)? = null,
 ) {
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val banded = onAddPayment != null && maxHeight - ADD_PAYMENT_ROOM >= LEDGER_ROW
-        val floating = onAddPayment != null && !banded
+    // Consumed rather than offered: a drag past the end consumes nothing and
+    // leaves the button where it is. A scroll the code makes, `scrollToItem`,
+    // is not nested and never hides it; it shows it once it ends.
+    var away by remember { mutableStateOf(false) }
+    val slideOnScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (consumed.y < 0f) away = true else if (consumed.y > 0f) away = false
+                return Offset.Zero
+            }
+        }
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { if (!it) away = false }
+    }
+    Box(modifier.fillMaxWidth().nestedScroll(slideOnScroll)) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
@@ -1026,7 +1039,7 @@ private fun Feed(
                     .weight(1f)
                     .background(Card)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(bottom = if (floating) ADD_PAYMENT_ROOM else 0.dp),
+                contentPadding = PaddingValues(bottom = if (onAddPayment != null) ADD_PAYMENT_ROOM else 0.dp),
             ) {
                 // An item and not a header: it scrolls away with the list
                 // rather than holding a line of a 640dp screen for a week.
@@ -1096,14 +1109,18 @@ private fun Feed(
                     }
                 }
             }
-            // The dotted rule is the screens' footers'.
-            if (banded) {
-                Spacer(Modifier.testTag(CASH_BAND).fillMaxWidth().height(ADD_PAYMENT_ROOM).background(Card).dottedRule(atTop = true))
-            }
         }
         if (onAddPayment != null) {
-            val bottom = if (banded) (ADD_PAYMENT_ROOM - ADD_PAYMENT_SIZE) / 2 else 20.dp
-            AddPaymentButton(onAddPayment, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = bottom))
+            // Its own height and the gap under it: all of it below the foot,
+            // where the app's opaque tab bar, drawn after this screen, covers it.
+            val slide by animateDpAsState(if (away) ADD_PAYMENT_SIZE + ADD_PAYMENT_GAP else 0.dp, label = "cash-slide")
+            AddPaymentButton(
+                onAddPayment,
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 20.dp, bottom = ADD_PAYMENT_GAP)
+                    .offset { IntOffset(0, slide.roundToPx()) },
+            )
         }
     }
 }
@@ -1358,7 +1375,7 @@ private val LEADER_LIFT = 4.5.dp
 
 /**
  * Spec 9.4's **Add payment**, the artboard's cash button: a + over "CASH" at
- * the bottom right of the Spending tab, in a band under the list. Named
+ * the bottom right of the Spending tab, floating over the list. Named
  * [ADD_PAYMENT] to TalkBack, since neither the + nor "CASH" says what it does.
  *
  * "CASH" is [MonoLabel] at its 12sp floor, not the board's 8px; the + and the
@@ -1386,11 +1403,11 @@ private fun AddPaymentButton(onClick: () -> Unit, modifier: Modifier = Modifier)
 /** The board's button, 54px square. */
 private val ADD_PAYMENT_SIZE = 54.dp
 
-/** The band under the list: the button and 16dp above and below it. */
-private val ADD_PAYMENT_ROOM = 86.dp
+/** The board's 16px between the button and the tab bar. */
+private val ADD_PAYMENT_GAP = 16.dp
 
-/** A categorised ledger row as drawn, 57dp (#189): the least list the band leaves. */
-private val LEDGER_ROW = 57.dp
+/** The list's end padding: the button and [ADD_PAYMENT_GAP] above and below it. */
+private val ADD_PAYMENT_ROOM = ADD_PAYMENT_SIZE + ADD_PAYMENT_GAP * 2
 
 /** The empty ledger's way to Settings, under its copy; the offer at its foot is the other. */
 internal const val OPEN_SETTINGS = "Open settings"
@@ -1401,8 +1418,6 @@ internal const val CASH_OFFER_LABEL = "Or start with a cash expense"
 /** Test tags, for the elements a test measures the drawing of. */
 const val ADD_PAYMENT_BUTTON = "add-payment-button"
 
-/** The band under the list the add button sits in, where there is room for one. */
-const val CASH_BAND = "cash-band"
 const val CASH_OFFER = "cash-offer"
 const val EMPTY_HERO = "empty-hero"
 const val HEARD_CHIP = "heard-chip"

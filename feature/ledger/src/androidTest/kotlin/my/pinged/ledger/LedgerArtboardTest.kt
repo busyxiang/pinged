@@ -1,14 +1,20 @@
 package my.pinged.ledger
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performScrollToKey
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
@@ -45,12 +51,12 @@ import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.entity.Category
 import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.home.ADD_PAYMENT_BUTTON
-import my.pinged.ledger.home.CASH_BAND
 import my.pinged.ledger.home.CASH_OFFER
 import my.pinged.ledger.home.EMPTY_HERO
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.HEARD_CHIP
 import my.pinged.ledger.home.MONTH_BUTTON
+import my.pinged.ledger.home.MONTH_SUMMARY
 import my.pinged.ledger.home.TOP_BAR_TOTAL
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
@@ -202,63 +208,78 @@ class LedgerArtboardTest {
     }
 
     /**
-     * The list stops above the button, in a band the button is centred in
-     * (#221): a ledger's amounts and badges are right-aligned, the edge the
-     * button sits on, and room only after the last row left it over every
-     * other row the list scrolled past.
+     * The button floats over the list as `Main.dc.html` draws it (#287):
+     * 20dp in from the right and 16dp above the tab bar, which is this
+     * screen's foot. The list's viewport runs to that foot, with no band.
      */
-    @Test fun theListEndsAboveTheAddButton() {
-        long()
-        val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
-        val button = compose.onNodeWithTag(ADD_PAYMENT_BUTTON).fetchSemanticsNode().boundsInRoot
-        assertTrue("The list runs to ${list.bottom}, under the button's top at ${button.top}", list.bottom <= button.top)
-        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
-        assertEquals("The button is not centred in the band", (list.bottom + root.bottom) / 2, button.center.y, 1f)
-        val band = compose.onRoot().captureToImage().toPixelMap()
-        val y = ((list.bottom + button.top) / 2).toInt().coerceAtLeast(list.bottom.toInt() + 2)
-        assertTrue("The band is not Card", ArtboardProbe.close(band[(root.width / 4).toInt(), y], Card))
+    @Test fun at320UnderTheBannerTheListRunsToTheTabBar() = assertTheListRunsToTheTabBar(UNDER_THE_BANNER)
+
+    @Test fun at411TheListRunsToTheTabBar() = assertTheListRunsToTheTabBar(AT_411)
+
+    private fun assertTheListRunsToTheTabBar(size: DpSize) {
+        long(size = size)
+        val screen = screenBounds()
+        assertEquals("The list ends ${(screen.bottom - listBounds().bottom) / compose.density.density}dp above the tab bar", screen.bottom, listBounds().bottom, 0.5f)
+        assertTheButtonRests()
     }
 
     /**
-     * The band is drawn only where the list keeps a 57dp row above it (#221).
-     * In the app at 320x640 the Spending tab is 640 less the 52dp status bar
-     * and the 62dp tab bar, 502dp; the capture-off banner, which every fresh
-     * install draws, takes 226dp of that, leaving this screen 276dp
-     * (measured in `:app`). The summary is the list's first item (#253), so
-     * all of it but the top bar is the list's, and the band fits under it.
+     * At the end of the list its last row rests above the button, on the
+     * list's 86dp of end padding: the button and 16dp either side
+     * (`MainEnd.dc.html`).
      */
-    @Test fun underTheBannerAt320x640TheBandFits() {
-        long(size = DpSize(320.dp, 276.dp))
-        compose.onNodeWithTag(CASH_BAND).assertExists()
+    @Test fun at320UnderTheBannerTheLastRowEndsAboveTheButton() = assertTheLastRowEndsAboveTheButton(UNDER_THE_BANNER)
+
+    @Test fun at411TheLastRowEndsAboveTheButton() = assertTheLastRowEndsAboveTheButton(AT_411)
+
+    private fun assertTheLastRowEndsAboveTheButton(size: DpSize) {
+        long(size = size)
+        compose.onNode(hasScrollToIndexAction()).performScrollToKey("txn-24")
+        compose.waitForIdle()
+        val row = boundsOf(LAST_ROW)
+        val button = buttonBounds()
+        assertTrue("The last row is cut off at ${row.bottom}, the list's foot at ${listBounds().bottom}", row.bottom <= listBounds().bottom + 0.5f)
+        assertTrue("The last row ends at ${row.bottom}, under the button's top at ${button.top}", row.bottom <= button.top)
+    }
+
+    /**
+     * A drag down the list, toward older days, slides the button off the
+     * bottom; a drag back up brings it back while the finger is still down.
+     * The clock is held so the finger stays down: the list never comes to
+     * rest between the two. Away, no Stamp is drawn where it rests.
+     */
+    @Test fun aDragDownTheListHidesTheButtonAndADragUpShowsIt() {
+        long(size = UNDER_THE_BANNER)
+        val list = compose.onNode(hasScrollToIndexAction())
+        compose.mainClock.autoAdvance = false
+        list.performTouchInput {
+            down(center)
+            moveBy(Offset(0f, -height / 3f))
+            moveBy(Offset(0f, -height / 3f))
+        }
+        compose.mainClock.advanceTimeBy(SLIDE_SETTLED)
+        val screen = screenBounds()
         val density = compose.density.density
-        assertTrue("The list kept ${listBounds().height / density}dp", listBounds().height / density >= 57f)
+        val column = (screen.right - 74 * density)..(screen.right - 20 * density)
+        assertEquals("Stamp where the button rests, away", 0, stampIn(column, (screen.bottom - 70 * density)..(screen.bottom - 16 * density)))
+        list.performTouchInput { moveBy(Offset(0f, height / 4f)) }
+        compose.mainClock.advanceTimeBy(SLIDE_SETTLED)
+        assertTheButtonRests()
+        list.performTouchInput { up() }
+        compose.mainClock.autoAdvance = true
     }
 
-    /**
-     * Where the band would leave no 57dp row, the list takes the whole
-     * height and the button floats over it, as the board draws it.
-     */
-    @Test fun whereTheBandLeavesNoRowTheButtonFloats() {
-        long(size = DpSize(320.dp, 180.dp))
-        assertEquals("A band is drawn with no room for a row", 0, compose.onAllNodes(hasTestTag(CASH_BAND)).fetchSemanticsNodes().size)
-        assertTrue("The list is ${listBounds().height}px tall", listBounds().height > 0f)
-        compose.onNodeWithTag(ADD_PAYMENT_BUTTON).assertExists()
-    }
-
-    /**
-     * With no banner the same screen is 502dp, and the band leaves the list
-     * 196dp, measured at 320x640/160: the band is drawn.
-     */
-    @Test fun withoutTheBannerAt320x640TheBandIsDrawn() {
-        long(size = DpSize(320.dp, 502.dp))
-        compose.onNodeWithTag(CASH_BAND).assertExists()
-        val density = compose.density.density
-        assertTrue("The list kept ${listBounds().height / density}dp", listBounds().height / density >= 57f)
-    }
-
-    @Test fun at411TheBandIsDrawn() {
-        long(size = DpSize(411.dp, 800.dp))
-        compose.onNodeWithTag(CASH_BAND).assertExists()
+    /** After a fling the button is back once the list has come to rest, and opens the entry. */
+    @Test fun afterAFlingTheButtonComesBackAndOpensTheEntry() {
+        long(size = UNDER_THE_BANNER)
+        val before = compose.onNodeWithTag(MONTH_SUMMARY).fetchSemanticsNode().boundsInRoot.top
+        compose.onNode(hasScrollToIndexAction()).performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        val after = compose.onAllNodesWithTag(MONTH_SUMMARY).fetchSemanticsNodes().singleOrNull()?.boundsInRoot?.top
+        assertTrue("The fling did not move the list", after == null || after < before)
+        assertTheButtonRests()
+        compose.onNodeWithTag(ADD_PAYMENT_BUTTON).performClick()
+        assertEquals(1, added)
     }
 
     @Test fun theAddButtonIsLabelledCash() {
@@ -515,11 +536,13 @@ class LedgerArtboardTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale ?: density.fontScale)) {
                 PingedTheme {
                     LedgerScreenContent(
-                        modifier = when {
-                            size != null -> Modifier.requiredSize(size)
-                            width != null -> Modifier.requiredWidth(width)
-                            else -> Modifier
-                        },
+                        modifier = Modifier.testTag(SCREEN).then(
+                            when {
+                                size != null -> Modifier.requiredSize(size)
+                                width != null -> Modifier.requiredWidth(width)
+                                else -> Modifier
+                            },
+                        ),
                         items = flow.collectAsLazyPagingItems(),
                         read = LedgerRead(summary = summary, categories = listOf(FOOD, GROCERIES, PETROL)),
                         storageUnavailable = false,
@@ -550,6 +573,30 @@ class LedgerArtboardTest {
     private fun boundsOf(text: String, inTotal: Boolean = false): Rect = text(text, inTotal = inTotal).fetchSemanticsNode().boundsInRoot
 
     private fun listBounds(): Rect = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
+
+    /** The screen as laid out, whose foot is the tab bar's top in the app. */
+    private fun screenBounds(): Rect = compose.onNodeWithTag(SCREEN).fetchSemanticsNode().boundsInRoot
+
+    private fun buttonBounds(): Rect = compose.onNodeWithTag(ADD_PAYMENT_BUTTON).fetchSemanticsNode().boundsInRoot
+
+    /** Pixels within a hair of Stamp in the root's [x] by [y], clamped to the root. */
+    private fun stampIn(x: ClosedFloatingPointRange<Float>, y: ClosedFloatingPointRange<Float>): Int {
+        val pixels = compose.onRoot().captureToImage().toPixelMap()
+        val xs = x.start.toInt().coerceAtLeast(0) until x.endInclusive.toInt().coerceAtMost(pixels.width)
+        val ys = y.start.toInt().coerceAtLeast(0) until y.endInclusive.toInt().coerceAtMost(pixels.height)
+        assertTrue("The strip $x by $y is off the root, ${pixels.width}x${pixels.height}", !xs.isEmpty() && !ys.isEmpty())
+        return ys.sumOf { py -> xs.count { px -> distance(pixels[px, py], Stamp) < 0.02f } }
+    }
+
+    /** The whole button where the board rests it: 20dp in, 16dp above the tab bar. */
+    private fun assertTheButtonRests() {
+        val button = buttonBounds()
+        val screen = screenBounds()
+        val density = compose.density.density
+        assertEquals("The button shows ${button.height / density}dp of its 54", 54f, button.height / density, 0.6f)
+        assertEquals("The button above the tab bar; the board's is 16", 16f, (screen.bottom - button.bottom) / density, 0.6f)
+        assertEquals("The button's right margin; the board's is 20", 20f, (screen.right - button.right) / density, 0.6f)
+    }
 
     private fun layoutOf(text: String, substring: Boolean = false, inTotal: Boolean = false): TextLayoutResult {
         val layouts = mutableListOf<TextLayoutResult>()
@@ -609,6 +656,27 @@ class LedgerArtboardTest {
         /** An index of [long]'s list well past its summary, the first item. */
         const val PAST_THE_SUMMARY = 20
         const val HEARD = "HEARD <5 MIN"
+
+        /** [long]'s last row, keyed `txn-24`. */
+        const val LAST_ROW = "Row 24"
+
+        /**
+         * In ms of the test clock, longer than the button's slide: the drag
+         * test asserts the button at rest, whole, after it.
+         */
+        const val SLIDE_SETTLED = 1_000L
+
+        /** The test tag on the screen, whose foot is the tab bar's top in the app. */
+        const val SCREEN = "screen"
+
+        /**
+         * The Spending tab at 320x640 under the capture-off banner, which
+         * every fresh install draws: 640 less the 52dp status bar, the 62dp
+         * tab bar and the banner's 226dp (measured in `:app`).
+         */
+        val UNDER_THE_BANNER = DpSize(320.dp, 276.dp)
+
+        val AT_411 = DpSize(411.dp, 800.dp)
 
         const val HEADLINE = "Nothing is missing. There is just nothing yet."
         const val BODY_START = "Android will not hand over notifications"
