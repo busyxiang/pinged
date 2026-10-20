@@ -321,11 +321,85 @@ object Databases {
      * through it; a caller replacing an instance for damage waits for
      * [block] as [reset] does.
      *
+     * @param heldAs what [holder] shows from before the monitor is asked for
+     *   until after it is let go. In production only the export passes one.
      * @throws DatabaseReplacedException without touching the file.
      */
-    fun <T> whileLive(database: PingedDatabase, block: () -> T): T = synchronized(this) {
-        requireLive(database)
-        block()
+    fun <T> whileLive(database: PingedDatabase, heldAs: Holder? = null, block: () -> T): T =
+        holding(heldAs) {
+            synchronized(this) {
+                requireLive(database)
+                block()
+            }
+        }
+
+    /**
+     * A block that holds this object's monitor long enough for a screen's
+     * read to be seen waiting behind it (#238): what [holder] names.
+     */
+    enum class Holder {
+        /**
+         * `ExportJson.write`, 1,243ms at 50,000 captures (`Transfers.export`),
+         * or `ExportCsv.write`, which holds the monitor the same way.
+         */
+        Export,
+
+        /** [Integrity.check], weekly from `ParseWorker` or on demand from settings: 644ms at 50,000 (its KDoc). */
+        IntegrityCheck,
+    }
+
+    /**
+     * Every [holding] block running now, in the order each began; guarded
+     * by [heldNowLock].
+     */
+    private val heldNow = ArrayList<Holder>()
+
+    /**
+     * [heldNow]'s and [_holder]'s lock, its own: never [leaseLock] or this
+     * object's monitor. Held only to change [heldNow] and write [_holder] --
+     * written under it so two publications cannot land out of order -- so
+     * it sits outside their order unless a collector resumed inline by that
+     * write, on `Dispatchers.Unconfined`, reaches for the monitor. None does.
+     */
+    private val heldNowLock = Any()
+
+    private val _holder = MutableStateFlow<Holder?>(null)
+
+    /**
+     * What a read on the database is waiting behind, in this process: an
+     * export, an integrity check, or `null` for neither.
+     *
+     * **Set before the block asks for the monitor** and cleared after it has
+     * let go, by a return, a throw or a cancellation alike: a read that
+     * starts while either is queued or running sees it, and sees `null` once
+     * nothing it could wait behind is left. Two at once -- an integrity check
+     * waiting for an export's monitor -- show the one that began first, and
+     * then the other. The first to begin is usually the one holding the
+     * monitor, but not certainly: a monitor is not fair, so a later one can
+     * take it first, and a block that sets nothing can hold it while the
+     * one shown is still queued.
+     *
+     * Only the two long holders set this. A short holder -- [reset]'s wait
+     * for leases, [inOneTransaction] -- does not, nor does anything in
+     * another process.
+     */
+    val holder: StateFlow<Holder?> = _holder.asStateFlow()
+
+    /** [block], with [holder] showing [held] for its length; nothing when [held] is null. */
+    private inline fun <T> holding(held: Holder?, block: () -> T): T {
+        if (held == null) return block()
+        synchronized(heldNowLock) {
+            heldNow += held
+            _holder.value = heldNow.first()
+        }
+        try {
+            return block()
+        } finally {
+            synchronized(heldNowLock) {
+                heldNow.remove(held)
+                _holder.value = heldNow.firstOrNull()
+            }
+        }
     }
 
     /**
@@ -407,6 +481,7 @@ object Databases {
      * order is [whileLive]'s, and the same rule holds: nothing may call this
      * from inside a transaction on the current instance.
      *
+     * @param heldAs as [whileLive]'s. In production only [Integrity.check] passes one.
      * @throws DatabaseBeingDeletedException while a gate is up.
      * @throws DatabaseReplacedException if there is no file to open.
      * @throws DatabaseKeyUnavailableException if the key file is gone.
@@ -414,14 +489,17 @@ object Databases {
      *   it -- code 26 on a fresh connection, a damaged first page or a wrong
      *   key, which is not poison.
      */
-    fun <T> aside(context: Context, block: (PingedDatabase) -> T): T = synchronized(this) {
-        val own = openAsideLocked(context)
-        try {
-            block(own)
-        } finally {
-            runCatching { own.close() }
+    fun <T> aside(context: Context, heldAs: Holder? = null, block: (PingedDatabase) -> T): T =
+        holding(heldAs) {
+            synchronized(this) {
+                val own = openAsideLocked(context)
+                try {
+                    block(own)
+                } finally {
+                    runCatching { own.close() }
+                }
+            }
         }
-    }
 
     /**
      * [aside]'s instance without its block, for a reader that has to open

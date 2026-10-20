@@ -53,7 +53,7 @@ object ExportCsv {
         filter: SearchFilter,
         onProgress: (Int) -> Unit = {},
         isCancelled: () -> Boolean = { false },
-    ): Int = Databases.whileLive(db) {
+    ): Int = Databases.whileLive(db, Databases.Holder.Export) {
         db.runInTransaction(
             Callable {
                 val categories = db.categoryDao().all().associate { it.id to it.name }

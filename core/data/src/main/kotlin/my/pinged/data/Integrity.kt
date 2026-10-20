@@ -67,7 +67,7 @@ object Integrity {
      * @throws DatabaseReplacedException if a delete or restore has removed the file.
      * @throws DatabaseUnavailableException if the file cannot be opened at all.
      */
-    fun check(context: Context): Result = Databases.aside(context) { db ->
+    fun check(context: Context): Result = Databases.aside(context, Databases.Holder.IntegrityCheck) { db ->
         try {
             db.openHelper.writableDatabase.query("PRAGMA integrity_check").use { cursor ->
                 val lines = buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
