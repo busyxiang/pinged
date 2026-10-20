@@ -20,6 +20,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
+import my.pinged.ui.ringgit
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Ink
@@ -229,7 +230,7 @@ class InboxArtboardTest {
     @Test fun acceptAllIsAQuietOfferAtTheHeadersRight() {
         inbox()
         val node = compose.onNode(
-            androidx.compose.ui.test.hasText(requireNotNull(AcceptAll.of(listOf(card(FIRST), card(SECOND)))).label) and
+            androidx.compose.ui.test.hasText(requireNotNull(AcceptAll.of(oneOverOneUnder().toList())).label) and
                 androidx.compose.ui.test.hasClickAction(),
         )
         assertTrue(
@@ -246,16 +247,22 @@ class InboxArtboardTest {
         assertTrue("Accept all is drawn in $ink, nearer Stamp than Muted", distance(ink, Muted) < distance(ink, Stamp))
     }
 
-    private fun inbox(vararg cards: ReviewCard = arrayOf(card(FIRST), card(SECOND))) = compose.setContent {
+    /**
+     * One card over the check limit and one under it, so Accept all is drawn
+     * with its longest label: a net and the note naming the card it left out (#223).
+     */
+    private fun oneOverOneUnder(): Array<ReviewCard> = arrayOf(card(FIRST), card(SECOND, PendingReason.RULE_REVIEW, amountSen = 45_000L))
+
+    private fun inbox(vararg cards: ReviewCard = oneOverOneUnder()) = compose.setContent {
         PingedTheme {
             ReviewInboxScreenContent(cards = cards.toList(), storageUnavailable = false, busy = null, onBack = {}, onAnswer = { _, _ -> })
         }
     }
 
-    private fun card(id: Long, reason: PendingReason = PendingReason.OVER_THRESHOLD) = ReviewCard(
-        txn = ledgerTxn(amountSen = 65_000L, state = TxnState.PENDING, pendingReason = reason, id = id),
+    private fun card(id: Long, reason: PendingReason = PendingReason.OVER_THRESHOLD, amountSen: Long = 65_000L) = ReviewCard(
+        txn = ledgerTxn(amountSen = amountSen, state = TxnState.PENDING, pendingReason = reason, id = id),
         title = "Maybank2u",
-        body = "RM650.00 debited from a/c 0000xxxx",
+        body = "${ringgit(amountSen)} debited from a/c 0000xxxx",
     )
 
     /** [answer]'s button on card [id]: the clickable node holding its label. */
@@ -266,7 +273,7 @@ class InboxArtboardTest {
                 androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag(reviewSurfaceTag(id))),
         ).performScrollTo()
 
-    /** The text node [text] on card [id] alone: every card in [inbox] gives the same reason. */
+    /** The text node [text] on card [id] alone. */
     private fun textIn(id: Long, text: String): SemanticsNodeInteraction =
         compose.onNode(
             androidx.compose.ui.test.hasText(text) and

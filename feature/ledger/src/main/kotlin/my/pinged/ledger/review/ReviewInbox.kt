@@ -114,7 +114,7 @@ class ReviewInbox(
      * Accept all (§9.2): accept every batchable card of the last read
      * ([isBatchable]) in one transaction (`TxnDao.settleAll`), each
      * guarded as [accept] is, and offer the rows it wrote as one Undo. No
-     * transfer or duplicate card is ever in it.
+     * transfer or duplicate card is ever in it, nor any over the check limit.
      */
     fun acceptAll(): Job = scope.launch {
         val batch = _cards.value.orEmpty().filter { it.isBatchable }

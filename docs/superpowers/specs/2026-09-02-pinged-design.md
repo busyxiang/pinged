@@ -1826,14 +1826,26 @@ afterwards may name another payment that the guard cannot tell apart.
 
 **Swipe to accept, and Accept all, on plain cards only** (rule review,
 merchant missing, over threshold, by the stored reason). A swipe right is
-Accept. **Accept N · RM<net>** accepts every plain card in one transaction,
-each row guarded as a single answer is (a row that moved is skipped), with no
-confirm dialog and one Undo for the whole batch. The net is payments less
-refunds; when any plain card is not in ringgit the label drops the sum and
-reads **Accept N**. Transfer and duplicate cards never swipe and are never in
-the batch, so a batch cannot count a reload as spending or a payment twice;
-the button is absent when no card is plain. Both are disabled with the
-answers while a restore or a delete-everything runs.
+Accept. **Accept N · RM<net>** accepts every plain card within the check limit
+in one transaction, each row guarded as a single answer is (a row that moved is
+skipped), with no confirm dialog and one Undo for the whole batch. The net is
+payments less refunds; when any batched card is not in ringgit the label drops
+the sum and reads **Accept N**. Transfer and duplicate cards never swipe and are
+never in the batch, so a batch cannot count a reload as spending or a payment
+twice. Both are disabled with the answers while a restore or a delete-everything
+runs.
+
+**Accept all leaves out every plain card over the check limit, by its amount**
+(`amount_sen` > RM500, the gate's own strict test, so RM500.00 exactly is
+batched), whatever reason it is stored with: the gate stores one reason and
+over threshold ranks lowest, so a row over RM500 that also fired rule review is
+stored as rule review (#223). Its swipe and its own Accept still take it. The
+label names what it left out: **Accept 8 · RM1,320.00 · 1 over RM500 left to
+check**, or **Accept 8 · 1 over RM500 left to check** with no sum; with none
+left out it is unchanged. The count and net are the batch's alone, as are the
+snackbar's **ACCEPTED N · RM<net>** and its Undo, which carry no note. The
+button is absent when no plain card is within the limit. This reverses #109's
+decision 1 for the batch only, which let Accept all take a card over the limit.
 
 Showing the raw text is a hard requirement — the user must always be able to
 see exactly what the app saw.

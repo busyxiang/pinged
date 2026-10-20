@@ -77,6 +77,23 @@ class ReviewInboxScreenTest {
         )
     }
 
+    /** Accept all leaves these out by amount (#223); a swipe still takes each, one at a time. */
+    @Test fun aSwipeStillAcceptsAPlainCardOverTheCheckLimit() {
+        val reviewed = rent.copy(txn = rent.txn.copy(id = RENT_ID + 1, amountSen = 50_001L, pendingReason = PendingReason.RULE_REVIEW))
+        content(listOf(rent, reviewed))
+
+        listOf(RENT_ID, RENT_ID + 1).forEach { id ->
+            compose.onNodeWithTag(reviewCardTag(id)).performScrollTo().performTouchInput { swipeRight() }
+            compose.waitForIdle()
+        }
+
+        assertEquals(
+            "A swipe did not accept a plain card over the check limit",
+            listOf(RENT_ID to ReviewAnswer.ACCEPT, RENT_ID + 1 to ReviewAnswer.ACCEPT),
+            answers,
+        )
+    }
+
     @Test fun aTransferCardAsksLeaveOutOfSpendingWithLeaveOutAsTheDefaultAndNoSwipe() {
         val reload = rent.copy(
             txn = rent.txn.copy(amountSen = 10_000L, pendingReason = PendingReason.TRANSFER_SUSPECT),

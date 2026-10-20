@@ -365,11 +365,12 @@ class TypeRolesTest {
 
         val groceries = Category(id = 1L, name = "Groceries", iconKey = "shopping-basket", sortOrder = 0)
 
+        /** Under the check limit, so Accept all is drawn for it (#223). */
         val plain = ReviewCard(
             txn = ledgerTxn(
-                amountSen = 65_000L,
+                amountSen = 4_500L,
                 state = TxnState.PENDING,
-                pendingReason = PendingReason.OVER_THRESHOLD,
+                pendingReason = PendingReason.RULE_REVIEW,
                 id = 42L,
             ),
             title = TITLE,
