@@ -5,6 +5,18 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.12.0](https://github.com/busyxiang/pinged/compare/v0.11.0...v0.12.0) (2026-10-20)
+
+
+### Features
+
+* float the Cash button over Spending's list and slide it away while scrolling down ([#290](https://github.com/busyxiang/pinged/issues/290)) ([d979fce](https://github.com/busyxiang/pinged/commit/d979fceeebac7b9acf65c51bffed9e42731d9154))
+
+
+### Bug Fixes
+
+* leave cards over the RM500 check limit out of Accept all ([#289](https://github.com/busyxiang/pinged/issues/289)) ([75a5fdf](https://github.com/busyxiang/pinged/commit/75a5fdfcb5c50b6fbd28c7d12b7afb5935089c97)), closes [#223](https://github.com/busyxiang/pinged/issues/223)
+
 ## [0.11.0](https://github.com/busyxiang/pinged/compare/v0.10.0...v0.11.0) (2026-10-19)
 
 
