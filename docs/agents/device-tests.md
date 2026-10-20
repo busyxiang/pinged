@@ -67,6 +67,20 @@ A loop backgrounded through `adb shell` keeps `adb shell` from returning,
 redirected or not, and its lease hangs until `--max-hold` stops it. Run the
 loop on the host.
 
+To find a flake's cause, log the figures it depends on and compare a passing
+run with a failing one. Put the test and the log read in one script, so one
+lease runs `adb logcat -c`, then the test, then `adb logcat -d -s <TAG>`. Then
+call the script from the loop: `emu -- script.sh runN`. Stop the loop once you
+have one run of each, to free the emulator. To falsify a flake's fix, loop the
+reverted code until the first failure. Then check that the failure in the
+result XML is at the test's own assertion.
+
+A session that fixes a flaky test also updates this file, in the same branch.
+Add the cause as a rule that stops the next test or screen from repeating
+it, with the figures that showed it. If an existing rule covers the cause,
+explain why the rule was missed. A cause that stays only in the commit is
+found again by the next flake.
+
 ## CI's screen
 
 CI's emulator screen is shorter than a dev one. A tap in an instrumented test
@@ -78,3 +92,23 @@ composed: scroll the list itself first, with `performScrollToKey` or
 command ends, fails or is killed. That includes the suites a change reaches
 and not only the tests it adds: a change to what a screen draws breaks tests
 it never touched, and only on the short screen.
+
+## The keyboard
+
+A test that types into a field does not wait for the keyboard. The keyboard
+rises over several frames, and the window shrinks at each one. In
+`MerchantSheet`'s list at CI's size, the heights went 435, 373, 281, then
+229px. A test's next step can land at any of those heights. So code that
+measures the layout once, for example in a `LaunchedEffect` keyed on the typed
+text, sees whatever height that frame has. `MerchantSheet`'s
+scroll-to-search ran at 373px, before the list could scroll, and moved 0px.
+After that, nothing ran again. The test failed 4 runs of 17. `waitForIdle()`
+did not hide the race.
+
+Code that scrolls or places something from a measured layout has to react to
+the layout changing. Collect a `snapshotFlow` of the viewport size and act on
+each value, as `MerchantSheet` now does. Acting once on the first value races
+the keyboard. A lazy item can also be missing from `visibleItemsInfo` for a
+frame while the list shrinks. So scroll by the item's index, or wait for the
+next layout, rather than give up. The fix goes in the screen, not the test.
+A user's keyboard rises the same way.
