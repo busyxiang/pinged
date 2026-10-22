@@ -6,6 +6,7 @@ import android.os.Parcel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -24,6 +25,13 @@ import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import kotlinx.coroutines.runBlocking
 import my.pinged.ui.test.boundedWaitUntil
+import my.pinged.ui.test.ink
+import my.pinged.ui.theme.UPDATING
+import my.pinged.ui.theme.UPDATING_ALPHA
+import androidx.test.espresso.Espresso
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -88,6 +96,78 @@ class MonthsSheetTest {
         compose.runOnIdle { viewModel = ChartsViewModel(app, restored) }
 
         awaitMonth(previous, "RM123.45")
+    }
+
+    /**
+     * #285: a month picked keeps the last month's figures, dimmed to 45%
+     * under `UPDATING`, while its read is held in its transaction. The dim
+     * is the hero's ink during the re-read over its ink before it.
+     */
+    @Test(timeout = 120_000)
+    fun aMonthPickedKeepsTheLastMonthDimmedUntilItsReadLands() {
+        seed()
+        val viewModel = ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to now.toString())))
+        compose.setContent { ChartsScreen(viewModel) }
+        awaitMonth(now, "RM50.00")
+        val settled = compose.onNodeWithText("RM50.00").captureToImage().ink()
+
+        val release = holdTheNextRead(viewModel)
+        try {
+            compose.runOnUiThread { viewModel.select(previous) }
+            compose.boundedWaitUntil(TIMEOUT) { shows(UPDATING) }
+            val dimmed = compose.onNodeWithText("RM50.00").captureToImage().ink()
+            assertDimmed("The last month's hero", settled, dimmed)
+        } finally {
+            release.countDown()
+        }
+        awaitMonth(previous, "RM123.45")
+        compose.boundedWaitUntil(TIMEOUT) { !shows(UPDATING) }
+    }
+
+    /**
+     * #285: Jump to opened again keeps the last opening's months, dimmed to
+     * 45% under `UPDATING`, while this opening's read is held.
+     */
+    @Test(timeout = 120_000)
+    fun aReopenedSheetKeepsTheLastMonthsDimmedUntilItsReadLands() {
+        seed()
+        val viewModel = ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to now.toString())))
+        compose.setContent { ChartsScreen(viewModel) }
+        awaitMonth(now, "RM50.00")
+        compose.onNodeWithText(header(now)).performScrollTo().performClick()
+        compose.boundedWaitUntil(TIMEOUT) { shows(rowName(previous)) }
+        val settled = compose.onNodeWithText(rowName(previous)).captureToImage().ink()
+        Espresso.pressBack()
+        compose.boundedWaitUntil(TIMEOUT) { !shows(rowName(previous)) }
+
+        val release = holdTheNextRead(viewModel)
+        try {
+            compose.onNodeWithText(header(now)).performScrollTo().performClick()
+            compose.boundedWaitUntil(TIMEOUT) { shows(UPDATING) }
+            val dimmed = compose.onNodeWithText(rowName(previous)).captureToImage().ink()
+            assertDimmed("The last opening's month", settled, dimmed)
+        } finally {
+            release.countDown()
+        }
+        compose.boundedWaitUntil(TIMEOUT) { !shows(UPDATING) }
+    }
+
+    /**
+     * Holds [viewModel]'s next read inside its transaction until the latch
+     * returned is counted down; the reads after it run through.
+     */
+    private fun holdTheNextRead(viewModel: ChartsViewModel): CountDownLatch {
+        val release = CountDownLatch(1)
+        val held = AtomicBoolean(false)
+        viewModel.midRead = {
+            if (held.compareAndSet(false, true)) release.await(TIMEOUT, TimeUnit.MILLISECONDS)
+        }
+        return release
+    }
+
+    /** [dimmed]'s ink is [settled]'s at the board's 45%, within 0.08. */
+    private fun assertDimmed(what: String, settled: Float, dimmed: Float) {
+        assertEquals("$what drew at ${dimmed / settled} of its ink ($dimmed of $settled)", UPDATING_ALPHA, dimmed / settled, 0.08f)
     }
 
     /** The header names [month] and the hero prints [figure]. */

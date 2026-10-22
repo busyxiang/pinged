@@ -5,29 +5,29 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.filterToOne
-import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.filterToOne
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.lifecycle.SavedStateHandle
 import androidx.paging.LoadState
 import androidx.paging.LoadStates
 import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -43,15 +43,19 @@ import my.pinged.ledger.home.LedgerScreenContent
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.home.MERCHANT_LIST_TAG
 import my.pinged.ledger.home.MerchantActions
+import my.pinged.ledger.home.MerchantOpening
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.NAME_FIELD_TAG
+import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.SAVE_NAME
 import my.pinged.ledger.home.SUGGESTED
 import my.pinged.ledger.home.readMerchantSheet
 import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
+import my.pinged.ui.theme.READING_DELAY_MILLIS
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -99,7 +103,7 @@ class MerchantSheetTest {
                     storageUnavailable = false,
                     onAssign = { _, _, _ -> },
                     onOpenSettings = {},
-                    merchantSheet = sheet,
+                    merchantSheet = sheet?.let { OpenMerchantSheet(MerchantOpening(it.ownKey, it.name, DAY), it) },
                     merchantActions = actions,
                 )
             }
@@ -112,7 +116,7 @@ class MerchantSheetTest {
         merged: MutableList<String> = mutableListOf(),
         separated: MutableList<String> = mutableListOf(),
     ) = MerchantActions(
-        open = { key, on -> opened += key to on },
+        open = { opened += it.ownKey to it.on },
         rename = { renamed += it },
         merge = { merged += it },
         separate = { separated += it },
@@ -132,6 +136,12 @@ class MerchantSheetTest {
         val pressed = row(scanAndPay, "Yuenkeehometowncafe", id = 1)
         content(listOf(pressed), actions = actions(opened = opened))
         compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Yuenkeehometowncafe").fetchSemanticsNodes().isNotEmpty() }
+        // `LedgerRead()` has no total, so the hero's dash and status line
+        // come 200ms after the first frame and push the row down. Pressed
+        // before them, the row moved under a long press still held and the
+        // press was cancelled: let them draw first.
+        compose.mainClock.advanceTimeBy(READING_DELAY_MILLIS + 40)
+        compose.waitForIdle()
 
         compose.onNodeWithText("Yuenkeehometowncafe").performTouchInput { longClick() }
         compose.waitForIdle()
@@ -274,8 +284,8 @@ class MerchantSheetTest {
         insert(duitNow, "Restoran Yuen Kee Home Town Cafe", 1_500L, at = 2_000L)
         val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
 
-        runBlocking { withTimeout(10_000) { viewModel.openMerchant(scanAndPay, DAY).join() } }
-        val sheet = viewModel.merchantSheet.value!!
+        runBlocking { withTimeout(10_000) { viewModel.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY)).join() } }
+        val sheet = viewModel.merchantSheet.value!!.read!!
         assertEquals(listOf(duitNow), sheet.others.map { it.identityKey })
         assertEquals(setOf(duitNow), sheet.suggested)
 
@@ -285,6 +295,34 @@ class MerchantSheetTest {
         val dao = Databases.merchantIdentityDao(context)
         assertEquals(duitNow, dao.canonicalOf(scanAndPay))
         assertEquals("Restoran Yuen Kee Home Town Cafe", dao.nameOf(duitNow))
+    }
+
+    /**
+     * The sheet opens before its read (#284), so the read must not land on a
+     * sheet the user has closed since: it would open the sheet again by itself.
+     */
+    @Test fun aSheetClosedBeforeItsReadLandsStaysClosed() {
+        context.freshLedger()
+        insert(scanAndPay, "Yuenkeehometowncafe", 1_250L, at = 1_000L)
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
+
+        val read = viewModel.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY))
+        assertNotNull("The sheet did not open on the tap", viewModel.merchantSheet.value)
+        viewModel.closeMerchant()
+        runBlocking { withTimeout(10_000) { read.join() } }
+
+        assertNull("The read opened a sheet the user had closed", viewModel.merchantSheet.value)
+    }
+
+    /** A sheet opened on a merchant the ledger no longer has closes once the read says so. */
+    @Test fun aMerchantNoLongerInTheLedgerClosesTheSheet() {
+        context.freshLedger()
+        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
+
+        val read = viewModel.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY))
+        runBlocking { withTimeout(10_000) { read.join() } }
+
+        assertNull("A sheet with nothing to read stayed open", viewModel.merchantSheet.value)
     }
 
     @Test fun theHolderRenamesTheMergedMerchantFromEitherKey() {
@@ -300,7 +338,7 @@ class MerchantSheetTest {
         assertEquals(2, sheet.txnCount)
 
         val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
-        runBlocking { withTimeout(10_000) { viewModel.openMerchant(scanAndPay, DAY).join() } }
+        runBlocking { withTimeout(10_000) { viewModel.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY)).join() } }
         runBlocking { withTimeout(10_000) { viewModel.renameMerchant("Yuen Kee").join() } }
 
         assertEquals("Yuen Kee", dao.nameOf(duitNow))

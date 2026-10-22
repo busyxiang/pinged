@@ -6,7 +6,9 @@ import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -157,15 +159,22 @@ class ChartsViewModel(app: Application, private val handle: SavedStateHandle) : 
         return refresh(today)
     }
 
-    /** Read the `Months` sheet as of [today] (#75), through [monthsRead]. */
-    fun readMonths(today: LocalDate = LocalDate.now()): Job = viewModelScope.launch {
+    /**
+     * Read the `Months` sheet as of [today] (#75), through [monthsRead]:
+     * true once published, false when it could not be read.
+     */
+    fun readMonths(today: LocalDate = LocalDate.now()): Deferred<Boolean> = viewModelScope.async {
         CaptureStorage.guarded(
             context,
             what = "The months cannot be read",
-            unavailable = { _unavailable.value = true },
+            unavailable = {
+                _unavailable.value = true
+                false
+            },
             damageStopsCapture = false,
         ) {
             _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today, midRead) }
+            true
         }
     }
 

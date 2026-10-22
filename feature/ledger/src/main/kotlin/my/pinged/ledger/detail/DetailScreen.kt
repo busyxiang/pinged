@@ -63,7 +63,8 @@ import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.HeroSerif
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
-import my.pinged.ledger.home.MerchantSheetState
+import my.pinged.ledger.home.MerchantOpening
+import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.RemoveSheet
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.UnderlinedField
@@ -79,6 +80,12 @@ import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.DashLeader
+import my.pinged.ui.theme.DottedCell
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
+import my.pinged.ledger.home.HERO_NOT_READ_YET
+import androidx.compose.ui.text.TextStyle
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
@@ -89,6 +96,7 @@ import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
+import my.pinged.ui.theme.ValueDash
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
 import my.pinged.ui.theme.heroFigure
@@ -177,7 +185,7 @@ internal fun DetailScreenContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     actions: DetailActions = DetailActions.None,
-    merchantSheet: MerchantSheetState? = null,
+    merchantSheet: OpenMerchantSheet? = null,
     merchantActions: MerchantActions = MerchantActions.None,
     zone: ZoneId = ZoneId.systemDefault(),
 ) {
@@ -193,7 +201,7 @@ internal fun DetailScreenContent(
             // First: a row drawn under a ledger that cannot be read would be a
             // claim about money no read supports.
             storageUnavailable -> Notice(CANNOT_READ_YOUR_DATA, Stamp)
-            read == null -> Notice("READING", Muted)
+            read == null -> NotReadYet()
             row == null -> Notice(GONE, Muted)
             else -> DetailBody(
                 row = row,
@@ -254,6 +262,41 @@ private fun Header(onBack: () -> Unit) {
     }
 }
 
+/**
+ * The row's read in flight: `design/LoadingDetail.dc.html`, or
+ * `LoadingWaiting.dc.html` while an export or the integrity check holds the
+ * database. The eyebrow and the fields' labels are drawn, every value a dash
+ * on a dotted leader; the merchant is a dotted rule and the notification a
+ * dotted box, since what they say is the read.
+ */
+@Composable
+private fun NotReadYet() {
+    ReadingLayout(Modifier.fillMaxWidth()) {
+        Column {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp)) {
+                // The board's PAID is a dash: PAID or a refund's CAME BACK
+                // is the row's direction, which is a read.
+                ValueDash(style = MonoLabel)
+                // Rule, decorative, as Spending's hero dash is: the status
+                // line under it says the amount is not read yet.
+                Text(HERO_NOT_READ_YET, style = HeroSerif, color = Rule, modifier = Modifier.padding(top = 4.dp))
+                Box(Modifier.padding(top = 10.dp).fillMaxWidth(0.55f).height(18.dp).dottedRule())
+                ReadingStatus(Modifier.padding(top = 6.dp))
+            }
+            TornEdge(Modifier.padding(top = 16.dp))
+            Column(Modifier.fillMaxWidth().background(Card).padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 20.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (label in listOf(WHEN, CATEGORY, CAME_FROM, NAME_ON_THE_BILL)) {
+                        DashLeader(Modifier.heightIn(min = 18.dp), label = label, labelStyle = FieldLabel)
+                    }
+                }
+                Text(WHAT_PINGED_READ, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 22.dp))
+                DottedCell(Modifier.padding(top = 9.dp).fillMaxWidth().height(54.dp).testTag(VERBATIM_NOT_READ_YET))
+            }
+        }
+    }
+}
+
 @Composable
 private fun DetailBody(
     row: DetailRow,
@@ -292,7 +335,7 @@ private fun DetailBody(
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(2.dp))
-                        .clickable(role = Role.Button) { merchantActions.open(key, row.row.txn.localDate) }
+                        .clickable(role = Role.Button) { merchantActions.open(MerchantOpening(key, name ?: key, row.row.txn.localDate)) }
                         .size(44.dp)
                         .semantics { contentDescription = EDIT_MERCHANT },
                     contentAlignment = Alignment.Center,
@@ -501,7 +544,7 @@ private fun Field(label: String, value: String) {
 @Composable
 private fun Field(label: String, value: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-        Text(label, fontFamily = Body, fontSize = 13.5.sp, lineHeight = 18.sp, color = Muted)
+        Text(label, style = FieldLabel, color = Muted)
         Box(Modifier.weight(1f).padding(start = 8.dp, end = 8.dp, bottom = 4.dp).height(1.dp).dottedRule())
         value()
     }
@@ -598,6 +641,12 @@ private val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("h.mm a", CAL
 
 /** The notification as Pinged saw it, as the inbox sets it. */
 private val Quoted = MonoLabel.copy(letterSpacing = 0.sp, lineHeight = 18.sp)
+
+/** A field's label, read or not. */
+private val FieldLabel = TextStyle(fontFamily = Body, fontSize = 13.5.sp, lineHeight = 18.sp)
+
+/** The dotted box where the notification will be quoted, as a device test finds it. */
+internal const val VERBATIM_NOT_READ_YET = "detail-verbatim-not-read-yet"
 
 internal const val EYEBROW = "CAPTURED, NOT TYPED"
 internal const val PAID = "PAID"

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.charts.MonthsSheet
+import my.pinged.charts.rememberMonthsRead
 import my.pinged.charts.model.monthsSheet
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
@@ -71,6 +73,7 @@ import my.pinged.data.dao.RetroPreview
 import my.pinged.ledger.home.CategoryChip
 import my.pinged.ledger.home.CheckMark
 import my.pinged.ledger.home.ENTERED_BY_HAND
+import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ledger.settings.SearchExportSheet
@@ -90,6 +93,7 @@ import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Magnifier
@@ -98,12 +102,19 @@ import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
 import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedRule
+import my.pinged.ui.theme.NOT_READ_YET
+import my.pinged.ui.theme.Rule
+import my.pinged.ui.theme.UpdatingStatus
+import my.pinged.ui.theme.rememberUpdating
+import my.pinged.ui.theme.updating
 import java.time.YearMonth
 import java.time.format.TextStyle as JavaTextStyle
 
@@ -187,10 +198,11 @@ fun SearchScreen(
     val close = { sheet = null }
     when (sheet) {
         FilterSheet.Month -> {
-            LaunchedEffect(viewModel) { viewModel.readMonths() }
+            val reading = rememberMonthsRead(viewModel) { viewModel.readMonths() }
             val months by viewModel.months.collectAsState()
             MonthsSheet(
                 items = months?.let(::monthsSheet),
+                reading = reading,
                 onPick = { close(); viewModel.setMonth(it) },
                 onDismiss = close,
                 onAny = { close(); viewModel.setMonth(null) },
@@ -255,6 +267,9 @@ internal fun SearchScreenContent(
     val categoryName = choice.categoryId?.let { categoriesById[it]?.name }
     // The rows the totals count, not the ones drawn: the export has no limit.
     val found = read?.takeUnless { storageUnavailable }?.totals?.sumOf { it.rowCount } ?: 0
+    // The words or a filter changed and their read has not landed (#285):
+    // the last answer stays, dimmed under `UPDATING` once 200ms have passed.
+    val updating = rememberUpdating(read != null && (read.text != query || read.choice != choice))
     Column(modifier.fillMaxSize().background(Paper)) {
         LazyColumn(Modifier.weight(1f)) {
             item { Field(query, onQuery, onBack) }
@@ -263,10 +278,14 @@ internal fun SearchScreenContent(
                 // First, for the reason Day's is: rows under a ledger that cannot
                 // be read would be a claim about money no read supports.
                 storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
-                read == null -> item { Notice("READING", Muted) }
-                read.rows.isEmpty() -> item { Notice(nothingFound(read.choice), Muted) }
+                read == null -> item { NotReadYet(choice.month) }
+                read.rows.isEmpty() -> {
+                    item { Notice(nothingFound(read.choice), Muted, Modifier.updating(updating)) }
+                    if (updating) item { Updating(query) }
+                }
                 else -> {
-                    item { Hero(read) }
+                    item { Hero(read, Modifier.updating(updating)) }
+                    if (updating) item { Updating(query) }
                     item { TornEdge(Modifier.padding(top = 20.dp)) }
                     items(read.rows, key = { "txn-" + it.txn.id }) { row ->
                         // As `LedgerRow` offers it: never on an excluded row,
@@ -279,12 +298,13 @@ internal fun SearchScreenContent(
                             onOpenEntry,
                             onOpenDetail,
                             onCategorize = if (sortable) ({ categorizing = row.txn.id }) else null,
+                            modifier = Modifier.updating(updating),
                         )
                     }
                 }
             }
         }
-        if (onExport != null && found > 0) ExportFooter(found, onExport)
+        if (onExport != null && found > 0) ExportFooter(found.takeUnless { updating }, onExport)
     }
 
     // Found among the rows read rather than saved with the id, for the reason
@@ -309,9 +329,15 @@ internal fun SearchScreenContent(
 /**
  * The artboard's foot: "Export these N rows" in a dashed [Muted] outline
  * under a dotted rule, pinned below the list. [rows] is every row found.
+ *
+ * Null [rows] is a re-read in flight (#285): the count is about to change,
+ * so it is a dash, and the button is drawn in [Rule] and does nothing, as
+ * `LoadingSearch` draws it, since it would export the rows of words the user
+ * has already changed.
  */
 @Composable
-private fun ExportFooter(rows: Int, onClick: () -> Unit) {
+private fun ExportFooter(rows: Int?, onClick: () -> Unit) {
+    val tone = if (rows == null) Rule else Muted
     Box(
         Modifier
             .fillMaxWidth()
@@ -322,8 +348,8 @@ private fun ExportFooter(rows: Int, onClick: () -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(2.dp))
-                .dashedOutline(Muted)
-                .clickable(role = Role.Button, onClick = onClick)
+                .dashedOutline(tone)
+                .clickable(enabled = rows != null, role = Role.Button, onClick = onClick)
                 .heightIn(min = 46.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
@@ -331,18 +357,21 @@ private fun ExportFooter(rows: Int, onClick: () -> Unit) {
             Canvas(Modifier.size(16.dp)) {
                 val stroke = 1.7.dp.toPx()
                 val u = size.width / 24f
-                drawLine(Muted, Offset(4 * u, 6 * u), Offset(20 * u, 6 * u), stroke, StrokeCap.Round)
-                drawLine(Muted, Offset(7 * u, 12 * u), Offset(17 * u, 12 * u), stroke, StrokeCap.Round)
-                drawLine(Muted, Offset(10 * u, 18 * u), Offset(14 * u, 18 * u), stroke, StrokeCap.Round)
+                drawLine(tone, Offset(4 * u, 6 * u), Offset(20 * u, 6 * u), stroke, StrokeCap.Round)
+                drawLine(tone, Offset(7 * u, 12 * u), Offset(17 * u, 12 * u), stroke, StrokeCap.Round)
+                drawLine(tone, Offset(10 * u, 18 * u), Offset(14 * u, 18 * u), stroke, StrokeCap.Round)
             }
-            Text(exportTheseRows(rows), style = MonoLabel, color = Muted)
+            Text(exportTheseRows(rows), style = MonoLabel, color = tone)
         }
     }
 }
 
-/** The foot's label: `EXPORT THESE 18 ROWS`, or `THIS ROW` for one. */
-internal fun exportTheseRows(rows: Int): String =
-    if (rows == 1) "EXPORT THIS ROW" else "EXPORT THESE ${grouped(rows)} ROWS"
+/** The foot's label: `EXPORT THESE 18 ROWS`, or `THIS ROW` for one; null is a count not read yet. */
+internal fun exportTheseRows(rows: Int?): String = when (rows) {
+    null -> "EXPORT THESE $NOT_READ_YET ROWS"
+    1 -> "EXPORT THIS ROW"
+    else -> "EXPORT THESE ${grouped(rows)} ROWS"
+}
 
 /**
  * The artboard's top line: the back chevron, then the field on a 1.5dp Ink
@@ -491,9 +520,9 @@ private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
  * The period is named so a count is never read as all time.
  */
 @Composable
-private fun Hero(read: SearchRead) {
+private fun Hero(read: SearchRead, modifier: Modifier = Modifier) {
     val hero = heroLines(read.totals, read.choice.month, shown = read.rows.size)
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 13.dp)) {
+    Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 13.dp)) {
         Text(hero.label, style = HeroLabel, color = Faint, modifier = Modifier.testTag(SEARCH_COUNT))
         hero.amount?.let {
             Text(
@@ -523,6 +552,7 @@ private fun ResultRow(
     category: Category?,
     onOpenEntry: ((EditTarget) -> Unit)?,
     onOpenDetail: ((EditTarget) -> Unit)?,
+    modifier: Modifier = Modifier,
     onCategorize: (() -> Unit)? = null,
 ) {
     val txn = row.txn
@@ -531,7 +561,7 @@ private fun ResultRow(
     val counted = txn.state == TxnState.COMMITTED && !txn.isExcluded
     val tone = if (counted) Ink else Muted
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .background(Card)
             .then(if (open != null) Modifier.clickable(onClick = open) else Modifier)
@@ -580,18 +610,56 @@ private fun ResultRow(
 }
 
 @Composable
-private fun Notice(text: String, color: androidx.compose.ui.graphics.Color) {
+private fun Notice(text: String, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
     Text(
         text,
         style = MonoLabel,
         color = color,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp).testTag(SEARCH_NOTICE),
+        modifier = modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp).testTag(SEARCH_NOTICE),
     )
 }
 
 /**
- * A sheet of single choices: [any] first, then [options] by name. [options]
- * null is a read in flight, drawn as READING rather than as no options.
+ * The first read in flight, `design/LoadingSearch.dc.html`'s layout through
+ * `ReadingLayout`: the hero's label with its count a dash, over the [month]
+ * picked, which is known without a read; the total as Spending's hero dash;
+ * the status line under it; and [SEARCH_PLACES] rows, each amount a dash on
+ * a dotted leader. A re-read keeps the last answer instead ([Updating]).
+ */
+@Composable
+private fun NotReadYet(month: YearMonth?) {
+    ReadingLayout(Modifier.fillMaxWidth()) {
+        Column {
+            Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 13.dp)) {
+                Text("$NOT_READ_YET PAYMENTS" + Separator + period(month), style = HeroLabel, color = Muted)
+                // Rule, decorative, as Spending's hero dash is: the status
+                // line under it says the total is not read yet.
+                Text(HERO_NOT_READ_YET, style = HeroSerif, color = Rule, modifier = Modifier.padding(top = 4.dp))
+                ReadingStatus(Modifier.padding(top = 12.dp))
+            }
+            TornEdge(Modifier.padding(top = 20.dp))
+            Column(Modifier.fillMaxWidth().background(Card).padding(horizontal = 20.dp, vertical = 8.dp)) {
+                repeat(SEARCH_PLACES) {
+                    DashLeader(Modifier.padding(vertical = 9.dp), valueStyle = MonoNumerals.copy(fontSize = 14.sp))
+                }
+            }
+        }
+    }
+}
+
+/** `LoadingSearch`'s status line under the dimmed hero, naming the words typed. */
+@Composable
+private fun Updating(query: String) {
+    UpdatingStatus(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp).testTag(SEARCH_UPDATING), about = query)
+}
+
+/**
+ * A sheet of single choices: [any] first, then [options] by name.
+ *
+ * [options] null is a read in flight (#284): [any], which needs no read, at
+ * once, and under it `ReadingLayout`'s status line and [PICK_PLACES] dotted
+ * places, `design/LoadingList.dc.html`'s rows, rather than no options. An
+ * empty list is the read's answer and draws at once.
  */
 @Composable
 internal fun <T> PickSheet(
@@ -605,10 +673,37 @@ internal fun <T> PickSheet(
     ReceiptSheet(onDismissRequest = onDismiss, title = title) {
         PickRow(any, selected == null) { onPick(null) }
         if (options == null) {
-            Text("READING", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 12.dp))
+            ReadingLayout {
+                Column {
+                    ReadingStatus(Modifier.padding(top = 12.dp, bottom = 4.dp))
+                    repeat(PICK_PLACES) { PickRowNotReadYet() }
+                }
+            }
         } else {
             options.forEach { (value, name) -> PickRow(name, value == selected) { onPick(value) } }
         }
+    }
+}
+
+/** How many places [PickSheet] holds for options not read yet: they stand for rows, not a count. */
+internal const val PICK_PLACES = 3
+
+/** The tag on each of those places. */
+internal const val PICK_NOT_READ_YET = "pick-not-read-yet"
+
+/** A [PickRow] not read yet: its 44dp and dotted rule, the name a dotted line 45% wide. */
+@Composable
+private fun PickRowNotReadYet() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .testTag(PICK_NOT_READ_YET)
+            .dottedRule()
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(Modifier.fillMaxWidth(0.45f).height(12.dp).dottedRule())
     }
 }
 
@@ -722,7 +817,7 @@ internal data class HeroLines(val label: String, val amount: String?, val notes:
  * added to it.
  */
 internal fun heroLines(totals: List<SearchTotal>, month: YearMonth?, shown: Int): HeroLines {
-    val period = month?.let(::monthName) ?: "ALL TIME"
+    val period = period(month)
     val lead = totals.firstOrNull { it.currency == RINGGIT } ?: totals.firstOrNull()
     val notes = mutableListOf<String>()
     val paid = lead?.paymentCount ?: 0
@@ -749,6 +844,9 @@ internal fun heroLines(totals: List<SearchTotal>, month: YearMonth?, shown: Int)
     if (rows > shown) notes += "SHOWING THE NEWEST $shown OF $rows"
     return HeroLines(label, amount, notes)
 }
+
+/** The hero label's period: the month picked, or all time. */
+private fun period(month: YearMonth?): String = month?.let(::monthName) ?: "ALL TIME"
 
 private fun payments(n: Int): String = when (n) {
     0 -> "NO PAYMENTS"
@@ -814,6 +912,7 @@ const val SEARCH_COUNT = "searchCount"
 const val SEARCH_TOTAL = "searchTotal"
 const val SEARCH_NOTE = "searchNote"
 const val SEARCH_NOTICE = "searchNotice"
+const val SEARCH_UPDATING = "searchUpdating"
 
 /** A chip's test tag is this followed by its label. */
 const val CHIP = "chip:"
@@ -838,3 +937,6 @@ const val ANY_AMOUNT = "Any amount"
 const val FROM_RM = "FROM RM"
 const val TO_RM = "TO RM"
 const val APPLY = "Apply"
+
+/** How many places the first read in flight holds for rows: they stand for rows, not a count. */
+internal const val SEARCH_PLACES = 4

@@ -44,6 +44,7 @@ import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
 import my.pinged.data.dao.TaughtRuleRow
 import my.pinged.ledger.BackChevron
+import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.parse.Direction
 import my.pinged.ui.CALENDAR
@@ -57,7 +58,9 @@ import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.dottedRule
 
@@ -88,11 +91,14 @@ fun LearnedScreen(viewModel: LearnedViewModel, onBack: () -> Unit, modifier: Mod
     )
 }
 
-/** The board's tabs, each with what it says when it lists nothing and how many it lists. */
-internal enum class TaughtTab(val label: String, val nothing: String, val countIn: (LearnedState) -> Int) {
-    MERCHANTS("MERCHANTS", NOTHING_TAUGHT, { it.items.size }),
-    MESSAGES("MESSAGES", NO_MESSAGES, { it.messages.size }),
-    IGNORED("IGNORED", NOTHING_IGNORED, { it.ignored.size }),
+/**
+ * The board's tabs, each with what it says when it lists nothing, how many
+ * it lists, and its rows' count line while the read is in flight.
+ */
+internal enum class TaughtTab(val label: String, val nothing: String, val countIn: (LearnedState) -> Int, val notReadYet: String) {
+    MERCHANTS("MERCHANTS", NOTHING_TAUGHT, { it.items.size }, paymentsLabel(NOT_READ_YET)),
+    MESSAGES("MESSAGES", NO_MESSAGES, { it.messages.size }, "READ $NOT_READ_YET"),
+    IGNORED("IGNORED", NOTHING_IGNORED, { it.ignored.size }, hidesLabel(NOT_READ_YET)),
 }
 
 /** [LearnedScreen] without its holder, so a test can draw any state. */
@@ -107,19 +113,25 @@ internal fun LearnedContent(
     onDeleteMessage: (TaughtRuleRow) -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
+    if (!state.loaded) {
+        Column(modifier.fillMaxSize().background(Paper)) {
+            Header(onBack)
+            ReadingLayout { Tabs(selected = tab, count = { NOT_READ_YET }, onSelect = { tab = it }) }
+            ListNotReadYet(caption = tab.notReadYet, icon = false)
+        }
+        return
+    }
     LazyColumn(modifier.fillMaxSize().background(Paper)) {
         item { Header(onBack) }
         item {
             Tabs(
                 selected = tab,
-                counts = TaughtTab.entries.associateWith { it.countIn(state) },
-                shown = state.loaded && !state.storageUnavailable,
+                count = { if (state.storageUnavailable) null else grouped(it.countIn(state)) },
                 onSelect = { tab = it },
             )
         }
         item {
             val notice = when {
-                !state.loaded -> null
                 state.storageUnavailable -> CANNOT_READ_YOUR_DATA
                 tab.countIn(state) == 0 -> tab.nothing
                 else -> null
@@ -144,11 +156,11 @@ internal fun LearnedContent(
 
 /**
  * The board's chips, `MERCHANTS 38`: the selected one filled in [Stamp], the
- * other outlined. 30dp drawn, as the board sets them, in a 44dp target. No
- * counts until a read has given them, for `SettingsState.sourcesOn`'s reason.
+ * other outlined. 30dp drawn, as the board sets them, in a 44dp target.
+ * [count] null draws none, for `SettingsState.sourcesOn`'s reason.
  */
 @Composable
-private fun Tabs(selected: TaughtTab, counts: Map<TaughtTab, Int>, shown: Boolean, onSelect: (TaughtTab) -> Unit) {
+private fun Tabs(selected: TaughtTab, count: (TaughtTab) -> String?, onSelect: (TaughtTab) -> Unit) {
     Row(Modifier.padding(start = 20.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         TaughtTab.entries.forEach { tab ->
             val on = tab == selected
@@ -161,7 +173,7 @@ private fun Tabs(selected: TaughtTab, counts: Map<TaughtTab, Int>, shown: Boolea
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    tab.label + if (shown) " " + grouped(counts.getValue(tab)) else "",
+                    tab.label + (count(tab)?.let { " $it" } ?: ""),
                     style = MonoLabel,
                     color = if (on) Paper else Muted,
                     modifier = Modifier
@@ -318,7 +330,9 @@ private fun Header(onBack: () -> Unit) {
 }
 
 /** The row's count, in the words the issue gives it. */
-internal fun paymentsLabel(payments: Int): String = "PAYMENTS ${grouped(payments)}"
+internal fun paymentsLabel(payments: Int): String = paymentsLabel(grouped(payments))
+
+private fun paymentsLabel(payments: String): String = "PAYMENTS $payments"
 
 /** The settings row's label and this screen's title, the board's. */
 const val TAUGHT = "Things you taught Pinged"
@@ -332,7 +346,9 @@ internal fun messageLabel(rule: TaughtRuleRow): String = listOfNotNull(
 ).joinToString(Separator)
 
 /** The IGNORED row's count, in the board's voice. */
-internal fun hidesLabel(hidden: Int): String = "HIDES ${grouped(hidden)}"
+internal fun hidesLabel(hidden: Int): String = hidesLabel(grouped(hidden))
+
+private fun hidesLabel(hidden: String): String = "HIDES $hidden"
 internal const val DELETE = "Delete"
 internal const val NOTHING_IGNORED =
     "Nothing ignored. Tap 'Never a transaction' on a notification Pinged could not read."

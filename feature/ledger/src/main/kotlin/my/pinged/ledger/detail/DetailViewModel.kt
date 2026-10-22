@@ -16,7 +16,8 @@ import my.pinged.data.dao.DetailRow
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
 import my.pinged.ledger.home.ChooserRead
-import my.pinged.ledger.home.MerchantSheetState
+import my.pinged.ledger.home.MerchantOpening
+import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.RowActions
 
 /**
@@ -50,7 +51,7 @@ class DetailViewModel(app: Application, val txnId: Long, val createdAt: Long) : 
         unavailable = { _storageUnavailable.value = true },
     )
 
-    val merchantSheet: StateFlow<MerchantSheetState?> = rows.merchantSheet
+    val merchantSheet: StateFlow<OpenMerchantSheet?> = rows.merchantSheet
 
     /**
      * Read the row and the chooser's half under one lease, published in one
@@ -98,7 +99,7 @@ class DetailViewModel(app: Application, val txnId: Long, val createdAt: Long) : 
         it.removeCaptured(txnId, now())
     }
 
-    fun openMerchant(ownKey: String, on: LocalDate): Job = rows.openMerchant(ownKey, on)
+    fun openMerchant(opening: MerchantOpening): Job = rows.openMerchant(opening)
 
     fun closeMerchant() = rows.closeMerchant()
 

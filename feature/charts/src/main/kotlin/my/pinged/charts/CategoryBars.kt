@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -33,6 +34,8 @@ import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.ValueDash
+import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
 
 /**
@@ -133,6 +136,33 @@ private fun BarLine(bar: Bar, greyed: Boolean) {
             softWrap = false,
             modifier = Modifier.width(72.dp),
         )
+    }
+}
+
+/**
+ * `WHERE IT WENT` while the month's read is in flight (#281,
+ * `design/LoadingCharts`): five rows of a dotted rule where the name goes, a
+ * dotted track, and a dash for the amount, in [BarLine]'s columns so nothing
+ * moves sideways when the bars land. Five is the board's, and says nothing
+ * about how many categories there are.
+ */
+@Composable
+internal fun CategoryBarsNotReadYet(modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp)) {
+        Spacer(Modifier.fillMaxWidth().height(1.dp).dottedRule(atTop = true))
+        Text("WHERE IT WENT", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 15.dp))
+        Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            repeat(5) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.width(110.dp).height(10.dp).dottedRule())
+                    Box(Modifier.weight(1f).height(12.dp).dottedOutline(RectangleShape))
+                    ValueDash(
+                        Modifier.width(72.dp),
+                        style = MonoNumerals.copy(fontSize = 12.sp, textAlign = TextAlign.End),
+                    )
+                }
+            }
+        }
     }
 }
 

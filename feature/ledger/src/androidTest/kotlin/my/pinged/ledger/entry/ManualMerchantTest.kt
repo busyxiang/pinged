@@ -11,7 +11,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import my.pinged.capture.Graph
@@ -24,6 +23,7 @@ import my.pinged.data.entity.Txn
 import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
+import my.pinged.ledger.home.MerchantOpening
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ledger.transfer.ImportJson
@@ -195,8 +195,8 @@ class ManualMerchantTest {
 
     /** The sheet open on [key], as a long-press on its row leaves it. */
     private suspend fun open(rows: RowActions, key: String) {
-        rows.openMerchant(key, LocalDates.of(NOON)).join()
-        withTimeout(TIMEOUT) { rows.merchantSheet.filterNotNull().first() }
+        rows.openMerchant(MerchantOpening(key, key, LocalDates.of(NOON))).join()
+        withTimeout(TIMEOUT) { rows.merchantSheet.first { it?.read != null } }
     }
 
     private companion object {

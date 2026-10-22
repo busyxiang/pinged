@@ -21,6 +21,8 @@ import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
 import my.pinged.ledger.home.NAME_HEADING
 import my.pinged.ledger.home.MerchantActions
+import my.pinged.ledger.home.MerchantOpening
+import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.SEPARATE_NO_RULE
 import my.pinged.ledger.home.readMerchantSheet
@@ -86,7 +88,7 @@ class MerchantSheetRulesTest {
                     storageUnavailable = false,
                     onAssign = { _, _, _ -> },
                     onOpenSettings = {},
-                    merchantSheet = sheet,
+                    merchantSheet = OpenMerchantSheet(MerchantOpening(sheet.ownKey, sheet.name, ANY_DAY), sheet),
                     merchantActions = MerchantActions.None,
                 )
             }

@@ -39,7 +39,7 @@ class HeroSenTest {
             monthTotals = listOf(CurrencyTotal("MYR", 119_273L)),
         )
         compose.setContent {
-            PingedTheme { ChartsScreenContent("SEPTEMBER 2026", ChartsState.Month(monthView(read)), unavailable = false) }
+            PingedTheme { ChartsScreenContent(YearMonth.of(2026, 9), ChartsState.Month(monthView(read)), unavailable = false) }
         }
 
         val text: AnnotatedString = compose.onNodeWithText("RM1,192.73").fetchSemanticsNode()

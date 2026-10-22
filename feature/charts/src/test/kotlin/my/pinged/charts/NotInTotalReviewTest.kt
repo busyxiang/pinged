@@ -53,7 +53,7 @@ class NotInTotalReviewTest {
         compose.setContent {
             PingedTheme {
                 ChartsScreenContent(
-                    "SEPTEMBER 2026",
+                    YearMonth.of(2026, 9),
                     ChartsState.Month(monthView(read)),
                     unavailable = false,
                     onOpenReview = { opened++ },

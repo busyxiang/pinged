@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle as ComposeTextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -35,9 +36,12 @@ import my.pinged.data.SearchFilter
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
+import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.NOT_READ_YET
+import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
@@ -203,8 +207,15 @@ fun ExportSheet(
             val counted = spreadsheet.counts?.takeIf { it.choice == spreadsheet.choice }
             PrimaryButton(exportRowsLabel(counted?.rows), spreadsheet.onPick)
         } else {
-            state.exportRows?.let { rows ->
-                Text("${grouped(rows)} ROWS TO WRITE", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 16.dp))
+            val rowsToWrite = Modifier.padding(top = 16.dp)
+            when {
+                // The screen's read in flight: the count is a dash. Once read,
+                // a null count is one it could not stand behind, and nothing.
+                !state.loaded -> ReadingLayout {
+                    Text("$NOT_READ_YET ROWS TO WRITE", style = MonoLabel, color = Muted, modifier = rowsToWrite)
+                }
+                state.exportRows != null ->
+                    Text("${grouped(state.exportRows)} ROWS TO WRITE", style = MonoLabel, color = Muted, modifier = rowsToWrite)
             }
             PrimaryButton("Export", onPick)
         }
@@ -294,8 +305,12 @@ private fun SpreadsheetChoices(panel: SpreadsheetPanel) {
         }
         RangeChip(EVERYTHING_SO_FAR, choice.month == null) { panel.onChoose(choice.copy(month = null)) }
     }
-    if (counts == null || (counts.excluded == 0 && counts.pending == 0)) return
-    SectionLabel("WHAT TO LEAVE OUT")
+    if (counts == null) {
+        LeaveOutNotReadYet()
+        return
+    }
+    if (counts.excluded == 0 && counts.pending == 0) return
+    SectionLabel(WHAT_TO_LEAVE_OUT)
     if (counts.excluded > 0) {
         LeaveOut(
             LEFT_OUT_OF_TOTALS,
@@ -313,6 +328,34 @@ private fun SpreadsheetChoices(panel: SpreadsheetPanel) {
         ) { panel.onChoose(choice.copy(leaveOutPending = it)) }
     }
 }
+
+/**
+ * WHAT TO LEAVE OUT while the month is counted, `design/LoadingSheet`'s
+ * treatment: after `ReadingLayout`'s delay, the section and both rows with
+ * their counts a dash on a dotted leader. Once counted, a month with nothing
+ * to leave out drops the section.
+ *
+ * A count that could not be made is null too, and so stays drawn this way:
+ * [SpreadsheetPanel.counts] does not tell the two apart.
+ */
+@Composable
+private fun LeaveOutNotReadYet() {
+    ReadingLayout(Modifier.fillMaxWidth()) {
+        Column {
+            SectionLabel(WHAT_TO_LEAVE_OUT)
+            for (label in listOf(LEFT_OUT_OF_TOTALS, AWAITING_REVIEW)) {
+                DashLeader(
+                    Modifier.heightIn(min = 44.dp).padding(vertical = 12.dp),
+                    label = label,
+                    labelStyle = ComposeTextStyle(fontFamily = Body, fontSize = 14.5.sp),
+                )
+            }
+        }
+    }
+}
+
+/** The second leave-out row's name while its count is not read yet. */
+private const val AWAITING_REVIEW = "Still awaiting review"
 
 @Composable
 private fun SectionLabel(text: String) =
@@ -417,6 +460,9 @@ private fun Footnote() = Text(
 
 /** The HOW MUCH chip for no range. */
 const val EVERYTHING_SO_FAR = "Everything so far"
+
+/** The spreadsheet's section of what it can leave out. */
+internal const val WHAT_TO_LEAVE_OUT = "WHAT TO LEAVE OUT"
 
 /** The leave-out row for every `is_excluded` row, whatever its reason. */
 const val LEFT_OUT_OF_TOTALS = "Left out of your totals"

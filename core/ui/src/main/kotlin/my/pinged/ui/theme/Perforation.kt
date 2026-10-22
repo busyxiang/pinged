@@ -13,7 +13,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -56,6 +60,18 @@ fun Modifier.dottedOutline(): Modifier = drawWithCache {
     val corner = CornerRadius(2.dp.toPx())
     val dots = Stroke(width = weight, pathEffect = perforation())
     onDrawBehind { drawRoundRect(color = Rule, topLeft = topLeft, size = box, cornerRadius = corner, style = dots) }
+}
+
+/**
+ * [dottedOutline] around any [shape]: a circle for a row's icon not read
+ * yet, a square for a grid cell (`DottedCell`). Inset by half the stroke
+ * for [dashedOutline]'s reason.
+ */
+fun Modifier.dottedOutline(shape: Shape): Modifier = drawWithCache {
+    val weight = 1.dp.toPx()
+    val outline = shape.createOutline(Size(size.width - weight, size.height - weight), layoutDirection, this)
+    val dots = Stroke(width = weight, pathEffect = perforation())
+    onDrawBehind { translate(weight / 2f, weight / 2f) { drawOutline(outline, color = Rule, style = dots) } }
 }
 
 /** The perforation's pattern, 1dp on and 2dp off; every dotted mark draws with it. */
@@ -129,6 +145,27 @@ fun Chevron(pointsRight: Boolean, size: Dp, strokeWidth: Dp, tint: Color) {
         drawLine(tint, Offset(tip, this.size.height * 0.5f), Offset(tail, this.size.height * 0.78f), stroke)
     }
 }
+
+/**
+ * The boards' month chevron, `M6 9l6 6 6-6` in a 24-unit box at 14dp, stroke
+ * 1.8 of 24, round-capped, in [Muted], beside the month label that opens
+ * `Months`: Spending's and Charts'. Tagged [MONTH_CHEVRON].
+ */
+@Composable
+fun MonthChevron() {
+    Canvas(Modifier.testTag(MONTH_CHEVRON).size(MONTH_CHEVRON_SIZE)) {
+        val unit = size.width / 24f
+        val stroke = 1.8f * unit
+        drawLine(Muted, Offset(6 * unit, 9 * unit), Offset(12 * unit, 15 * unit), stroke, StrokeCap.Round)
+        drawLine(Muted, Offset(12 * unit, 15 * unit), Offset(18 * unit, 9 * unit), stroke, StrokeCap.Round)
+    }
+}
+
+/** [MonthChevron]'s size, the boards' 14px square. */
+val MONTH_CHEVRON_SIZE = 14.dp
+
+/** [MonthChevron]'s test tag. */
+const val MONTH_CHEVRON = "month-chevron"
 
 /**
  * The boards' arrow out of the app, `M8 16L16 8M9 8h7v7` in a 24-unit [size]

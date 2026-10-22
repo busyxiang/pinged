@@ -20,7 +20,8 @@ import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.TxnState
 import my.pinged.data.notCaptured
 import my.pinged.ledger.home.ChooserRead
-import my.pinged.ledger.home.MerchantSheetState
+import my.pinged.ledger.home.MerchantOpening
+import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.RowActions
 import my.pinged.ui.RINGGIT
 import java.time.LocalDate
@@ -56,7 +57,7 @@ class DayViewModel(app: Application, val date: LocalDate) : AndroidViewModel(app
         unavailable = { _storageUnavailable.value = true },
     )
 
-    val merchantSheet: StateFlow<MerchantSheetState?> = rows.merchantSheet
+    val merchantSheet: StateFlow<OpenMerchantSheet?> = rows.merchantSheet
 
     /** Tests only: runs inside [refresh]'s transaction, after the rows are read. */
     @VisibleForTesting
@@ -126,7 +127,7 @@ class DayViewModel(app: Application, val date: LocalDate) : AndroidViewModel(app
     /** See [RowActions.addCategory]; the day, and so the chooser, is re-read after. */
     suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey) { refresh().join() }
 
-    fun openMerchant(ownKey: String, on: my.pinged.data.LocalDate): Job = rows.openMerchant(ownKey, on)
+    fun openMerchant(opening: MerchantOpening): Job = rows.openMerchant(opening)
 
     fun closeMerchant() = rows.closeMerchant()
 

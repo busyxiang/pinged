@@ -38,12 +38,14 @@ import my.pinged.charts.model.RhythmGrid
 import my.pinged.ui.dayMonth
 import my.pinged.ui.ringgit
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.DottedCell
 import my.pinged.ui.theme.ChartRamp
 import my.pinged.ui.theme.GridRamp
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 import java.time.LocalDate
+import java.time.YearMonth
 
 /**
  * The daily rhythm grid (spec 8, #88): `WHEN IT WENT`, the month's squares
@@ -94,6 +96,35 @@ internal fun RhythmGridSection(grid: RhythmGrid, onDayClick: (LocalDate) -> Unit
                 color = Muted,
                 modifier = Modifier.padding(top = 10.dp),
             )
+        }
+    }
+}
+
+/**
+ * The grid while the month's read is in flight (#281, `design/LoadingCharts`):
+ * `WHEN IT WENT` and the month's squares, Monday first, each day up to
+ * [today] a [DottedCell], **never hatched**: hatching says Pinged was not
+ * watching, which no read has said yet. A day still to come is blank, as it
+ * is once the month lands. No legend: every key in it is a fact of the read.
+ */
+@Composable
+internal fun RhythmGridNotReadYet(month: YearMonth, today: LocalDate, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
+        Text("WHEN IT WENT", style = MonoLabel, color = Muted)
+        Column(Modifier.padding(top = 11.dp), verticalArrangement = Arrangement.spacedBy(GAP)) {
+            val leading = month.atDay(1).dayOfWeek.value - 1
+            val squares: List<LocalDate?> = List(leading) { null } + (1..month.lengthOfMonth()).map(month::atDay)
+            squares.chunked(7).forEach { week ->
+                Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
+                    week.forEach { day ->
+                        if (day == null || day > today) {
+                            Spacer(Modifier.size(CELL))
+                        } else {
+                            DottedCell(Modifier.testTag(NOT_READ_YET_DAY).size(CELL))
+                        }
+                    }
+                }
+            }
         }
     }
 }

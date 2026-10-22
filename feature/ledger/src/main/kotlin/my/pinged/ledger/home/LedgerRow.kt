@@ -82,7 +82,7 @@ internal fun LedgerRow(
     uncategorizedId: Long?,
     canCategorize: Boolean,
     onCategorize: (txnId: Long) -> Unit,
-    onOpenMerchant: (ownKey: String, on: LocalDate) -> Unit,
+    onOpenMerchant: (MerchantOpening) -> Unit,
     onOpenReview: (txnId: Long) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
@@ -94,7 +94,7 @@ internal fun LedgerRow(
         name = row.displayName,
         onOpen = (if (manual) onOpenEntry else onOpenDetail)?.let { open -> { open(EditTarget(txn.id, txn.createdAt)) } },
         openLabel = if (manual) EDIT_ENTRY else OPEN_DETAIL,
-        onOpenMerchant = txn.merchantKey?.let { key -> { onOpenMerchant(key, txn.localDate) } },
+        onOpenMerchant = txn.merchantKey?.let { key -> { onOpenMerchant(MerchantOpening(key, row.displayName ?: key, txn.localDate)) } },
         category = categoriesById[txn.categoryId],
         uncategorized = txn.categoryId == uncategorizedId,
         onCategorize = if (canCategorize && !txn.isExcluded) {

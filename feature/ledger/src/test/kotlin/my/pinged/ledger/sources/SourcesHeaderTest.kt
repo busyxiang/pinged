@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.ui.theme.NOT_READ_YET
+import my.pinged.ui.theme.READING_DELAY_MILLIS
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,6 +20,8 @@ class SourcesHeaderTest {
 
     @Test fun beforeTheReadLandsTheCountIsADash() {
         compose.setContent { SourcesScreenContent(state = SourcesState(), onToggle = { _, _ -> }, onBack = {}) }
+        // Past `ReadingLayout`'s delay (#283): the dash is drawn after it.
+        compose.mainClock.advanceTimeBy(READING_DELAY_MILLIS + 40)
         compose.onNodeWithText("0 ENABLED", substring = true).assertDoesNotExist()
         compose.onNodeWithText("$NOT_READ_YET ENABLED", substring = true).assertExists()
     }

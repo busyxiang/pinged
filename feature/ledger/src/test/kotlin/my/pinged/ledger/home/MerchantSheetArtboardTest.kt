@@ -52,7 +52,7 @@ class MerchantSheetArtboardTest {
     )
 
     private fun draw(shown: MerchantSheetState = sheet) {
-        val actions = MerchantActions({ _, _ -> }, {}, { merged += it }, {}, { closed++ })
+        val actions = MerchantActions({}, {}, { merged += it }, {}, { closed++ })
         compose.setContent { MerchantSheet(shown, actions) }
     }
 

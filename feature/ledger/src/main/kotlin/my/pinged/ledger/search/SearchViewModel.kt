@@ -10,7 +10,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
@@ -250,18 +252,25 @@ class SearchViewModel(
     /** See [Transfers.cancelExport]: the export sheet's Cancel. */
     fun cancelExport() = Transfers.cancelExport()
 
-    fun readMonths(today: LocalDate = LocalDate.now()): Job {
-        // The last read's months and flags are not this opening's: the sheet
-        // draws its loading state until the re-read lands (#237).
-        _months.value = null
-        return viewModelScope.launch {
+    /**
+     * Read the month filter's sheet as of [today]. The last read stays
+     * published meanwhile: the sheet draws it as the last opening's, dimmed
+     * under `UPDATING`, until this one lands (#285, `rememberMonthsRead`).
+     * True once published, false when it could not be read.
+     */
+    fun readMonths(today: LocalDate = LocalDate.now()): Deferred<Boolean> {
+        return viewModelScope.async {
             CaptureStorage.guarded(
                 context,
                 what = "The months cannot be read",
-                unavailable = { _storageUnavailable.value = true },
+                unavailable = {
+                    _storageUnavailable.value = true
+                    false
+                },
                 damageStopsCapture = false,
             ) {
                 _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today) }
+                true
             }
         }
     }

@@ -34,25 +34,26 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -82,12 +83,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.charts.MonthsSheet
 import my.pinged.charts.model.monthsSheet
+import my.pinged.charts.rememberMonthsRead
 import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
+import my.pinged.ledger.RowNotReadYet
 import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.review.awaitingReviewLabel
@@ -101,6 +104,9 @@ import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.MONTH_CHEVRON_SIZE
+import my.pinged.ui.theme.MonthChevron
+import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.HeroFill
 import my.pinged.ui.theme.Ink
@@ -108,15 +114,22 @@ import my.pinged.ui.theme.Magnifier
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.PlusMark
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
 import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
+import my.pinged.ui.theme.UpdatingStatus
 import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedRule
 import my.pinged.ui.theme.heroFigure
+import my.pinged.ui.theme.rememberReadingShown
+import my.pinged.ui.theme.rememberUpdating
+import my.pinged.ui.theme.updating
 import java.time.YearMonth
 import java.time.format.TextStyle as JavaTextStyle
 import kotlin.math.roundToInt
@@ -215,6 +228,9 @@ fun LedgerScreen(
         backupReminder = backupReminder,
         picked = picked,
         picks = picks,
+        // The summary on screen is another month's than the one picked: its
+        // read is in flight, since `pick` reads the month it names.
+        rereading = read.summary.let { it != null && it.month != (picked ?: YearMonth.now()) },
         onOpenMonths = { monthsOpen = true },
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
@@ -231,10 +247,11 @@ fun LedgerScreen(
 
     if (monthsOpen) {
         // Read when it opens, so its rows are as of that moment.
-        LaunchedEffect(viewModel) { viewModel.readMonths() }
+        val reading = rememberMonthsRead(viewModel) { viewModel.readMonths() }
         val months by viewModel.months.collectAsState()
         MonthsSheet(
             items = months?.let(::monthsSheet),
+            reading = reading,
             onPick = {
                 monthsOpen = false
                 picks++
@@ -266,7 +283,7 @@ internal fun LedgerScreenContent(
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
     /** The chooser's New category (#155); null draws no tile. */
     addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
-    merchantSheet: MerchantSheetState? = null,
+    merchantSheet: OpenMerchantSheet? = null,
     merchantActions: MerchantActions = MerchantActions.None,
     onOpenReview: (focus: Long?) -> Unit = {},
     onAddPayment: (() -> Unit)? = null,
@@ -280,10 +297,12 @@ internal fun LedgerScreenContent(
     picked: YearMonth? = null,
     onOpenMonths: (() -> Unit)? = null,
     picks: Int = 0,
+    /** [read]'s summary is a month other than [picked]'s, whose read is in flight (#285). */
+    rereading: Boolean = false,
 ) {
     // Saveable, and above the branch below, so the position outlives both a
     // tab switch (`NavDisplay`'s saveable-state decorator) and a first read
-    // drawn as `Reading` on the way back.
+    // drawn as `NotReadYet` on the way back.
     val listState = rememberLazyListState()
     // A pick starts the feed at its month, so the list goes to its top: at
     // once, over the rows still drawn, and again when the first row changes.
@@ -341,6 +360,14 @@ internal fun LedgerScreenContent(
     // the sheet listed it, so there is a history, only none of it that old.
     val empty = !unreadable && !reading && items.itemCount == 0 && picked == null
     val feed = !unreadable && !reading && !empty
+    // A month picked and not read yet (#285): the last month stays, dimmed
+    // under `UPDATING`, below the month picked.
+    val updating = rememberUpdating(feed && rereading)
+    // The first read is in flight until both the rows and the month's total
+    // have landed. Timed here, once, rather than by each branch's own layout:
+    // rows landing after 200ms and before the total would otherwise take the
+    // hero's dash, already drawn, away for another 200ms.
+    val notReadYetShown = rememberReadingShown(!unreadable && (reading || read.summary == null))
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(Paper)) {
@@ -349,11 +376,11 @@ internal fun LedgerScreenContent(
             TopBar(
                 // The pick before the clock: it is saved state, so after a
                 // process death it is known before the summary is read (#237).
-                month = read.summary?.month ?: picked ?: YearMonth.now(),
+                month = (if (updating) null else read.summary?.month) ?: picked ?: YearMonth.now(),
                 heard = heard,
                 onOpenMonths = onOpenMonths,
                 onOpenSearch = onOpenSearch,
-                total = remember(read.summary) { barTotal(read.summary) },
+                total = remember(read.summary, updating) { barTotal(read.summary.takeUnless { updating }) },
                 // Only over the feed: the other states draw no summary to
                 // have scrolled past, whatever position was saved.
                 showTotal = feed && pastHero,
@@ -381,13 +408,14 @@ internal fun LedgerScreenContent(
                 // drawing this then disposes the `LazyColumn` and its scroll
                 // position with it, so a recategorized row jumps the list to the
                 // top (#158).
-                reading -> Reading(Modifier.weight(1f))
+                reading -> NotReadYet(notReadYetShown, Modifier.weight(1f))
 
                 empty -> Empty(onOpenSettings, Modifier.weight(1f), onAddPayment)
 
                 else -> Feed(
                     items = items,
                     summary = read.summary,
+                    heroNotReadYetShown = notReadYetShown,
                     categoriesById = categoriesById,
                     uncategorizedId = read.uncategorizedId,
                     hasChoices = choices.isNotEmpty(),
@@ -403,6 +431,8 @@ internal fun LedgerScreenContent(
                     listState = listState,
                     onHeroBottom = { heroBottom = it },
                     modifier = Modifier.weight(1f),
+                    updating = updating,
+                    picked = picked ?: YearMonth.now(),
                     // The summary's own month and the read's own id, so the
                     // search is over the month the count was taken from.
                     onOpenToSort = onOpenToSort?.let { open ->
@@ -598,7 +628,7 @@ private class LeadWidths(val full: Int, val scrolled: Int)
 private fun leadWidths(measurer: TextMeasurer, density: Density, full: String, short: String, total: String?, chevron: Boolean): LeadWidths =
     with(density) {
         fun label(text: String) = measurer.measure(text, MonoLabel).size.width
-        val chevronWidth = if (chevron) (MONTH_GAP + CHEVRON_SIZE).roundToPx() else 0
+        val chevronWidth = if (chevron) (MONTH_GAP + MONTH_CHEVRON_SIZE).roundToPx() else 0
         val fullWidth = label(full) + chevronWidth
         val scrolled = if (total == null) {
             0
@@ -663,7 +693,7 @@ private fun MonthButton(
         ) {
             Text(label, style = MonoLabel, color = Muted)
             // Only where it opens something: it says "pick a month".
-            if (onOpenMonths != null) DownChevron()
+            if (onOpenMonths != null) MonthChevron()
         }
         if (trailing != null) Text(trailing, style = MonoLabel, color = Muted, modifier = Modifier.clearAndSetSemantics {})
     }
@@ -769,25 +799,8 @@ const val OPEN_SEARCH = "Search"
  */
 private const val PICK_SETTLE = 10_000L
 
-/** The board's month chevron, 14px square. */
-private val CHEVRON_SIZE = 14.dp
-
 /** The month button's height: the design system's 44px target. */
 private val MONTH_TARGET = 44.dp
-
-/**
- * The board's month chevron, `M6 9l6 6 6-6` in a 24-unit box at 14dp, stroke
- * 1.8 of 24, round-capped, in Muted.
- */
-@Composable
-private fun DownChevron() {
-    Canvas(Modifier.testTag(MONTH_CHEVRON).size(CHEVRON_SIZE)) {
-        val unit = size.width / 24f
-        val stroke = 1.8f * unit
-        drawLine(Muted, Offset(6 * unit, 9 * unit), Offset(12 * unit, 15 * unit), stroke, StrokeCap.Round)
-        drawLine(Muted, Offset(12 * unit, 15 * unit), Offset(18 * unit, 9 * unit), stroke, StrokeCap.Round)
-    }
-}
 
 /**
  * The boards' top-right chip -- `Empty.dc.html`'s "LISTENING" -- carrying
@@ -858,15 +871,69 @@ private fun Unreadable(modifier: Modifier = Modifier) {
     }
 }
 
-/** The first read is in flight. Deliberately not the empty copy. */
+/**
+ * The first read is in flight: `design/LoadingSpending.dc.html`, or
+ * `LoadingWaiting.dc.html` while an export or the integrity check holds the
+ * database. Deliberately not the empty copy.
+ *
+ * Only what is known without a read is drawn: the hero's label. Every figure
+ * is a dash and every name a dotted leader, so nothing here can be taken for
+ * an amount, a zero, or a day **Not captured**. The list's days and rows are
+ * the board's, two days of four, and are clipped rather than scrolled: they
+ * stand for rows, and say nothing about how many there are.
+ */
 @Composable
-private fun Reading(modifier: Modifier = Modifier) {
-    Text(
-        "READING",
-        style = MonoLabel,
-        color = Muted,
-        modifier = modifier.padding(start = 20.dp, top = 24.dp),
-    )
+private fun NotReadYet(shown: Boolean, modifier: Modifier = Modifier) {
+    ReadingLayout(shown, modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxSize().clipToBounds()) {
+            Column(Modifier.fillMaxWidth().background(Paper).padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
+                Text("SPENT SO FAR", style = MonoLabel, color = Muted)
+                HeroNotReadYet()
+                // The board's top three, with no name: which categories lead
+                // is a read too.
+                Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    repeat(3) { DashLeader(Modifier.heightIn(min = 18.dp)) }
+                }
+            }
+            TornEdge(Modifier.padding(top = 18.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Card)
+                    .padding(start = 20.dp, end = 20.dp, top = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                repeat(2) {
+                    DayNotReadYet()
+                    repeat(4) { RowNotReadYet(amount = true) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The hero's figure not read yet, and the status line under it. In [Rule],
+ * the boards' `#cfc4ae`, below WCAG's 4.5:1 and decorative: the status line
+ * under it, in [Muted] or [Stamp], is what says the figure is not read yet.
+ */
+@Composable
+private fun HeroNotReadYet() {
+    Text(HERO_NOT_READ_YET, style = HeroSerif, color = Rule, modifier = Modifier.padding(top = 2.dp))
+    ReadingStatus(Modifier.padding(top = 6.dp))
+}
+
+/** The board's `RM&thinsp;&mdash;`. */
+internal const val HERO_NOT_READ_YET = "RM\u2009" + NOT_READ_YET
+
+/** A day heading not read yet: its date and its subtotal are both reads. */
+@Composable
+private fun DayNotReadYet() {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(NOT_READ_YET.repeat(3), style = DayLabelStyle, color = Muted)
+        Text(NOT_READ_YET, style = MonoLabel, color = Muted)
+    }
 }
 
 /**
@@ -999,11 +1066,12 @@ private fun CashOffer(onClick: () -> Unit, modifier: Modifier = Modifier) {
 private fun Feed(
     items: LazyPagingItems<LedgerItem>,
     summary: MonthSummary?,
+    heroNotReadYetShown: Boolean,
     categoriesById: Map<Long, Category>,
     uncategorizedId: Long?,
     hasChoices: Boolean,
     onCategorize: (Long) -> Unit,
-    onOpenMerchant: (ownKey: String, on: LocalDate) -> Unit,
+    onOpenMerchant: (MerchantOpening) -> Unit,
     awaitingReview: Int,
     awaitingReviewInMonth: Int,
     onOpenReview: (focus: Long?) -> Unit,
@@ -1015,6 +1083,9 @@ private fun Feed(
     onAddPayment: (() -> Unit)? = null,
     backupReminder: BackupReminder? = null,
     onOpenToSort: (() -> Unit)? = null,
+    /** [summary] and the rows are the last month's, dimmed while [picked]'s are read (#285). */
+    updating: Boolean = false,
+    picked: YearMonth? = null,
 ) {
     // Consumed rather than offered: a drag past the end consumes nothing and
     // leaves the button where it is. A scroll the code makes, `scrollToItem`,
@@ -1051,7 +1122,11 @@ private fun Feed(
                 }
                 item(key = SUMMARY_KEY, contentType = SUMMARY_KEY) {
                     Column(Modifier.testTag(MONTH_SUMMARY).fillMaxWidth().background(Paper)) {
-                        MonthSummaryBlock(summary, categoriesById, onHeroBottom, onOpenToSort)
+                        Box(Modifier.updating(updating)) {
+                            MonthSummaryBlock(summary, categoriesById, onHeroBottom, onOpenToSort, heroNotReadYetShown)
+                        }
+                        // `LoadingSearch`'s place for it: under the dimmed hero.
+                        if (updating) UpdatingStatus(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp))
                         // A hairline and a change of ground rather than the artboard's
                         // perforation: that is `SourcesScreen`'s `TornEdge`, private to that
                         // file, and a second copy of its tile geometry is a second thing to
@@ -1065,7 +1140,14 @@ private fun Feed(
                 // is never noise.
                 if (awaitingReview > 0) {
                     stickyHeader(key = "awaiting-review", contentType = "awaiting-review") {
-                        AccentLineRow(pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)) {
+                        // The month's share is the picked month's to read: a dash
+                        // until it lands. Every month's count stays.
+                        val label = if (updating) {
+                            pinnedReviewLabel(awaitingReview, null, picked)
+                        } else {
+                            pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)
+                        }
+                        AccentLineRow(label) {
                             onOpenReview(null)
                         }
                     }
@@ -1094,18 +1176,22 @@ private fun Feed(
                         // shrinks under the composition. Nothing is the honest draw
                         // for a row that is no longer there.
                         null -> Unit
-                        is LedgerItem.DayHeader -> DayHeader(item.date, item.subtotal, first = index == 0)
-                        is LedgerItem.Row -> LedgerRow(
-                            row = item.feedRow,
-                            categoriesById = categoriesById,
-                            uncategorizedId = uncategorizedId,
-                            canCategorize = hasChoices,
-                            onCategorize = onCategorize,
-                            onOpenMerchant = onOpenMerchant,
-                            onOpenReview = onOpenReview,
-                            onOpenEntry = onOpenEntry,
-                            onOpenDetail = onOpenDetail,
-                        )
+                        is LedgerItem.DayHeader -> Box(Modifier.updating(updating)) {
+                            DayHeader(item.date, item.subtotal, first = index == 0)
+                        }
+                        is LedgerItem.Row -> Box(Modifier.updating(updating)) {
+                            LedgerRow(
+                                row = item.feedRow,
+                                categoriesById = categoriesById,
+                                uncategorizedId = uncategorizedId,
+                                canCategorize = hasChoices,
+                                onCategorize = onCategorize,
+                                onOpenMerchant = onOpenMerchant,
+                                onOpenReview = onOpenReview,
+                                onOpenEntry = onOpenEntry,
+                                onOpenDetail = onOpenDetail,
+                            )
+                        }
                     }
                 }
             }
@@ -1163,6 +1249,10 @@ private fun AccentLineRow(label: String, onOpen: () -> Unit) {
  *
  * Under the top three, `N TO SORT` (#273) opens [onOpenToSort], drawn only
  * above zero and only where there is somewhere to go.
+ *
+ * [heroNotReadYetShown] is whether a null [summary] draws the hero's dash:
+ * [LedgerScreenContent] times the whole first read, so rows landing before
+ * the total do not restart the delay.
  */
 @Composable
 internal fun MonthSummaryBlock(
@@ -1170,6 +1260,7 @@ internal fun MonthSummaryBlock(
     categoriesById: Map<Long, Category>,
     onHeroBottom: (Int) -> Unit,
     onOpenToSort: (() -> Unit)? = null,
+    heroNotReadYetShown: Boolean,
 ) {
     val leaderLift = with(LocalDensity.current) { LEADER_LIFT.roundToPx() }
     Column(Modifier.fillMaxWidth()) {
@@ -1183,12 +1274,9 @@ internal fun MonthSummaryBlock(
             Text("SPENT SO FAR", style = MonoLabel, color = Muted)
 
             when {
-                summary == null -> Text(
-                    "READING",
-                    style = MonoLabel,
-                    color = Muted,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
+                // The rows have landed and the aggregate has not: the hero
+                // alone is not read yet, on the same delay.
+                summary == null -> ReadingLayout(heroNotReadYetShown) { Column { HeroNotReadYet() } }
 
                 summary.totals.isEmpty() -> Text(
                     "NOTHING COUNTED THIS MONTH",
@@ -1318,12 +1406,13 @@ private fun DayHeader(date: LocalDate, subtotal: List<CurrencyTotal>?, first: Bo
  * every month's (§9.2) and Charts' is [month]'s, so where they differ the row
  * names its share of [month] rather than read as contradicting Charts (#215).
  * Where every held payment is in [month], or the month has not been read, the
- * suffix would say nothing and is left off.
+ * suffix would say nothing and is left off. A null [inMonth] is [month]'s
+ * share not read yet, a month just picked (#285): a dash.
  */
-internal fun pinnedReviewLabel(count: Int, inMonth: Int, month: YearMonth?): String {
+internal fun pinnedReviewLabel(count: Int, inMonth: Int?, month: YearMonth?): String {
     val all = awaitingReviewLabel(count)
     if (month == null || inMonth == count) return all
-    return all + Separator + "$inMonth IN " + month.month.getDisplayName(JavaTextStyle.FULL, CALENDAR).uppercase(CALENDAR)
+    return all + Separator + "${inMonth ?: NOT_READ_YET} IN " + month.month.getDisplayName(JavaTextStyle.FULL, CALENDAR).uppercase(CALENDAR)
 }
 
 /**
@@ -1419,10 +1508,10 @@ internal const val CASH_OFFER_LABEL = "Or start with a cash expense"
 const val ADD_PAYMENT_BUTTON = "add-payment-button"
 
 const val CASH_OFFER = "cash-offer"
+
 const val EMPTY_HERO = "empty-hero"
 const val HEARD_CHIP = "heard-chip"
 const val MONTH_BUTTON = "month-button"
-const val MONTH_CHEVRON = "month-chevron"
 
 /** The summary, the list's first item. */
 const val MONTH_SUMMARY = "month-summary"

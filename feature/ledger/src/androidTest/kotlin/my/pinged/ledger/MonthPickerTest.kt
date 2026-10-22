@@ -7,6 +7,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -18,6 +21,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
@@ -26,11 +30,16 @@ import my.pinged.ledger.home.CHOOSE_A_MONTH
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.home.MONTH_BUTTON
-import my.pinged.ledger.home.MONTH_CHEVRON
+import my.pinged.ledger.home.MONTH_SUMMARY
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ui.monthName
 import my.pinged.ui.monthYear
 import my.pinged.ui.test.boundedWaitUntil
+import my.pinged.ui.test.ink
+import my.pinged.ui.theme.MONTH_CHEVRON
+import my.pinged.ui.theme.UPDATING
+import my.pinged.ui.theme.UPDATING_ALPHA
+import androidx.test.espresso.Espresso
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.PingedTheme
 import org.junit.After
@@ -164,28 +173,57 @@ class MonthPickerTest {
     }
 
     /**
-     * #237: the sheet reopened draws none of the last read's months and flags
-     * while its own read is in flight. The reset is synchronous on the main
-     * thread, so it is asserted in the same frame the read starts.
+     * #285: the sheet reopened keeps the last opening's months, dimmed to
+     * 45% under `UPDATING`, while its own read is in flight, rather than
+     * drawing them as this opening's (#237) or dropping them. The dim is a
+     * row's ink during the re-read over its ink before it.
      *
-     * Under [withTheDatabaseHeld], because the re-read publishes from IO and
-     * could otherwise land before the main thread reads the value back: with
-     * the emulator pinned to one host core beside a busy loop, 23 of 200
-     * unheld re-reads had already landed (CI's ledger-1, run 39242301864).
+     * Under [withTheDatabaseHeld], so the re-read cannot land before the
+     * 200ms delay has passed.
      */
-    @Test fun aReopenedSheetDrawsNothingFromTheLastRead() {
-        compose.runOnUiThread { viewModel.readMonths() }
-        compose.boundedWaitUntil(TIMEOUT) { viewModel.months.value != null }
+    @Test fun aReopenedSheetKeepsTheLastMonthsDimmedUntilItsReadLands() {
+        compose.onNodeWithTag(MONTH_BUTTON).performClick()
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(monthYear(lastMonth)) > 0 }
+        val settled = compose.onNodeWithText(monthYear(lastMonth)).captureToImage().ink()
+        Espresso.pressBack()
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(monthYear(lastMonth)) == 0 }
 
-        var during: Any? = Unit
         withTheDatabaseHeld {
-            compose.runOnUiThread {
-                viewModel.readMonths()
-                during = viewModel.months.value
-            }
+            compose.onNodeWithTag(MONTH_BUTTON).performClick()
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(UPDATING) > 0 }
+            val dimmed = compose.onNodeWithText(monthYear(lastMonth)).captureToImage().ink()
+            assertDimmed("The last opening's month", settled, dimmed)
         }
-        assertEquals("A re-read began with the last read's months still published", null, during)
-        compose.boundedWaitUntil(TIMEOUT) { viewModel.months.value != null }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(UPDATING) == 0 }
+    }
+
+    /**
+     * #285: a month picked keeps this month's summary, dimmed to 45% under
+     * `UPDATING`, while the picked month's summary is held, and the header
+     * names the month picked.
+     */
+    @Test fun aPickKeepsTheLastSummaryDimmedUntilItsReadLands() {
+        val hero = hasText("RM50.00") and hasAnyAncestor(hasTestTag(MONTH_SUMMARY))
+        val settled = compose.onNode(hero).captureToImage().ink()
+
+        val release = CompletableDeferred<Unit>()
+        viewModel.beforeSummary = { release.await() }
+        try {
+            compose.runOnUiThread { viewModel.pick(lastMonth) }
+            compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(UPDATING) > 0 }
+            val dimmed = compose.onNode(hero).captureToImage().ink()
+            assertDimmed("This month's hero", settled, dimmed)
+            compose.onNodeWithText(monthName(lastMonth)).assertExists()
+        } finally {
+            release.complete(Unit)
+        }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM12.34") > 0 }
+        compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely(UPDATING) == 0 }
+    }
+
+    /** [dimmed]'s ink is [settled]'s at the board's 45%, within 0.08. */
+    private fun assertDimmed(what: String, settled: Float, dimmed: Float) {
+        assertEquals("$what drew at ${dimmed / settled} of its ink ($dimmed of $settled)", UPDATING_ALPHA, dimmed / settled, 0.08f)
     }
 
     /** The pick is the entry's saved state, so a process death comes back to it. */
