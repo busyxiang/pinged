@@ -139,9 +139,17 @@ tbody td{color:var(--ink)}
     <div style="display: flex; align-items: baseline; font-size: 13px;"><span>Bills &amp; utilities</span><span style="flex: 1; border-bottom: 1px dotted #cfc4ae; margin: 0 8px 4px;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;">465.60</span></div>
   </div>
 
+  <!-- N TO SORT (#273): the month's counted rows still under Uncategorized,
+       which never takes a top-three slot. One button, opening Search on the
+       month and Uncategorized; absent at zero. -->
+  <div style="margin-top: 4px; min-height: 44px; padding: 0 20px; display: flex; align-items: center;">
+    <span style="flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #a03826;">6 TO SORT</span>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a03826" stroke-width="1.7" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+  </div>
+
   <div style="height: 9px; margin-top: 18px; background-image: linear-gradient(45deg, transparent 50%, #efe7d8 50%), linear-gradient(-45deg, transparent 50%, #efe7d8 50%); background-size: 12px 9px; background-repeat: repeat-x;"></div>
 
-  <div style="flex: 1; background: #efe7d8; padding: 14px 20px 0; display: flex; flex-direction: column; gap: 14px;">
+  <div style="flex: 1; min-height: 0; overflow: hidden; background: #efe7d8; padding: 14px 20px 0; display: flex; flex-direction: column; gap: 14px;">
 
     <div style="display: flex; flex-direction: column; gap: 11px;">
       <div style="display: flex; justify-content: space-between; align-items: baseline;">
@@ -198,10 +206,6 @@ tbody td{color:var(--ink)}
     </div>
   </div>
 
-  <div style="position: absolute; right: 20px; bottom: 78px; width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbf6ea" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #fbf6ea;">CASH</span>
-  </div>
   <div style="border-top: 1px dotted #cfc4ae; background: #fbf6ea; display: flex; align-items: stretch;">
     <div style="flex: 1; min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-top: 2px solid #a03826; margin-top: -1px;">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
@@ -215,6 +219,10 @@ tbody td{color:var(--ink)}
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a8175" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h6M14 7h6M4 12h10M18 12h2M4 17h3M11 17h9"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="17" r="2"/></svg>
       <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; color: #8a8175;">SETTINGS</span>
     </div>
+  </div>
+  <div style="position: absolute; right: 20px; bottom: 78px; width: 54px; height: 54px; background: #a03826; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbf6ea" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: #fbf6ea;">CASH</span>
   </div>
 </div></div>
       </div>
