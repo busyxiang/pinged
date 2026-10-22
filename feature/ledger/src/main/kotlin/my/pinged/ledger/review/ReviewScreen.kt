@@ -66,8 +66,13 @@ import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.DottedCell
 import my.pinged.ui.theme.Faint
+import my.pinged.ui.theme.NOT_READ_YET
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
@@ -193,14 +198,14 @@ private fun Cards(
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = bottom + CARD_GAP)) {
         item {
             val offer = acceptAll.takeIf { !storageUnavailable && !cards.isNullOrEmpty() }
-            Header(cards?.size, onBack, offer, enabled = busy == null, onAcceptAll)
+            Header(cards?.size, onBack, offer, enabled = busy == null, onAcceptAll, reading = cards == null && !storageUnavailable)
         }
         if (busy != null) item { Notice(busyLine(busy, Withheld.ANSWERED), Stamp) }
         when {
             // First, for the reason `DayScreenContent` gives: stale cards
             // under a ledger that cannot be read would be answers to nothing.
             storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
-            cards == null -> item { Notice("READING", Muted) }
+            cards == null -> item { NotReadYet() }
             cards.isEmpty() -> item { Notice(NOTHING_AWAITING_REVIEW, Muted) }
             else -> {
                 itemsIndexed(cards, key = { _, card -> "review-" + card.txn.id }) { index, card ->
@@ -255,7 +260,7 @@ private fun UndoBar(undoable: Undoable, enabled: Boolean, onUndo: () -> Unit, mo
  * carries the count and the net, which at CI's 320dp broke the title in two.
  */
 @Composable
-private fun Header(count: Int?, onBack: () -> Unit, acceptAll: AcceptAll?, enabled: Boolean, onAcceptAll: () -> Unit) {
+private fun Header(count: Int?, onBack: () -> Unit, acceptAll: AcceptAll?, enabled: Boolean, onAcceptAll: () -> Unit, reading: Boolean) {
     FlowRow(
         Modifier
             .fillMaxWidth()
@@ -295,6 +300,12 @@ private fun Header(count: Int?, onBack: () -> Unit, acceptAll: AcceptAll?, enabl
                     color = Muted,
                     modifier = Modifier.padding(start = 43.dp, top = 3.dp),
                 )
+            } else if (reading) {
+                // `design/LoadingInbox.dc.html`'s count: a dash, after the
+                // delay the cards below wait for too.
+                ReadingLayout {
+                    Text("$NOT_READ_YET AWAITING REVIEW", style = MonoLabel, color = Muted, modifier = Modifier.padding(start = 43.dp, top = 3.dp))
+                }
             }
         }
         if (acceptAll != null) {
@@ -484,6 +495,49 @@ private fun Notice(text: String, color: Color) {
         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp),
     )
 }
+
+/**
+ * The inbox's first read in flight: `design/LoadingInbox.dc.html`, or
+ * `LoadingWaiting.dc.html`'s status line while an export or the integrity
+ * check holds the database. Three cards that stand for cards, not a count:
+ * the reason a dotted rule, the notification a dotted box, the merchant and
+ * amount a leader and a dash, and the two answers dotted cells.
+ */
+@Composable
+private fun NotReadYet() {
+    ReadingLayout(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ReadingStatus(Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+            repeat(3) { CardNotReadYet() }
+        }
+    }
+}
+
+/** One card of [NotReadYet], at a card's own border and padding. */
+@Composable
+private fun CardNotReadYet() {
+    val shape = RoundedCornerShape(2.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Paper, shape)
+            .border(1.dp, Border, shape)
+            .padding(horizontal = 15.dp, vertical = 12.dp),
+    ) {
+        Box(Modifier.fillMaxWidth(0.6f).height(9.dp).dottedRule())
+        DottedCell(Modifier.padding(top = 10.dp).fillMaxWidth().height(44.dp).testTag(CARD_NOT_READ_YET))
+        DashLeader(Modifier.padding(top = 10.dp).heightIn(min = 18.dp))
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            repeat(2) { DottedCell(Modifier.weight(1f).heightIn(min = 44.dp), shape) }
+        }
+    }
+}
+
+/** A card's dotted notification box while the inbox is not read yet, as a device test finds it. */
+internal const val CARD_NOT_READ_YET = "review-card-not-read-yet"
 
 /** `RM650.00`, or the card's `650.00` without [symbol], signed `+` for a refund as the list signs it. */
 internal fun amountOf(card: ReviewCard, symbol: Boolean = true): String =

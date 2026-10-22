@@ -50,6 +50,7 @@ import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.PingedTheme
+import my.pinged.ui.theme.READING_DELAY_MILLIS
 import my.pinged.parse.ExclusionReason
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -147,6 +148,8 @@ class LedgerScreenTest {
 
     @Test fun aFirstLoadStillInFlightIsNotDrawnAsEmpty() {
         content(items = emptyList(), refresh = LoadState.Loading)
+        // `ReadingLayout` draws nothing for its first 200ms.
+        compose.mainClock.advanceTimeBy(READING_DELAY_MILLIS + 40)
         compose.waitForIdle()
 
         assertTrue(

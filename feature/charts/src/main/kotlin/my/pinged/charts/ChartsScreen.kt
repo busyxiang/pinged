@@ -37,8 +37,17 @@ import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.NOT_READ_YET
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
+import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.ValueDash
 import my.pinged.ui.theme.heroFigure
+import my.pinged.ui.theme.NOT_READ_YET
+import my.pinged.ui.theme.UpdatingStatus
+import my.pinged.ui.theme.rememberUpdating
+import my.pinged.ui.theme.updating
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -75,9 +84,12 @@ fun ChartsScreen(
     // Saveable, so a sheet open at a process death is open again after it.
     var monthsOpen by rememberSaveable { mutableStateOf(false) }
     ChartsScreenContent(
-        monthName = monthName(month),
+        month = month,
         state = chartsState(read),
         unavailable = unavailable,
+        // A month picked whose read has not landed: `refresh` drops a read
+        // of any other month, so a mismatch is a read still in flight.
+        rereading = read.let { it != null && it.month != month },
         modifier = modifier,
         onDayClick = onDayClick,
         onOpenMonths = { monthsOpen = true },
@@ -110,15 +122,19 @@ fun ChartsScreen(
  */
 @Composable
 internal fun ChartsScreenContent(
-    monthName: String,
+    month: YearMonth,
     state: ChartsState,
     unavailable: Boolean,
     modifier: Modifier = Modifier,
+    today: LocalDate = LocalDate.now(),
     onDayClick: (LocalDate) -> Unit = {},
     onOpenMonths: () -> Unit = {},
     onOpenReview: () -> Unit = {},
     onOpenUncategorized: (() -> Unit)? = null,
+    /** [state] is a month other than [month], whose read is in flight (#285). */
+    rereading: Boolean = false,
 ) {
+    val monthName = monthName(month)
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         when {
             // Before the state, which may still hold an older read: a screen
@@ -128,9 +144,11 @@ internal fun ChartsScreenContent(
                 Unreadable()
             }
 
+            // The month name is the selection, not a read, and opens
+            // `Months` at once; the rest waits out `ReadingLayout`'s delay.
             state is ChartsState.Reading -> {
-                HeaderSection(monthName, chip = null, onOpenMonths)
-                MonoLine("READING", Muted, Modifier.padding(start = 20.dp, top = 24.dp))
+                HeaderSection(monthName, chip = null, onOpenMonths, chipNotReadYet = true)
+                ChartsNotReadYet(month, today)
             }
 
             state is ChartsState.Empty -> {
@@ -140,30 +158,77 @@ internal fun ChartsScreenContent(
 
             state is ChartsState.Month -> {
                 val view = state.view
+                // A month picked and not read yet (#285): the last month
+                // stays, dimmed under `UPDATING`, below the month picked,
+                // whose chip is a count not read yet.
+                val updating = rememberUpdating(rereading)
                 // Slot: header (#86). The month name opens `Months` (#93).
-                HeaderSection(view.header.month, view.header.chip, onOpenMonths)
-                // Slot: hero (#86).
-                HeroSection(view.hero)
-                // Slot: comparison line (#94), under the hero.
-                ComparisonLine(view.comparison)
-                RhythmGridSection(view.grid, onDayClick)
-                // Category bars, or collecting (#91): one block stands in
-                // for both the bars and the merchants while the gate is shut.
-                if (view.collecting.open) CategoryBars(view.bars, onOpenUncategorized = onOpenUncategorized) else CollectingBlock(view.collecting)
-                // Top merchants (#92), behind the same gate.
-                if (view.collecting.open) TopMerchants(view.merchants)
-                NotInTotalBlock(view.notInTotal, onOpenReview = onOpenReview)
+                HeaderSection(
+                    if (updating) monthName else view.header.month,
+                    if (updating) Chip(NOT_READ_YET, alert = false) else view.header.chip,
+                    onOpenMonths,
+                )
+                Column(Modifier.updating(updating)) {
+                    // Slot: hero (#86).
+                    HeroSection(view.hero)
+                    // Slot: comparison line (#94), under the hero.
+                    ComparisonLine(view.comparison)
+                }
+                if (updating) UpdatingStatus(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp))
+                Column(Modifier.updating(updating)) {
+                    RhythmGridSection(view.grid, onDayClick)
+                    // Category bars, or collecting (#91): one block stands in
+                    // for both the bars and the merchants while the gate is shut.
+                    if (view.collecting.open) CategoryBars(view.bars, onOpenUncategorized = onOpenUncategorized) else CollectingBlock(view.collecting)
+                    // Top merchants (#92), behind the same gate.
+                    if (view.collecting.open) TopMerchants(view.merchants)
+                    NotInTotalBlock(view.notInTotal, onOpenReview = onOpenReview)
+                }
             }
         }
     }
 }
 
 /**
- * The mono month name, which opens `Months` (#93), and the chip on the right
- * (#68). The chevron is its own `Text`, so the name stays a whole node's text.
+ * The first read is in flight: `design/LoadingCharts.dc.html`, or
+ * `LoadingWaiting`'s status line while an export or the integrity check
+ * holds the database. Deliberately not the empty copy.
+ *
+ * Only what is known without a read is drawn: the section labels and the
+ * month's days. Every figure is a dash, every name a dotted leader, and every
+ * day a dotted cell, so nothing here can be taken for an amount, a zero, or a
+ * day **Not captured**.
  */
 @Composable
-private fun HeaderSection(month: String, chip: Chip?, onOpenMonths: () -> Unit) {
+private fun ChartsNotReadYet(month: YearMonth, today: LocalDate) {
+    ReadingLayout(Modifier.fillMaxWidth()) {
+        Column {
+            Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 18.dp)) {
+                // Whether the net is spending is a read; that the month is
+                // still running is not.
+                MonoLine(if (month == YearMonth.from(today)) "SPENT SO FAR" else "TOTAL SPENT", Muted)
+                Text(HERO_NOT_READ_YET, style = HeroSerif, color = Rule, modifier = Modifier.padding(top = 4.dp))
+                ReadingStatus(Modifier.padding(top = 6.dp))
+            }
+            RhythmGridNotReadYet(month, today)
+            CategoryBarsNotReadYet()
+            TopMerchantsNotReadYet()
+        }
+    }
+}
+
+/** The board's `RM&thinsp;&mdash;`, in [Rule]: decorative, since the status line under it says what it means. */
+internal const val HERO_NOT_READ_YET = "RM " + NOT_READ_YET
+
+/**
+ * The mono month name, which opens `Months` (#93), and the chip on the right
+ * (#68). The chevron is its own `Text`, so the name stays a whole node's text.
+ *
+ * [chipNotReadYet] draws the board's dash in the chip's frame, after
+ * `ReadingLayout`'s delay: which chip a month takes is a read.
+ */
+@Composable
+private fun HeaderSection(month: String, chip: Chip?, onOpenMonths: () -> Unit, chipNotReadYet: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 26.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -188,6 +253,15 @@ private fun HeaderSection(month: String, chip: Chip?, onOpenMonths: () -> Unit) 
                     .border(1.dp, if (chip.alert) Stamp else Border, RoundedCornerShape(2.dp))
                     .padding(horizontal = 7.dp, vertical = 4.dp),
             )
+        } else if (chipNotReadYet) {
+            ReadingLayout {
+                ValueDash(
+                    Modifier
+                        .border(1.dp, Border, RoundedCornerShape(2.dp))
+                        .padding(horizontal = 7.dp, vertical = 4.dp),
+                    style = MonoLabel,
+                )
+            }
         }
     }
 }
@@ -267,3 +341,6 @@ private val HeroSerif = TextStyle(fontFamily = Display, fontSize = 44.sp, lineHe
 
 /** The board's `.30`: 28px under a 50px figure, the same 0.56 of this 44sp one. */
 private val HERO_SEN = 25.sp
+
+/** The test tag of a grid day not read yet. */
+internal const val NOT_READ_YET_DAY = "grid-day-not-read-yet"

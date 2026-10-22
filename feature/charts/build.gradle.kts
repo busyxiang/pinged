@@ -36,6 +36,8 @@ android {
     // :feature:ledger's build file includes the same directory.
     sourceSets {
         getByName("androidTest") { kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path) }
+        // `HeldClock`, which every not-read-yet test steps its frames with.
+        getByName("test") { kotlin.directories.add(rootProject.file("core/ui/src/sharedTest/kotlin").path) }
     }
 
     testOptions {

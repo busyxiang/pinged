@@ -44,7 +44,7 @@ class CollectingGateTest {
             capturedSinceStart = (1L..capturedDays).map { today.minusDays(it) }.toSet(),
         )
         compose.setContent {
-            PingedTheme { ChartsScreenContent("SEPTEMBER 2026", ChartsState.Month(monthView(read)), unavailable = false) }
+            PingedTheme { ChartsScreenContent(YearMonth.of(2026, 9), ChartsState.Month(monthView(read)), unavailable = false) }
         }
     }
 

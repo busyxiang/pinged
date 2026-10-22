@@ -3,6 +3,7 @@ package my.pinged.ledger.settings
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import my.pinged.ui.theme.NOT_READ_YET
+import my.pinged.ui.theme.READING_DELAY_MILLIS
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.foundation.layout.Column
@@ -73,6 +74,8 @@ class SettingsScreenTest {
                 )
             }
         }
+        // Past `ReadingLayout`'s delay (#283): the dashes are drawn after it.
+        compose.mainClock.advanceTimeBy(READING_DELAY_MILLIS + 40)
         compose.onNodeWithText("NEVER", substring = true).assertDoesNotExist()
         compose.onNode(hasText("Export everything") and hasText(NOT_READ_YET)).assertExists()
         compose.onNode(hasText("Check my data") and hasText(NOT_READ_YET)).assertExists()

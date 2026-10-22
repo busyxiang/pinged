@@ -50,6 +50,8 @@ import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.OutwardArrow
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.RESCUE
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
 import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
@@ -103,10 +105,7 @@ fun SettingsScreen(
     var confirmingRestore by remember { mutableStateOf(false) }
     var confirmingWipe by remember { mutableStateOf(false) }
 
-    Column(modifier.fillMaxSize().background(Paper).verticalScroll(rememberScrollState())) {
-        Header()
-        RunningNotice(state.running)
-        RecoveryNotice(state, onRescue)
+    SettingsPage(state, buildVersion, packVersion, onOpenLicences, onRescue, modifier) {
         SettingsRows(
             state = state,
             onOpenSources = onOpenSources,
@@ -121,7 +120,6 @@ fun SettingsScreen(
             alertsOn = alertsOn,
             onAlerts = onAlerts,
         )
-        Footer(buildVersion, packVersion, onOpenLicences)
     }
 
     // Named before the picker is ever shown: spec 11.2 discards the device's
@@ -168,6 +166,31 @@ fun SettingsScreen(
     // opened next, and an export's failure is never mistaken for a restore's.
     state.reported?.let { outcome ->
         OutcomeSheet(outcome = outcome, onDismiss = { viewModel.acknowledge(outcome) })
+    }
+}
+
+/**
+ * [SettingsScreen]'s page around its [rows], without the holder, so a test
+ * can draw any state.
+ */
+@Composable
+internal fun SettingsPage(
+    state: SettingsState,
+    buildVersion: String,
+    packVersion: Int,
+    onOpenLicences: () -> Unit,
+    onRescue: () -> Unit,
+    modifier: Modifier = Modifier,
+    rows: @Composable () -> Unit,
+) {
+    Column(modifier.fillMaxSize().background(Paper).verticalScroll(rememberScrollState())) {
+        Header()
+        RunningNotice(state.running)
+        RecoveryNotice(state, onRescue)
+        rows()
+        // Not under a read in flight: drawn under the header while the rows
+        // wait their 200ms, it would jump down the screen when they came.
+        if (state.loaded) Footer(buildVersion, packVersion, onOpenLicences)
     }
 }
 
@@ -472,111 +495,132 @@ internal fun SettingsRows(
     onAlerts: (() -> Unit)? = null,
     onOpenUnread: () -> Unit = {},
 ) {
-    val readable = state.storage == Storage.HEALTHY || state.storage == Storage.DAMAGED
-    val idle = state.running == null
-    // Design 6 gives Damaged no Export: its first damaged page throws and
-    // leaves nothing. The recovery notice's rescue is the way to a file there.
-    val exportable = state.storage == Storage.HEALTHY
+    NotReadYetOr(state.loaded) {
+        val readable = state.storage == Storage.HEALTHY || state.storage == Storage.DAMAGED
+        val idle = state.running == null
+        // Design 6 gives Damaged no Export: its first damaged page throws and
+        // leaves nothing. The recovery notice's rescue is the way to a file there.
+        val exportable = state.storage == Storage.HEALTHY
 
-    SectionLabel("CAPTURE", first = true)
-    SettingsRow(
-        "Capture sources",
-        // No placeholder when the count is unavailable (`SettingsState.sourcesOn`'s
-        // KDoc): a blank value is honest, a substituted one is not.
-        value = state.read { state.sourcesOn?.let { "${grouped(it)} ON" } },
-        onClick = onOpenSources,
-    )
-    // Spec 10.2's daily check reaches a user only through a notification, and
-    // this is the one place that asks for the permission: a prompt on launch
-    // would come before the user knows what it is for.
-    if (onAlerts != null) {
+        SectionLabel("CAPTURE", first = true)
         SettingsRow(
-            CAPTURE_ALERTS,
-            caption = "A DAILY CHECK, IN ANDROID'S SETTINGS",
-            value = alertsOn?.let { if (it) "ON" else "OFF" },
-            onClick = onAlerts,
-            mark = Mark.OUTWARD,
+            "Capture sources",
+            // No placeholder when the count is unavailable (`SettingsState.sourcesOn`'s
+            // KDoc): a blank value is honest, a substituted one is not.
+            value = state.read { state.sourcesOn?.let { "${grouped(it)} ON" } },
+            onClick = onOpenSources,
         )
-    }
-    // Spec 5.5's corrections wait on the user only now and then, and the
-    // board draws no row for them: drawn only while one waits (#224), since
-    // "NONE" names a mechanism nobody asked about. Nothing while the count
-    // is null, for `SettingsState.correctionsPending`'s reason.
-    val corrections = state.correctionsPending?.takeIf { it > 0 }
-    // Spec 5.6's authoring aid, where the artboard puts it: the count in
-    // Stamp, as the board draws it, because each is a notification lost to
-    // the ledger until a rule reads it. Muted at 0, which asks nothing.
-    SettingsRow(
-        UNREAD_ROW,
-        caption = "HELPS ADD SUPPORT FOR NEW BANKS",
-        value = state.read { state.unreadCount?.let { grouped(it) } },
-        valueTint = if ((state.unreadCount ?: 0) > 0) Stamp else Muted,
-        onClick = onOpenUnread,
-        divider = corrections != null,
-    )
-    if (corrections != null) {
+        // Spec 10.2's daily check reaches a user only through a notification, and
+        // this is the one place that asks for the permission: a prompt on launch
+        // would come before the user knows what it is for.
+        if (onAlerts != null) {
+            SettingsRow(
+                CAPTURE_ALERTS,
+                caption = "A DAILY CHECK, IN ANDROID'S SETTINGS",
+                value = alertsOn?.let { if (it) "ON" else "OFF" },
+                onClick = onAlerts,
+                mark = Mark.OUTWARD,
+            )
+        }
+        // Spec 5.5's corrections wait on the user only now and then, and the
+        // board draws no row for them: drawn only while one waits (#224), since
+        // "NONE" names a mechanism nobody asked about. Nothing while the count
+        // is null, for `SettingsState.correctionsPending`'s reason.
+        val corrections = state.correctionsPending?.takeIf { it > 0 }
+        // Spec 5.6's authoring aid, where the artboard puts it: the count in
+        // Stamp, as the board draws it, because each is a notification lost to
+        // the ledger until a rule reads it. Muted at 0, which asks nothing.
         SettingsRow(
-            "Corrections from pack updates",
-            value = "${grouped(corrections)} TO REVIEW",
-            onClick = onOpenCorrections,
+            UNREAD_ROW,
+            caption = "HELPS ADD SUPPORT FOR NEW BANKS",
+            value = state.read { state.unreadCount?.let { grouped(it) } },
+            valueTint = if ((state.unreadCount ?: 0) > 0) Stamp else Muted,
+            onClick = onOpenUnread,
+            divider = corrections != null,
+        )
+        if (corrections != null) {
+            SettingsRow(
+                "Corrections from pack updates",
+                value = "${grouped(corrections)} TO REVIEW",
+                onClick = onOpenCorrections,
+                divider = false,
+            )
+        }
+
+        SectionBreak()
+        SectionLabel("HOW THINGS GET SORTED")
+        // The count is the two lists' lengths, so it cannot disagree with them;
+        // see `SettingsState.learnedCount`. Blank unless both read.
+        SettingsRow(
+            TAUGHT,
+            value = state.read { state.learnedCount?.let { learned -> state.ignoredCount?.let { grouped(learned + it) } } },
+            onClick = onOpenLearned,
+        )
+        // The artboard's "Categories · 16": every row the list shows, Uncategorized
+        // included. The section's last row, so no divider.
+        SettingsRow(
+            CATEGORIES,
+            value = state.read { state.categoryCount?.let { grouped(it) } },
+            onClick = onOpenCategories,
+            divider = false,
+        )
+
+        SectionBreak()
+        SectionLabel("YOUR DATA")
+        if (exportable) {
+            SettingsRow(
+                label = EXPORT_EVERYTHING,
+                caption = "EVERY TRANSACTION AND ITS NOTIFICATION",
+                value = state.read { state.lastExportAt?.let { ago(it, never = "NEVER") } },
+                onClick = onExport,
+                enabled = idle,
+            )
+        }
+        SettingsRow(
+            label = "Replace everything from a backup",
+            caption = "DISCARDS WHAT IS HERE FIRST",
+            onClick = onRestore,
+            enabled = idle,
+        )
+        if (readable) {
+            SettingsRow(
+                label = "Check my data",
+                caption = checkResult(state),
+                value = state.read { state.lastCheckAt?.let { ago(it, never = "NEVER CHECKED") } },
+                onClick = onCheck,
+                enabled = idle,
+                mark = Mark.NONE,
+            )
+        }
+        // Always last in this section, so it alone never draws the divider below
+        // it -- there is nothing under it to separate from.
+        SettingsRow(
+            label = "Delete everything",
+            onClick = onDelete,
+            enabled = idle,
+            tint = Stamp,
             divider = false,
         )
     }
+}
 
-    SectionBreak()
-    SectionLabel("HOW THINGS GET SORTED")
-    // The count is the two lists' lengths, so it cannot disagree with them;
-    // see `SettingsState.learnedCount`. Blank unless both read.
-    SettingsRow(
-        TAUGHT,
-        value = state.read { state.learnedCount?.let { learned -> state.ignoredCount?.let { grouped(learned + it) } } },
-        onClick = onOpenLearned,
-    )
-    // The artboard's "Categories · 16": every row the list shows, Uncategorized
-    // included. The section's last row, so no divider.
-    SettingsRow(
-        CATEGORIES,
-        value = state.read { state.categoryCount?.let { grouped(it) } },
-        onClick = onOpenCategories,
-        divider = false,
-    )
-
-    SectionBreak()
-    SectionLabel("YOUR DATA")
-    if (exportable) {
-        SettingsRow(
-            label = EXPORT_EVERYTHING,
-            caption = "EVERY TRANSACTION AND ITS NOTIFICATION",
-            value = state.read { state.lastExportAt?.let { ago(it, never = "NEVER") } },
-            onClick = onExport,
-            enabled = idle,
-        )
+/**
+ * [content] once the screen has read; while its read is in flight,
+ * `design/LoadingSettings.dc.html`: the same sections, every value a dash
+ * (`read`), under the status line every screen's read in flight draws.
+ */
+@Composable
+private fun NotReadYetOr(loaded: Boolean, content: @Composable () -> Unit) {
+    if (loaded) {
+        content()
+    } else {
+        ReadingLayout {
+            Column {
+                ReadingStatus(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp))
+                content()
+            }
+        }
     }
-    SettingsRow(
-        label = "Replace everything from a backup",
-        caption = "DISCARDS WHAT IS HERE FIRST",
-        onClick = onRestore,
-        enabled = idle,
-    )
-    if (readable) {
-        SettingsRow(
-            label = "Check my data",
-            caption = checkResult(state),
-            value = state.read { state.lastCheckAt?.let { ago(it, never = "NEVER CHECKED") } },
-            onClick = onCheck,
-            enabled = idle,
-            mark = Mark.NONE,
-        )
-    }
-    // Always last in this section, so it alone never draws the divider below
-    // it -- there is nothing under it to separate from.
-    SettingsRow(
-        label = "Delete everything",
-        onClick = onDelete,
-        enabled = idle,
-        tint = Stamp,
-        divider = false,
-    )
 }
 
 /**

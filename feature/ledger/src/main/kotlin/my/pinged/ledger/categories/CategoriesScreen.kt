@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.dao.CategoryUse
+import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.home.CategorySheet
 import my.pinged.ledger.home.NEW_CATEGORY
 import my.pinged.ledger.home.categoryIcon
@@ -47,6 +48,8 @@ import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.NOT_READ_YET
+import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.PlusMark
 import my.pinged.ui.theme.Separator
@@ -64,7 +67,9 @@ const val CATEGORIES_BACK = "Back to Settings"
 internal const val PROTECTED_NOTE = "CANNOT BE RENAMED OR DELETED"
 
 /** A row's count, in the words the sheet's reach uses. */
-internal fun transactionsLabel(n: Int): String = if (n == 1) "1 TRANSACTION" else "${grouped(n)} TRANSACTIONS"
+internal fun transactionsLabel(n: Int): String = if (n == 1) "1 TRANSACTION" else "${grouped(n)} $TRANSACTIONS"
+
+private const val TRANSACTIONS = "TRANSACTIONS"
 
 /** The folded row's words, for [n] categories nothing is filed under. */
 internal fun emptyFoldLabel(n: Int): String = "${grouped(n)} WITH NOTHING IN THEM YET"
@@ -134,10 +139,14 @@ internal fun CategoriesContent(
     val arranged = Arranged(state.items)
 
     Column(modifier.fillMaxSize().background(Paper)) {
-        Header(count = if (usable) state.items.size else null, onBack = onBack)
+        Header(count = if (usable) state.items.size else null, reading = !state.loaded, onBack = onBack)
+        if (!state.loaded) {
+            ListNotReadYet(caption = "$NOT_READ_YET $TRANSACTIONS", modifier = Modifier.weight(1f))
+            return@Column
+        }
         LazyColumn(Modifier.weight(1f).padding(top = 14.dp)) {
             item {
-                val notice = if (state.loaded && state.storageUnavailable) CANNOT_READ_YOUR_DATA else null
+                val notice = if (state.storageUnavailable) CANNOT_READ_YOUR_DATA else null
                 if (notice != null) {
                     Text(notice, fontFamily = Body, fontSize = 14.sp, color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
                 }
@@ -289,11 +298,11 @@ private fun NewCategoryOffer(onClick: () -> Unit) {
 
 /**
  * The back chevron beside the serif title, and under it how many categories
- * there are and in what order. [count] null until a read has said, so a
- * loading list claims no number.
+ * there are and in what order. [count] null until a read has said, so a list
+ * not read yet claims no number: while [reading], the count is a dash.
  */
 @Composable
-private fun Header(count: Int?, onBack: () -> Unit) {
+private fun Header(count: Int?, reading: Boolean, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 20.dp), verticalAlignment = Alignment.Bottom) {
         Box(
             Modifier
@@ -307,8 +316,10 @@ private fun Header(count: Int?, onBack: () -> Unit) {
         }
         Column(Modifier.padding(bottom = 4.dp)) {
             Text(CATEGORIES, fontFamily = Display, fontWeight = FontWeight.Normal, fontSize = 25.sp, color = Ink)
-            if (count != null) {
-                Text("${grouped(count)}$Separator$MOST_USED_FIRST", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 2.dp))
+            val order = @Composable { n: String -> Text("$n$Separator$MOST_USED_FIRST", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 2.dp)) }
+            when {
+                count != null -> order(grouped(count))
+                reading -> ReadingLayout { order(NOT_READ_YET) }
             }
         }
     }

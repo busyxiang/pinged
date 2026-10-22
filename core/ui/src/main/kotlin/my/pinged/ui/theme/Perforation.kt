@@ -13,7 +13,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -56,6 +59,18 @@ fun Modifier.dottedOutline(): Modifier = drawWithCache {
     val corner = CornerRadius(2.dp.toPx())
     val dots = Stroke(width = weight, pathEffect = perforation())
     onDrawBehind { drawRoundRect(color = Rule, topLeft = topLeft, size = box, cornerRadius = corner, style = dots) }
+}
+
+/**
+ * [dottedOutline] around any [shape]: a circle for a row's icon not read
+ * yet, a square for a grid cell (`DottedCell`). Inset by half the stroke
+ * for [dashedOutline]'s reason.
+ */
+fun Modifier.dottedOutline(shape: Shape): Modifier = drawWithCache {
+    val weight = 1.dp.toPx()
+    val outline = shape.createOutline(Size(size.width - weight, size.height - weight), layoutDirection, this)
+    val dots = Stroke(width = weight, pathEffect = perforation())
+    onDrawBehind { translate(weight / 2f, weight / 2f) { drawOutline(outline, color = Rule, style = dots) } }
 }
 
 /** The perforation's pattern, 1dp on and 2dp off; every dotted mark draws with it. */

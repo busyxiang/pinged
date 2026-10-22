@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
 import my.pinged.data.Databases
+import my.pinged.ledger.ListNotReadYet
+import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -143,6 +145,12 @@ fun SourcesScreenContent(
     }
 
     Column(modifier.fillMaxSize().background(Paper)) {
+        if (!loaded) {
+            Header(enabledCount = enabledCount, reading = true, onBack = onBack)
+            ListNotReadYet(caption = "$NOT_READ_YET SEEN", modifier = Modifier.weight(1f), icon = false)
+            Footer()
+            return@Column
+        }
         // `LazyColumn`, not a `Column` with `verticalScroll`. The lower list holds one
         // row per app first seen in the last 30 days (spec 9.6), with no upper bound,
         // and an eager column composes every one of them on every read. Each item carries its own background and horizontal padding,
@@ -154,7 +162,7 @@ fun SourcesScreenContent(
         ) {
             item(key = "header") {
                 Column(Modifier.fillMaxWidth().background(Paper)) {
-                    Header(enabledCount = enabledCount, onBack = onBack)
+                    Header(enabledCount = enabledCount, reading = false, onBack = onBack)
                     SectionLabel("ON YOUR PHONE", Modifier.padding(start = 20.dp, top = 26.dp))
                     Spacer(Modifier.height(12.dp))
                 }
@@ -170,10 +178,7 @@ fun SourcesScreenContent(
                         if (state.storageUnavailable) {
                             Alert(CANNOT_READ_YOUR_DATA)
                         } else {
-                            Note(
-                                if (loaded) "NO KNOWN SOURCE IS INSTALLED ON THIS DEVICE"
-                                else "READING",
-                            )
+                            Note("NO KNOWN SOURCE IS INSTALLED ON THIS DEVICE")
                         }
                     }
                 }
@@ -210,7 +215,7 @@ fun SourcesScreenContent(
                         if (state.storageUnavailable) {
                             Alert(CANNOT_READ_YOUR_DATA)
                         } else {
-                            Note(if (loaded) "NOTHING ELSE HAS POSTED YET" else "READING")
+                            Note("NOTHING ELSE HAS POSTED YET")
                         }
                     }
                 }
@@ -249,7 +254,7 @@ fun SourcesScreenContent(
  * `Canvas`: an unlabelled node is one a screen reader can say nothing about.
  */
 @Composable
-private fun Header(enabledCount: String, onBack: () -> Unit) {
+private fun Header(enabledCount: String, reading: Boolean, onBack: () -> Unit) {
     Box(
         Modifier
             .padding(start = 8.dp, top = 12.dp)
@@ -276,14 +281,18 @@ private fun Header(enabledCount: String, onBack: () -> Unit) {
             color = Ink,
         )
     }
-    Text(
-        // Uppercased in the string, not by a text transform, so what is read
-        // out is what is drawn.
-        "$enabledCount ENABLED" + Separator + "TEXT IS STORED ONLY FOR THESE",
-        style = MonoLabel,
-        color = Muted,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
-    )
+    val line = @Composable {
+        Text(
+            // Uppercased in the string, not by a text transform, so what is read
+            // out is what is drawn.
+            "$enabledCount ENABLED" + Separator + "TEXT IS STORED ONLY FOR THESE",
+            style = MonoLabel,
+            color = Muted,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+        )
+    }
+    // While [reading] the count is a dash, held back with the list's layout.
+    if (reading) ReadingLayout { line() } else line()
 }
 
 @Composable

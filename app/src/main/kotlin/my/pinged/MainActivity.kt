@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -103,6 +104,8 @@ import my.pinged.ledger.sources.SourcesScreen
 import my.pinged.ledger.sources.SourcesViewModel
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.HeldBy
+import my.pinged.ui.theme.LocalHeldBy
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ledger.transfer.TransferStore
 
@@ -180,7 +183,7 @@ class MainActivity : ComponentActivity() {
         val openSources = SourcePrompt.opensSources(intent)
         val settingsStart = settingsStackFor(openSources)
         setContent {
-            PingedTheme {
+            WithHolder {
                 // One saved stack per tab and the tab showing, kept in saved
                 // state for the reason `Ledger` gives. `TabStacks` holds the
                 // rules; see it for why `NavDisplay` is handed every tab's
@@ -1194,6 +1197,27 @@ internal fun bannerFor(report: CaptureReport): BannerKind? {
  */
 internal fun backupReminderShows(report: CaptureReport?, exportOverdue: Boolean): Boolean =
     report != null && bannerFor(report) == null && exportOverdue
+
+/**
+ * [PingedTheme] with [LocalHeldBy] provided from `Databases.holder` (#279),
+ * so every screen's status line names what its read is waiting behind
+ * without each screen collecting it.
+ */
+@Composable
+private fun WithHolder(content: @Composable () -> Unit) {
+    val holder by Databases.holder.collectAsState()
+    CompositionLocalProvider(LocalHeldBy provides heldBy(holder)) { PingedTheme(content) }
+}
+
+/**
+ * `core:data`'s holder as `core:ui` names it: `:core:ui` may not depend on
+ * `:core:data` (#81), so the two enums meet here.
+ */
+internal fun heldBy(holder: Databases.Holder?): HeldBy? = when (holder) {
+    null -> null
+    Databases.Holder.Export -> HeldBy.Export
+    Databases.Holder.IntegrityCheck -> HeldBy.IntegrityCheck
+}
 
 /**
  * Spec 10.2's always-visible signal, for the ledger's top bar: when Pinged last

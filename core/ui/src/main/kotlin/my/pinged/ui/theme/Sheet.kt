@@ -157,15 +157,27 @@ fun ReceiptSheetFrame(
  * the title (`design/MerchantSheet.dc.html`'s payments in a month), inside the
  * header's own bottom margin rather than after it.
  *
+ * [below] is drawn where [subtitle] goes, with no margin of its own: a
+ * header whose line is not read yet (`design/LoadingSheet.dc.html`) draws it
+ * inside `ReadingLayout`, which must not hold the 4dp open while it draws
+ * nothing.
+ *
  * Public for `CategoryPicker`, which is drawn in [ReceiptSheetFrame] and so
  * does not get it from [ReceiptSheet]; [modifier] carries the margins that
  * [ReceiptSheet]'s padded `Column` otherwise gives it.
  */
 @Composable
-fun SheetHeader(title: String, onClose: () -> Unit, modifier: Modifier = Modifier, subtitle: String? = null) {
+fun SheetHeader(
+    title: String,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    below: (@Composable () -> Unit)? = null,
+) {
     Column(modifier.fillMaxWidth().padding(bottom = 14.dp)) {
         TitleRow(title, onClose)
         if (subtitle != null) Text(subtitle, style = MonoLabel, color = Faint, modifier = Modifier.padding(top = 4.dp))
+        below?.invoke()
     }
 }
 

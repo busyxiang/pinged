@@ -17,7 +17,9 @@ import androidx.room.InvalidationTracker
 import androidx.paging.map
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -113,7 +115,7 @@ class LedgerViewModel(
     val months: StateFlow<MonthsRead?> = _months.asStateFlow()
 
     /** Spec 6.4's merchant sheet, while one is open; see [openMerchant]. */
-    val merchantSheet: StateFlow<MerchantSheetState?> = rows.merchantSheet
+    val merchantSheet: StateFlow<OpenMerchantSheet?> = rows.merchantSheet
 
     /**
      * The DAO once the database has opened, with the `Databases.generation`
@@ -151,6 +153,15 @@ class LedgerViewModel(
      */
     @VisibleForTesting
     internal var beforePage: suspend () -> Unit = {}
+
+    /**
+     * Tests only: runs before each read of the month's summary, outside the
+     * lease, so a test can hold a picked month's read in flight (#285).
+     * Holding the database instead also stalls the main thread: a pick
+     * under `withTheDatabaseHeld` never let Compose go idle in 30s.
+     */
+    @VisibleForTesting
+    internal var beforeSummary: suspend () -> Unit = {}
 
     /**
      * The rows, newest day first, with a day header above the first row of each
@@ -407,20 +418,24 @@ class LedgerViewModel(
     /**
      * Read the `Months` sheet as of [today], through Charts' own read
      * ([monthsRead]), so the two sheets cannot list different months or flag
-     * different days. In one transaction, for the reason it gives.
+     * different days. In one transaction, for the reason it gives. True once
+     * published, false when it could not be read.
      */
-    fun readMonths(today: java.time.LocalDate = java.time.LocalDate.now()): Job {
-        // The last read's months and flags are not this opening's: the sheet
-        // draws its loading state until the re-read lands (#237).
-        _months.value = null
-        return viewModelScope.launch {
+    fun readMonths(today: java.time.LocalDate = java.time.LocalDate.now()): Deferred<Boolean> {
+        // The last read stays published: the sheet draws it as the last
+        // opening's, dimmed under `UPDATING`, until this one lands (#285).
+        return viewModelScope.async {
             CaptureStorage.guarded(
                 context,
                 what = "The months cannot be read",
-                unavailable = { _storageUnavailable.value = true },
+                unavailable = {
+                    _storageUnavailable.value = true
+                    false
+                },
                 damageStopsCapture = false,
             ) {
                 _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today) }
+                true
             }
         }
     }
@@ -428,6 +443,7 @@ class LedgerViewModel(
     /** [refresh]'s body, run under [refreshing]. */
     private suspend fun readMonth(now: YearMonth) {
         lastMonth = now
+        beforeSummary()
         val month = LocalDates.monthRange(now)
 
         // No `withContext(Dispatchers.IO)` of its own: `guarded` dispatches its
@@ -514,7 +530,7 @@ class LedgerViewModel(
         rows.addCategory(name, iconKey) { refresh(shownMonth()).join() }
 
     /** See [RowActions.openMerchant]. */
-    fun openMerchant(ownKey: String, on: LocalDate): Job = rows.openMerchant(ownKey, on)
+    fun openMerchant(opening: MerchantOpening): Job = rows.openMerchant(opening)
 
     fun closeMerchant() = rows.closeMerchant()
 

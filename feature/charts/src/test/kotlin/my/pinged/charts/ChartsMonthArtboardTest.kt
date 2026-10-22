@@ -56,7 +56,7 @@ class ChartsMonthArtboardTest {
             ),
         )
         compose.setContent {
-            PingedTheme { ChartsScreenContent("OCTOBER 2026", ChartsState.Month(monthView(read)), unavailable = false) }
+            PingedTheme { ChartsScreenContent(YearMonth.of(2026, 10), ChartsState.Month(monthView(read)), unavailable = false) }
         }
     }
 

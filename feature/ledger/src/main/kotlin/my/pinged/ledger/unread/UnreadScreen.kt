@@ -51,6 +51,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import my.pinged.data.dao.UnreadCapture
+import my.pinged.ledger.ListNotReadYet
 import my.pinged.parse.FixtureText
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.theme.Body
@@ -64,8 +65,10 @@ import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Quote
+import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
@@ -121,13 +124,20 @@ internal fun UnreadContent(
     zone: ZoneId = ZoneId.systemDefault(),
     onTeach: (UnreadCapture) -> Unit = {},
 ) {
+    if (!state.loaded) {
+        Column(modifier.fillMaxSize().background(Card)) {
+            Header(onBack)
+            // A card's first line: its source and when it was posted.
+            ListNotReadYet(caption = NOT_READ_YET + Separator + NOT_READ_YET, icon = false)
+        }
+        return
+    }
     LazyColumn(
         modifier.fillMaxSize().background(Card),
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         item { Header(onBack) }
         val notice = when {
-            !state.loaded -> null
             state.storageUnavailable -> CANNOT_READ_YOUR_DATA
             state.items.isEmpty() -> NOTHING_UNREAD
             else -> null

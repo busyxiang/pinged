@@ -1,6 +1,9 @@
 package my.pinged.ledger
 
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -11,28 +14,26 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.performScrollToKey
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToKey
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.requiredWidth
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
@@ -49,33 +50,41 @@ import my.pinged.data.LocalDate
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.entity.Category
+import my.pinged.ledger.NOT_READ_YET_ICON
 import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.home.ADD_PAYMENT_BUTTON
 import my.pinged.ledger.home.CASH_OFFER
 import my.pinged.ledger.home.EMPTY_HERO
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.HEARD_CHIP
-import my.pinged.ledger.home.MONTH_BUTTON
-import my.pinged.ledger.home.MONTH_SUMMARY
-import my.pinged.ledger.home.TOP_BAR_TOTAL
+import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
+import my.pinged.ledger.home.MONTH_BUTTON
+import my.pinged.ledger.home.MONTH_SUMMARY
 import my.pinged.ledger.home.MonthSummary
+import my.pinged.ledger.home.TOP_BAR_TOTAL
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ui.money
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
-import my.pinged.ui.theme.Display
-import my.pinged.ui.theme.HeroFill
 import my.pinged.ui.theme.Card
+import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.HeldBy
+import my.pinged.ui.theme.HeroFill
 import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.LocalHeldBy
 import my.pinged.ui.theme.Mono
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.PingedTheme
+import my.pinged.ui.theme.READING
+import my.pinged.ui.theme.READING_DELAY_MILLIS
+import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.WAITING_FOR_AN_EXPORT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -457,7 +466,70 @@ class LedgerArtboardTest {
         assertTrue("The offer's name does not start with what it says: $description", description.single().startsWith(CASH_OFFER_LABEL))
     }
 
+    // ---- Not read yet (#280) ----
+
+    /** `LoadingSpending.dc.html`'s `RM&thinsp;&mdash;`: the hero's serif at 54, in `#cfc4ae`. */
+    @Test fun theHeroNotReadYetIsTheBoardsSerifInRule() {
+        notReadYet()
+        val style = styleOf(HERO_NOT_READ_YET)
+        assertEquals("The hero dash's family", Display, style.fontFamily)
+        assertEquals("The board's hero dash is 54px", 54.sp, style.fontSize)
+        assertEquals("The board's hero dash is #cfc4ae", Rule, style.color)
+    }
+
+    /** `LoadingSpending.dc.html`'s status line: READING in `#6b6459`, beside a square of the same. */
+    @Test fun readingIsMutedWithAMutedSquare() {
+        notReadYet()
+        assertEquals("The board's READING is #6b6459", Muted, styleOf(READING).color)
+        assertTrue("No Muted square beside READING", squareBeside(READING, Muted) > 0)
+    }
+
+    /** `LoadingWaiting.dc.html`'s status line: the wait named in Stamp, beside a Stamp square. */
+    @Test fun anExportsWaitIsStampWithAStampSquare() {
+        notReadYet(HeldBy.Export)
+        assertEquals("The board's waiting line is #a03826", Stamp, styleOf(WAITING_FOR_AN_EXPORT).color)
+        assertTrue("No Stamp square beside the waiting line", squareBeside(WAITING_FOR_AN_EXPORT, Stamp) > 0)
+    }
+
+    /**
+     * The board's rows: a dotted 18dp circle where the icon goes, never a
+     * filled or hatched one. Dotted: along the circle's top, Rule's dots
+     * have Card between them.
+     */
+    @Test fun aRowNotReadYetHasADottedCircle() {
+        notReadYet()
+        val circle = compose.onAllNodesWithTag(NOT_READ_YET_ICON).onFirst().fetchSemanticsNode()
+        val density = compose.density.density
+        assertEquals("The board's circle is 18px", 18f, circle.size.width / density, 0.6f)
+        val pixels = compose.onAllNodesWithTag(NOT_READ_YET_ICON).onFirst().captureToImage().toPixelMap()
+        val inside = count(pixels, Card)
+        val dots = count(pixels, Rule)
+        assertTrue("The circle drew no Rule dots", dots > 0)
+        assertTrue("The circle is filled rather than outlined: $inside Card pixels", inside > pixels.width * pixels.height / 2)
+    }
+
     // ---- Harness ----
+
+    private fun notReadYet(heldBy: HeldBy? = null) {
+        show(items = emptyList(), summary = null, heard = null, fontScale = null, refresh = LoadState.Loading, heldBy = heldBy)
+        compose.mainClock.advanceTimeBy(READING_DELAY_MILLIS + 40)
+        compose.waitForIdle()
+    }
+
+    /** Pixels of [colour] in the 10dp left of [text], where the status line's square is. */
+    private fun squareBeside(text: String, colour: Color): Int {
+        val density = compose.density.density
+        val bounds = boundsOf(text)
+        return countIn(bounds.left - 14 * density..bounds.left - 4 * density, bounds.top..bounds.bottom, colour)
+    }
+
+    /** Pixels within a hair of [colour] in the root's [x] by [y]. */
+    private fun countIn(x: ClosedFloatingPointRange<Float>, y: ClosedFloatingPointRange<Float>, colour: Color): Int {
+        val pixels = compose.onRoot().captureToImage().toPixelMap()
+        val xs = x.start.toInt().coerceAtLeast(0) until x.endInclusive.toInt().coerceAtMost(pixels.width)
+        val ys = y.start.toInt().coerceAtLeast(0) until y.endInclusive.toInt().coerceAtMost(pixels.height)
+        return ys.sumOf { py -> xs.count { px -> distance(pixels[px, py], colour) < 0.02f } }
+    }
 
     private fun populated(heard: String? = null, fontScale: Float? = null, chrome: Boolean = false, width: Dp? = null) {
         val first = ledgerTxn(1_840L, localDate = SEP_30, categoryId = FOOD.id, id = 1L, rawCaptureId = null)
@@ -524,16 +596,21 @@ class LedgerArtboardTest {
         chrome: Boolean = false,
         width: Dp? = null,
         size: DpSize? = null,
+        refresh: LoadState = LoadState.NotLoading(true),
+        heldBy: HeldBy? = null,
     ) {
         val flow = flowOf(
             PagingData.from(
                 items,
-                LoadStates(LoadState.NotLoading(true), LoadState.NotLoading(true), LoadState.NotLoading(true)),
+                LoadStates(refresh, LoadState.NotLoading(true), LoadState.NotLoading(true)),
             ),
         )
         compose.setContent {
             val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale ?: density.fontScale)) {
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, fontScale ?: density.fontScale),
+                LocalHeldBy provides heldBy,
+            ) {
                 PingedTheme {
                     LedgerScreenContent(
                         modifier = Modifier.testTag(SCREEN).then(

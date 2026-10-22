@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,6 +58,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 import my.pinged.data.LocalDate
+import my.pinged.data.LocalDates
 import my.pinged.data.dao.MerchantChoice
 import my.pinged.data.dao.MerchantMember
 import my.pinged.data.dao.MerchantTotal
@@ -68,14 +70,19 @@ import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.LocalHeldBy
 import my.pinged.ui.theme.Magnifier
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Paper
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
 import my.pinged.ui.theme.ReceiptSheetFrame
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.SheetHeader
 import my.pinged.ui.theme.Stamp
+import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
 import java.time.YearMonth
 import java.time.format.TextStyle as DateStyle
@@ -162,9 +169,29 @@ data class MerchantSheetState(
     val monthTotals: List<MerchantTotal> = emptyList(),
 )
 
+/**
+ * What the row a merchant sheet is opened from already shows (#284): enough
+ * to open the sheet on the tap, before its read.
+ *
+ * @property ownKey the row's own `merchant_key`.
+ * @property name the merchant's name as the row draws it, the sheet's title
+ *   until the read names it.
+ * @property on the row's own `local_date`, whose month the header counts.
+ */
+data class MerchantOpening(val ownKey: String, val name: String, val on: LocalDate) {
+    /** The month [on] falls in: the header's, which needs no read. */
+    val month: YearMonth get() = YearMonth.from(LocalDates.calendarDay(on))
+}
+
+/**
+ * A merchant sheet that is open: [opening] from the tap, and [read], spec
+ * 6.4's read of it, null while that is in flight.
+ */
+data class OpenMerchantSheet(val opening: MerchantOpening, val read: MerchantSheetState? = null)
+
 /** The sheet's writes, so `LedgerScreenContent` takes one parameter for all of them. */
 internal class MerchantActions(
-    val open: (ownKey: String, on: LocalDate) -> Unit,
+    val open: (MerchantOpening) -> Unit,
     val rename: (name: String) -> Unit,
     val merge: (targetKey: String) -> Unit,
     val separate: (key: String) -> Unit,
@@ -172,7 +199,7 @@ internal class MerchantActions(
 ) {
     companion object {
         /** No sheet: a screen test that is not about merchants. */
-        val None = MerchantActions({ _, _ -> }, {}, {}, {}, {})
+        val None = MerchantActions({}, {}, {}, {}, {})
     }
 }
 
@@ -203,165 +230,280 @@ internal fun MerchantSheet(
     actions: MerchantActions,
     modifier: Modifier = Modifier,
 ) {
+    ReceiptSheetFrame(onDismissRequest = actions.close, modifier = modifier) { MerchantSheetRead(sheet, actions) }
+}
+
+/**
+ * The merchant sheet from the tap (#284): [sheet]'s read once it lands, and
+ * until then `design/LoadingSheet.dc.html`, drawn from what the row already
+ * showed.
+ *
+ * One [ReceiptSheetFrame] for both, so the read landing redraws the sheet's
+ * body in place rather than closing one sheet and opening another.
+ */
+@Composable
+internal fun MerchantSheet(
+    sheet: OpenMerchantSheet,
+    actions: MerchantActions,
+    modifier: Modifier = Modifier,
+) {
+    ReceiptSheetFrame(onDismissRequest = actions.close, modifier = modifier) {
+        val read = sheet.read
+        if (read != null) MerchantSheetRead(read, actions) else MerchantSheetNotReadYet(sheet.opening, actions.close)
+    }
+}
+
+/** [MerchantSheet]'s body once its read has landed. */
+@Composable
+private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: MerchantActions) {
     var name by rememberSaveable(sheet.identityKey) { mutableStateOf(sheet.name) }
     var filter by rememberSaveable(sheet.identityKey) { mutableStateOf("") }
     var chosenKey by rememberSaveable(sheet.identityKey) { mutableStateOf<String?>(null) }
     val shown = remember(sheet.others, sheet.suggested, filter) { candidates(sheet.others, sheet.suggested, filter) }
     val chosen = sheet.others.firstOrNull { it.identityKey == chosenKey }
 
-    ReceiptSheetFrame(onDismissRequest = actions.close, modifier = modifier) {
-        SheetHeader(
-            sheet.name,
-            actions.close,
-            Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
-            subtitle = sheet.month?.let { monthLine(it, sheet.monthTotals) },
-        )
-        val list = rememberLazyListState()
-        // Typing puts the search field at the top of the list, so what it
-        // finds is in view beneath it. At CI's 320x640 with the keyboard up the
-        // list is 229px tall and the field at rest is its bottom 28px, so with
-        // no scroll every result is below the sheet's edge.
-        //
-        // Once per height, not once per keystroke: the first letter can land
-        // while the keyboard is still rising. A run measured the list at 373px
-        // then, with nothing below to scroll, so a single scroll moved 0px
-        // and the keyboard then shrank the list to 229px, the field at its
-        // bottom again: 4 runs of 17 at CI's size. The field leaves the viewport
-        // for a frame as the list shrinks, so a height it is not laid out at
-        // waits for the next layout. A drag ends it, so closing the keyboard
-        // does not undo the user's own scroll.
-        LaunchedEffect(filter) {
-            if (filter.isBlank()) return@LaunchedEffect
-            val dragged = launch { list.interactionSource.interactions.first { it is DragInteraction.Start } }
-            snapshotFlow {
-                val search = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == SEARCH_ITEM }
-                search?.let { list.layoutInfo.viewportSize.height to it.index }
-            }
-                .filterNotNull()
-                .takeWhile { dragged.isActive }
-                .collect { (_, index) -> list.scrollToItem(index) }
+    SheetHeader(
+        sheet.name,
+        actions.close,
+        Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
+        subtitle = sheet.month?.let { monthLine(it, sheet.monthTotals) },
+    )
+    val list = rememberLazyListState()
+    // Typing puts the search field at the top of the list, so what it
+    // finds is in view beneath it. At CI's 320x640 with the keyboard up the
+    // list is 229px tall and the field at rest is its bottom 28px, so with
+    // no scroll every result is below the sheet's edge.
+    //
+    // Once per height, not once per keystroke: the first letter can land
+    // while the keyboard is still rising. A run measured the list at 373px
+    // then, with nothing below to scroll, so a single scroll moved 0px
+    // and the keyboard then shrank the list to 229px, the field at its
+    // bottom again: 4 runs of 17 at CI's size. The field leaves the viewport
+    // for a frame as the list shrinks, so a height it is not laid out at
+    // waits for the next layout. A drag ends it, so closing the keyboard
+    // does not undo the user's own scroll.
+    LaunchedEffect(filter) {
+        if (filter.isBlank()) return@LaunchedEffect
+        val dragged = launch { list.interactionSource.interactions.first { it is DragInteraction.Start } }
+        snapshotFlow {
+            val search = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == SEARCH_ITEM }
+            search?.let { list.layoutInfo.viewportSize.height to it.index }
         }
-        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().testTag(MERCHANT_LIST_TAG), state = list) {
-            item(key = "name") {
-                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
-                    Text(NAME_HEADING, style = MonoLabel, color = Muted)
-                    UnderlinedField(
-                        value = name,
-                        onValueChange = { name = it },
-                        placeholder = sheet.derivedName.orEmpty(),
-                        tag = NAME_FIELD_TAG,
-                        capitalization = KeyboardCapitalization.Words,
+            .filterNotNull()
+            .takeWhile { dragged.isActive }
+            .collect { (_, index) -> list.scrollToItem(index) }
+    }
+    LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().testTag(MERCHANT_LIST_TAG), state = list) {
+        item(key = "name") {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
+                Text(NAME_HEADING, style = MonoLabel, color = Muted)
+                UnderlinedField(
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = sheet.derivedName.orEmpty(),
+                    tag = NAME_FIELD_TAG,
+                    capitalization = KeyboardCapitalization.Words,
+                )
+                Row(
+                    Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(reach(sheet.txnCount), style = MonoLabel, color = Faint, modifier = Modifier.weight(1f))
+                    SaveNameButton(enabled = name.trim() != sheet.name, onClick = { actions.rename(name) })
+                }
+            }
+        }
+
+        sheet.mergedInto?.let { canonical ->
+            item(key = "merged") {
+                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
+                    Text("Counted as $canonical.", fontFamily = Body, fontSize = 15.sp, color = Ink)
+                    OutlineButton(
+                        "$SEPARATE from $canonical",
+                        onClick = { actions.separate(sheet.ownKey) },
+                        modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
                     )
-                    Row(
-                        Modifier.padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(reach(sheet.txnCount), style = MonoLabel, color = Faint, modifier = Modifier.weight(1f))
-                        SaveNameButton(enabled = name.trim() != sheet.name, onClick = { actions.rename(name) })
-                    }
+                    if (sheet.noOwnRule && sheet.ruleCategory != null) RuleNote(SEPARATE_NO_RULE)
                 }
             }
+        }
 
-            sheet.mergedInto?.let { canonical ->
-                item(key = "merged") {
-                    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
-                        Text("Counted as $canonical.", fontFamily = Body, fontSize = 15.sp, color = Ink)
-                        OutlineButton(
-                            "$SEPARATE from $canonical",
-                            onClick = { actions.separate(sheet.ownKey) },
-                            modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
-                        )
-                        if (sheet.noOwnRule && sheet.ruleCategory != null) RuleNote(SEPARATE_NO_RULE)
-                    }
-                }
-            }
-
-            if (sheet.others.isNotEmpty()) {
-                item(key = "others") {
-                    Column(
-                        Modifier
-                            .padding(start = 20.dp, end = 20.dp, top = 14.dp)
-                            .dottedRule(atTop = true)
-                            .padding(top = 14.dp),
-                    ) {
-                        Text(SAME_SHOP_HEADING, style = MonoLabel, color = Muted)
-                        Text(
-                            "Choose the merchant this one really is. Its payments are then " +
-                                "counted there, under that name. You can separate them again here.",
-                            fontFamily = Body,
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                            color = Muted,
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
-                }
-                item(key = SEARCH_ITEM) {
-                    Column(Modifier.padding(horizontal = 20.dp)) {
-                        UnderlinedField(
-                            value = filter,
-                            onValueChange = { filter = it },
-                            placeholder = "Search merchants",
-                            tag = FILTER_FIELD_TAG,
-                            capitalization = KeyboardCapitalization.None,
-                            leading = { Magnifier(15.dp, Faint) },
-                        )
-                        shown.heading?.let { heading ->
-                            Text(heading, style = MonoLabel, color = Faint, modifier = Modifier.padding(top = 12.dp))
-                        }
-                    }
-                }
-                items(shown.choices, key = { "other-" + it.identityKey }) { choice ->
-                    ChoiceRow(choice, chosen = choice.identityKey == chosenKey) {
-                        chosenKey = if (chosenKey == choice.identityKey) null else choice.identityKey
-                    }
-                }
-            }
-
-            if (chosen != null) {
-                item(key = "commit") {
-                    Column(Modifier.padding(top = 12.dp)) {
-                        Column(
-                            Modifier.fillMaxWidth().background(Card).padding(horizontal = 20.dp, vertical = 11.dp),
-                        ) {
-                            mergeBand(sheet, chosen).forEach { line -> Text(line, style = MonoLabel, color = Muted) }
-                        }
-                        FilledButton(
-                            countItAs(chosen),
-                            onClick = { actions.merge(chosen.identityKey) },
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp).fillMaxWidth(),
-                        )
-                    }
-                }
-            }
-
-            if (sheet.members.isNotEmpty()) {
-                item(key = "members") {
+        if (sheet.others.isNotEmpty()) {
+            item(key = "others") {
+                Column(
+                    Modifier
+                        .padding(start = 20.dp, end = 20.dp, top = 14.dp)
+                        .dottedRule(atTop = true)
+                        .padding(top = 14.dp),
+                ) {
+                    Text(SAME_SHOP_HEADING, style = MonoLabel, color = Muted)
                     Text(
-                        ALSO_PAID_AS,
-                        style = MonoLabel,
-                        color = Faint,
-                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 6.dp),
+                        "Choose the merchant this one really is. Its payments are then " +
+                            "counted there, under that name. You can separate them again here.",
+                        fontFamily = Body,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = Muted,
+                        modifier = Modifier.padding(top = 6.dp),
                     )
                 }
-                item(key = "member-own") {
-                    KeyRow(sheet.ownKey, sheet.txnCount - sheet.members.sumOf { it.txnCount })
-                }
-                items(sheet.members, key = { "member-" + it.merchantKey }) { member ->
-                    KeyRow(member.merchantKey, member.txnCount) {
-                        OutlineButton(SEPARATE, onClick = { actions.separate(member.merchantKey) })
-                    }
-                    if (member.noOwnRule && sheet.ruleCategory != null) {
-                        Box(Modifier.padding(horizontal = 20.dp)) { RuleNote(SEPARATE_NO_RULE) }
+            }
+            item(key = SEARCH_ITEM) {
+                Column(Modifier.padding(horizontal = 20.dp)) {
+                    UnderlinedField(
+                        value = filter,
+                        onValueChange = { filter = it },
+                        placeholder = "Search merchants",
+                        tag = FILTER_FIELD_TAG,
+                        capitalization = KeyboardCapitalization.None,
+                        leading = { Magnifier(15.dp, Faint) },
+                    )
+                    shown.heading?.let { heading ->
+                        Text(heading, style = MonoLabel, color = Faint, modifier = Modifier.padding(top = 12.dp))
                     }
                 }
             }
+            items(shown.choices, key = { "other-" + it.identityKey }) { choice ->
+                ChoiceRow(choice, chosen = choice.identityKey == chosenKey) {
+                    chosenKey = if (chosenKey == choice.identityKey) null else choice.identityKey
+                }
+            }
+        }
 
-            item(key = "end") { Spacer(Modifier.height(22.dp)) }
+        if (chosen != null) {
+            item(key = "commit") {
+                Column(Modifier.padding(top = 12.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth().background(Card).padding(horizontal = 20.dp, vertical = 11.dp),
+                    ) {
+                        mergeBand(sheet, chosen).forEach { line -> Text(line, style = MonoLabel, color = Muted) }
+                    }
+                    FilledButton(
+                        countItAs(chosen),
+                        onClick = { actions.merge(chosen.identityKey) },
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp).fillMaxWidth(),
+                    )
+                }
+            }
+        }
+
+        if (sheet.members.isNotEmpty()) {
+            item(key = "members") {
+                Text(
+                    ALSO_PAID_AS,
+                    style = MonoLabel,
+                    color = Faint,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 6.dp),
+                )
+            }
+            item(key = "member-own") {
+                KeyRow(sheet.ownKey, sheet.txnCount - sheet.members.sumOf { it.txnCount })
+            }
+            items(sheet.members, key = { "member-" + it.merchantKey }) { member ->
+                KeyRow(member.merchantKey, member.txnCount) {
+                    OutlineButton(SEPARATE, onClick = { actions.separate(member.merchantKey) })
+                }
+                if (member.noOwnRule && sheet.ruleCategory != null) {
+                    Box(Modifier.padding(horizontal = 20.dp)) { RuleNote(SEPARATE_NO_RULE) }
+                }
+            }
+        }
+
+        item(key = "end") { Spacer(Modifier.height(22.dp)) }
+    }
+}
+
+/**
+ * `design/LoadingSheet.dc.html`: the sheet before its read, its title and
+ * NAME field the row's own name and every figure a dash.
+ *
+ * The title and the close are drawn at once, since the tap is the sheet's to
+ * answer and the row already said the name; the rest waits in
+ * [ReadingLayout] like any read in flight. The field is drawn and takes no
+ * edit: a name typed now would be overwritten by the read's, and Save name
+ * cannot say what it reaches yet.
+ *
+ * The board draws no status line. One is drawn while something holds the
+ * database, in `design/LoadingWaiting.dc.html`'s words, because the read can
+ * then take over a second and the dashes alone would not say why.
+ */
+@Composable
+private fun MerchantSheetNotReadYet(opening: MerchantOpening, close: () -> Unit) {
+    val heldBy = LocalHeldBy.current
+    SheetHeader(
+        opening.name,
+        close,
+        Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
+        below = {
+            ReadingLayout {
+                Column {
+                    Text(monthLineNotReadYet(opening.month), style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 4.dp))
+                    if (heldBy != null) ReadingStatus(Modifier.padding(top = 6.dp), heldBy)
+                }
+            }
+        },
+    )
+    ReadingLayout(Modifier.fillMaxWidth()) {
+        Column {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
+                Text(NAME_HEADING, style = MonoLabel, color = Muted)
+                UnderlinedField(
+                    value = opening.name,
+                    onValueChange = {},
+                    placeholder = "",
+                    tag = NAME_FIELD_TAG,
+                    capitalization = KeyboardCapitalization.Words,
+                    readOnly = true,
+                )
+                Row(
+                    Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(REACH_NOT_READ_YET, style = MonoLabel, color = Muted, modifier = Modifier.weight(1f))
+                    SaveNameButton(enabled = false, onClick = {})
+                }
+            }
+            Column(
+                Modifier
+                    .padding(start = 20.dp, end = 20.dp, top = 14.dp)
+                    .dottedRule(atTop = true)
+                    .padding(top = 14.dp),
+            ) {
+                Text(SAME_SHOP_HEADING, style = MonoLabel, color = Muted)
+                Text(SUGGESTED, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 10.dp))
+                repeat(2) { ChoiceNotReadYet() }
+            }
+            Spacer(Modifier.height(22.dp))
         }
     }
 }
+
+/** A candidate not read yet: the board's dotted box, its two lines dotted rules 55% and 70% wide. */
+@Composable
+private fun ChoiceNotReadYet() {
+    Column(
+        Modifier
+            .padding(top = 8.dp)
+            .fillMaxWidth()
+            .dottedOutline()
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+    ) {
+        Box(Modifier.fillMaxWidth(0.55f).height(10.dp).dottedRule())
+        Box(Modifier.padding(top = 6.dp).fillMaxWidth(0.70f).height(9.dp).dottedRule())
+    }
+}
+
+/** The header before its read, as the board sets it: "— PAYMENTS · RM — IN SEPTEMBER". */
+internal fun monthLineNotReadYet(month: YearMonth): String {
+    val named = month.month.getDisplayName(DateStyle.FULL, CALENDAR).uppercase(Locale.ROOT)
+    return "$NOT_READ_YET PAYMENTS${Separator}RM $NOT_READ_YET IN $named"
+}
+
+/** [reach] before the count is read. */
+internal const val REACH_NOT_READ_YET = "$NOT_READ_YET TRANSACTIONS WILL SHOW A NEW NAME"
 
 /** "11 TRANSACTIONS WILL SHOW A NEW NAME", the reach a rename states first (spec 6.4). */
 internal fun reach(count: Int): String =
@@ -567,7 +709,8 @@ private fun OutlineButton(label: String, onClick: () -> Unit, modifier: Modifier
  * its child. [onDone] is the keyboard's Done key, which by default only
  * closes the keyboard. [placeholderColour] is [Faint] on [Paper]; a field on
  * another band passes its own. [leading] is drawn before the text, 8dp from
- * it: the merchant search's magnifier.
+ * it: the merchant search's magnifier. [readOnly] draws the field and takes
+ * no edit: the merchant sheet's name before its read.
  */
 @Composable
 internal fun UnderlinedField(
@@ -579,6 +722,7 @@ internal fun UnderlinedField(
     onDone: (() -> Unit)? = null,
     placeholderColour: Color = Faint,
     leading: (@Composable () -> Unit)? = null,
+    readOnly: Boolean = false,
 ) {
     val style = TextStyle(fontFamily = Body, fontSize = 17.sp, color = Ink)
     Box(
@@ -599,7 +743,7 @@ internal fun UnderlinedField(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             leading?.invoke()
-            FieldLine(value, onValueChange, placeholder, style, capitalization, onDone, placeholderColour)
+            FieldLine(value, onValueChange, placeholder, style, capitalization, onDone, placeholderColour, readOnly)
         }
     }
 }
@@ -614,10 +758,15 @@ private fun FieldLine(
     capitalization: KeyboardCapitalization,
     onDone: (() -> Unit)?,
     placeholderColour: Color,
+    readOnly: Boolean,
 ) {
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
+        // Disabled as well as read-only, so it takes no focus and offers
+        // TalkBack no edit.
+        enabled = !readOnly,
+        readOnly = readOnly,
         singleLine = true,
         textStyle = style,
         keyboardOptions = KeyboardOptions(capitalization = capitalization, imeAction = ImeAction.Done),

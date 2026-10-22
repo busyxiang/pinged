@@ -72,7 +72,7 @@ class GridDayClickTest {
         compose.setContent {
             PingedTheme {
                 ChartsScreenContent(
-                    monthName = "SEPTEMBER 2026",
+                    month = YearMonth.of(2026, 9),
                     state = ChartsState.Month(view),
                     unavailable = false,
                     onDayClick = { clicked += it },

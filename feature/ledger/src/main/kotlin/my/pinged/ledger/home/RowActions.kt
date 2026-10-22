@@ -7,6 +7,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.Graph
@@ -52,8 +53,8 @@ class RowActions(
     private val unavailable: () -> Unit,
 ) {
     /** Spec 6.4's merchant sheet, while one is open; see [openMerchant]. */
-    private val _merchantSheet = MutableStateFlow<MerchantSheetState?>(null)
-    val merchantSheet: StateFlow<MerchantSheetState?> = _merchantSheet.asStateFlow()
+    private val _merchantSheet = MutableStateFlow<OpenMerchantSheet?>(null)
+    val merchantSheet: StateFlow<OpenMerchantSheet?> = _merchantSheet.asStateFlow()
 
     /**
      * Everything the chooser needs beside the row it opens on.
@@ -176,22 +177,29 @@ class RowActions(
         ) { Databases.merchantRuleDao(context()).retroPreview(txnId, categoryId) }
 
     /**
-     * Open spec 6.4's sheet for the merchant a row's [ownKey] belongs to.
+     * Open spec 6.4's sheet for the merchant [opening]'s row belongs to.
      *
-     * One read of everything the sheet shows, published whole, so a sheet
-     * never draws a name from one read beside a list from another. A key that
-     * no longer resolves to any transaction opens nothing. [on] is the row's
-     * own `local_date`, whose month the header counts.
+     * The sheet opens on the tap, from what the row already showed (#284),
+     * and the read follows. One read of everything the sheet shows, published
+     * whole, so a sheet never draws a name from one read beside a list from
+     * another. A key that no longer resolves to any transaction, or a ledger
+     * that cannot be opened, closes the sheet as soon as the read says so.
+     *
+     * A read lands only on the opening it was made for: a sheet closed, or
+     * opened from another row, while it ran stays as the user left it.
      */
-    fun openMerchant(ownKey: String, on: LocalDate): Job = scope.launch {
-        CaptureStorage.guarded(
-            context(),
-            what = "The merchant could not be read",
-            unavailable = { unavailable() },
-            damageStopsCapture = false,
-        ) {
-            _merchantSheet.value =
-                readMerchantSheet(Databases.merchantIdentityDao(context()), Databases.txnDao(context()), ownKey, on)
+    fun openMerchant(opening: MerchantOpening): Job {
+        _merchantSheet.value = OpenMerchantSheet(opening)
+        return scope.launch {
+            val read = CaptureStorage.guarded(
+                context(),
+                what = "The merchant could not be read",
+                unavailable = { unavailable(); null },
+                damageStopsCapture = false,
+            ) {
+                readMerchantSheet(Databases.merchantIdentityDao(context()), Databases.txnDao(context()), opening.ownKey, opening.on)
+            }
+            _merchantSheet.update { open -> if (open?.opening !== opening) open else read?.let { open.copy(read = it) } }
         }
     }
 
@@ -228,7 +236,9 @@ class RowActions(
         what: String,
         write: (MerchantIdentityDao, MerchantSheetState) -> Unit,
     ): Job = scope.launch {
-        val sheet = _merchantSheet.value ?: return@launch
+        // Nothing to write against before the read: the sheet offers no write
+        // until then.
+        val sheet = _merchantSheet.value?.read ?: return@launch
         _merchantSheet.value = null
         CaptureStorage.guarded<Unit>(
             context(),

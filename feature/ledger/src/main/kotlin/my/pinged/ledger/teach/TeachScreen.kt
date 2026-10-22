@@ -40,6 +40,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.ZoneId
+import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.unread.postedOf
 import my.pinged.ledger.unread.sourceOf
 import my.pinged.parse.Direction
@@ -56,8 +57,10 @@ import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Quote
+import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
@@ -105,9 +108,13 @@ internal fun TeachContent(
     val capture = state.capture
     val selection = state.selection
     Column(modifier.fillMaxSize().background(Paper)) {
-        Header(subline = capture?.let { sourceOf(it).uppercase(CALENDAR) + Separator + postedOf(it, zone) }, onBack = onBack)
+        Header(subline = capture?.let { sourceOf(it).uppercase(CALENDAR) + Separator + postedOf(it, zone) }, reading = !state.loaded, onBack = onBack)
+        if (!state.loaded) {
+            // The message's lines: what it says, and how long it is, are the read.
+            ListNotReadYet(caption = null, icon = false)
+            return@Column
+        }
         val notice = when {
-            !state.loaded -> null
             state.storageUnavailable -> CANNOT_READ_YOUR_DATA
             capture == null || selection == null -> GONE
             else -> null
@@ -189,8 +196,9 @@ internal fun TeachContent(
     }
 }
 
+/** The title, and under it the capture's source and time, which are dashes while [reading]. */
 @Composable
-private fun Header(subline: String?, onBack: () -> Unit) {
+private fun Header(subline: String?, reading: Boolean, onBack: () -> Unit) {
     Column(Modifier.fillMaxWidth().dottedRule().padding(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -206,6 +214,11 @@ private fun Header(subline: String?, onBack: () -> Unit) {
             Text(TEACH_TITLE, fontFamily = Display, fontSize = 22.sp, color = Ink, modifier = Modifier.padding(start = 2.dp))
         }
         if (subline != null) Text(subline, style = MonoLabel, color = Faint, modifier = Modifier.padding(start = 46.dp, top = 2.dp))
+        if (reading) {
+            ReadingLayout {
+                Text(NOT_READ_YET + Separator + NOT_READ_YET, style = MonoLabel, color = Muted, modifier = Modifier.padding(start = 46.dp, top = 2.dp))
+            }
+        }
     }
 }
 

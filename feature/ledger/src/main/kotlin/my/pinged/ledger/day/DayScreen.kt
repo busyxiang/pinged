@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -51,10 +52,15 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
-import my.pinged.ledger.home.MerchantSheetState
+import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.OPEN_REVIEW
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
+import my.pinged.ledger.home.HERO_NOT_READ_YET
+import my.pinged.ledger.RowNotReadYet
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
+import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -147,7 +153,7 @@ internal fun DayScreenContent(
     retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
     /** The chooser's New category (#155); null draws no tile. */
     addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
-    merchantSheet: MerchantSheetState? = null,
+    merchantSheet: OpenMerchantSheet? = null,
     merchantActions: MerchantActions = MerchantActions.None,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
@@ -164,13 +170,20 @@ internal fun DayScreenContent(
     // board's Card runs from the torn edge to the foot however few rows. A
     // notice draws no torn edge, and so stays on Paper.
     val ground = if (read != null && !storageUnavailable) Card else Paper
-    LazyColumn(modifier.fillMaxSize().background(ground)) {
+    if (read == null && !storageUnavailable) {
+        // Not the list: the board's Card runs to the foot under rows that
+        // stand for rows, so they are clipped rather than scrolled.
+        Column(modifier.fillMaxSize().background(Paper)) {
+            Header(date, onBack, onStep, today)
+            NotReadYet(Modifier.weight(1f))
+        }
+    } else LazyColumn(modifier.fillMaxSize().background(ground)) {
         item { Header(date, onBack, onStep, today) }
         when {
             // First: stale rows under a ledger that cannot be read would be a
-            // claim about money no read supports.
-            storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
-            read == null -> item { Notice("READING", Muted) }
+            // claim about money no read supports. A null read lands here only
+            // with it.
+            storageUnavailable || read == null -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
             else -> {
                 // The day's first held row in the order drawn, which is
                 // the inbox's newest-first order too, so the inbox opens on
@@ -335,6 +348,35 @@ private fun Heading(heading: DayHeading, onOpenReview: () -> Unit) {
                     .border(1.dp, Stamp, RoundedCornerShape(2.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             )
+        }
+    }
+}
+
+/**
+ * The day's read in flight: `design/LoadingDay.dc.html`, or
+ * `LoadingWaiting.dc.html` while an export or the integrity check holds the
+ * database. The date is the header's, known without a read; the total is the
+ * hero's dash, and the board's four rows a dotted circle, a leader and a dash
+ * each, which say nothing about how many rows the day has.
+ */
+@Composable
+private fun NotReadYet(modifier: Modifier = Modifier) {
+    ReadingLayout(modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxSize().clipToBounds()) {
+            Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp)) {
+                Text(HERO_NOT_READ_YET, style = TotalStyle, color = Rule)
+                ReadingStatus(Modifier.padding(top = 6.dp))
+            }
+            TornEdge(Modifier.padding(top = 20.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Card)
+                    .padding(start = 20.dp, end = 20.dp, top = 14.dp),
+            ) {
+                repeat(4) { RowNotReadYet(amount = true) }
+            }
         }
     }
 }

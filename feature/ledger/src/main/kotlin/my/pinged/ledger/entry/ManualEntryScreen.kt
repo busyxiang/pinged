@@ -82,8 +82,14 @@ import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.ButtonLabel
+import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.DottedCell
 import my.pinged.ui.theme.Faint
+import my.pinged.ui.theme.ReadingLayout
+import my.pinged.ui.theme.ReadingStatus
+import my.pinged.ui.theme.Rule
+import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
@@ -173,12 +179,9 @@ internal fun ManualEntryScreenContent(
         if (state.reading) {
             // Not the fields: they would draw the empty default draft as the
             // payment, and a field typed into now is overwritten by the read.
-            Text(
-                "READING",
-                style = MonoLabel,
-                color = Muted,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp),
-            )
+            // A ledger that will not open is a read that will not land, and
+            // the line below says so instead.
+            if (!state.storageUnavailable) NotReadYet()
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AmountField(
@@ -219,6 +222,34 @@ internal fun ManualEntryScreenContent(
         }
         SaveButton(if (state.editing != null) SAVE_CHANGES else SAVE, enabled = state.canSave, onClick = onSave)
         if (state.editing != null) DeleteEntry(state.loaded, enabled = state.canDelete, onDelete = onDelete)
+    }
+}
+
+/**
+ * A correction's payment not read yet: `design/LoadingDetail.dc.html`'s
+ * treatment of this screen's own layout, or `LoadingWaiting.dc.html`'s
+ * status line while an export or the integrity check holds the database.
+ * The amount is the hero's dash, the category chips dotted cells, and the
+ * merchant and note their labels over a dash, since each is the read.
+ */
+@Composable
+private fun NotReadYet() {
+    ReadingLayout(Modifier.fillMaxWidth()) {
+        Column {
+            // Rule, decorative, as Spending's hero dash is: the status line
+            // under it says the amount is not read yet.
+            Text(HERO_NOT_READ_YET, style = AmountStyle, color = Rule, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp))
+            ReadingStatus(Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp))
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(3) { DottedCell(Modifier.weight(1f).heightIn(min = 44.dp), RoundedCornerShape(2.dp)) }
+            }
+            for (label in listOf(MERCHANT, NOTE)) {
+                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
+                    Text(label, style = MonoLabel, color = Muted)
+                    DashLeader(Modifier.padding(top = 10.dp).heightIn(min = 18.dp))
+                }
+            }
+        }
     }
 }
 

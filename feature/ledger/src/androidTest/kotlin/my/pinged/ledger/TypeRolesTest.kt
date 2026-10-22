@@ -170,7 +170,7 @@ class TypeRolesTest {
                     uncategorizedId = null,
                     canCategorize = false,
                     onCategorize = {},
-                    onOpenMerchant = { _, _ -> },
+                    onOpenMerchant = {},
                     onOpenReview = {},
                 )
             }

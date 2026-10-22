@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -40,6 +41,7 @@ import my.pinged.ledger.settings.Storage
 import my.pinged.ledger.settings.Transfers
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.RESCUE
+import my.pinged.ui.test.boundedWaitUntil
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -128,6 +130,11 @@ class TouchTargetTest {
     @Test fun restoreConfirmationsTwoAnswers() {
         cleanSettings()
         settings(SettingsViewModel(app))
+        // The rows draw once the read lands, or after `ReadingLayout`'s
+        // 200ms while it is in flight (#283), not on the first frame.
+        compose.boundedWaitUntil(30_000L) {
+            compose.onAllNodesWithText("Replace everything from a backup").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Replace everything from a backup").performScrollTo().performClick()
         compose.waitForIdle()
         assertTall("Keep what's here", "Continue")

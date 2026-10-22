@@ -33,6 +33,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.ledger.home.PICKER_HEADING
 import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ui.theme.PingedTheme
+import my.pinged.ui.theme.READING
+import my.pinged.ui.theme.READING_DELAY_MILLIS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -84,7 +86,8 @@ class ManualEntryScreenTest {
         state = ManualEntryState(editing = 7, reading = true)
         draw()
         amountField().assertDoesNotExist()
-        compose.onNodeWithText("READING").assertExists()
+        compose.mainClock.advanceTimeBy(READING_DELAY_MILLIS + 40)
+        compose.onNodeWithText(READING).assertExists()
         compose.onNodeWithText(SAVE_CHANGES).assertIsNotEnabled()
     }
 

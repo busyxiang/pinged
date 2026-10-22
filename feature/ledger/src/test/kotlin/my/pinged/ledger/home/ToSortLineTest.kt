@@ -40,6 +40,7 @@ class ToSortLineTest {
                 categoriesById = emptyMap(),
                 onHeroBottom = {},
                 onOpenToSort = { opened++ },
+                heroNotReadYetShown = false,
             )
         }
     }

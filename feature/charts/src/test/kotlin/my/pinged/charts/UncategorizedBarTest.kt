@@ -49,7 +49,7 @@ class UncategorizedBarTest {
         compose.setContent {
             PingedTheme {
                 ChartsScreenContent(
-                    "SEPTEMBER 2026",
+                    YearMonth.of(2026, 9),
                     ChartsState.Month(monthView(read)),
                     unavailable = false,
                     onOpenUncategorized = { opened++ },

@@ -29,6 +29,7 @@ import my.pinged.capture.Corrections
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.BackChevron
+import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ledger.home.words
@@ -40,6 +41,7 @@ import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.dottedRule
@@ -70,11 +72,18 @@ internal fun CorrectionsContent(
     onDecline: (Corrections.Correction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (!state.loaded) {
+        Column(modifier.fillMaxSize().background(Paper)) {
+            Header(onBack)
+            // A card's first line: its day and its source.
+            ListNotReadYet(caption = NOT_READ_YET + Separator + NOT_READ_YET, icon = false)
+        }
+        return
+    }
     LazyColumn(modifier.fillMaxSize().background(Paper)) {
         item { Header(onBack) }
         item {
             val notice = when {
-                !state.loaded -> null
                 state.storageUnavailable -> CANNOT_READ_YOUR_DATA
                 state.checking -> "STILL CHECKING YOUR HISTORY AGAINST PACK ${state.packVersion}"
                 state.items.isEmpty() -> NOTHING_TO_REVIEW

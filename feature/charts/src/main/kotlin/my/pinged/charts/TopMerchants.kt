@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.charts.model.Merchants
 import my.pinged.ui.theme.Body
+import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
@@ -49,6 +50,24 @@ internal fun TopMerchants(merchants: Merchants, modifier: Modifier = Modifier) {
             // Quiet like the bars' `Everything else`: the label is not a name.
             merchants.rest?.let { RuledLine(it.label, Muted, count = null, it.amount, figure) }
             merchants.negatives.forEach { RuledLine(it.name, Ink, it.count, it.amount, figure) }
+        }
+    }
+}
+
+/**
+ * `WHO GOT IT` while the month's read is in flight (#281,
+ * `design/LoadingCharts`): three of the Day screen's leaders with no name,
+ * since which merchants lead is a read too, each ending in a dash.
+ */
+@Composable
+internal fun TopMerchantsNotReadYet(modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
+        Spacer(Modifier.fillMaxWidth().height(1.dp).dottedRule(atTop = true))
+        Text("WHO GOT IT", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 18.dp))
+        Column(Modifier.padding(top = 13.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            repeat(3) {
+                DashLeader(labelStyle = MerchantName, valueStyle = MonoNumerals.copy(fontSize = 14.sp, lineHeight = 20.sp))
+            }
         }
     }
 }
