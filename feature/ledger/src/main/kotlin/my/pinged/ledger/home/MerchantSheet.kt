@@ -303,6 +303,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
                     placeholder = sheet.derivedName.orEmpty(),
                     tag = NAME_FIELD_TAG,
                     capitalization = KeyboardCapitalization.Words,
+                    underline = Muted,
                 )
                 Row(
                     Modifier.padding(top = 8.dp),
@@ -455,6 +456,7 @@ private fun MerchantSheetNotReadYet(opening: MerchantOpening, close: () -> Unit)
                     tag = NAME_FIELD_TAG,
                     capitalization = KeyboardCapitalization.Words,
                     readOnly = true,
+                    underline = Muted,
                 )
                 Row(
                     Modifier.padding(top = 8.dp),
@@ -710,7 +712,9 @@ private fun OutlineButton(label: String, onClick: () -> Unit, modifier: Modifier
  * closes the keyboard. [placeholderColour] is [Faint] on [Paper]; a field on
  * another band passes its own. [leading] is drawn before the text, 8dp from
  * it: the merchant search's magnifier. [readOnly] draws the field and takes
- * no edit: the merchant sheet's name before its read.
+ * no edit: the merchant sheet's name before its read. [underline] is the
+ * line's colour: the merchant sheet's NAME is [Muted], as `MerchantSheet` and
+ * `LoadingSheet.dc.html` draw it, before its read and after.
  */
 @Composable
 internal fun UnderlinedField(
@@ -723,6 +727,7 @@ internal fun UnderlinedField(
     placeholderColour: Color = Faint,
     leading: (@Composable () -> Unit)? = null,
     readOnly: Boolean = false,
+    underline: Color = Faint,
 ) {
     val style = TextStyle(fontFamily = Body, fontSize = 17.sp, color = Ink)
     Box(
@@ -733,7 +738,7 @@ internal fun UnderlinedField(
             .drawBehind {
                 val weight = 1.5.dp.toPx()
                 drawLine(
-                    color = Faint,
+                    color = underline,
                     start = Offset(0f, size.height - weight / 2f),
                     end = Offset(size.width, size.height - weight / 2f),
                     strokeWidth = weight,
