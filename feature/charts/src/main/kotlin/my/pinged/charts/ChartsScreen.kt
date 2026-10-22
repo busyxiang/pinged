@@ -36,6 +36,7 @@ import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
+import my.pinged.ui.theme.MonthChevron
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.ReadingLayout
@@ -237,9 +238,11 @@ private fun HeaderSection(month: String, chip: Chip?, onOpenMonths: () -> Unit, 
         Row(
             Modifier.clickable(onClickLabel = "Choose a month", onClick = onOpenMonths),
             verticalAlignment = Alignment.CenterVertically,
+            // The boards' `gap: 6px`.
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(month, style = MonoLabel, color = Ink)
-            Text(" ⌄", style = MonoLabel, color = Ink)
+            Text(month, style = MonoLabel, color = Muted)
+            MonthChevron()
         }
         if (chip != null) {
             // The alert is in the accent and framed in it; the others are

@@ -30,13 +30,13 @@ import my.pinged.ledger.home.CHOOSE_A_MONTH
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.home.MONTH_BUTTON
-import my.pinged.ledger.home.MONTH_CHEVRON
 import my.pinged.ledger.home.MONTH_SUMMARY
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ui.monthName
 import my.pinged.ui.monthYear
 import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.test.ink
+import my.pinged.ui.theme.MONTH_CHEVRON
 import my.pinged.ui.theme.UPDATING
 import my.pinged.ui.theme.UPDATING_ALPHA
 import androidx.test.espresso.Espresso

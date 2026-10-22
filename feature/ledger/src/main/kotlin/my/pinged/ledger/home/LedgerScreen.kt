@@ -104,6 +104,8 @@ import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
+import my.pinged.ui.theme.MONTH_CHEVRON_SIZE
+import my.pinged.ui.theme.MonthChevron
 import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.HeroFill
@@ -626,7 +628,7 @@ private class LeadWidths(val full: Int, val scrolled: Int)
 private fun leadWidths(measurer: TextMeasurer, density: Density, full: String, short: String, total: String?, chevron: Boolean): LeadWidths =
     with(density) {
         fun label(text: String) = measurer.measure(text, MonoLabel).size.width
-        val chevronWidth = if (chevron) (MONTH_GAP + CHEVRON_SIZE).roundToPx() else 0
+        val chevronWidth = if (chevron) (MONTH_GAP + MONTH_CHEVRON_SIZE).roundToPx() else 0
         val fullWidth = label(full) + chevronWidth
         val scrolled = if (total == null) {
             0
@@ -691,7 +693,7 @@ private fun MonthButton(
         ) {
             Text(label, style = MonoLabel, color = Muted)
             // Only where it opens something: it says "pick a month".
-            if (onOpenMonths != null) DownChevron()
+            if (onOpenMonths != null) MonthChevron()
         }
         if (trailing != null) Text(trailing, style = MonoLabel, color = Muted, modifier = Modifier.clearAndSetSemantics {})
     }
@@ -797,25 +799,8 @@ const val OPEN_SEARCH = "Search"
  */
 private const val PICK_SETTLE = 10_000L
 
-/** The board's month chevron, 14px square. */
-private val CHEVRON_SIZE = 14.dp
-
 /** The month button's height: the design system's 44px target. */
 private val MONTH_TARGET = 44.dp
-
-/**
- * The board's month chevron, `M6 9l6 6 6-6` in a 24-unit box at 14dp, stroke
- * 1.8 of 24, round-capped, in Muted.
- */
-@Composable
-private fun DownChevron() {
-    Canvas(Modifier.testTag(MONTH_CHEVRON).size(CHEVRON_SIZE)) {
-        val unit = size.width / 24f
-        val stroke = 1.8f * unit
-        drawLine(Muted, Offset(6 * unit, 9 * unit), Offset(12 * unit, 15 * unit), stroke, StrokeCap.Round)
-        drawLine(Muted, Offset(12 * unit, 15 * unit), Offset(18 * unit, 9 * unit), stroke, StrokeCap.Round)
-    }
-}
 
 /**
  * The boards' top-right chip -- `Empty.dc.html`'s "LISTENING" -- carrying
@@ -1527,7 +1512,6 @@ const val CASH_OFFER = "cash-offer"
 const val EMPTY_HERO = "empty-hero"
 const val HEARD_CHIP = "heard-chip"
 const val MONTH_BUTTON = "month-button"
-const val MONTH_CHEVRON = "month-chevron"
 
 /** The summary, the list's first item. */
 const val MONTH_SUMMARY = "month-summary"
