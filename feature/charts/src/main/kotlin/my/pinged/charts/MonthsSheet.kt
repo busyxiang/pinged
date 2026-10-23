@@ -64,7 +64,7 @@ internal fun MonthsSheetHost(viewModel: ChartsViewModel, onPick: (YearMonth) -> 
  * which is also what a first opening is before its read lands, when there
  * are no months to draw and the sheet says so itself.
  */
-internal fun monthsReading(state: ReadState<*, *>): MonthsReading = when {
+fun monthsReading(state: ReadState<*, *>): MonthsReading = when {
     state.unavailable -> MonthsReading.Unreadable
     state.rereading -> MonthsReading.InFlight
     else -> MonthsReading.Landed

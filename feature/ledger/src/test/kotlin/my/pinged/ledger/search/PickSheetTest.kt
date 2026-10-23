@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.ui.test.HeldClock
+import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.HeldBy
 import my.pinged.ui.theme.LocalHeldBy
 import my.pinged.ui.theme.PingedTheme
@@ -80,6 +81,24 @@ class PickSheetTest {
         compose.setContent {
             PingedTheme { PickSheet("Category", ANY_CATEGORY, emptyList<Pair<Long, String>>(), null, {}, {}) }
         }
+        at(READING_DELAY_MILLIS + 40)
+        compose.onNodeWithText(READING).assertDoesNotExist()
+        assertEquals(0, places())
+    }
+
+    /** A refused read says so at once, in place of options held from the last opening and of the places. */
+    @Test fun aRefusedReadSaysSoInPlaceOfTheOptionsHeld() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            PingedTheme {
+                PickSheet("Category", ANY_CATEGORY, listOf(FOOD_ID to FOOD), null, {}, {}, unavailable = true)
+            }
+        }
+        at(HeldClock.FRAME)
+
+        compose.onNodeWithText(CANNOT_READ_YOUR_DATA).assertExists()
+        compose.onNodeWithText(FOOD).assertDoesNotExist()
+        compose.onNodeWithTag(PICK + ANY_CATEGORY).assertExists()
         at(READING_DELAY_MILLIS + 40)
         compose.onNodeWithText(READING).assertDoesNotExist()
         assertEquals(0, places())

@@ -1,5 +1,8 @@
 package my.pinged.ledger.categories
 
+import my.pinged.read.ScreenRead
+import my.pinged.ledger.home.rowScreen
+import my.pinged.capture.GuardedRunner
 import android.app.Application
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -37,7 +40,9 @@ class CategoriesScreenTest {
      * the chooser reads.
      */
     @Test fun aRenameReachesTheChooserOfAHolderThatAlreadyReadTheTable() = runBlocking {
-        val rows = RowActions({ app }, CoroutineScope(Dispatchers.IO), {})
+        val scope = CoroutineScope(Dispatchers.IO)
+        val runner = GuardedRunner(app)
+        val rows = RowActions({ app }, scope, runner, ScreenRead.fixed(scope, runner, "The test cannot be read") {}.rowScreen())
         val shopping = Databases.categoryDao(app).all().first { it.name == "Shopping" }.id
         assertTrue(rows.readChooser().categories.any { it.name == "Shopping" })
 

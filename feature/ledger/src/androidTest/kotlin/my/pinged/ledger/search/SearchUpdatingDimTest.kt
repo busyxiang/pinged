@@ -46,11 +46,14 @@ class SearchUpdatingDimTest {
     @Test fun theLastAnswersHeroDrawsAt45PercentWhileTheWordsTypedAreRead() {
         compose.setContent {
             PingedTheme {
+                val words = query.collectAsState().value
                 SearchScreenContent(
-                    query = query.collectAsState().value,
+                    query = words,
                     onQuery = {},
                     choice = SearchChoice(month = month),
                     read = read,
+                    // What `SearchScreen` is told by its read: words not yet answered.
+                    rereading = read.text != words,
                     storageUnavailable = false,
                     onBack = {},
                     onOpenSheet = {},

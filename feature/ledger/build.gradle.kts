@@ -33,6 +33,8 @@ android {
             kotlin.directories.add("src/sharedTest/kotlin")
             // `HeldClock`, which every not-read-yet test steps its frames with.
             kotlin.directories.add(rootProject.file("core/ui/src/sharedTest/kotlin").path)
+            // `ScriptedRunner`, the runner a `ScreenRead` test answers, refuses or holds on command.
+            kotlin.directories.add(rootProject.file("core/read/src/sharedTest/kotlin").path)
         }
         getByName("androidTest") {
             kotlin.directories.add("src/sharedTest/kotlin")

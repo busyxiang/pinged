@@ -1,5 +1,7 @@
 package my.pinged.ledger.search
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import android.app.Application
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasClickAction
@@ -201,12 +203,12 @@ class SearchScreenTest {
         val opened = System.nanoTime()
         val viewModel = SearchViewModel(context.applicationContext as Application, SavedStateHandle())
         // The screen's resume read, of no words.
-        runBlocking { viewModel.refresh().join() }
+        runBlocking { withContext(Dispatchers.Main) { viewModel.read.refresh() }.join() }
         viewModel.setQuery("grab")
         val typedAfterMs = (System.nanoTime() - opened) / 1_000_000
         assumeTrue("typed ${typedAfterMs}ms in, outside the window", typedAfterMs < SearchViewModel.DEBOUNCE_MS)
 
-        val read = runBlocking { withTimeoutOrNull(TIMEOUT) { viewModel.read.first { it?.text == "grab" } } }
+        val read = runBlocking { withTimeoutOrNull(TIMEOUT) { viewModel.read.state.first { it.answer?.text == "grab" } } }
         assertTrue("the words typed ${typedAfterMs}ms in were never read", read != null)
     }
 
@@ -276,7 +278,7 @@ class SearchScreenTest {
         seed()
         val viewModel = SearchViewModel(context.applicationContext as Application, SavedStateHandle())
         viewModel.setQuery("grab")
-        runBlocking { viewModel.refresh().join() }
+        runBlocking { withContext(Dispatchers.Main) { viewModel.read.ask(SearchQuestion("grab", viewModel.choice.value)) }.join() }
         val target = File(context.cacheDir, "search-export.csv").apply { delete() }
         try {
             val sink = object : ExportSink {

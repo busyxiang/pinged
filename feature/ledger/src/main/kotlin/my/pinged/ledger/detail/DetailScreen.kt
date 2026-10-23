@@ -50,10 +50,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.LocalDate
 import my.pinged.parse.TaughtTemplate
-import my.pinged.data.Databases
+import my.pinged.read.rememberReadState
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.DetailRow
 import my.pinged.data.dao.RetroPreview
@@ -127,17 +126,12 @@ fun DetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val rewrites by Databases.rewrites.collectAsState()
-    LifecycleResumeEffect(viewModel, rewrites) {
-        viewModel.refresh()
-        onPauseOrDispose {}
-    }
-    val read by viewModel.read.collectAsState()
-    val unavailable by viewModel.storageUnavailable.collectAsState()
+    // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
+    val read = viewModel.read.rememberReadState()
     val merchantSheet by viewModel.merchantSheet.collectAsState()
     DetailScreenContent(
-        read = read,
-        storageUnavailable = unavailable,
+        read = read.answer,
+        storageUnavailable = read.unavailable,
         onBack = onBack,
         actions = remember(viewModel, onBack) {
             DetailActions(

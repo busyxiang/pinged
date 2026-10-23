@@ -11,11 +11,12 @@ import my.pinged.read.ReadRunner
  * A [ReadRunner] a test drives: each call answers at once, is refused, or
  * is held until the test says (#296, decision 8).
  *
- * **The database it hands a body is never opened.** Room builds the instance
- * lazily, so a body that touches no DAO, as a test's does, costs no SQLCipher
- * and no file; a body that does touch one fails at once, loudly. Use a
- * device test for anything that needs the real database: snapshot
- * consistency and the lease.
+ * **The database it hands a body is in memory**, on Robolectric's SQLite and not
+ * SQLCipher, and Room builds it lazily: a body that touches no DAO costs
+ * nothing. One that does may run on the test's own thread
+ * (`allowMainThreadQueries`), and finds the schema and none of the seed:
+ * insert what the body reads. Use a device test for anything that needs the
+ * real database: snapshot consistency, the lease, SQLCipher.
  *
  * Single-threaded: a test calls it from the thread its `ScreenRead` runs on.
  * Compiled into the JVM tests of `:core:read` and of every module that joins
@@ -23,7 +24,7 @@ import my.pinged.read.ReadRunner
  */
 internal class ScriptedRunner(context: Context) : ReadRunner {
     private val database: PingedDatabase =
-        Room.inMemoryDatabaseBuilder(context, PingedDatabase::class.java).build()
+        Room.inMemoryDatabaseBuilder(context, PingedDatabase::class.java).allowMainThreadQueries().build()
 
     /** Every call so far, in the order it began. */
     val calls = ArrayList<Call>()

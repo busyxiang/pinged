@@ -93,6 +93,19 @@ class ScreenRead<Q, A>(
     }
 
     /**
+     * Change the question to [question] **without reading it**, for a screen
+     * whose question is "nothing to show", as a merchant sheet that has been
+     * closed. A read running for the old question publishes nothing, one still
+     * waiting its turn is never run, and nothing is queued. The answer held
+     * stays, with the question it answered, so the next [ask] can be told
+     * apart from it.
+     */
+    fun setQuestion(question: Q) {
+        _question.value = question
+        emit { held -> held }
+    }
+
+    /**
      * Read the current question again: a resume, a restore, or whatever else
      * may have changed what the ledger holds. Never sets [ReadState.rereading],
      * whose answer is for the same question.

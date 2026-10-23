@@ -200,6 +200,26 @@ class ScreenReadTest {
         assertFalse("A successful read-back did not clear unavailable", state.unavailable)
     }
 
+    /** A sheet closed: nothing is read for it, and what was on its way publishes nothing. */
+    @Test fun settingTheQuestionReadsNothingAndDropsWhatWasInFlightOrWaitingForTheOldOne() {
+        runner.holding = true
+        read.refresh()
+        read.refresh()
+
+        read.setQuestion(2)
+        runner.calls[0].release()
+
+        assertEquals("The read already running did not run its body", listOf(1), ran)
+        assertEquals("A read for the question left behind was run after it was left", 1, runner.calls.size)
+        assertNull("An answer to the question left behind was published", state.answered)
+        assertFalse("Setting a question with nothing asked of it was rereading", state.rereading)
+        assertEquals(2, read.question.value)
+
+        read.refresh()
+        runner.calls[1].release()
+        assertEquals("The question set was not the one read next", Answered(2, "q2#2"), state.answered)
+    }
+
     @Test fun aReadWithNoQuestionAsksUnitAndNeverRereads() {
         val fixed = ScreenRead.fixed(scope, runner, "The test cannot be read") { "fixed" }
         runner.holding = true

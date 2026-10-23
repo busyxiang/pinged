@@ -44,9 +44,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.ledger.entry.EditTarget
-import my.pinged.data.Databases
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.LedgerRow
@@ -58,6 +56,7 @@ import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.RowNotReadYet
+import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.ReadingStatus
 import my.pinged.ui.theme.Rule
@@ -106,18 +105,13 @@ fun DayScreen(
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onStep: ((LocalDate) -> Unit)? = null,
 ) {
-    val rewrites by Databases.rewrites.collectAsState()
-    LifecycleResumeEffect(viewModel, rewrites) {
-        viewModel.refresh()
-        onPauseOrDispose {}
-    }
-    val read by viewModel.read.collectAsState()
-    val unavailable by viewModel.storageUnavailable.collectAsState()
+    // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
+    val read = viewModel.read.rememberReadState()
     val merchantSheet by viewModel.merchantSheet.collectAsState()
     DayScreenContent(
         date = viewModel.date,
-        read = read,
-        storageUnavailable = unavailable,
+        read = read.answer,
+        storageUnavailable = read.unavailable,
         onBack = onBack,
         onOpenReview = onOpenReview,
         onOpenEntry = onOpenEntry,

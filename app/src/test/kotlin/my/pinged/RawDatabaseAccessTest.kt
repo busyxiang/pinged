@@ -241,6 +241,11 @@ class RawDatabaseAccessTest {
                 "Transfers.readable probes the export's instance with a transaction inside " +
                     "Databases.whileLive, which refuses a closed or retired instance.",
             ),
+            "feature/ledger/src/main/kotlin/my/pinged/ledger/home/RowActions.kt" to Site(
+                mapOf("runInTransaction" to 1),
+                "RowActions.assignCategory wraps its transaction in Databases.whileLive, " +
+                    "on the instance the write's lease was handed.",
+            ),
             "feature/ledger/src/main/kotlin/my/pinged/ledger/transfer/ImportJson.kt" to Site(
                 mapOf("runInTransaction" to 1),
                 "ImportJson.read calls Databases.requireLive first, on an instance only " +

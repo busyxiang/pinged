@@ -12,7 +12,7 @@ import java.time.YearMonth
  * How long search's read holds Room's one connection: `SearchViewModel`'s
  * transaction -- the rows at its limit of 200, their totals, the categories --
  * over a constructed ledger of 20,000 rows across 24 months and 500
- * merchants. The figures are recorded on `SearchViewModel.refresh`.
+ * merchants. The figures are recorded on `SearchViewModel.read`.
  */
 @RunWith(AndroidJUnit4::class)
 class SearchTimingTest {

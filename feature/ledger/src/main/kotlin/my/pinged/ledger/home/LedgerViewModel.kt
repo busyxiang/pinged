@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import my.pinged.capture.CaptureStorage
+import my.pinged.capture.GuardedRunner
 import my.pinged.charts.MonthsRead
 import my.pinged.charts.monthsRead
 import my.pinged.data.CaptureEvidence
@@ -92,12 +93,19 @@ class LedgerViewModel(
     /**
      * The row's category and merchant actions, shared with any other screen
      * that draws ledger rows. Its failures raise this screen's banner.
+     *
+     * The summary is not a `ScreenRead` yet (#299), so the writes are not read
+     * back by `RowActions`: [assignCategory] and [addCategory] call [refresh]
+     * themselves, and `LedgerRowScreen` only guards and raises the banner.
      */
-    private val rows = RowActions(
-        context = { context },
-        scope = viewModelScope,
-        unavailable = { _storageUnavailable.value = true },
-    )
+    private val rows = GuardedRunner(app).let { runner ->
+        RowActions(
+            context = { context },
+            scope = viewModelScope,
+            runner = runner,
+            screen = LedgerRowScreen(viewModelScope, runner, unavailable = { _storageUnavailable.value = true }),
+        )
+    }
 
     /**
      * The month Spending's header picked (#192), or null to follow the clock:
@@ -520,14 +528,20 @@ class LedgerViewModel(
         categoryId: Long,
         teach: Boolean = false,
         now: YearMonth = shownMonth(),
-    ): Job = rows.assignCategory(txnId, categoryId, teach) { refresh(now).join() }
+    ): Job = viewModelScope.launch {
+        rows.assignCategory(txnId, categoryId, teach).join()
+        refresh(now).join()
+    }
 
     /** See [RowActions.retroPreview]. */
     suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
 
     /** See [RowActions.addCategory]; the month, and so the chooser, is re-read after. */
-    suspend fun addCategory(name: String, iconKey: String): Long? =
-        rows.addCategory(name, iconKey) { refresh(shownMonth()).join() }
+    suspend fun addCategory(name: String, iconKey: String): Long? {
+        val id = rows.addCategory(name, iconKey)
+        refresh(shownMonth()).join()
+        return id
+    }
 
     /** See [RowActions.openMerchant]. */
     fun openMerchant(opening: MerchantOpening): Job = rows.openMerchant(opening)
