@@ -87,10 +87,16 @@ class RewriteRereadTest {
     @Test fun correctionsReadsAgainWhenTheLedgerIsReplaced() {
         val viewModel = CorrectionsViewModel(app, runner, Dispatchers.Unconfined)
         compose.setContent { CorrectionsScreen(viewModel, onBack = {}) }
-        compose.waitForIdle()
+        // Its read waits on the capture store's DataStore, which answers on a
+        // thread the compose clock does not drive, so `waitForIdle` can return
+        // while the first read still holds the turn and the second has not
+        // started. Reproduced by holding that step 300ms: 1 where 2 is meant.
+        awaitAnswer(viewModel)
         assertEquals("Corrections was not read once when shown", 1, reads(CORRECTIONS))
 
-        replaceTheLedger()
+        Databases.reset()
+        awaitReads(CORRECTIONS, 2)
+        compose.waitForIdle()
 
         assertEquals("Corrections did not read again, or read twice, when the ledger was replaced", 2, reads(CORRECTIONS))
     }
@@ -106,7 +112,22 @@ class RewriteRereadTest {
         assertEquals("The inbox did not read again, or read twice, when the ledger was replaced", 2, reads(INBOX))
     }
 
+    /** Poll for what happens off the compose clock, up to [SETTLE_MS], and leave the assertion to the caller. */
+    private fun awaitUntil(done: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + SETTLE_MS
+        compose.waitForIdle()
+        while (!done() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+            compose.waitForIdle()
+        }
+    }
+
+    private fun awaitReads(what: String, count: Int) = awaitUntil { reads(what) >= count }
+
+    private fun awaitAnswer(viewModel: CorrectionsViewModel) = awaitUntil { viewModel.read.state.value.answer != null }
+
     private companion object {
+        const val SETTLE_MS = 10_000L
         const val LEARNED = "Learned merchants cannot be read"
         const val UNREAD = "The notifications Pinged could not read cannot be read"
         const val CATEGORIES = "Categories cannot be read"
