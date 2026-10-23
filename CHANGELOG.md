@@ -5,6 +5,19 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.13.0](https://github.com/busyxiang/pinged/compare/v0.12.0...v0.13.0) (2026-10-23)
+
+
+### Features
+
+* draw every screen's read in flight as the receipt's not-read-yet layout ([#295](https://github.com/busyxiang/pinged/issues/295)) ([90da8a9](https://github.com/busyxiang/pinged/commit/90da8a99bb72fcf0aa06a18b5236942e6c647ff9))
+
+
+### Bug Fixes
+
+* read every screen's ledger figures through one ScreenRead module, and re-read on a restore ([#309](https://github.com/busyxiang/pinged/issues/309)) ([a6d5593](https://github.com/busyxiang/pinged/commit/a6d5593db8e382e9a4d7904e9b43914c1a52aff1))
+* scroll the merchant search to the top once the keyboard has risen ([#292](https://github.com/busyxiang/pinged/issues/292)) ([2a64d11](https://github.com/busyxiang/pinged/commit/2a64d1134778ef959493e58c2dc66661d825dcf0))
+
 ## [0.12.0](https://github.com/busyxiang/pinged/compare/v0.11.0...v0.12.0) (2026-10-20)
 
 
