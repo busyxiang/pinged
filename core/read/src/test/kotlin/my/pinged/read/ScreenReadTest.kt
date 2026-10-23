@@ -231,4 +231,53 @@ class ScreenReadTest {
         assertFalse(fixed.state.value.rereading)
         assertEquals(Answered(Unit, "fixed"), fixed.state.value.answered)
     }
+
+    /**
+     * What a staged read does between its steps is its own, with nothing of the
+     * ledger held, and the answer is one: published when the last step is done.
+     */
+    @Test fun aStagedReadRunsItsStepsInOrderWithItsOwnWorkBetweenThemAndPublishesOnceAtTheEnd() {
+        val steps = ArrayList<String>()
+        val staged = ScreenRead.fixedStaged(scope, runner, "The test cannot be read", Dispatchers.Unconfined) {
+            statements { steps += "statements" }
+            steps += "between"
+            val seen = transaction { steps += "transaction"; 3 }
+            "answer $seen"
+        }
+        runner.holding = true
+
+        staged.refresh()
+        assertEquals("The first step did not wait for the runner", emptyList<String>(), steps)
+        runner.calls[0].release()
+        assertEquals("The work between the steps did not run once the first step was done", listOf("statements", "between"), steps)
+        assertEquals("The answer landed before the last step", true, staged.state.value.notReadYet)
+        assertEquals("The steps were not a statement, then a transaction", listOf(true, false), runner.calls.map { it.write })
+
+        runner.calls[1].release()
+        assertEquals(listOf("statements", "between", "transaction"), steps)
+        assertEquals(Answered(Unit, "answer 3"), staged.state.value.answered)
+    }
+
+    @Test fun aRefusedStepEndsAStagedReadAsUnavailableAndRunsNothingAfterIt() {
+        val steps = ArrayList<String>()
+        val staged = ScreenRead.fixedStaged(scope, runner, "The test cannot be read", Dispatchers.Unconfined) {
+            statements { steps += "statements" }
+            steps += "between"
+            transaction { steps += "transaction" }
+            "never"
+        }
+        runner.refusing = true
+
+        staged.refresh()
+
+        assertTrue("A refused step did not raise unavailable", staged.state.value.unavailable)
+        assertEquals("A step ran after the one that was refused", emptyList<String>(), steps)
+        assertEquals("The read asked the runner again after a refusal", 1, runner.calls.size)
+        assertNull("A refused read published an answer", staged.state.value.answered)
+
+        runner.refusing = false
+        staged.refresh()
+        assertFalse("The next read that landed did not clear unavailable", staged.state.value.unavailable)
+        assertEquals(Answered(Unit, "never"), staged.state.value.answered)
+    }
 }

@@ -2,6 +2,7 @@ package my.pinged.ledger
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.Dispatchers
 import my.pinged.capture.Corrections
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
@@ -29,8 +30,7 @@ import org.robolectric.RobolectricTestRunner
 /**
  * What each holder moved onto `:core:read` asks of it when a tap writes
  * (#300, #296 decisions 4 and 5): the write, then the read of the same screen
- * in the same turn, with no `turn` mutex or `refresh` of the holder's own, and
- * a refusal raised through the module rather than a flag of the holder's.
+ * in the same turn, and a refusal raised through the module.
  * Through `ScriptedRunner`, which answers inline on the test's thread.
  *
  * The in-memory ledger is empty, so a write changes no row: what is asserted
@@ -93,7 +93,7 @@ class WritesReadBackTest {
         val txn = ledgerTxn(amountSen = 1_000L)
         val correction = Corrections.Correction(1L, 1, 2, null, "rule", txn, txn, emptySet())
 
-        CorrectionsViewModel(app, runner).decline(correction)
+        CorrectionsViewModel(app, runner, Dispatchers.Unconfined).decline(correction)
 
         assertWroteThenReadOnce("The correction could not be saved", CORRECTIONS)
     }

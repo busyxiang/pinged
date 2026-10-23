@@ -2,8 +2,10 @@ package my.pinged.read
 
 import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,6 +66,11 @@ import my.pinged.data.PingedDatabase
  * composable that does, since a holder that re-reads for itself re-reads at the
  * wrong moments (`LedgerViewModel.rebind`).
  *
+ * **A read that must not hold the connection** is [staged] instead of built with
+ * the constructor: one transaction is Room's one connection and `Databases`'
+ * monitor for as long as its body runs, so a body that waits on another store
+ * or does work of its own measures itself against `GuardedRunner`'s bound.
+ *
  * @param scope where the turn runs; [CoroutineScope.launch]ed bodies end with it.
  * @param runner opens, leases, runs one transaction and guards: see [ReadRunner].
  * @param what the failure's name in the log, for example "The charts cannot be read".
@@ -72,13 +79,25 @@ import my.pinged.data.PingedDatabase
  * @param read the question's statements, all through the [PingedDatabase] it is handed
  *   and so inside its one transaction.
  */
-class ScreenRead<Q, A>(
+class ScreenRead<Q, A> private constructor(
     private val scope: CoroutineScope,
     private val runner: ReadRunner,
-    private val what: String,
     initial: Q,
-    private val read: (PingedDatabase, Q) -> A,
+    private val fetch: Fetch<Q, A>,
 ) {
+    constructor(
+        scope: CoroutineScope,
+        runner: ReadRunner,
+        what: String,
+        initial: Q,
+        read: (PingedDatabase, Q) -> A,
+    ) : this(scope, runner, initial, Fetch { question -> runner.read(what) { db -> read(db, question) } })
+
+    /** One question's whole read, as the turn runs it: the answer, or the refusal. */
+    private fun interface Fetch<Q, A> {
+        suspend fun of(question: Q): Outcome<A>
+    }
+
     private val _question = MutableStateFlow(initial)
 
     /** The question the next read answers: the last one [ask]ed, or `initial`. */
@@ -191,7 +210,7 @@ class ScreenRead<Q, A>(
     private suspend fun readInTurn(asked: Q, own: Pending) {
         var outcome: Outcome<A>? = null
         try {
-            if (_question.value == asked) outcome = runner.read(what) { db -> read(db, asked) }
+            if (_question.value == asked) outcome = fetch.of(asked)
         } finally {
             pending.remove(own)
             val landed = outcome
@@ -256,5 +275,86 @@ class ScreenRead<Q, A>(
             what: String,
             read: (PingedDatabase) -> A,
         ): ScreenRead<Unit, A> = ScreenRead(scope, runner, what, Unit) { db, _ -> read(db) }
+
+        /**
+         * A read whose statements are not all one transaction: [read] asks
+         * [ReadSteps] for each in turn, and does whatever else it must between
+         * them -- another store's read, work on what the last step returned --
+         * with nothing of the ledger held. Still one turn, one answer, and a
+         * refusal at any step is [ReadState.unavailable] with the rest skipped.
+         *
+         * For what one transaction cannot hold: a body that waits on another
+         * store (`DataStore` has no blocking read that is safe inside a
+         * transaction), or works at a length that would hold Room's one
+         * connection and the monitor against a capture. Statements that must
+         * agree with each other still belong in one [ReadSteps.transaction].
+         *
+         * [read] runs on [dispatcher], not the scope's thread, so blocking or
+         * CPU-bound work in it is safe: `Dispatchers.IO`, which the runner's
+         * own steps hop to as well. A JVM test passes the dispatcher it drives.
+         */
+        fun <Q, A> staged(
+            scope: CoroutineScope,
+            runner: ReadRunner,
+            what: String,
+            initial: Q,
+            dispatcher: CoroutineDispatcher = Dispatchers.IO,
+            read: suspend ReadSteps.(Q) -> A,
+        ): ScreenRead<Q, A> = ScreenRead(scope, runner, initial) { question ->
+            try {
+                Outcome.Done(withContext(dispatcher) { RunnerSteps(runner, what).read(question) })
+            } catch (_: StepRefused) {
+                Outcome.Refused
+            }
+        }
+
+        /** [staged] for a read with no question, as [fixed] is. */
+        fun <A> fixedStaged(
+            scope: CoroutineScope,
+            runner: ReadRunner,
+            what: String,
+            dispatcher: CoroutineDispatcher = Dispatchers.IO,
+            read: suspend ReadSteps.() -> A,
+        ): ScreenRead<Unit, A> = staged(scope, runner, what, Unit, dispatcher) { read() }
     }
 }
+
+/**
+ * What a [ScreenRead.staged] read may ask of the ledger, one step at a time.
+ * Each is guarded and leased by the runner; a database that cannot be opened
+ * ends the read as [ReadState.unavailable] and no later step runs.
+ */
+interface ReadSteps {
+    /**
+     * [body] in **one transaction**, as a plain [ScreenRead] read's is: its
+     * statements read one snapshot, and it holds Room's one connection and
+     * `Databases`' monitor until it returns. Short and bounded, and nothing
+     * in it suspends or waits on another store. [body] runs off the main thread.
+     */
+    suspend fun <T> transaction(body: (PingedDatabase) -> T): T
+
+    /**
+     * [body] guarded and leased, in **no transaction**: each statement is its
+     * own snapshot, and a capture takes the connection between them. For
+     * statements that need no agreement with each other, or write. [body] may
+     * run twice, on a new connection, if the first met damage, so it must be
+     * safe to. [body] runs off the main thread.
+     */
+    suspend fun <T> statements(body: (PingedDatabase) -> T): T
+}
+
+/** [ReadSteps] over a [ReadRunner]: a refusal ends the read by this exception, caught by [ScreenRead.staged]. */
+private class RunnerSteps(private val runner: ReadRunner, private val what: String) : ReadSteps {
+    override suspend fun <T> transaction(body: (PingedDatabase) -> T): T = runner.read(what, body).orRefuse()
+
+    override suspend fun <T> statements(body: (PingedDatabase) -> T): T =
+        runner.write(what) { db -> body(db) }.orRefuse()
+
+    private fun <T> Outcome<T>.orRefuse(): T = when (this) {
+        is Outcome.Done -> value
+        Outcome.Refused -> throw StepRefused()
+    }
+}
+
+/** A step was refused. Not a failure: it is [ScreenRead.staged]'s way to stop at the first one. */
+private class StepRefused : RuntimeException(null, null, false, false)

@@ -63,8 +63,8 @@ dependencies {
     // SourceCounters, CaptureReport -- is used inside this module rather than
     // re-exported. :app depends on :feature:capture directly for the banner.
     implementation(project(":feature:capture"))
-    // `ScreenRead`, which every screen here reads the ledger through once it
-    // has joined (#296); `:feature:charts` is the first.
+    // `ScreenRead`, which the screens here read the ledger through (#296).
+    // Settings and Home's feed do not: they stay out of that spec's joins.
     implementation(project(":core:read"))
     // The theme, the fonts and the shared sheet chrome, in their own module so
     // the Charts can use them without depending on this one (#81, Modules).

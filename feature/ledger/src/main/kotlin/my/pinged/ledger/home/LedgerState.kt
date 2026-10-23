@@ -177,7 +177,7 @@ data class LedgerRead(
     /**
      * The `category.id` the dictionary files a merchant key under, null where
      * it files nothing; see [dictionaryCategoryIds]. A function, built once per
-     * database and not per refresh, so two reads of one database carry the same
+     * database and not per read, so two reads of one database carry the same
      * instance and `LedgerRead`'s equality does not churn.
      */
     val dictionaryFiling: (String?) -> Long? = NO_DICTIONARY,

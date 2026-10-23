@@ -291,33 +291,70 @@ object Corrections {
      * Every correction awaiting an answer, oldest capture first; null while the
      * current version's [sweep] has not reached the end, because until then the
      * set this reads is mostly captures nobody has compared yet.
+     *
+     * Each page is its own statements and no transaction, so the list is not
+     * one snapshot: a capture that moves between pages is caught by [accept],
+     * which refuses it.
      */
     suspend fun pending(context: Context, captures: RawCaptureDao, matcher: RuleMatcher): List<Correction>? =
-        pending(comparedVersion(context), captures, matcher)
+        pending(comparedVersion(context), matcher) { afterId -> stalePage(captures, matcher.packVersion, afterId) }
 
     /**
      * The pack version whose [sweep] has reached the end of the history, 0 for
-     * none: [pending]'s first argument, read apart from it for a caller that
-     * reads the captures in a database transaction, where nothing may suspend.
+     * none: [pending]'s first argument, for a caller that reads it before it
+     * takes a transaction, where nothing may suspend.
      */
     suspend fun comparedVersion(context: Context): Int = context.captureStore.data.first()[COMPARED_PACK_VERSION] ?: 0
 
-    /** [pending] with the swept version, [comparedVersion], already read. Blocking: it only reads [captures]. */
-    fun pending(compared: Int, captures: RawCaptureDao, matcher: RuleMatcher): List<Correction>? {
-        val version = matcher.packVersion
-        if (compared < version) return null
+    /** One capture still at an older pack version, and the unedited transaction it wrote. */
+    class Stale internal constructor(internal val capture: RawCapture, internal val txn: Txn)
+
+    /**
+     * One page of the set [pending] re-reads. [lastId] is where the next page
+     * starts, and [last] says there is none.
+     */
+    class StalePage internal constructor(internal val rows: List<Stale>, val lastId: Long, val last: Boolean)
+
+    /**
+     * The captures after [afterId] still at a pack version before [version], at
+     * most [PAGE_SIZE] of them, with their transactions. **Statements only,
+     * and no matching**: the part of [pending] that touches the database, for
+     * a caller that holds the connection for it and does the re-reading
+     * outside. Blocking.
+     */
+    fun stalePage(captures: RawCaptureDao, version: Int, afterId: Long): StalePage {
+        val page = captures.matchedStaleAfter(version, afterId, PAGE_SIZE)
+        return StalePage(
+            rows = page.mapNotNull { capture -> captures.txnForCapture(capture.id)?.let { Stale(capture, it) } },
+            lastId = page.lastOrNull()?.id ?: afterId,
+            last = page.size < PAGE_SIZE,
+        )
+    }
+
+    /**
+     * [pending] with the swept version, [comparedVersion], already read, and
+     * each page fetched by [readPage] -- [stalePage], in a transaction of its
+     * own for a caller that must not hold the connection across the matching:
+     * on emulator-5554, 1,000 awaiting captures took 230ms to read and re-read
+     * and 62ms of that to read (medians of 7).
+     */
+    suspend fun pending(
+        compared: Int,
+        matcher: RuleMatcher,
+        readPage: suspend (afterId: Long) -> StalePage,
+    ): List<Correction>? {
+        if (compared < matcher.packVersion) return null
         val now = System.currentTimeMillis()
         val found = mutableListOf<Correction>()
         var afterId = 0L
         while (true) {
-            val page = captures.matchedStaleAfter(version, afterId, PAGE_SIZE)
-            for (capture in page) {
-                val txn = captures.txnForCapture(capture.id) ?: continue
-                val reread = reread(capture, txn, matcher, now)
+            val page = readPage(afterId)
+            for (stale in page.rows) {
+                val reread = reread(stale.capture, stale.txn, matcher, now)
                 if (reread is Reread.Differs) found += reread.correction
             }
-            if (page.size < PAGE_SIZE) return found
-            afterId = page.last().id
+            if (page.last) return found
+            afterId = page.lastId
         }
     }
 

@@ -4,9 +4,10 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import my.pinged.capture.Corrections
 import my.pinged.capture.Graph
 import my.pinged.capture.GuardedRunner
@@ -58,24 +59,45 @@ internal fun ReadState<Unit, Pending>.toState(): CorrectionsState {
  * (`Corrections.accept` returns false), and no read publishes a list older
  * than an answer that landed.
  */
-class CorrectionsViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+class CorrectionsViewModel internal constructor(
+    app: Application,
+    runner: ReadRunner,
+    /** Where the read's own work runs; a JVM test passes the one it drives. */
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
 
     /** A getter, for the reason `SourcesViewModel.context` gives. */
     private val context: Context get() = getApplication<Application>()
 
     /**
-     * What is awaiting an answer, in one transaction. The swept version comes
-     * from the capture store through `runBlocking`, which the body may do
-     * because it runs off the main thread and cannot itself suspend.
+     * What is awaiting an answer. The swept version is read from the capture
+     * store first, and the list a page at a time: each page of captures in a
+     * transaction of its own, and the re-reading of them outside it. That is
+     * [ScreenRead.fixedStaged], because `Corrections.pending` matches every
+     * capture still at an older pack version, and one transaction over the list
+     * holds Room's one connection and `Databases`' monitor for all of it.
+     * Measured on emulator-5554 over 1,000 awaiting captures (`ReadHoldTest`):
+     * a page's transaction held them 6ms at the median and 21ms at the longest
+     * of 77, against 200ms median and 254ms longest of 7 for one transaction
+     * over the whole list, and the 66ms a lease may leave up. A capture can land
+     * between pages, so the list is not one snapshot: `Corrections.accept`
+     * refuses a capture that moved since it was read.
      * `CorrectionsScreen` reads it on resume and on `Databases.rewrites`
      * through `rememberReadState`.
      */
     internal val read: ScreenRead<Unit, Pending> =
-        ScreenRead.fixed(viewModelScope, runner, "Corrections cannot be read") { db ->
+        ScreenRead.fixedStaged(viewModelScope, runner, "Corrections cannot be read", dispatcher) {
             val matcher = Graph.ruleMatcher()
-            val compared = runBlocking { Corrections.comparedVersion(context) }
-            Pending(Corrections.pending(compared, db.rawCaptureDao(), matcher), matcher.packVersion)
+            // The open, asked for before the sweep has reached the end as well,
+            // when no page is read: a ledger that cannot be opened is
+            // `unavailable` (spec 11.1), not "still checking".
+            transaction { }
+            val compared = Corrections.comparedVersion(context)
+            val found = Corrections.pending(compared, matcher) { afterId ->
+                transaction { db -> Corrections.stalePage(db.rawCaptureDao(), matcher.packVersion, afterId) }
+            }
+            Pending(found, matcher.packVersion)
         }
 
     fun accept(correction: Corrections.Correction): Job =

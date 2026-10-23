@@ -3,6 +3,7 @@ package my.pinged.ledger
 import android.app.Application
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.Dispatchers
 import my.pinged.data.Databases
 import my.pinged.ledger.categories.CategoriesScreen
 import my.pinged.ledger.categories.CategoriesViewModel
@@ -84,7 +85,7 @@ class RewriteRereadTest {
     }
 
     @Test fun correctionsReadsAgainWhenTheLedgerIsReplaced() {
-        val viewModel = CorrectionsViewModel(app, runner)
+        val viewModel = CorrectionsViewModel(app, runner, Dispatchers.Unconfined)
         compose.setContent { CorrectionsScreen(viewModel, onBack = {}) }
         compose.waitForIdle()
         assertEquals("Corrections was not read once when shown", 1, reads(CORRECTIONS))

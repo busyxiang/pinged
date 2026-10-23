@@ -7,14 +7,13 @@ import android.content.pm.PackageManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.runBlocking
 import my.pinged.capture.GuardedRunner
 import my.pinged.capture.Graph
 import my.pinged.capture.SourceCounters
 import my.pinged.capture.SourceGaps
-import my.pinged.data.PingedDatabase
 import my.pinged.data.entity.CaptureSource
 import my.pinged.read.ReadRunner
+import my.pinged.read.ReadSteps
 import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
 
@@ -114,7 +113,7 @@ class SourcesViewModel internal constructor(app: Application, runner: ReadRunner
     private val context: Context get() = getApplication<Application>()
 
     /**
-     * Everything the screen draws, in one transaction. `SourcesScreen` reads it
+     * Everything the screen draws, in no transaction. `SourcesScreen` reads it
      * on each resume and on `Databases.rewrites` through `rememberReadState`: a
      * package that spoke while the screen was away must appear, and a restore
      * must not leave the replaced ledger's sources switched on. Calls are made
@@ -129,7 +128,7 @@ class SourcesViewModel internal constructor(app: Application, runner: ReadRunner
      * screen may not be composed at all.
      */
     val read: ScreenRead<Unit, SourcesState> =
-        ScreenRead.fixed(viewModelScope, runner, "The allow-list cannot be read") { db -> readAllowList(db) }
+        ScreenRead.fixedStaged(viewModelScope, runner, "The allow-list cannot be read") { readAllowList() }
 
     /**
      * The allow-list write, and the only one in the app. Three statements, in
@@ -176,22 +175,30 @@ class SourcesViewModel internal constructor(app: Application, runner: ReadRunner
         }
 
     /**
-     * The statements of one read, on [db] inside its transaction and off the main
-     * thread, which is also why the counts, which live in `DataStore`, are read
-     * through `runBlocking`: the body cannot itself suspend.
+     * One read of the allow-list, as [read]'s staged body: the database in one
+     * leased step and the counts, which live in `DataStore`, after it, with
+     * nothing of the ledger held.
      *
-     * One transaction holds Room's one connection, so a capture waits for it, and
-     * this read used to take it a statement at a time. Measured on the emulator,
-     * over 60 discovered packages and 10 enabled sources, from the call to the
-     * state published: 7.8ms median, 10.1ms at the longest of 40 reads.
+     * **No transaction, because `SourceGaps.refresh` is in it.** It writes
+     * `expected_monthly_count` and scans `raw_capture` once per enabled source
+     * still speaking (spec 10.3), and a transaction would hold Room's one
+     * connection and `Databases`' monitor against every capture, stage two and
+     * `retire` for the whole of it. Measured on emulator-5554 with 10 enabled
+     * sources all speaking, in one transaction: 200ms at 20,000 captures
+     * (`ReadHoldTest`) and 582ms at 50,000 (medians of 7). As statements the
+     * connection is held one scan at a time, but the lease still spans all of
+     * them, as it always has: a gate waits for that, up to 5s. The `DataStore`
+     * calls are outside the lease as well: a file write behind the connection
+     * would queue every capture on a disk.
      */
-    private fun readAllowList(db: PingedDatabase): SourcesState {
+    private suspend fun ReadSteps.readAllowList(): SourcesState {
         val now = System.currentTimeMillis()
-        // Here as well as in the daily check, which an OEM may never let run:
-        // this screen is where the user can see which source has gone quiet.
-        SourceGaps.refresh(db.captureSourceDao(), db.rawCaptureDao(), now)
-        val known: Map<String, CaptureSource> =
+        val known: Map<String, CaptureSource> = statements { db ->
+            // Here as well as in the daily check, which an OEM may never let run:
+            // this screen is where the user can see which source has gone quiet.
+            SourceGaps.refresh(db.captureSourceDao(), db.rawCaptureDao(), now)
             db.captureSourceDao().all().associateBy { it.pkg }
+        }
         // The count means the same thing on both sides of the allow-list gate:
         // notifications this listener has been handed from that package. Counting
         // only the discarded side draws `0 SEEN` beside a bank that is visibly
@@ -202,14 +209,12 @@ class SourcesViewModel internal constructor(app: Application, runner: ReadRunner
         // else writes one for a package the user never enabled. Pack packages are
         // kept too: Suggested draws them whatever the counter says, so dropping one
         // would only reset its count.
-        runBlocking {
-            SourceCounters.dropExpired(
-                context,
-                now = System.currentTimeMillis(),
-                keep = known.keys + packLabels.keys,
-            )
-        }
-        val counts = runBlocking { SourceCounters.allSeenCounts(context) }
+        SourceCounters.dropExpired(
+            context,
+            now = System.currentTimeMillis(),
+            keep = known.keys + packLabels.keys,
+        )
+        val counts = SourceCounters.allSeenCounts(context)
         val apps = InstalledApps(context.packageManager)
 
         // Every pack package this device can confirm, plus every source the user has

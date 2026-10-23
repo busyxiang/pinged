@@ -10,7 +10,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /**
- * Everything one `ChartsViewModel.refresh` read, published in one piece (#81,
+ * Everything one read of `ChartsViewModel.read` found, published in one piece (#81,
  * The Charts read), so no section draws a number from a different moment than
  * the chip and the grey beside it.
  *

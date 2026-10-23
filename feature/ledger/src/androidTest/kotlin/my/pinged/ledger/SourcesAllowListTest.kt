@@ -270,15 +270,14 @@ class SourcesAllowListTest {
     }
 
     /**
-     * The job `refresh()` hands back does not complete until its read has
+     * The job `read.refresh()` hands back does not complete until its read has
      * published, even when another refresh follows it.
      *
-     * The trap underneath is that `refresh()` cancels the read in flight and
+     * The trap underneath is a read cancelled by the next one asked for:
      * `Job.join()` on a cancelled job returns immediately, so a caller
-     * sequencing a write after a read can be released by the cancellation
-     * rather than by the read. `MainActivity.onResume` rested on this and
-     * probes the database itself now, so the contract stays asserted here
-     * rather than in `MainActivity`, which has no test source set.
+     * sequencing a write after a read would be released by the cancellation
+     * rather than by the read. `ScreenRead` queues the second behind the first
+     * instead.
      */
     @Test fun aRefreshJobDoesNotCompleteUntilItsReadHasPublished() {
         val viewModel = sourcesViewModel()
@@ -303,7 +302,7 @@ class SourcesAllowListTest {
             withTimeoutOrNull(SECOND_TAP_BUDGET) { first.join() } != null
         }
         assertFalse(
-            "The job returned by refresh() completed while its read was still " +
+            "The job returned by read.refresh() completed while its read was still " +
                 "held, so anything sequencing a write after a read sees the " +
                 "previous answer",
             completed && !viewModel.current.loaded,

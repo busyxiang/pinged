@@ -36,8 +36,6 @@ import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
-import my.pinged.read.Outcome
-import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
 import java.time.YearMonth
 import java.util.concurrent.atomic.AtomicBoolean
@@ -69,10 +67,7 @@ class LedgerViewModel(
     /** A getter, not a field, for the reason `SourcesViewModel` records. */
     private val context: Context get() = getApplication<Application>()
 
-    /**
-     * Opens, leases and guards every read and write this screen makes. The
-     * summary's read goes through it with [beforeSummary] in front.
-     */
+    /** Opens, leases and guards every read and write this screen makes. */
     private val runner = GuardedRunner(app)
 
     /**
@@ -83,12 +78,7 @@ class LedgerViewModel(
      */
     private val spending: SpendingRead = SpendingRead(
         scope = viewModelScope,
-        runner = object : ReadRunner by runner {
-            override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> {
-                beforeSummary()
-                return runner.read(what, body)
-            }
-        },
+        runner = runner,
         handle = handle,
         chooser = { rows.readChooser() },
     )
@@ -161,13 +151,20 @@ class LedgerViewModel(
     internal var beforePage: suspend () -> Unit = {}
 
     /**
-     * Tests only: runs before each read of the month's summary, outside the
-     * lease, so a test can hold a picked month's read in flight (#285).
-     * Holding the database instead also stalls the main thread: a pick
-     * under `withTheDatabaseHeld` never let Compose go idle in 30s.
+     * Tests only: [ScreenRead.beforeEachOperation] of the month's summary,
+     * which runs at the head of each of its operations -- a read, or a write
+     * and its read-back -- outside the lease, so a test can hold a picked
+     * month's read in flight (#285). Not the `Months` sheet's, which is
+     * another [ScreenRead]. Holding the database instead also stalls the main
+     * thread: a pick under `withTheDatabaseHeld` never let Compose go idle in
+     * 30s.
      */
     @VisibleForTesting
-    internal var beforeSummary: suspend () -> Unit = {}
+    internal var beforeSummary: suspend () -> Unit
+        get() = spending.read.beforeEachOperation
+        set(hold) {
+            spending.read.beforeEachOperation = hold
+        }
 
     /**
      * The rows, newest day first, with a day header above the first row of each
@@ -191,7 +188,7 @@ class LedgerViewModel(
      *
      * It is also what makes the failure **recoverable**: a full disk or a
      * transient IO error at the wrong moment must not leave `loadState.refresh`
-     * an error for the life of the holder while `refresh` and
+     * an error for the life of the holder while [read] and
      * `MainActivity.onResume` re-probe and clear the banner -- the screen would
      * read CANNOT READ YOUR DATA under a banner saying capture was fine.
      * `LedgerScreen`'s resume effect calls `retry()`, which re-enters the open.

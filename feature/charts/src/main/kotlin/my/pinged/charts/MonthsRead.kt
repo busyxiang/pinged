@@ -27,8 +27,8 @@ data class MonthsRead(
  * The `Months` sheet's read as of [today] (#75): the history start, then two
  * statements. Charts and Spending's header (#192) both call it, each inside
  * its own `Databases.inOneTransaction`, so a month's total and the captured
- * days that flag it are of one snapshot. Measured on `ChartsViewModel.refresh`'s
- * ledger: 47ms median, 51ms at the longest of 40, of which two years of
+ * days that flag it are of one snapshot. Measured on the ledger
+ * `ChartsViewModel.readMonth` is measured on: 47ms median, 51ms at the longest of 40, of which two years of
  * `capturedDates` is 20ms.
  *
  * - `monthlyTotals` from the first packed day there is, since a month of
