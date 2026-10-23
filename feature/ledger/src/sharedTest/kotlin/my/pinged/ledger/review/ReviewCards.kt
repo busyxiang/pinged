@@ -13,4 +13,4 @@ internal val DAY: LocalDate = LocalDates.of(NOON)
 
 /** Row [id]'s card as [inbox] last read it. */
 internal fun card(inbox: ReviewInbox, id: Long): ReviewCard =
-    inbox.cards.value.orEmpty().single { it.txn.id == id }
+    inbox.cards.orEmpty().single { it.txn.id == id }

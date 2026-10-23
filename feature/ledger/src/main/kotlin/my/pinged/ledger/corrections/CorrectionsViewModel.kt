@@ -5,16 +5,15 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import my.pinged.capture.CaptureStorage
+import kotlinx.coroutines.runBlocking
 import my.pinged.capture.Corrections
 import my.pinged.capture.Graph
-import my.pinged.data.Databases
+import my.pinged.capture.GuardedRunner
+import my.pinged.data.PingedDatabase
+import my.pinged.read.ReadRunner
+import my.pinged.read.ReadState
+import my.pinged.read.ScreenRead
 
 /** What the corrections screen draws. */
 data class CorrectionsState(
@@ -31,64 +30,62 @@ data class CorrectionsState(
     val storageUnavailable: Boolean = false,
 )
 
+/** What one read of [CorrectionsViewModel.read] found: [Corrections.pending]'s list, null while [checking]. */
+internal data class Pending(val found: List<Corrections.Correction>?, val packVersion: Int)
+
+/**
+ * What the screen draws for [this] read: an unreadable ledger draws no list,
+ * whatever the last read held, as `LearnedViewModel`'s does.
+ */
+internal fun ReadState<Unit, Pending>.toState(): CorrectionsState {
+    if (unavailable) return CorrectionsState(loaded = true, storageUnavailable = true)
+    val pending = answer ?: return CorrectionsState()
+    return CorrectionsState(
+        loaded = true,
+        checking = pending.found == null,
+        items = pending.found.orEmpty(),
+        packVersion = pending.packVersion,
+    )
+}
+
 /**
  * Spec 5.5's reviewable list: reads [Corrections.pending], and writes the
  * user's answer to one item.
  *
- * Every read and write takes [turn], so an answer and the read after it run
- * in the order they were asked for: two taps on one card answer it once, the
- * second finding it already answered (`Corrections.accept` returns false),
- * and no read publishes a list older than an answer that landed.
+ * The list is `:core:read`'s [ScreenRead] (#296) and an answer is its `write`,
+ * so an answer and the read after it run in the order they were asked for: two
+ * taps on one card answer it once, the second finding it already answered
+ * (`Corrections.accept` returns false), and no read publishes a list older
+ * than an answer that landed.
  */
-class CorrectionsViewModel(app: Application) : AndroidViewModel(app) {
+class CorrectionsViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, GuardedRunner(app))
 
     /** A getter, for the reason `SourcesViewModel.context` gives. */
     private val context: Context get() = getApplication<Application>()
 
-    private val turn = Mutex()
-    private val _state = MutableStateFlow(CorrectionsState())
-    val state: StateFlow<CorrectionsState> = _state.asStateFlow()
-
-    fun refresh(): Job = viewModelScope.launch { turn.withLock { _state.value = read() } }
+    /**
+     * What is awaiting an answer, in one transaction. The swept version comes
+     * from the capture store through `runBlocking`, which the body may do
+     * because it runs off the main thread and cannot itself suspend.
+     * `CorrectionsScreen` reads it on resume and on `Databases.rewrites`
+     * through `rememberReadState`.
+     */
+    internal val read: ScreenRead<Unit, Pending> =
+        ScreenRead.fixed(viewModelScope, runner, "Corrections cannot be read") { db ->
+            val matcher = Graph.ruleMatcher()
+            val compared = runBlocking { Corrections.comparedVersion(context) }
+            Pending(Corrections.pending(compared, db.rawCaptureDao(), matcher), matcher.packVersion)
+        }
 
     fun accept(correction: Corrections.Correction): Job =
-        answer { Corrections.accept(Databases.rawCaptureDao(context), correction) }
+        answer("The correction could not be saved") { Corrections.accept(it.rawCaptureDao(), correction) }
 
     fun decline(correction: Corrections.Correction): Job =
-        answer { Corrections.decline(Databases.rawCaptureDao(context), correction) }
+        answer("The correction could not be saved") { Corrections.decline(it.rawCaptureDao(), correction) }
 
-    /**
-     * Guarded as every write in this module is, since `viewModelScope` has no
-     * handler and an unguarded open in spec 11.1's state kills the process on
-     * a tap. A write the guard refuses leaves the row as it was, and the read
-     * after it draws that.
-     */
-    private fun answer(write: () -> Boolean): Job = viewModelScope.launch {
-        turn.withLock {
-            CaptureStorage.guarded(
-                context,
-                what = "The correction could not be saved",
-                unavailable = { false },
-                damageStopsCapture = false,
-            ) { write() }
-            _state.value = read()
-        }
+    /** A write the guard refuses leaves the row as it was, and the read after it draws that. */
+    private fun answer(what: String, write: (PingedDatabase) -> Boolean): Job = viewModelScope.launch {
+        read.write(what) { db -> write(db) }.await()
     }
-
-    private suspend fun read(): CorrectionsState =
-        CaptureStorage.guarded(
-            context,
-            what = "Corrections cannot be read",
-            unavailable = { CorrectionsState(loaded = true, storageUnavailable = true) },
-            damageStopsCapture = false,
-        ) {
-            val matcher = Graph.ruleMatcher()
-            val found = Corrections.pending(context, Databases.rawCaptureDao(context), matcher)
-            CorrectionsState(
-                loaded = true,
-                checking = found == null,
-                items = found.orEmpty(),
-                packVersion = matcher.packVersion,
-            )
-        }
 }

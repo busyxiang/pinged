@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import my.pinged.data.Databases
 import my.pinged.data.entity.PendingReason
@@ -72,9 +73,10 @@ class ManualEntryThenCaptureTest {
         assertEquals(PendingReason.DUPLICATE_SUSPECT, captured.pendingReason)
         assertEquals("The capture changed the manual entry", typed, txns.byId(manualId))
 
-        val inbox = ReviewInbox(context = { context }, scope = scope)
-        withTimeout(TIMEOUT) { inbox.refresh().join() }
-        val card = inbox.cards.value.orEmpty().single { it.txn.id == captured.id }
+        val inbox = ReviewInbox(scope = scope, runner = GuardedRunner(context))
+        // A `ScreenRead`'s calls are made on its scope's thread, the main thread here.
+        withTimeout(TIMEOUT) { withContext(Dispatchers.Main) { inbox.read.refresh() }.join() }
+        val card = inbox.cards.orEmpty().single { it.txn.id == captured.id }
         assertEquals("The inbox does not pair the capture with the manual entry", manualId, card.pair?.id)
         assertEquals("The inbox does not draw a duplicate card", CardKind.DUPLICATE, card.kind)
 

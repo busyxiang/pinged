@@ -137,7 +137,7 @@ class ReviewDuplicateTest {
             listOf(AMOUNT),
             dao.monthTotals(DAY, DAY).map { it.netSen },
         )
-        assertEquals("The merged card is still in the inbox", emptyList<ReviewCard>(), inbox.cards.value)
+        assertEquals("The merged card is still in the inbox", emptyList<ReviewCard>(), inbox.cards)
         assertEquals("The snackbar does not name Merge", "MERGED · RM12.34", inbox.undoable.value?.said)
     }
 
@@ -185,7 +185,7 @@ class ReviewDuplicateTest {
         assertEquals(
             "The undone duplicate is not back in the inbox beside its pair",
             listOf(held to pair),
-            inbox.cards.value?.map { it.txn.id to it.pair?.id },
+            inbox.cards?.map { it.txn.id to it.pair?.id },
         )
     }
 

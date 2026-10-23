@@ -51,17 +51,17 @@ class CategoriesScreenTest {
 
         val after = rows.readChooser().categories.single { it.id == shopping }
         assertEquals("Beli-belah" to "shopping-cart", after.name to after.iconKey)
-        assertEquals("Beli-belah", model.state.value.items.single { it.category.id == shopping }.category.name)
+        assertEquals("Beli-belah", model.read.state.value.toState().items.single { it.category.id == shopping }.category.name)
     }
 
     @Test fun anAddedCategoryIsListedAndAnUnusedOneDeletes() = runBlocking {
         val model = CategoriesViewModel(app)
         model.add("Kucing", "dog").join()
-        val added = model.state.value.items.single { it.category.name == "Kucing" }
+        val added = model.read.state.value.toState().items.single { it.category.name == "Kucing" }
         assertEquals(0, added.transactions)
 
         model.delete(added.category.id).join()
-        assertTrue(model.state.value.items.none { it.category.name == "Kucing" })
+        assertTrue(model.read.state.value.toState().items.none { it.category.name == "Kucing" })
     }
 
     /**
@@ -76,6 +76,6 @@ class CategoriesScreenTest {
         val model = CategoriesViewModel(app)
         model.delete(health).join()
 
-        assertEquals(1, model.state.value.items.single { it.category.id == health }.transactions)
+        assertEquals(1, model.read.state.value.toState().items.single { it.category.id == health }.transactions)
     }
 }

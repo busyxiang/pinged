@@ -292,9 +292,20 @@ object Corrections {
      * current version's [sweep] has not reached the end, because until then the
      * set this reads is mostly captures nobody has compared yet.
      */
-    suspend fun pending(context: Context, captures: RawCaptureDao, matcher: RuleMatcher): List<Correction>? {
+    suspend fun pending(context: Context, captures: RawCaptureDao, matcher: RuleMatcher): List<Correction>? =
+        pending(comparedVersion(context), captures, matcher)
+
+    /**
+     * The pack version whose [sweep] has reached the end of the history, 0 for
+     * none: [pending]'s first argument, read apart from it for a caller that
+     * reads the captures in a database transaction, where nothing may suspend.
+     */
+    suspend fun comparedVersion(context: Context): Int = context.captureStore.data.first()[COMPARED_PACK_VERSION] ?: 0
+
+    /** [pending] with the swept version, [comparedVersion], already read. Blocking: it only reads [captures]. */
+    fun pending(compared: Int, captures: RawCaptureDao, matcher: RuleMatcher): List<Correction>? {
         val version = matcher.packVersion
-        if ((context.captureStore.data.first()[COMPARED_PACK_VERSION] ?: 0) < version) return null
+        if (compared < version) return null
         val now = System.currentTimeMillis()
         val found = mutableListOf<Correction>()
         var afterId = 0L

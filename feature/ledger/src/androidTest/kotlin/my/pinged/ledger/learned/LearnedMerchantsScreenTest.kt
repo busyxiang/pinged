@@ -17,6 +17,7 @@ import my.pinged.data.dao.TaughtRuleRow
 import my.pinged.data.entity.UserTemplateRule
 import my.pinged.parse.Direction
 import my.pinged.data.entity.ParseStatus
+import my.pinged.ledger.refreshed
 import my.pinged.ledger.transfer.bulkCapture
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
@@ -103,9 +104,9 @@ class LearnedMerchantsScreenTest {
         taught("ZUS COFFEE", "MR DIY")
         val model = LearnedViewModel(app)
 
-        model.refresh().join()
+        model.read.refreshed()
 
-        val state = model.state.value
+        val state = model.read.state.value.toState()
         assertEquals(true, state.loaded)
         assertEquals(listOf("MR DIY", "ZUS COFFEE"), state.items.map { it.name })
     }
@@ -113,11 +114,11 @@ class LearnedMerchantsScreenTest {
     @Test fun deleteForgetsTheRuleAndTheListDrawsWithoutIt() = runBlocking {
         taught("ZUS COFFEE", "MR DIY")
         val model = LearnedViewModel(app)
-        model.refresh().join()
+        model.read.refreshed()
 
-        model.delete(model.state.value.items.first { it.identity == "MR DIY" }).join()
+        model.delete(model.read.state.value.toState().items.first { it.identity == "MR DIY" }).join()
 
-        assertEquals(listOf("ZUS COFFEE"), model.state.value.items.map { it.name })
+        assertEquals(listOf("ZUS COFFEE"), model.read.state.value.toState().items.map { it.name })
         assertEquals("Delete changed a transaction", 2, Databases.txnDao(app).countAll())
         assertEquals(null, Databases.merchantRuleDao(app).learnedCategoryFor("MR DIY"))
     }
@@ -126,9 +127,9 @@ class LearnedMerchantsScreenTest {
         app.corruptTheDatabase()
         val model = LearnedViewModel(app)
 
-        model.refresh().join()
+        model.read.refreshed()
 
-        assertEquals(true, model.state.value.storageUnavailable)
+        assertEquals(true, model.read.state.value.toState().storageUnavailable)
     }
 
     // ---- spec 5.7's IGNORED tab -------------------------------------------------
@@ -187,12 +188,12 @@ class LearnedMerchantsScreenTest {
         rejects.neverATransaction(first, now = 2_000L)
         assertEquals(0, rejects.unreadCount())
         val model = LearnedViewModel(app)
-        model.refresh().join()
-        assertEquals(listOf(2), model.state.value.ignored.map { it.hidden })
+        model.read.refreshed()
+        assertEquals(listOf(2), model.read.state.value.toState().ignored.map { it.hidden })
 
-        model.deleteIgnored(model.state.value.ignored.single()).join()
+        model.deleteIgnored(model.read.state.value.toState().ignored.single()).join()
 
-        assertEquals(emptyList<RejectRuleRow>(), model.state.value.ignored)
+        assertEquals(emptyList<RejectRuleRow>(), model.read.state.value.toState().ignored)
         assertEquals(2, rejects.unreadCount())
     }
 
@@ -241,12 +242,12 @@ class LearnedMerchantsScreenTest {
         )
         val txns = Databases.txnDao(app).countAll()
         val model = LearnedViewModel(app)
-        model.refresh().join()
-        assertEquals(1, model.state.value.messages.size)
+        model.read.refreshed()
+        assertEquals(1, model.read.state.value.toState().messages.size)
 
-        model.deleteMessage(model.state.value.messages.single()).join()
+        model.deleteMessage(model.read.state.value.toState().messages.single()).join()
 
-        assertEquals(emptyList<TaughtRuleRow>(), model.state.value.messages)
+        assertEquals(emptyList<TaughtRuleRow>(), model.read.state.value.toState().messages)
         assertEquals(0, taught.countAll())
         assertEquals(txns, Databases.txnDao(app).countAll())
     }

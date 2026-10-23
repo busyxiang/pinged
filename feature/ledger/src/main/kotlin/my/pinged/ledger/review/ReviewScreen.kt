@@ -50,14 +50,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
-import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.entity.Txn
 import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
 import my.pinged.ledger.settings.Operation
 import my.pinged.parse.Direction
+import my.pinged.read.rememberReadState
 import my.pinged.ui.dayMonthYear
 import my.pinged.ui.money
 import my.pinged.ui.theme.Body
@@ -101,18 +100,13 @@ import java.util.Locale
  */
 @Composable
 fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modifier = Modifier, focus: Long? = null) {
-    val rewrites by Databases.rewrites.collectAsState()
-    LifecycleResumeEffect(viewModel, rewrites) {
-        viewModel.refresh()
-        onPauseOrDispose {}
-    }
-    val cards by viewModel.inbox.cards.collectAsState()
-    val unavailable by viewModel.inbox.storageUnavailable.collectAsState()
+    // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
+    val read = viewModel.inbox.read.rememberReadState()
     val busy by viewModel.inbox.busy.collectAsState()
     val undoable by viewModel.inbox.undoable.collectAsState()
     ReviewInboxScreenContent(
-        cards = cards,
-        storageUnavailable = unavailable,
+        cards = read.answer,
+        storageUnavailable = read.unavailable,
         busy = busy,
         onBack = onBack,
         onAnswer = { card, answer -> viewModel.answer(card, answer) },

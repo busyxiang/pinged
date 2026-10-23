@@ -1,10 +1,11 @@
 package my.pinged.ledger.review
 
 import android.app.Application
-import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import my.pinged.capture.GuardedRunner
+import my.pinged.read.ReadRunner
 
 /**
  * The review inbox screen's holder: owns a [ReviewInbox] on its own scope.
@@ -13,14 +14,10 @@ import kotlinx.coroutines.Job
  * process death reads every card afresh. The `Review` key's focus is the
  * screen's, not this holder's.
  */
-class ReviewViewModel(app: Application) : AndroidViewModel(app) {
+class ReviewViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, GuardedRunner(app))
 
-    /** A getter, not a field, for the reason `SourcesViewModel` records. */
-    private val context: Context get() = getApplication<Application>()
-
-    val inbox = ReviewInbox(context = { context }, scope = viewModelScope)
-
-    fun refresh(): Job = inbox.refresh()
+    val inbox = ReviewInbox(scope = viewModelScope, runner = runner)
 
     /** [answer] to [card], by the button the screen drew for it. */
     fun answer(card: ReviewCard, answer: ReviewAnswer): Job = when (answer) {

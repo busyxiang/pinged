@@ -19,6 +19,7 @@ import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.data.entity.ParseStatus
+import my.pinged.ledger.refreshed
 import my.pinged.ledger.ArtboardProbe
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
@@ -150,12 +151,12 @@ class UnreadScreenTest {
             bulkCapture(3).copy(parseStatus = ParseStatus.UNMATCHED, text = "Your statement is ready"),
         )
         val model = UnreadViewModel(app)
-        model.refresh().join()
-        assertEquals(3, model.state.value.items.size)
+        model.read.refreshed()
+        assertEquals(3, model.read.state.value.toState().items.size)
 
-        model.neverATransaction(model.state.value.items.first { it.id != other }).join()
+        model.neverATransaction(model.read.state.value.toState().items.first { it.id != other }).join()
 
-        assertEquals(listOf(other), model.state.value.items.map { it.id })
+        assertEquals(listOf(other), model.read.state.value.toState().items.map { it.id })
         assertEquals(1, Databases.userRejectRuleDao(app).countAll())
     }
 
@@ -164,15 +165,15 @@ class UnreadScreenTest {
         unmatched(60)
         val model = UnreadViewModel(app)
 
-        model.refresh().join()
-        assertEquals(50, model.state.value.items.size)
-        assertEquals(true, model.state.value.more)
+        model.read.refreshed()
+        assertEquals(50, model.read.state.value.toState().items.size)
+        assertEquals(true, model.read.state.value.toState().more)
 
         model.loadMore().join()
-        val ids = model.state.value.items.map { it.id }
+        val ids = model.read.state.value.toState().items.map { it.id }
         assertEquals(60, ids.size)
         assertEquals("newest first, nothing twice", ids.sortedDescending(), ids)
-        assertEquals(false, model.state.value.more)
+        assertEquals(false, model.read.state.value.toState().more)
     }
 
     /** The screen asks for the next page itself, once its last card composes. */
@@ -181,17 +182,17 @@ class UnreadScreenTest {
         unmatched(55)
         val model = UnreadViewModel(app)
         compose.setContent { UnreadScreen(model, onBack = {}, onTeach = {}) }
-        compose.boundedWaitUntil(5_000) { model.state.value.items.size == 50 }
+        compose.boundedWaitUntil(5_000) { model.read.state.value.toState().items.size == 50 }
         compose.onNode(hasScrollToNodeAction())
             .performScrollToNode(hasText(FOOTER))
-        compose.boundedWaitUntil(5_000) { model.state.value.items.size == 55 }
+        compose.boundedWaitUntil(5_000) { model.read.state.value.toState().items.size == 55 }
     }
 
     @Test fun anUnopenableDatabaseIsStorageUnavailableNotEmpty() = runBlocking {
         app.corruptTheDatabase()
         val model = UnreadViewModel(app)
-        model.refresh().join()
-        assertEquals(true, model.state.value.storageUnavailable)
+        model.read.refreshed()
+        assertEquals(true, model.read.state.value.toState().storageUnavailable)
     }
 
     private companion object {

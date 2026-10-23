@@ -14,23 +14,13 @@ import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 
 /**
- * What a screen's holder that writes the ledger on a tap shares with the
- * others (`ReviewInbox`, `ManualEntries`): whether a restore or a
- * delete-everything is running, which refuses the write, and whether the
- * ledger opened on the last guarded touch.
+ * Whether a restore or a delete-everything is running, which a screen that
+ * writes on a tap refuses to do through (`ReviewInbox`, `ManualEntries`).
  *
  * In `my.pinged.ledger` rather than beside either holder, for the placement
  * rule `AppViewModelFactory` gives.
  */
-internal class LedgerWrites(
-    private val context: () -> Context,
-    scope: CoroutineScope,
-    private val transfers: StateFlow<TransferState>,
-) {
-    /** The database would not open on the last guarded touch. */
-    private val _storageUnavailable = MutableStateFlow(false)
-    val storageUnavailable: StateFlow<Boolean> = _storageUnavailable.asStateFlow()
-
+internal class LedgerBusy(scope: CoroutineScope, private val transfers: StateFlow<TransferState>) {
     /** The restore or delete-everything running, while one is: what a screen draws. */
     val busy: StateFlow<Operation?> = transfers
         .map { it.replacingLedger }
@@ -45,6 +35,29 @@ internal class LedgerWrites(
      * raises the capture-stopped banner over an operation the user started.
      */
     val replacing: Boolean get() = transfers.value.replacingLedger != null
+}
+
+/**
+ * What the manual entry screen's holder shares with [LedgerBusy]: whether the
+ * ledger opened on the last guarded touch. The review inbox reads through
+ * `:core:read`, which keeps that flag itself (#296), and uses [LedgerBusy] alone.
+ */
+internal class LedgerWrites(
+    private val context: () -> Context,
+    scope: CoroutineScope,
+    transfers: StateFlow<TransferState>,
+) {
+    private val gate = LedgerBusy(scope, transfers)
+
+    /** The database would not open on the last guarded touch. */
+    private val _storageUnavailable = MutableStateFlow(false)
+    val storageUnavailable: StateFlow<Boolean> = _storageUnavailable.asStateFlow()
+
+    /** See [LedgerBusy.busy]. */
+    val busy: StateFlow<Operation?> get() = gate.busy
+
+    /** See [LedgerBusy.replacing]. */
+    val replacing: Boolean get() = gate.replacing
 
     /**
      * [block] under `CaptureStorage.guarded`, which leases the instance; a

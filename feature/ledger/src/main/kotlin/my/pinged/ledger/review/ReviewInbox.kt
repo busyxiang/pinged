@@ -1,6 +1,5 @@
 package my.pinged.ledger.review
 
-import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,11 +8,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import my.pinged.capture.Graph
 import my.pinged.data.Databases
+import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.Answered
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
-import my.pinged.ledger.LedgerWrites
+import my.pinged.ledger.LedgerBusy
+import my.pinged.read.Outcome
+import my.pinged.read.ReadRunner
+import my.pinged.read.ReadState
+import my.pinged.read.ScreenRead
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
@@ -23,17 +27,18 @@ import my.pinged.ledger.settings.Transfers
  * and the answers that settle one (#109, #112).
  *
  * Shaped like `RowActions`: owned by a view model, which hands over its
- * [scope]; every database touch inside `CaptureStorage.guarded`, which leases
- * the instance and turns a database that will not open into [storageUnavailable]
- * rather than a process kill on a tap.
+ * [scope]. The cards are `:core:read`'s [ScreenRead] (#296), and every answer
+ * is its `write`: leased and guarded, a database that will not open is
+ * [ReadState.unavailable] rather than a process kill on a tap, and the cards
+ * are read again in the answer's own turn, which is how a missed answer
+ * redraws its row as it now is.
  *
  * **Each answer is one targeted `UPDATE` guarded on the card**
  * (`TxnDao.settle`): it writes only while the row is still `PENDING` for the
  * reason the card was drawn with, so an answer to a card a Corrections re-read
- * has since changed writes nothing. Every answer is followed by a re-read,
- * which is how a missed one redraws the row as it now is. One answer settles a
- * row: only the highest-precedence reason is stored, and lower ones that also
- * fired are not asked separately.
+ * has since changed writes nothing. One answer settles a row: only the
+ * highest-precedence reason is stored, and lower ones that also fired are not
+ * asked separately.
  *
  * **During a restore or a delete-everything nothing is answered** ([busy]).
  * An answer asked for then is dropped on the spot, not queued behind the gate:
@@ -56,21 +61,31 @@ import my.pinged.ledger.settings.Transfers
  * `Transfers.state`, the same flow the settings screen draws its notice from.
  */
 class ReviewInbox(
-    private val context: () -> Context,
     private val scope: CoroutineScope,
+    runner: ReadRunner,
     private val transfers: StateFlow<TransferState> = Transfers.state,
 ) {
+    private val gate = LedgerBusy(scope, transfers)
+
+    /**
+     * Every card awaiting review, newest first. `ReviewScreen` reads it on
+     * resume and on `Databases.rewrites` through `rememberReadState`, and it
+     * is not read yet until the first read lands. Public for the tests of
+     * other modules that drive an inbox; a screen reads through `ReviewScreen`.
+     */
+    val read: ScreenRead<Unit, List<ReviewCard>> =
+        ScreenRead.fixed(scope, runner, "The review inbox cannot be read") { db ->
+            val txns = db.txnDao()
+            txns.awaitingReview().map { row ->
+                ReviewCard(row, pair = row.txn.takeIf { it.pendingReason == PendingReason.DUPLICATE_SUSPECT }?.let(txns::duplicatePair))
+            }
+        }
+
     /** The cards from the last read, newest first; null before one lands. */
-    private val _cards = MutableStateFlow<List<ReviewCard>?>(null)
-    val cards: StateFlow<List<ReviewCard>?> = _cards.asStateFlow()
-
-    private val writes = LedgerWrites(context, scope, transfers)
-
-    /** The database would not open on the last read or write. */
-    val storageUnavailable: StateFlow<Boolean> = writes.storageUnavailable
+    val cards: List<ReviewCard>? get() = read.state.value.answer
 
     /** The restore or delete-everything running, while one is; see the class KDoc. */
-    val busy: StateFlow<Operation?> = writes.busy
+    val busy: StateFlow<Operation?> = gate.busy
 
     /** The last answer, while it can still be undone; see the class KDoc. */
     private val _undoable = MutableStateFlow<Undoable?>(null)
@@ -93,17 +108,6 @@ class ReviewInbox(
         }
     }
 
-    /** Read every card again. */
-    fun refresh(): Job = scope.launch {
-        writes.guarded("The review inbox cannot be read", unavailable = Unit) {
-            val txns = Databases.txnDao(context())
-            _cards.value = txns.awaitingReview().map { row ->
-                ReviewCard(row, pair = row.txn.takeIf { it.pendingReason == PendingReason.DUPLICATE_SUSPECT }?.let(txns::duplicatePair))
-            }
-            writes.opened()
-        }
-    }
-
     /** Count [card]'s payment as it stands: `COMMITTED`, no reason. */
     fun accept(card: ReviewCard): Job = settle(card, TxnState.COMMITTED, "The payment could not be accepted")
 
@@ -115,9 +119,10 @@ class ReviewInbox(
      * ([isBatchable]) in one transaction (`TxnDao.settleAll`), each
      * guarded as [accept] is, and offer the rows it wrote as one Undo. No
      * transfer or duplicate card is ever in it, nor any over the check limit.
+     * The cards are read again before it returns.
      */
     fun acceptAll(): Job = scope.launch {
-        val batch = _cards.value.orEmpty().filter { it.isBatchable }
+        val batch = cards.orEmpty().filter { it.isBatchable }
         if (batch.isEmpty()) return@launch
         val wrote = written("The payments could not be accepted", unavailable = emptyList()) { now ->
             settleAll(
@@ -129,7 +134,6 @@ class ReviewInbox(
         answered(
             AcceptAll.of(batch.filter { it.txn.id in ids })?.let { Undoable(said = it.said, rows = wrote) },
         )
-        refresh().join()
     }
 
     /**
@@ -151,17 +155,16 @@ class ReviewInbox(
      * as every answer is (`TxnDao.leaveOut`).
      */
     fun leaveOut(card: ReviewCard): Job = scope.launch {
-        val wrote = written("The payment could not be left out", unavailable = emptyList()) { now ->
-            val capture = card.txn.rawCaptureId?.let { Databases.rawCaptureDao(context()).byId(it) }
+        val wrote = writtenOn("The payment could not be left out", unavailable = emptyList()) { db, now ->
+            val capture = card.txn.rawCaptureId?.let { db.rawCaptureDao().byId(it) }
             val exclusion = Graph.suggestedExclusion(capture?.sourcePackage, capture?.matchedRuleId)
-            if (leaveOut(card.txn.id, card.txn.pendingReason, exclusion, now) == 1) {
+            if (db.txnDao().leaveOut(card.txn.id, card.txn.pendingReason, exclusion, now) == 1) {
                 listOf(Answered(card.txn.id, card.txn.pendingReason, TxnState.COMMITTED, exclusion))
             } else {
                 emptyList()
             }
         } ?: return@launch
         answered(wrote.takeIf { it.isNotEmpty() }?.let { Undoable(said = "LEFT OUT · " + amountOf(card), rows = it) })
-        refresh().join()
     }
 
     /**
@@ -191,13 +194,12 @@ class ReviewInbox(
         _undoable.compareAndSet(offered, null)
         written("The answer could not be undone", unavailable = false) { now -> unsettle(offered.rows, now) }
             ?: return@launch
-        refresh().join()
     }
 
     /**
      * One answer: [write] (by default `TxnDao.settle` to [to]) unless a
-     * restore or delete runs, then the Undo offer, said as [line], and a
-     * re-read. [write] returns the rows it wrote.
+     * restore or delete runs, which has read the cards again by the time it
+     * returns, then the Undo offer, said as [line]. [write] returns the rows it wrote.
      */
     private fun settle(
         card: ReviewCard,
@@ -219,17 +221,22 @@ class ReviewInbox(
                 null
             },
         )
-        refresh().join()
     }
+
+    /** [writtenOn] for a [write] that is one `TxnDao` statement. */
+    private suspend fun <T : Any> written(what: String, unavailable: T, write: TxnDao.(now: Long) -> T): T? =
+        writtenOn(what, unavailable) { db, now -> db.txnDao().write(now) }
 
     /**
      * One write of an answer or an Undo: [write] on the ledger at `now`, or
      * null without running it while a restore or a delete runs (see the class
-     * KDoc), and [unavailable] when the database will not open.
+     * KDoc), and [unavailable] when the database will not open. It is [read]'s
+     * `write`, so the cards are read again in its turn before this returns.
      */
-    private suspend fun <T : Any> written(what: String, unavailable: T, write: TxnDao.(now: Long) -> T): T? {
-        if (writes.replacing) return null
-        return writes.guarded(what, unavailable) { Databases.txnDao(context()).write(System.currentTimeMillis()) }
+    private suspend fun <T : Any> writtenOn(what: String, unavailable: T, write: (PingedDatabase, now: Long) -> T): T? {
+        if (gate.replacing) return null
+        val outcome = read.write(what) { db -> write(db, System.currentTimeMillis()) }.await()
+        return (outcome as? Outcome.Done)?.value ?: unavailable
     }
 
     /**

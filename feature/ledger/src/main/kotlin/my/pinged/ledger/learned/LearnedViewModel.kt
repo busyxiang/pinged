@@ -1,21 +1,17 @@
 package my.pinged.ledger.learned
 
 import android.app.Application
-import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import my.pinged.capture.CaptureStorage
-import my.pinged.data.Databases
+import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
 import my.pinged.data.dao.TaughtRuleRow
+import my.pinged.read.ReadRunner
+import my.pinged.read.ReadState
+import my.pinged.read.ScreenRead
 
 /** What the taught-rules screen draws. */
 data class LearnedState(
@@ -30,85 +26,72 @@ data class LearnedState(
     val storageUnavailable: Boolean = false,
 )
 
+/** What one read of [LearnedViewModel.read] found, in one transaction. */
+internal data class Taught(
+    val items: List<LearnedMerchant>,
+    val messages: List<TaughtRuleRow>,
+    val ignored: List<RejectRuleRow>,
+)
+
+/**
+ * What the screen draws for [this] read: an unreadable ledger draws no rules,
+ * whatever the last read held, since a list is a claim the database no longer
+ * supports.
+ */
+internal fun ReadState<Unit, Taught>.toState(): LearnedState {
+    if (unavailable) return LearnedState(loaded = true, storageUnavailable = true)
+    val taught = answer ?: return LearnedState()
+    return LearnedState(loaded = true, items = taught.items, messages = taught.messages, ignored = taught.ignored)
+}
+
 /**
  * The list of learned rules (#50, spec #45 "Learned merchants list") and of
  * spec 5.7's user reject rules: read, and delete.
  *
- * A delete and the read after it take [turn], so the list never draws a state
- * older than a delete that landed. Delete is `MerchantRuleDao.deleteLearnedOfIdentity`
- * and nothing else: it touches no `txn` row and re-files nothing.
+ * The read is `:core:read`'s [ScreenRead] (#296), and each delete is its
+ * `write`, so the list never draws a state older than a delete that landed.
+ * Delete is `MerchantRuleDao.deleteLearnedOfIdentity` and nothing else: it
+ * touches no `txn` row and re-files nothing.
  */
-class LearnedViewModel(app: Application) : AndroidViewModel(app) {
+class LearnedViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, GuardedRunner(app))
 
-    /** A getter, for the reason `SourcesViewModel.context` gives. */
-    private val context: Context get() = getApplication<Application>()
-
-    private val turn = Mutex()
-    private val _state = MutableStateFlow(LearnedState())
-    val state: StateFlow<LearnedState> = _state.asStateFlow()
-
-    fun refresh(): Job = viewModelScope.launch { turn.withLock { _state.value = read() } }
-
-    fun delete(merchant: LearnedMerchant): Job = viewModelScope.launch {
-        turn.withLock {
-            // Guarded as every write in this module is: `viewModelScope` has no
-            // handler, and an unguarded open in spec 11.1's state kills the
-            // process on a tap. A refused delete leaves the rule, and the read
-            // after it draws that.
-            CaptureStorage.guarded(
-                context,
-                what = "The learned merchant could not be deleted",
-                unavailable = { 0 },
-                damageStopsCapture = false,
-            ) { Databases.merchantRuleDao(context).deleteLearnedOfIdentity(merchant.identity) }
-            _state.value = read()
+    /**
+     * The three lists, in one transaction. `LearnedScreen` reads it on resume
+     * and on `Databases.rewrites` through `rememberReadState`.
+     */
+    internal val read: ScreenRead<Unit, Taught> =
+        ScreenRead.fixed(viewModelScope, runner, "Learned merchants cannot be read") { db ->
+            Taught(
+                items = db.merchantRuleDao().learnedMerchants(),
+                messages = db.userTemplateRuleDao().rows(),
+                ignored = db.userRejectRuleDao().rules(),
+            )
         }
+
+    /**
+     * A refused delete leaves the rule, and the read after it draws that. A
+     * delete is its read's `write`: guarded, `viewModelScope` having no handler.
+     */
+    fun delete(merchant: LearnedMerchant): Job = viewModelScope.launch {
+        read.write("The learned merchant could not be deleted") { db ->
+            db.merchantRuleDao().deleteLearnedOfIdentity(merchant.identity)
+        }.await()
     }
 
     /**
      * Forget [rule]: `UserRejectRuleDao.delete`, which returns its captures to
-     * the unread list (spec 5.7) and touches nothing else. Guarded as [delete] is.
+     * the unread list (spec 5.7) and touches nothing else.
      */
     fun deleteIgnored(rule: RejectRuleRow): Job = viewModelScope.launch {
-        turn.withLock {
-            CaptureStorage.guarded(
-                context,
-                what = "The ignored message could not be deleted",
-                unavailable = { 0 },
-                damageStopsCapture = false,
-            ) { Databases.userRejectRuleDao(context).delete(rule.id) }
-            _state.value = read()
-        }
+        read.write("The ignored message could not be deleted") { db -> db.userRejectRuleDao().delete(rule.id) }.await()
     }
 
     /**
      * Forget [rule]: `UserTemplateRuleDao.delete`, which leaves every
-     * transaction it wrote as it is (spec 5.8). Guarded as [delete] is.
+     * transaction it wrote as it is (spec 5.8).
      */
     fun deleteMessage(rule: TaughtRuleRow): Job = viewModelScope.launch {
-        turn.withLock {
-            CaptureStorage.guarded(
-                context,
-                what = "The taught message could not be deleted",
-                unavailable = { 0 },
-                damageStopsCapture = false,
-            ) { Databases.userTemplateRuleDao(context).delete(rule.id) }
-            _state.value = read()
-        }
+        read.write("The taught message could not be deleted") { db -> db.userTemplateRuleDao().delete(rule.id) }.await()
     }
-
-    private suspend fun read(): LearnedState =
-        CaptureStorage.guarded(
-            context,
-            what = "Learned merchants cannot be read",
-            unavailable = { LearnedState(loaded = true, storageUnavailable = true) },
-            damageStopsCapture = false,
-        ) {
-            LearnedState(
-                loaded = true,
-                items = Databases.merchantRuleDao(context).learnedMerchants(),
-                messages = Databases.userTemplateRuleDao(context).rows(),
-                ignored = Databases.userRejectRuleDao(context).rules(),
-            )
-        }
 }
