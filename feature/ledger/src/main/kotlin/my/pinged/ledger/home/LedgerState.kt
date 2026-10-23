@@ -103,7 +103,7 @@ internal fun dayHeaderBetween(before: LedgerItem?, after: LedgerItem?): LedgerIt
  *
  * [month] is carried rather than read from the clock at composition, so the
  * label naming the period cannot disagree with the numbers underneath it --
- * `LedgerViewModel.refresh` takes the month as a parameter, and the aggregate
+ * `LedgerViewModel.read`'s question is the month, and the aggregate
  * is the only thing that knows which one it summed.
  *
  * **No category names here.** [CategoryTotal] holds a `category_id` and §9.1
@@ -124,7 +124,7 @@ data class MonthSummary(
 )
 
 /**
- * Everything one `LedgerViewModel.refresh` read, published in one piece.
+ * Everything one `LedgerViewModel.read` read, published in one piece.
  *
  * **The fields must be published together.** The picker's `choices` is
  * [categories] minus the row at [uncategorizedId], so a composition that saw a

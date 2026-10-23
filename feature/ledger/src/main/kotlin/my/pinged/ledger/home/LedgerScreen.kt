@@ -83,7 +83,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.charts.MonthsSheet
 import my.pinged.charts.model.monthsSheet
-import my.pinged.charts.rememberMonthsRead
+import my.pinged.charts.monthsReading
 import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
@@ -95,6 +95,7 @@ import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.review.awaitingReviewLabel
 import my.pinged.ledger.settings.grouped
+import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
 import my.pinged.ui.monthName
@@ -176,9 +177,7 @@ fun LedgerScreen(
     backupReminder: BackupReminder? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
-    val read by viewModel.read.collectAsState()
     val merchantSheet by viewModel.merchantSheet.collectAsState()
-    val unavailable by viewModel.storageUnavailable.collectAsState()
     val picked by viewModel.picked.collectAsState()
     // Saveable, so a sheet open at a process death is open again after it,
     // as Charts' is.
@@ -187,33 +186,35 @@ fun LedgerScreen(
     // month's included.
     var picks by rememberSaveable { mutableIntStateOf(0) }
 
-    // Once per foreground, not once per holder -- see `SourcesScreen`, which
-    // records the mechanism. Firing once per holder would leave the aggregates
-    // never re-read: a payment captured while the app was away appears as a row
-    // -- the insert invalidates the `PagingSource` -- above a day header and a
-    // month total that do not count it.
+    // The month on screen follows the clock on each foreground, and the
+    // summary reads on each foreground, on `Databases.rewrites` and when the
+    // feed saw a write: `rememberReadState` owns those triggers, and the
+    // holder must not re-read for itself (`LedgerViewModel.rebind`). Without
+    // the foreground read a payment captured while the app was away appears as
+    // a row -- the insert invalidates the `PagingSource` -- above a day header
+    // and a month total that do not count it.
     //
-    // Keyed on `Databases.rewrites` too, so a delete or restore that lands
-    // while this screen is showing re-reads the aggregates without a resume;
-    // the holder rebinds the feed itself (`LedgerViewModel.rebind`), on
-    // `generation`. Here rather than there for the reason `SourcesScreen`
-    // gives; `rewrites` rather than `generation` for the one `Databases` gives.
+    // The clock first, so a screen left open across a month's end reads the
+    // new month and not the old one; `followClock` is a no-op when nothing has
+    // moved, so the order of the two effects cannot cost a read.
     val rewrites by Databases.rewrites.collectAsState()
     LifecycleResumeEffect(viewModel, rewrites) {
-        viewModel.refresh()
+        viewModel.followClock()
         // Paging does not re-attempt a load that failed, so the feed's half of
         // the catch-up has to be asked for. Without it a transient failure is
-        // permanent on this screen alone, while `refresh` and
+        // permanent on this screen alone, while the summary's read and
         // `MainActivity.onResume` clear the banner -- leaving the body reading
         // "cannot be read" under a banner saying otherwise.
         items.retry()
         onPauseOrDispose {}
     }
+    val feedWrites by viewModel.feedWrites.count.collectAsState()
+    val state = viewModel.read.rememberReadState(alsoOn = feedWrites)
 
     LedgerScreenContent(
         items = items,
-        read = read,
-        storageUnavailable = unavailable,
+        read = state.answer ?: LedgerRead(),
+        storageUnavailable = state.unavailable,
         onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
         retroPreview = viewModel::retroPreview,
         addCategory = viewModel::addCategory,
@@ -228,9 +229,9 @@ fun LedgerScreen(
         backupReminder = backupReminder,
         picked = picked,
         picks = picks,
-        // The summary on screen is another month's than the one picked: its
-        // read is in flight, since `pick` reads the month it names.
-        rereading = read.summary.let { it != null && it.month != (picked ?: YearMonth.now()) },
+        // The summary on screen is another month's than the one asked: its
+        // read is in flight, since `pick` asks the month it names.
+        rereading = state.rereading,
         onOpenMonths = { monthsOpen = true },
         merchantSheet = merchantSheet,
         merchantActions = remember(viewModel) {
@@ -246,12 +247,14 @@ fun LedgerScreen(
     )
 
     if (monthsOpen) {
-        // Read when it opens, so its rows are as of that moment.
-        val reading = rememberMonthsRead(viewModel) { viewModel.readMonths() }
-        val months by viewModel.months.collectAsState()
+        // Read when it opens, so its rows are as of that moment: each opening is
+        // a new question of the sheet's read, which keeps the last opening's
+        // months while it runs.
+        LaunchedEffect(viewModel) { viewModel.openMonths() }
+        val months by viewModel.months.state.collectAsState()
         MonthsSheet(
-            items = months?.let(::monthsSheet),
-            reading = reading,
+            items = months.answer?.let(::monthsSheet),
+            reading = monthsReading(months),
             onPick = {
                 monthsOpen = false
                 picks++

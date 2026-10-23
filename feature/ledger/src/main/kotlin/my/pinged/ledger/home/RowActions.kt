@@ -5,7 +5,6 @@ import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -102,8 +101,8 @@ class RowActions(
      *
      * Blocking, so it may only be called from inside a read's body, which is
      * where the holder's own read calls it, beside the rows the chooser marks.
-     * Of one snapshot with them only inside a transaction: the `Day` screen's
-     * read is one (`ReadRunner.read`), the Ledger's is not.
+     * Of one snapshot with them, because every screen's read is one
+     * transaction (`ReadRunner.read`).
      */
     fun readChooser(): ChooserRead {
         // Read on every refresh: Settings edits the table (#155), and a rename
@@ -342,22 +341,4 @@ internal fun readMerchantSheet(dao: MerchantIdentityDao, txns: TxnDao, ownKey: S
         monthTotals = txns.merchantTotals(range.start, range.endInclusive, limit = Int.MAX_VALUE)
             .filter { it.identityKey == identity },
     )
-}
-
-/**
- * The Ledger's [RowScreen] until its summary joins `:core:read` (#299): the
- * write is guarded and a refusal raises [unavailable], but nothing is read
- * back, because the Ledger's holder re-reads on its own after the write it
- * asked for. Deleted with that step.
- */
-internal class LedgerRowScreen(
-    private val scope: CoroutineScope,
-    private val runner: ReadRunner,
-    private val unavailable: () -> Unit,
-) : RowScreen {
-    override fun <R> write(what: String, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>> = scope.async {
-        runner.write(what, body).also { if (it is Outcome.Refused) unavailable() }
-    }
-
-    override fun refused() = unavailable()
 }

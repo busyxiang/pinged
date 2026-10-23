@@ -1,8 +1,12 @@
 package my.pinged.charts
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import kotlinx.coroutines.CompletableDeferred
 import my.pinged.charts.model.MonthsItem
+import my.pinged.read.Answered
+import my.pinged.read.ReadState
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.PingedTheme
@@ -19,8 +23,8 @@ import java.time.YearMonth
 /**
  * Jump to opened again (#285): the last opening's months stay while this
  * opening's read runs, under `UPDATING` once it has run 200ms, through
- * [rememberMonthsRead] as every host opens the sheet. The 45% dim is a
- * pixel, asserted on a device by `MonthPickerTest`.
+ * [monthsReading] as every host draws the sheet from its `ScreenRead`'s state.
+ * The 45% dim is a pixel, asserted on a device by `MonthPickerTest`.
  */
 @RunWith(RobolectricTestRunner::class)
 class MonthsSheetUpdatingTest {
@@ -31,15 +35,29 @@ class MonthsSheetUpdatingTest {
         MonthsItem.Row(YearMonth.of(2026, 9), "September 2026", "2,760.10", now = false, notCaptured = null, greyed = false),
     )
 
-    /** This opening's read: in flight until the test completes it. */
-    private val read = CompletableDeferred<Boolean>()
+    /**
+     * What the sheet's `ScreenRead` has published: this opening's read is in
+     * flight, over the last opening's answer, until the test moves it on.
+     */
+    private var state: ReadState<Int, Unit> by mutableStateOf(ReadState(Answered(1, Unit), rereading = true, unavailable = false))
+
+    /** This opening's read lands. */
+    private fun landed() {
+        state = ReadState(Answered(2, Unit), rereading = false, unavailable = false)
+    }
+
+    /** This opening's read was refused. */
+    private fun refused() {
+        state = state.copy(rereading = false, unavailable = true)
+    }
 
     private fun open(items: List<MonthsItem>?) {
+        // A first opening has no last answer to hold, and so is not a re-read.
+        if (items == null) state = ReadState(answered = null, rereading = false, unavailable = false)
         compose.mainClock.autoAdvance = false
         compose.setContent {
             PingedTheme {
-                val reading = rememberMonthsRead(Unit) { read }
-                MonthsSheet(items, onPick = {}, onDismiss = {}, reading = reading)
+                MonthsSheet(items, onPick = {}, onDismiss = {}, reading = monthsReading(state))
             }
         }
     }
@@ -65,7 +83,7 @@ class MonthsSheetUpdatingTest {
         assertEquals("No UPDATING once the reopened sheet's read had run 200ms: ${texts()}", 1, count(UPDATING))
         assertEquals("The last opening's months were not kept", 1, count("September 2026"))
 
-        read.complete(true)
+        landed()
         at(READING_DELAY_MILLIS + 80)
         assertEquals("UPDATING outlived the read it waited for", 0, count(UPDATING))
     }
@@ -74,7 +92,7 @@ class MonthsSheetUpdatingTest {
         open(lastOpening)
 
         at(READING_DELAY_MILLIS - 60)
-        read.complete(true)
+        landed()
         at(READING_DELAY_MILLIS * 3)
 
         assertEquals("A read that landed inside 200ms drew UPDATING, at these ms", emptyList<Long>(), updatingAt)
@@ -89,7 +107,7 @@ class MonthsSheetUpdatingTest {
         open(lastOpening)
 
         at(READING_DELAY_MILLIS + 40)
-        read.complete(false)
+        refused()
         at(READING_DELAY_MILLIS + 40 + HeldClock.FRAME * 2)
 
         assertEquals("A failed reopening did not say it cannot read: ${texts()}", 1, count(CANNOT_READ_YOUR_DATA))
@@ -101,7 +119,7 @@ class MonthsSheetUpdatingTest {
         open(lastOpening)
 
         at(48)
-        read.complete(false)
+        refused()
         at(READING_DELAY_MILLIS - 40)
 
         assertEquals("A failed reopening at 48ms waited for the delay: ${texts()}", 1, count(CANNOT_READ_YOUR_DATA))
@@ -112,7 +130,7 @@ class MonthsSheetUpdatingTest {
         open(null)
 
         at(48)
-        read.complete(false)
+        refused()
         at(READING_DELAY_MILLIS + 40)
 
         assertEquals("A failed first opening did not say it cannot read: ${texts()}", 1, count(CANNOT_READ_YOUR_DATA))

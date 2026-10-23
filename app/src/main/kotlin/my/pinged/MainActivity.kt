@@ -653,7 +653,7 @@ class MainActivity : ComponentActivity() {
         // database, so reading the report first describes the *previous*
         // foreground.
         //
-        // **`LedgerViewModel.refresh()` opens the database too, and this
+        // **`LedgerViewModel.read` opens the database too, and this
         // explicit probe stays anyway.** The banner is drawn above every
         // destination, so making the flag behind it depend on which destination
         // is composed gets the first foreground of a fresh install wrong.
@@ -1058,7 +1058,7 @@ internal fun exportIsOverdue(txns: Int, lastExportAt: Long, now: Long, nudgeDism
  * failure wrote survives a call that did in fact open the database, and the
  * "CANNOT OPEN YOUR DATA" banner outranks every other. It is not stuck, and the
  * only reason it is not is `LedgerScreen`'s `LifecycleResumeEffect`:
- * `LedgerViewModel.refresh` runs the same `guarded` over the same database and
+ * `LedgerViewModel.read` runs the same `guarded`, through `GuardedRunner`, over the same database and
  * clears the flag when its own read succeeds, on every foreground the ledger is
  * the destination for. Nothing enforces that, and it does not cover a
  * foreground spent entirely in settings; if the ledger ever stops probing on

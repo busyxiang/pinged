@@ -14,9 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
@@ -42,7 +39,6 @@ import my.pinged.ui.theme.dottedRule
 import my.pinged.ui.theme.UpdatingStatus
 import my.pinged.ui.theme.rememberUpdating
 import my.pinged.ui.theme.updating
-import kotlinx.coroutines.Deferred
 import java.time.YearMonth
 
 /**
@@ -84,7 +80,7 @@ fun monthsReading(state: ReadState<*, *>): MonthsReading = when {
  * [onAny] adds an `Any month` row above the months, for a caller to whom no
  * month is an answer; search's is the only one.
  *
- * [reading] is where this opening's read stands, from [rememberMonthsRead].
+ * [reading] is where this opening's read stands, from [monthsReading].
  * In flight, [items] are the last opening's: they stay, dimmed under
  * `UPDATING` after the delay every read waits (#285).
  */
@@ -239,23 +235,4 @@ enum class MonthsReading {
 
     /** This opening's read could not be made: no months drawn are current. */
     Unreadable,
-}
-
-/**
- * Starts this opening's read of the sheet, [read], once per [key], and says
- * where it stands: what [MonthsSheet]'s `reading` takes. [read] completes
- * true once it has published the months, false when they could not be read.
- * Every host that has not joined `:core:read` yet opens the sheet through
- * this, so a holder keeps its last read published and the sheet draws it
- * under `UPDATING` rather than `READING` (#285). Charts has joined: see
- * `MonthsSheetHost` and [monthsReading].
- */
-@Composable
-fun rememberMonthsRead(key: Any?, read: () -> Deferred<Boolean>): MonthsReading {
-    var reading by remember { mutableStateOf(MonthsReading.InFlight) }
-    LaunchedEffect(key) {
-        reading = MonthsReading.InFlight
-        reading = if (read().await()) MonthsReading.Landed else MonthsReading.Unreadable
-    }
-    return reading
 }

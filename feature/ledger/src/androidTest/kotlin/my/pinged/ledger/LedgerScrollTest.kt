@@ -148,11 +148,11 @@ class LedgerScrollTest {
         compose.setContent {
             PingedTheme {
                 val items = viewModel.items.collectAsLazyPagingItems()
-                val read by viewModel.read.collectAsState()
+                val read by viewModel.read.state.collectAsState()
                 loaded.set(items.itemCount)
                 LedgerScreenContent(
                     items = items,
-                    read = read,
+                    read = read.answer ?: LedgerRead(),
                     storageUnavailable = false,
                     onAssign = { txnId, categoryId, teach ->
                         saved.set(viewModel.assignCategory(txnId, categoryId, teach))
@@ -163,7 +163,7 @@ class LedgerScrollTest {
             }
         }
         compose.boundedWaitUntil(TIMEOUT) { loaded.get() > 0 }
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(YearMonth.now()).join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readMonth(YearMonth.now()) } }
     }
 
     private companion object {

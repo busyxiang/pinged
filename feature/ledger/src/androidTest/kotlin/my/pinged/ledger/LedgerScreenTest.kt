@@ -283,12 +283,12 @@ class LedgerScreenTest {
                 "throw there arrives in the composition",
         )
 
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh().join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readAgain() } }
         assertTrue(
             "The aggregate read failed and the holder does not report storage " +
                 "unavailable, so the one flag the screen and the banner both " +
                 "read stays false while nothing can be read",
-            viewModel.storageUnavailable.value,
+            viewModel.unavailable,
         )
     }
 
@@ -1322,7 +1322,7 @@ class LedgerScreenTest {
         val viewModel = ledgerViewModel()
 
         runBlocking {
-            withTimeout(TIMEOUT) { viewModel.assignCategory(1L, 1L, now = FIXED_MONTH).join() }
+            withTimeout(TIMEOUT) { viewModel.assignCategory(1L, 1L).join() }
         }
 
         assertTrue(
@@ -1330,7 +1330,7 @@ class LedgerScreenTest {
                 "read stays false, so the ledger keeps drawing as if it could " +
                 "be read -- and the throw is loose in viewModelScope, where " +
                 "nothing outside this test environment catches it",
-            viewModel.storageUnavailable.value,
+            viewModel.unavailable,
         )
     }
 
@@ -1356,21 +1356,21 @@ class LedgerScreenTest {
         categories.deleteRow(requireNotNull(categories.uncategorizedIdOrNull()))
         val viewModel = ledgerViewModel()
 
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readMonth(DEAD_MONTH) } }
 
         assertTrue(
             "The refresh never reached the summary. Resolving the " +
                 "uncategorized id threw, and the throw is loose in " +
                 "viewModelScope -- so a missing seed row takes the whole " +
                 "screen down rather than one chip",
-            viewModel.read.value.summary != null,
+            viewModel.answer.summary != null,
         )
         assertEquals(
             "The screen was handed an uncategorized id that no category has, " +
                 "so it would draw the chip on whichever rows happen to carry " +
                 "that number and assign from none of them",
             null,
-            viewModel.read.value.uncategorizedId,
+            viewModel.answer.uncategorizedId,
         )
     }
 
@@ -1405,9 +1405,9 @@ class LedgerScreenTest {
 
         runBlocking {
             val collector = launch(Dispatchers.Unconfined) {
-                viewModel.read.collect { reads += it }
+                viewModel.read.state.collect { reads += it.answer ?: LedgerRead() }
             }
-            withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() }
+            withTimeout(TIMEOUT) { viewModel.readMonth(DEAD_MONTH) }
             collector.cancel()
         }
 
@@ -1448,19 +1448,19 @@ class LedgerScreenTest {
     @Test fun theCategoryTableIsReadOnEveryRefreshWithTheAggregates() {
         val dao = freshLedger()
         val viewModel = ledgerViewModel()
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readMonth(DEAD_MONTH) } }
         val food = categoryId(FOOD)
-        assertEquals(FOOD, viewModel.read.value.categories.single { it.id == food }.name)
+        assertEquals(FOOD, viewModel.answer.categories.single { it.id == food }.name)
 
         Databases.categoryDao(context).edit(food, "Makan", "soup")
         dao.insert(ledgerTxn(amountSen = 5_000L, occurredAt = DEAD_MONTH_NOON, categoryId = food))
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readMonth(DEAD_MONTH) } }
 
-        val renamed = viewModel.read.value.categories.single { it.id == food }
+        val renamed = viewModel.answer.categories.single { it.id == food }
         assertEquals("The second refresh drew the name from before the rename", "Makan" to "soup", renamed.name to renamed.iconKey)
         assertEquals(
             listOf(5_000L),
-            requireNotNull(viewModel.read.value.summary).totals.map { it.netSen },
+            requireNotNull(viewModel.answer.summary).totals.map { it.netSen },
         )
     }
 
@@ -1476,14 +1476,14 @@ class LedgerScreenTest {
         bindDays(DEAD_MONTH.minusMonths(1), listOf(DEAD_MONTH.minusMonths(1).lengthOfMonth()))
         val viewModel = ledgerViewModel()
 
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readMonth(DEAD_MONTH) } }
 
         assertEquals(
             "A month the app was not alive for is reported as trustworthy. The " +
                 "total is then wrong, looks right, and the user has no way to " +
                 "suspect it",
             false,
-            requireNotNull(viewModel.read.value.summary).trustworthy,
+            requireNotNull(viewModel.answer.summary).trustworthy,
         )
     }
 
@@ -1498,13 +1498,13 @@ class LedgerScreenTest {
         bindDays(SHORT_DEAD_MONTH, 1..SHORT_DEAD_MONTH.lengthOfMonth())
         val viewModel = ledgerViewModel()
 
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(SHORT_DEAD_MONTH).join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readMonth(SHORT_DEAD_MONTH) } }
 
         assertEquals(
             "Every day of the month is recorded as bound and the total is still " +
                 "labelled do-not-trust, which teaches the user to ignore the label",
             true,
-            requireNotNull(viewModel.read.value.summary).trustworthy,
+            requireNotNull(viewModel.answer.summary).trustworthy,
         )
     }
 
@@ -1518,14 +1518,14 @@ class LedgerScreenTest {
         bindDays(DEAD_MONTH, 1 until DEAD_MONTH.lengthOfMonth())
         val viewModel = ledgerViewModel()
 
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(DEAD_MONTH).join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readMonth(DEAD_MONTH) } }
 
         assertEquals(
             "A finished month with a day nobody was listening on is reported as " +
                 "trustworthy. The day that is missing is a day of spending the " +
                 "total does not hold",
             false,
-            requireNotNull(viewModel.read.value.summary).trustworthy,
+            requireNotNull(viewModel.answer.summary).trustworthy,
         )
     }
 
@@ -1535,9 +1535,9 @@ class LedgerScreenTest {
      * the first read of a day sees when the foreground's write has not landed
      * (#82).
      *
-     * `refresh()` takes its default argument on purpose: this is the only
-     * test here that reads the current month and today off the clock, which
-     * is the path production always takes.
+     * The read is of the month the holder starts with, the clock's, on purpose:
+     * this is the only test here that reads the current month and today off
+     * the clock, which is the path production always takes.
      *
      * The bind on the last day of last month puts the history start before
      * this month, so on the 1st -- when no day of this month has passed --
@@ -1552,7 +1552,7 @@ class LedgerScreenTest {
         bindDays(YearMonth.from(today), 1 until today.dayOfMonth)
         val viewModel = ledgerViewModel()
 
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh().join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readAgain() } }
 
         assertEquals(
             "This month is captured on every day before today and is still " +
@@ -1560,7 +1560,7 @@ class LedgerScreenTest {
                 "is the label on every ordinary morning, which teaches the user " +
                 "that it means nothing",
             true,
-            requireNotNull(viewModel.read.value.summary).trustworthy,
+            requireNotNull(viewModel.answer.summary).trustworthy,
         )
     }
 
@@ -1602,8 +1602,8 @@ class LedgerScreenTest {
      * The screen over the real database, refreshed for the month a fixture is
      * dated in rather than for today, and settled before it returns.
      *
-     * `LedgerScreenContent` and an explicit `refresh(month)`, not [screen]: the
-     * stateful screen refreshes `YearMonth.now()` from its resume effect, so a
+     * `LedgerScreenContent` and an explicit `readMonth(month)`, not [screen]: the
+     * stateful screen reads `YearMonth.now()` from its resume effect, so a
      * fixture with a **fixed** date -- the only kind whose day heading has a
      * fixed spelling, and so the only kind whose heading can be asserted
      * without re-deriving it the way the screen derives it -- would have no
@@ -1622,17 +1622,17 @@ class LedgerScreenTest {
         compose.setContent {
             PingedTheme {
                 val items = viewModel.items.collectAsLazyPagingItems()
-                val read by viewModel.read.collectAsState()
+                val read by viewModel.read.state.collectAsState()
                 loaded.set(items.itemCount)
                 LedgerScreenContent(
                     items = items,
-                    read = read,
+                    read = read.answer ?: LedgerRead(),
                     storageUnavailable = false,
-                    // [month], not `assignCategory`'s default: the write is
-                    // followed by a refresh, and a refresh of today's month
-                    // would empty the summary this fixture is dated for.
+                    // The write is read back for the month asked below, and
+                    // a read of today's month would empty the summary this
+                    // fixture is dated for.
                     onAssign = { txnId, categoryId, teach ->
-                        viewModel.assignCategory(txnId, categoryId, teach, month)
+                        viewModel.assignCategory(txnId, categoryId, teach)
                     },
                     onOpenSettings = {},
                     // Somewhere to lead, so the summary draws `N TO SORT`.
@@ -1641,7 +1641,7 @@ class LedgerScreenTest {
             }
         }
         compose.boundedWaitUntil(TIMEOUT) { loaded.get() > 0 }
-        runBlocking { withTimeout(TIMEOUT) { viewModel.refresh(month).join() } }
+        runBlocking { withTimeout(TIMEOUT) { viewModel.readMonth(month) } }
         return viewModel
     }
 
