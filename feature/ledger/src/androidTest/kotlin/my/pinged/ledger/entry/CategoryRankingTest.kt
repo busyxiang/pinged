@@ -112,6 +112,11 @@ class CategoryRankingTest {
     @Test fun aManualEntryCountsLikeACapture() = runBlocking {
         context.freshLedger()
         val entries = entries()
+        // The rank `ManualEntries` starts on arrival reads before this save and
+        // publishes on its own thread. Left running, it can land after the
+        // `rank()` below and put the seed's order back over the new count: the
+        // CI failure was "expected Family but was Food & Drinks". Let it finish.
+        withTimeout(TIMEOUT) { entries.categories.first { it.isNotEmpty() } }
         entries.save(ManualDraft(amountSen = 500L, category = CategoryChoice(id("Family"), ChosenBy.TAPPED))).await()
 
         entries.rank().join()

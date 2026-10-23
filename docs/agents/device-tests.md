@@ -128,3 +128,22 @@ deadline (a published answer, a count of runner calls), and then asserts.
 Passing `Dispatchers.Unconfined` to a holder only runs its own steps inline;
 it does not make the DataStore step synchronous. This applies to the JVM
 tests under Robolectric as much as to the device ones.
+
+## A holder that reads on arrival
+
+A holder built with a read in its `init` (`ManualEntries` ranks the chips
+when `busy` first emits) has a read in flight that the test did not ask for.
+It reads before the test's next write and publishes from its own thread, so
+it can land after the read the test then waits on, and put the old answer
+back. `CategoryRankingTest.aManualEntryCountsLikeACapture` failed on CI with
+"expected Family but was Food & Drinks" for this reason. It passed on every
+earlier run, because the window is a few microseconds wide.
+
+A test that builds such a holder waits for the arrival read's answer
+(`categories.first { it.isNotEmpty() }` under `withTimeout`) before it writes.
+To find the window instead of waiting for CI to hit it, make the arrival read
+publish late: spin it until the later read has published, then publish. With
+the later read held 300ms, the old test failed every time at the CI assertion;
+with the wait it passed under the same hold. The holder itself still lets a
+stale read overwrite a newer one; no screen reaches that, because a save
+happens seconds after the screen opens.
