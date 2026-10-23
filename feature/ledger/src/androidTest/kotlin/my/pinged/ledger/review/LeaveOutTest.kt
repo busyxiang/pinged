@@ -83,7 +83,7 @@ class LeaveOutTest {
             ),
             after,
         )
-        assertEquals("A left-out card is still in the inbox", emptyList<ReviewCard>(), inbox.cards.value)
+        assertEquals("A left-out card is still in the inbox", emptyList<ReviewCard>(), inbox.cards)
     }
 
     @Test fun aLeftOutRowIsOutOfEveryTotalAndOnTheTransfersLineAndKeepAsExpenseCountsIt() = runBlocking {

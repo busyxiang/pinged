@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import my.pinged.capture.REVIEW_THRESHOLD_SEN
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.refreshed
 import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
@@ -66,12 +67,12 @@ class AcceptAllTest {
         assertEquals(
             "precondition: the pairless duplicate is not drawn as a plain card",
             CardKind.PLAIN,
-            inbox.cards.value!!.single { it.txn.id == duplicate }.kind,
+            inbox.cards!!.single { it.txn.id == duplicate }.kind,
         )
         assertEquals(
             "The button does not name the batch alone and the two cards it leaves to check",
             "Accept 3 · RM650.00 · 2 over RM500 left to check",
-            AcceptAll.of(inbox.cards.value!!)?.label,
+            AcceptAll.of(inbox.cards!!)?.label,
         )
 
         inbox.acceptAll().join()
@@ -113,16 +114,16 @@ class AcceptAllTest {
         assertEquals(
             "The net is not RM450.00 less the RM50.00 refund, over the two plain cards alone",
             "Accept 2 · RM400.00",
-            AcceptAll.of(inbox.cards.value!!)?.label,
+            AcceptAll.of(inbox.cards!!)?.label,
         )
 
         dao.insert(pending(PendingReason.MERCHANT_MISSING, at = NOON + 5, amountSen = 1_200L).copy(currency = "USD"))
-        inbox.refresh().join()
+        inbox.read.refreshed()
 
         assertEquals(
             "A plain card in another currency did not drop the sum, which would add dollars to ringgit",
             "Accept 3",
-            AcceptAll.of(inbox.cards.value!!)?.label,
+            AcceptAll.of(inbox.cards!!)?.label,
         )
     }
 

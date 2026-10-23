@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,13 +32,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.data.dao.CategoryUse
 import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.home.CategorySheet
 import my.pinged.ledger.home.NEW_CATEGORY
 import my.pinged.ledger.home.categoryIcon
 import my.pinged.ledger.settings.grouped
+import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Chevron
@@ -96,18 +95,16 @@ internal class Arranged(items: List<CategoryUse>) {
  * category with what is filed there, as [Arranged] orders it, a tap opening
  * spec 4's sheet, and "New category" at the foot.
  *
- * Read once per foreground, as `LearnedScreen` is, so a payment filed
- * elsewhere shows in the counts on return.
+ * Read on each foreground, so a payment filed elsewhere shows in the counts
+ * on return, and again when a restore or a delete replaces the ledger while it
+ * is open.
  */
 @Composable
 fun CategoriesScreen(viewModel: CategoriesViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    val state by viewModel.state.collectAsState()
-    LifecycleResumeEffect(viewModel) {
-        viewModel.refresh()
-        onPauseOrDispose { }
-    }
+    // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
+    val read = viewModel.read.rememberReadState()
     CategoriesContent(
-        state = state,
+        state = read.toState(),
         onBack = onBack,
         onAdd = viewModel::add,
         onEdit = viewModel::edit,

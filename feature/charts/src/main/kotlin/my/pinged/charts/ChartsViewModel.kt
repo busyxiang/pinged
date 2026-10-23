@@ -1,98 +1,85 @@
 package my.pinged.charts
 
 import android.app.Application
-import android.content.Context
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import my.pinged.capture.CaptureStorage
+import my.pinged.capture.GuardedRunner
 import my.pinged.data.CaptureEvidence
-import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
+import my.pinged.read.ScreenRead
 import java.time.LocalDate
 import java.time.YearMonth
 
 /**
- * The Charts screen's state (#81, The Charts read): one read of the selected
- * month, published as one [ChartsRead].
+ * The Charts screen's reads (#81, The Charts read): one read of the selected
+ * month, published as one [ChartsRead], and the `Months` sheet's read.
  *
- * The month is [selectedMonth] of [handle], so it survives a process death;
- * the `Months` sheet changes it through [select].
+ * Both are `:core:read`'s [ScreenRead], which owns what they have in
+ * common: the order of the reads, the answer kept while another is read, the
+ * answer dropped when its question has changed, and the database that cannot be
+ * opened. This class says what each reads.
+ *
+ * The month is [read]'s question, and is also kept in [handle] under
+ * [SELECTED_MONTH], so it survives a process death; the `Months` sheet changes
+ * it through [select]. [today] is asked when each read begins, so a read after
+ * midnight is of the new day.
  */
-class ChartsViewModel(app: Application, private val handle: SavedStateHandle) : AndroidViewModel(app) {
+class ChartsViewModel(
+    app: Application,
+    private val handle: SavedStateHandle,
+    private val today: () -> LocalDate = LocalDate::now,
+) : AndroidViewModel(app) {
 
-    /** A getter, not a field, for the reason `SourcesViewModel` records. */
-    private val context: Context get() = getApplication<Application>()
+    private val runner = GuardedRunner(app)
 
-    private val _month = MutableStateFlow(selectedMonth(handle, YearMonth.now()))
+    /**
+     * The selected month's read: the question is the month every figure on the
+     * screen covers. `ChartsScreen` reads it again on resume and on
+     * `Databases.rewrites` through `rememberReadState`.
+     */
+    val read: ScreenRead<YearMonth, ChartsRead> = ScreenRead(
+        scope = viewModelScope,
+        runner = runner,
+        what = "The charts cannot be read",
+        initial = selectedMonth(handle, YearMonth.now()),
+    ) { db, month -> readMonth(db, month, today()) }
 
-    /** The month every figure on the screen covers. */
-    val month: StateFlow<YearMonth> = _month.asStateFlow()
+    /**
+     * The `Months` sheet's read (#75). The question is the opening, numbered
+     * from [openMonths]: a sheet opening is a new question, so an opening's
+     * read keeps the last opening's months under `UPDATING` (#285).
+     */
+    val months: ScreenRead<Int, MonthsRead> = ScreenRead(
+        scope = viewModelScope,
+        runner = runner,
+        what = "The months cannot be read",
+        initial = 0,
+    ) { db, _ -> monthsRead(db, today(), midRead) }
 
-    private val _months = MutableStateFlow<MonthsRead?>(null)
-
-    /** The `Months` sheet's last read; null until [readMonths] lands one. */
-    val months: StateFlow<MonthsRead?> = _months.asStateFlow()
-
-    private val _read = MutableStateFlow<ChartsRead?>(null)
-
-    /** The last read that landed; null until the first does. */
-    val read: StateFlow<ChartsRead?> = _read.asStateFlow()
-
-    private val _unavailable = MutableStateFlow(false)
-
-    /** The last read could not open the database; the screen says so. */
-    val unavailable: StateFlow<Boolean> = _unavailable.asStateFlow()
+    private var openings = 0
 
     /** Tests only: runs inside each read's transaction, after its first statement or two. */
     @VisibleForTesting
     internal var midRead: () -> Unit = {}
 
     /**
-     * Read the selected month, as of [today].
+     * The statements of one read of [month], as of [today], all through [db]
+     * inside its transaction.
      *
-     * **In one transaction** (`Databases.inOneTransaction`), under the
-     * lease `CaptureStorage.guarded` takes: every statement reads one
-     * snapshot, so a stage-two commit is wholly in the read or wholly out of
-     * it, and the hero's spent less came back is its net, and the grid and
-     * bars sum to it. Outside one, each statement would be its own snapshot.
-     * The transaction holds Room's one connection, so a capture waits for it.
-     * Measured on emulator-5554 over 20,000 constructed rows across 24
-     * months, 500 merchants and 730 bound days: 45ms median, 51ms at the
-     * longest of 40 -- under stage two's longest single capture (66ms,
-     * `Databases.reset`).
-     *
-     * **One assignment, at the end**, as `LedgerViewModel.refresh` does: a
-     * screen that saw half a read would draw a figure beside a trust answer
-     * from another moment.
+     * **In one transaction** (`Databases.inOneTransaction`, which `GuardedRunner`
+     * runs under the lease `CaptureStorage.guarded` takes): every statement reads
+     * one snapshot, so a stage-two commit is wholly in the read or wholly out of
+     * it, and the hero's spent less came back is its net, and the grid and bars
+     * sum to it. Outside one, each statement would be its own snapshot. The
+     * transaction holds Room's one connection, so a capture waits for it.
+     * Measured on emulator-5554 over 20,000 constructed rows across 24 months,
+     * 500 merchants and 730 bound days: 45ms median, 51ms at the longest of 40
+     * -- under stage two's longest single capture (66ms, `Databases.reset`).
      */
-    fun refresh(today: LocalDate = LocalDate.now()): Job = viewModelScope.launch {
-        val month = _month.value
-        CaptureStorage.guarded(
-            context,
-            what = "The charts cannot be read",
-            unavailable = { _unavailable.value = true },
-            damageStopsCapture = false,
-        ) guarded@{
-            val read = Databases.inOneTransaction(context) { db -> readMonth(db, month, today) }
-            // A month picked while this read ran has its own read; this one,
-            // landing after it, would put the old month back on screen.
-            if (month != _month.value) return@guarded
-            _read.value = read
-            _unavailable.value = false
-        }
-    }
-
-    /** [refresh]'s statements, all through [db] inside its transaction. */
     private fun readMonth(db: PingedDatabase, month: YearMonth, today: LocalDate): ChartsRead {
         val range = LocalDates.monthRange(month)
         val txns = db.txnDao()
@@ -153,30 +140,16 @@ class ChartsViewModel(app: Application, private val handle: SavedStateHandle) : 
      * Show [month]: kept in [handle] under [SELECTED_MONTH], so a process
      * death comes back to it, then read.
      */
-    fun select(month: YearMonth, today: LocalDate = LocalDate.now()): Job {
+    fun select(month: YearMonth): Job {
         handle[SELECTED_MONTH] = month.toString()
-        _month.value = month
-        return refresh(today)
+        return read.ask(month)
     }
 
     /**
-     * Read the `Months` sheet as of [today] (#75), through [monthsRead]:
-     * true once published, false when it could not be read.
+     * The `Months` sheet has opened: read it as of now, as a new question
+     * whatever the last opening's answer was.
      */
-    fun readMonths(today: LocalDate = LocalDate.now()): Deferred<Boolean> = viewModelScope.async {
-        CaptureStorage.guarded(
-            context,
-            what = "The months cannot be read",
-            unavailable = {
-                _unavailable.value = true
-                false
-            },
-            damageStopsCapture = false,
-        ) {
-            _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today, midRead) }
-            true
-        }
-    }
+    fun openMonths(): Job = months.ask(++openings)
 
     private companion object {
         /** `monthByCategory`'s limit, set past any category count: no effective limit. */

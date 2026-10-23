@@ -106,13 +106,13 @@ class DamagedLedgerTest {
         Thread.setDefaultUncaughtExceptionHandler { _, thrown -> uncaught += thrown }
         val ledger = withContext(Dispatchers.Main) { LedgerViewModel(app, SavedStateHandle()) }
         try {
-            withContext(Dispatchers.Main) { ledger.refresh() }.join()
+            ledger.readAgain()
         } finally {
             Thread.setDefaultUncaughtExceptionHandler(previous)
         }
 
         assertEquals("the ledger's refresh threw past its guard", emptyList<Throwable>(), uncaught.toList())
-        assertEquals("the ledger reported its storage unavailable", false, ledger.storageUnavailable.value)
+        assertEquals("the ledger reported its storage unavailable", false, ledger.read.state.value.unavailable)
         val settings = withContext(Dispatchers.Main) { SettingsViewModel(app) }
         settings.refresh()
         assertEquals(

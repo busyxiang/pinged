@@ -38,6 +38,8 @@ Export in Settings writes a copy you can keep and restore from.
                       engine is JVM-testable.
     :core:data        Room entities, DAOs, the SQLCipher key, migrations.
     :core:ui          The theme and the formatting the screens share.
+    :core:read        `ScreenRead`: a screen's one-shot read of the ledger, its
+                      order, its staleness and its refusal. Depends on :core:data.
     :feature:capture  Stage one (the notification listener) and stage two
                       (the parse worker). Depends on :core:data.
     :feature:ledger   Every screen but Spending: the ledger, detail, search,

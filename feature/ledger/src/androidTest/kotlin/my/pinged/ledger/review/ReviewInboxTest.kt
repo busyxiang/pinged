@@ -92,7 +92,7 @@ class ReviewInboxTest {
             listOf(70_000L),
             dao.dayTotals(DAY, DAY).map { it.netSen },
         )
-        assertEquals("The accepted card is still in the inbox", emptyList<ReviewCard>(), inbox.cards.value)
+        assertEquals("The accepted card is still in the inbox", emptyList<ReviewCard>(), inbox.cards)
     }
 
     @Test fun notAPaymentRejectsAndTheRowLeavesTheFeedTheTotalsAndTopMerchants() = runBlocking {
@@ -164,7 +164,7 @@ class ReviewInboxTest {
         assertEquals(
             "The missed answer did not re-read the card as the row now is",
             listOf(reasonMoved to PendingReason.MERCHANT_MISSING),
-            inbox.cards.value?.map { it.txn.id to it.txn.pendingReason },
+            inbox.cards?.map { it.txn.id to it.txn.pendingReason },
         )
     }
 
@@ -198,7 +198,7 @@ class ReviewInboxTest {
         assertEquals(
             "The undone cards are not back in the inbox",
             listOf(rejected to PendingReason.RULE_REVIEW, accepted to PendingReason.OVER_THRESHOLD),
-            inbox.cards.value?.map { it.txn.id to it.txn.pendingReason },
+            inbox.cards?.map { it.txn.id to it.txn.pendingReason },
         )
         assertNull("Undo stayed on offer after it was used", inbox.undoable.value)
     }
@@ -228,7 +228,7 @@ class ReviewInboxTest {
             Triple(TxnState.COMMITTED, null, true),
             dao.byId(excluded)!!.let { Triple(it.state, it.pendingReason, it.isExcluded) },
         )
-        assertEquals("A refused Undo brought a card back", emptyList<ReviewCard>(), inbox.cards.value)
+        assertEquals("A refused Undo brought a card back", emptyList<ReviewCard>(), inbox.cards)
     }
 
     @Test fun anAnswerThatWritesNothingKeepsTheUndoOnOffer() = runBlocking {
@@ -262,7 +262,7 @@ class ReviewInboxTest {
         dao.insert(ledgerTxn(amountSen = 100L, occurredAt = NOON + 3))
 
         val inbox = inbox()
-        val cards = inbox.cards.value!!
+        val cards = inbox.cards!!
 
         assertEquals("The cards are not newest first", listOf(newest, middle, oldest), cards.map { it.txn.id })
         assertEquals("The inbox counts something other than the rows awaiting review", 3, cards.size)

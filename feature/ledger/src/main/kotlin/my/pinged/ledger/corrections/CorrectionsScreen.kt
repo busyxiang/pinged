@@ -15,8 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,7 +22,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.capture.Corrections
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
@@ -33,6 +30,7 @@ import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ledger.home.words
+import my.pinged.read.rememberReadState
 import my.pinged.ui.money
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
@@ -50,17 +48,15 @@ import my.pinged.ui.theme.dottedRule
  * Spec 5.5's reviewable list: each transaction a newer pack reads differently,
  * with its old and new values, and the user's accept or decline.
  *
- * Read once per foreground, as `SourcesScreen` is, so returning from the
- * ledger after the worker has finished its sweep draws the list it found.
+ * Read on each foreground, so returning from the ledger after the worker has
+ * finished its sweep draws the list it found, and again when a restore or a
+ * delete replaces the ledger while it is open.
  */
 @Composable
 fun CorrectionsScreen(viewModel: CorrectionsViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    val state by viewModel.state.collectAsState()
-    LifecycleResumeEffect(viewModel) {
-        viewModel.refresh()
-        onPauseOrDispose { }
-    }
-    CorrectionsContent(state, onBack, viewModel::accept, viewModel::decline, modifier)
+    // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
+    val read = viewModel.read.rememberReadState()
+    CorrectionsContent(read.toState(), onBack, viewModel::accept, viewModel::decline, modifier)
 }
 
 /** [CorrectionsScreen] without its holder, so a test can draw any state. */

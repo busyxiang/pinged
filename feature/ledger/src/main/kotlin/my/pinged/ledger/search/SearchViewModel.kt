@@ -10,27 +10,22 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import my.pinged.capture.CaptureStorage
+import my.pinged.capture.GuardedRunner
 import my.pinged.charts.MonthsRead
 import my.pinged.charts.monthsRead
-import my.pinged.data.Databases
 import my.pinged.data.LocalDates
+import my.pinged.data.PingedDatabase
 import my.pinged.data.SearchFilter
 import my.pinged.data.SearchTotal
 import my.pinged.data.dao.FeedRow
@@ -39,8 +34,10 @@ import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.RowActions
+import my.pinged.ledger.home.rowScreen
 import my.pinged.ledger.settings.ExportSink
 import my.pinged.ledger.settings.Transfers
+import my.pinged.read.ScreenRead
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -51,7 +48,8 @@ import java.time.YearMonth
  * **The words are debounced, the filters are not.** Spec 15.2 puts the
  * debounce ahead of the index: a read per keystroke is a transaction per
  * keystroke on Room's one connection, which a capture then waits behind. A
- * chip is one tap and reads at once.
+ * chip is one tap and reads at once. The debounce is the holder's, and only
+ * what survives it is asked of [read], whose question is [SearchQuestion].
  *
  * The words and filters live in the entry's [SavedStateHandle], so a search
  * comes back after a process death; what was found does not, and is read
@@ -59,16 +57,20 @@ import java.time.YearMonth
  * Uncategorized bar begins (#273); see [restoredChoice].
  *
  * A result row offers the ledger's category chooser, and a save re-reads the
- * search, so a row sorted out of an Uncategorized search leaves it at once.
+ * search through [read], so a row sorted out of an Uncategorized search leaves
+ * it at once.
  */
 class SearchViewModel(
     app: Application,
     private val handle: SavedStateHandle,
     start: SearchStart? = null,
+    private val today: () -> LocalDate = LocalDate::now,
 ) : AndroidViewModel(app) {
 
     /** A getter, not a field, for the reason `SourcesViewModel` records. */
     private val context: Context get() = getApplication<Application>()
+
+    private val runner = GuardedRunner(app)
 
     private val _query = MutableStateFlow(handle.get<String>(QUERY).orEmpty())
 
@@ -80,37 +82,59 @@ class SearchViewModel(
     /** The four filters. */
     val choice: StateFlow<SearchChoice> = _choice.asStateFlow()
 
-    private val _read = MutableStateFlow<SearchRead?>(null)
-
-    /** The last read that answers the current words and filters, or null before one lands. */
-    internal val read: StateFlow<SearchRead?> = _read.asStateFlow()
-
-    private val _storageUnavailable = MutableStateFlow(false)
-    val storageUnavailable: StateFlow<Boolean> = _storageUnavailable.asStateFlow()
+    /**
+     * What the last read found for the words and filters asked of it; its
+     * `rereading` says that others are being read. `SearchScreen` reads it
+     * again on resume and on `Databases.rewrites` through `rememberReadState`.
+     *
+     * The words asked of it lag [query] by the debounce, and the screen says
+     * `UPDATING` for that gap as well as for the read.
+     *
+     * The transaction holds Room's one connection, so a capture waits for
+     * it. `SearchTimingTest` measured it on emulator-5554 over 20,000
+     * constructed rows across two years, median of 40 after 10 warm-ups: a
+     * month with no words 3.3ms (5.1ms longest), every month with no words
+     * 25.5ms, a month with "grab" 34.0ms, every month with "grab" 37.1ms
+     * (38.3ms longest). What the words cost is nearly the same whatever the
+     * span, so a month does not make a search by words cheap.
+     */
+    internal val read: ScreenRead<SearchQuestion, SearchRead> = ScreenRead(
+        scope = viewModelScope,
+        runner = runner,
+        what = "The search cannot be read",
+        initial = SearchQuestion(_query.value, _choice.value),
+    ) { db, question -> readSearch(db, question) }
 
     /** The result rows' category chooser, shared with the Ledger. */
     private val rows = RowActions(
         context = { context },
         scope = viewModelScope,
-        unavailable = { _storageUnavailable.value = true },
+        runner = runner,
+        screen = read.rowScreen(),
     )
 
-    private val _months = MutableStateFlow<MonthsRead?>(null)
-
-    /** The month filter's sheet, read when it opens. */
-    val months: StateFlow<MonthsRead?> = _months.asStateFlow()
-
-    private val _apps = MutableStateFlow<List<SourceApp>?>(null)
-
-    /** The app filter's sheet, read when it opens. */
-    val apps: StateFlow<List<SourceApp>?> = _apps.asStateFlow()
-
     /**
-     * Held across one whole read, so a later read is also a later write of
-     * [read]; and a read that finishes after the question changed publishes
-     * nothing, since a newer one is coming.
+     * The month filter's sheet. Each opening is a new question, numbered from
+     * [openMonths], so the last opening's months stay drawn under `UPDATING`
+     * until this one lands (#285).
      */
-    private val reading = Mutex()
+    val months: ScreenRead<Int, MonthsRead> = ScreenRead(
+        scope = viewModelScope,
+        runner = runner,
+        what = "The months cannot be read",
+        initial = 0,
+    ) { db, _ -> monthsRead(db, today()) }
+
+    /** The app filter's sheet, read when it opens; see [openApps]. */
+    val apps: ScreenRead<Int, List<SourceApp>> = ScreenRead(
+        scope = viewModelScope,
+        runner = runner,
+        what = "The apps cannot be read",
+        initial = 0,
+    ) { db, _ -> db.txnDao().sourceApps() }
+
+    private var openings = 0
+    private var appOpenings = 0
 
     init {
         // A question the screen already shows the answer to is not read
@@ -119,13 +143,13 @@ class SearchViewModel(
         // swallow the opening empty words, so the first question here can be
         // the typed one, and dropping it left the screen on the opening read
         // (SearchScreenTest.wordsTypedWhileTheFirstReadIsDebouncedAreRead).
-        // The read runs in `collectLatest` itself, so a newer question
-        // cancels it while it waits for the lease or the IO dispatcher.
+        // [ScreenRead.ask] never blocks, and the read for a question that
+        // changes meanwhile publishes nothing, so no `collectLatest`.
         @OptIn(FlowPreview::class)
         viewModelScope.launch {
-            combine(_query.debounce(DEBOUNCE_MS), _choice) { q, c -> q to c }
-                .filter { (q, c) -> _read.value.let { it == null || it.text != q || it.choice != c } }
-                .collectLatest { read() }
+            combine(_query.debounce(DEBOUNCE_MS), _choice) { q, c -> SearchQuestion(q, c) }
+                .filter { it != read.question.value }
+                .collect { read.ask(it) }
         }
     }
 
@@ -154,57 +178,31 @@ class SearchViewModel(
     }
 
     /** See [RowActions.assignCategory]; the search is re-read after. */
-    fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
-        rows.assignCategory(txnId, categoryId, teach) { refresh().join() }
+    fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job = rows.assignCategory(txnId, categoryId, teach)
 
     /** See [RowActions.retroPreview]. */
     suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
 
     /** See [RowActions.addCategory]; the search, and so the chooser, is re-read after. */
-    suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey) { refresh().join() }
+    suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey)
 
     /**
-     * Read the current words and filters: the rows, at most [ROW_LIMIT] of
-     * them, their totals from SQL, and the categories the rows and chip are
-     * named from, in one transaction so the total is over the rows drawn.
-     *
-     * The transaction holds Room's one connection, so a capture waits for
-     * it. `SearchTimingTest` measured it on emulator-5554 over 20,000
-     * constructed rows across two years, median of 40 after 10 warm-ups: a
-     * month with no words 3.3ms (5.1ms longest), every month with no words
-     * 25.5ms, a month with "grab" 34.0ms, every month with "grab" 37.1ms
-     * (38.3ms longest). What the words cost is nearly the same whatever the
-     * span, so a month does not make a search by words cheap.
+     * The rows of [question], at most [ROW_LIMIT] of them, their totals from
+     * SQL, and the categories the rows and chip are named from, through [db]
+     * in the one transaction [read] runs, so the total is over the rows drawn.
      */
-    fun refresh(): Job = viewModelScope.launch { read() }
-
-    private suspend fun read() {
-        reading.withLock {
-            val text = _query.value
-            val choice = _choice.value
-            CaptureStorage.guarded(
-                context,
-                what = "The search cannot be read",
-                unavailable = { _storageUnavailable.value = true },
-                damageStopsCapture = false,
-            ) {
-                val read = Databases.inOneTransaction(context) { db ->
-                    val txns = db.txnDao()
-                    val filter = choice.filter()
-                    SearchRead(
-                        text = text,
-                        choice = choice,
-                        rows = txns.searchRows(text, filter, ROW_LIMIT),
-                        totals = txns.searchTotals(text, filter),
-                        // Through `Databases`' DAOs, which inside the
-                        // transaction's monitor are [db]'s, as Day's is.
-                        chooser = rows.readChooser(),
-                    )
-                }
-                if (text == _query.value && choice == _choice.value) _read.value = read
-                _storageUnavailable.value = false
-            }
-        }
+    private fun readSearch(db: PingedDatabase, question: SearchQuestion): SearchRead {
+        val txns = db.txnDao()
+        val filter = question.choice.filter()
+        return SearchRead(
+            text = question.text,
+            choice = question.choice,
+            rows = txns.searchRows(question.text, filter, ROW_LIMIT),
+            totals = txns.searchTotals(question.text, filter),
+            // Through `Databases`' DAOs, which inside the transaction's
+            // monitor are [db]'s, as Day's is.
+            chooser = rows.readChooser(),
+        )
     }
 
     /**
@@ -218,14 +216,14 @@ class SearchViewModel(
      * The [Job] ends once the export has let go of it.
      */
     fun exportTo(sink: ExportSink): Job {
-        val read = _read.value
+        val found = read.state.value.answer
         return viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
-            if (read == null) {
+            if (found == null) {
                 // Nothing on screen to export; the picker's document is let go.
                 runCatching { sink.delete() }
                 return@launch
             }
-            val pending = Transfers.spreadsheet(context, sink, read.text, read.choice.filter(), coroutineContext.job)
+            val pending = Transfers.spreadsheet(context, sink, found.text, found.choice.filter(), coroutineContext.job)
             val answer = try {
                 pending.await()
             } catch (cancelled: CancellationException) {
@@ -253,38 +251,13 @@ class SearchViewModel(
     fun cancelExport() = Transfers.cancelExport()
 
     /**
-     * Read the month filter's sheet as of [today]. The last read stays
-     * published meanwhile: the sheet draws it as the last opening's, dimmed
-     * under `UPDATING`, until this one lands (#285, `rememberMonthsRead`).
-     * True once published, false when it could not be read.
+     * The month filter's sheet has opened: read it as of now, as a new
+     * question whatever the last opening's answer was.
      */
-    fun readMonths(today: LocalDate = LocalDate.now()): Deferred<Boolean> {
-        return viewModelScope.async {
-            CaptureStorage.guarded(
-                context,
-                what = "The months cannot be read",
-                unavailable = {
-                    _storageUnavailable.value = true
-                    false
-                },
-                damageStopsCapture = false,
-            ) {
-                _months.value = Databases.inOneTransaction(context) { db -> monthsRead(db, today) }
-                true
-            }
-        }
-    }
+    fun openMonths(): Job = months.ask(++openings)
 
-    fun readApps(): Job = viewModelScope.launch {
-        CaptureStorage.guarded(
-            context,
-            what = "The apps cannot be read",
-            unavailable = { _storageUnavailable.value = true },
-            damageStopsCapture = false,
-        ) {
-            _apps.value = Databases.leasing { Databases.txnDao(context).sourceApps() }
-        }
-    }
+    /** The app filter's sheet has opened: read the apps, as a new question for the same reason. */
+    fun openApps(): Job = apps.ask(++appOpenings)
 
     internal companion object {
         const val TAG = "PingedSearch"
@@ -366,7 +339,13 @@ data class SearchChoice(
 }
 
 /**
- * What one [SearchViewModel.refresh] read, and the question it answers.
+ * What [SearchViewModel.read] asks: the words and the filters. Two searches
+ * are the same question when both are equal.
+ */
+internal data class SearchQuestion(val text: String, val choice: SearchChoice)
+
+/**
+ * What one read of [SearchViewModel.read] found, and the question it answers.
  * [chooser] is the category chooser's half, read in the same transaction,
  * and its categories are what the rows and the category chip are named from.
  */

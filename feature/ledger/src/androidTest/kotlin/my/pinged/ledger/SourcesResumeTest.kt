@@ -76,7 +76,7 @@ class SourcesResumeTest {
         val viewModel = SourcesViewModel(context.applicationContext as Application)
         compose.setContent { PingedTheme { SourcesScreen(viewModel, onBack = {}) } }
 
-        compose.boundedWaitUntil(TIMEOUT) { viewModel.state.value.loaded }
+        compose.boundedWaitUntil(TIMEOUT) { viewModel.current.loaded }
         assertEquals(
             "precondition: nothing has been counted for this package, so no row " +
                 "for it may be drawn yet",
@@ -105,7 +105,7 @@ class SourcesResumeTest {
         // "the row is composed but scrolled out of the lazy list".
         val reRead = runCatching {
             compose.boundedWaitUntil(TIMEOUT) {
-                viewModel.state.value.seenNotCaptured.any { it.pkg == pkg }
+                viewModel.current.seenNotCaptured.any { it.pkg == pkg }
             }
         }.isSuccess
         assertTrue(
@@ -152,7 +152,7 @@ class SourcesResumeTest {
             "precondition: the enabled source never reached the allow-list state",
             runCatching {
                 compose.boundedWaitUntil(TIMEOUT) {
-                    viewModel.state.value.suggested.any { it.pkg == pkg && it.enabled }
+                    viewModel.current.suggested.any { it.pkg == pkg && it.enabled }
                 }
             }.isSuccess,
         )
@@ -167,7 +167,7 @@ class SourcesResumeTest {
 
         val reRead = runCatching {
             compose.boundedWaitUntil(TIMEOUT) {
-                viewModel.state.value.suggested.none { it.pkg == pkg && it.enabled }
+                viewModel.current.suggested.none { it.pkg == pkg && it.enabled }
             }
         }.isSuccess
         assertTrue(

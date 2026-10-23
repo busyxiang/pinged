@@ -23,12 +23,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.charts.model.ChartsState
 import my.pinged.charts.model.Chip
 import my.pinged.charts.model.Hero
 import my.pinged.charts.model.chartsState
-import my.pinged.data.Databases
+import my.pinged.read.rememberReadState
 import my.pinged.ui.monthName
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
@@ -57,7 +56,7 @@ import java.time.YearMonth
  * below them the month's sections in one vertical scroll.
  *
  * Re-read on each foreground, and when a delete or a restore rewrites the
- * ledger while the screen shows (`Databases.rewrites`), as the Ledger does.
+ * ledger while the screen shows (`Databases.rewrites`), by `rememberReadState`.
  *
  * [onDayClick] is a grid square's tap (#69); `:app` routes it to `Day`, which
  * this module knows nothing of (#70). [onOpenReview] is the "not in the
@@ -74,23 +73,18 @@ fun ChartsScreen(
     onOpenReview: () -> Unit = {},
     onOpenUncategorized: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
 ) {
-    val rewrites by Databases.rewrites.collectAsState()
-    LifecycleResumeEffect(viewModel, rewrites) {
-        viewModel.refresh()
-        onPauseOrDispose {}
-    }
-    val read by viewModel.read.collectAsState()
-    val unavailable by viewModel.unavailable.collectAsState()
-    val month by viewModel.month.collectAsState()
+    // Reads on each resume and on `Databases.rewrites`: `rememberReadState` owns
+    // both triggers, and what the screen shows while a read is in flight.
+    val read = viewModel.read.rememberReadState()
+    val month by viewModel.read.question.collectAsState()
     // Saveable, so a sheet open at a process death is open again after it.
     var monthsOpen by rememberSaveable { mutableStateOf(false) }
     ChartsScreenContent(
         month = month,
-        state = chartsState(read),
-        unavailable = unavailable,
-        // A month picked whose read has not landed: `refresh` drops a read
-        // of any other month, so a mismatch is a read still in flight.
-        rereading = read.let { it != null && it.month != month },
+        state = chartsState(read.answer),
+        unavailable = read.unavailable,
+        // A month picked whose read has not landed.
+        rereading = read.rereading,
         modifier = modifier,
         onDayClick = onDayClick,
         onOpenMonths = { monthsOpen = true },
@@ -98,7 +92,7 @@ fun ChartsScreen(
         // The read's month and id, not the selection's: the bar drawn is
         // the read's, and a newer selection may not have landed yet.
         onOpenUncategorized = onOpenUncategorized?.let { open ->
-            read?.let { r -> r.uncategorizedId?.let { id -> { open(r.month, id) } } }
+            read.answer?.let { r -> r.uncategorizedId?.let { id -> { open(r.month, id) } } }
         },
     )
     if (monthsOpen) {

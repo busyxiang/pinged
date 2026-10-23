@@ -7,6 +7,7 @@ import my.pinged.data.Databases
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.refreshed
 import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.ledgerTxn
 
@@ -15,7 +16,7 @@ private val context get() = InstrumentationRegistry.getInstrumentation().targetC
 /** A view model over the real database, its holder read once and settled. */
 internal suspend fun settledReview(): ReviewViewModel {
     val viewModel = ReviewViewModel(context.applicationContext as Application)
-    withTimeout(TIMEOUT) { viewModel.inbox.refresh().join() }
+    withTimeout(TIMEOUT) { viewModel.inbox.read.refreshed() }
     return viewModel
 }
 

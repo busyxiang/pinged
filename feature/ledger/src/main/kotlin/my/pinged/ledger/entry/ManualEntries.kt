@@ -47,10 +47,11 @@ import my.pinged.parse.MerchantNormalization
  * the history start (`CaptureEvidence.historyStart`), so typing in cash cannot
  * hide a day Pinged was not watching.
  *
- * Shaped like `ReviewInbox`, and sharing its [LedgerWrites]: owned by a view
- * model, which hands over its [scope]; every database touch inside
- * `LedgerWrites.guarded`, which leases the instance and turns a database that
- * will not open into [storageUnavailable] rather than a process kill on a tap.
+ * Owned by a view model, which hands over its [scope]; every database touch
+ * inside `LedgerWrites.guarded`, which leases the instance and turns a database
+ * that will not open into [storageUnavailable] rather than a process kill on a
+ * tap. (`ReviewInbox`, whose busy state is the same, writes through
+ * `:core:read` instead.)
  *
  * **During a restore or a delete-everything nothing is saved** ([busy]). A
  * save asked for then is refused on the spot, not queued behind the gate:

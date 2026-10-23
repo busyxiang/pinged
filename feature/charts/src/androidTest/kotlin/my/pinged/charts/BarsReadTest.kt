@@ -60,10 +60,10 @@ class BarsReadTest {
         history.forEach { db.captureDayDao().recordListenerBound(LocalDates.of(it), bound = true) }
 
         val charts = withContext(Dispatchers.Main) {
-            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())))
+            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())), today = { today })
         }
-        withContext(Dispatchers.Main) { charts.refresh(today) }.join()
-        val read = charts.read.value
+        withContext(Dispatchers.Main) { charts.read.refresh() }.join()
+        val read = charts.read.state.value.answer
         assertNotNull("The read published nothing", read)
         read!!
 

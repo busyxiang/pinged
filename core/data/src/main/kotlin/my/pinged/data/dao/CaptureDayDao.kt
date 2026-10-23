@@ -189,7 +189,7 @@ interface CaptureDayDao {
      * that finds the listener bound** (#82), so a process bound since
      * yesterday gets its row from the first notification or the first
      * foreground, whichever is sooner. The foreground's write is launched, not
-     * awaited, and `LedgerViewModel.refresh` reads on resume, so the first
+     * awaited, and `LedgerViewModel.read` reads on resume, so the first
      * read of a day can run before it lands; `notCapturedDays` never counts
      * today, so that race cannot grey a month.
      */

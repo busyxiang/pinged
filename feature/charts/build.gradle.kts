@@ -50,8 +50,11 @@ android {
 dependencies {
     // The DAOs, `Databases` and the month-trust rule.
     implementation(project(":core:data"))
-    // `CaptureStorage.guarded`: the lease, the IO hop and the storage flag
-    // every screen's read goes through.
+    // `ScreenRead`: the order, the staleness and the refusal of every screen's
+    // read of the ledger (#296).
+    implementation(project(":core:read"))
+    // `GuardedRunner`, over `CaptureStorage.guarded`: the lease, the IO hop and
+    // the storage flag every screen's read goes through.
     implementation(project(":feature:capture"))
     // The theme and the fonts, shared with the Ledger without depending on it.
     implementation(project(":core:ui"))

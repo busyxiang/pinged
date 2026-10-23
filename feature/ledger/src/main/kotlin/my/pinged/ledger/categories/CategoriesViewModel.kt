@@ -1,22 +1,18 @@
 package my.pinged.ledger.categories
 
 import android.app.Application
-import android.content.Context
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import my.pinged.capture.CaptureStorage
-import my.pinged.data.Databases
+import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.CategoryInUseException
 import my.pinged.data.dao.CategoryUse
+import my.pinged.read.ReadRunner
+import my.pinged.read.ReadState
+import my.pinged.read.ScreenRead
 
 /** What the Categories list draws. */
 data class CategoriesState(
@@ -28,11 +24,21 @@ data class CategoriesState(
 )
 
 /**
+ * What the screen draws for [this] read: an unreadable ledger draws no
+ * categories, whatever the last read held, so a sheet open over one closes.
+ */
+internal fun ReadState<Unit, List<CategoryUse>>.toState(): CategoriesState {
+    if (unavailable) return CategoriesState(loaded = true, storageUnavailable = true)
+    val items = answer ?: return CategoriesState()
+    return CategoriesState(loaded = true, items = items)
+}
+
+/**
  * Spec 4's category editing (#155): the list, add, rename and re-icon, and
  * delete when unused.
  *
- * A write and the read after it take [turn], so the list never draws a state
- * older than a write that landed, as `LearnedViewModel` does.
+ * The list is `:core:read`'s [ScreenRead] (#296) and each edit is its `write`,
+ * so the list never draws a state older than a write that landed.
  *
  * **A refused write is the read after it, not an error.** The sheet says a
  * clash or a use before Save is tapped; the DAO refuses again inside its own
@@ -44,16 +50,15 @@ data class CategoriesState(
  * never sends a blank icon, so that one would be a programming error caught
  * as a refusal; it is logged, not hidden.
  */
-class CategoriesViewModel(app: Application) : AndroidViewModel(app) {
+class CategoriesViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, GuardedRunner(app))
 
-    /** A getter, for the reason `SourcesViewModel.context` gives. */
-    private val context: Context get() = getApplication<Application>()
-
-    private val turn = Mutex()
-    private val _state = MutableStateFlow(CategoriesState())
-    val state: StateFlow<CategoriesState> = _state.asStateFlow()
-
-    fun refresh(): Job = viewModelScope.launch { turn.withLock { _state.value = read() } }
+    /**
+     * Every category with what is filed there. `CategoriesScreen` reads it on
+     * resume and on `Databases.rewrites` through `rememberReadState`.
+     */
+    internal val read: ScreenRead<Unit, List<CategoryUse>> =
+        ScreenRead.fixed(viewModelScope, runner, "Categories cannot be read") { db -> db.categoryDao().uses() }
 
     fun add(name: String, iconKey: String): Job = write("The category could not be added") { it.add(name, iconKey) }
 
@@ -63,32 +68,16 @@ class CategoriesViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(categoryId: Long): Job = write("The category could not be deleted") { it.deleteIfUnused(categoryId) }
 
     private fun write(what: String, change: (CategoryDao) -> Unit): Job = viewModelScope.launch {
-        turn.withLock {
-            // Guarded as every write in this module is: `viewModelScope` has
-            // no handler, and an unguarded open in spec 11.1's state kills the
-            // process on a tap.
-            CaptureStorage.guarded(context, what = what, unavailable = { }, damageStopsCapture = false) {
-                try {
-                    change(Databases.categoryDao(context))
-                } catch (refused: IllegalArgumentException) {
-                    Log.i(TAG, "$what: ${refused.message}")
-                } catch (refused: CategoryInUseException) {
-                    Log.i(TAG, "$what: ${refused.message}")
-                }
+        read.write(what) { db ->
+            try {
+                change(db.categoryDao())
+            } catch (refused: IllegalArgumentException) {
+                Log.i(TAG, "$what: ${refused.message}")
+            } catch (refused: CategoryInUseException) {
+                Log.i(TAG, "$what: ${refused.message}")
             }
-            _state.value = read()
-        }
+        }.await()
     }
-
-    private suspend fun read(): CategoriesState =
-        CaptureStorage.guarded(
-            context,
-            what = "Categories cannot be read",
-            unavailable = { CategoriesState(loaded = true, storageUnavailable = true) },
-            damageStopsCapture = false,
-        ) {
-            CategoriesState(loaded = true, items = Databases.categoryDao(context).uses())
-        }
 
     private companion object {
         const val TAG = "Categories"

@@ -128,9 +128,9 @@ class LedgerRebindTest {
         )
         assertTrue(
             "The feed is empty and the holder still carries the deleted " +
-                "ledger's month totals, ${viewModel.read.value.summary?.totals}: " +
+                "ledger's month totals, ${viewModel.answer.summary?.totals}: " +
                 "the aggregates were not re-read after the reset",
-            waitFor { viewModel.read.value.summary?.totals?.isEmpty() == true },
+            waitFor { viewModel.answer.summary?.totals?.isEmpty() == true },
         )
 
         insertNow(AFTERWARDS, 999L)

@@ -42,16 +42,16 @@ class DayReadTest {
         Databases.captureDayDao(context).recordListenerBound(LocalDates.of(DAY.minusDays(10)), true)
         Databases.captureDayDao(context).recordListenerBound(LocalDates.of(DAY), true)
         dao.insert(txn(4_500L))
-        val day = withContext(Dispatchers.Main) { DayViewModel(context.applicationContext as Application, DAY) }
+        val day = withContext(Dispatchers.Main) { DayViewModel(context.applicationContext as Application, DAY) { TODAY } }
         val writer = AtomicReference<Thread?>(null)
         day.midRead = {
             writer.set(thread { Databases.shared(context).txnDao().insert(txn(1_000L)) }.also { it.join(GRACE_MS) })
         }
 
-        withContext(Dispatchers.Main) { day.refresh(TODAY) }.join()
+        withContext(Dispatchers.Main) { day.read.refresh() }.join()
         writer.get()!!.join()
 
-        val read = day.read.value
+        val read = day.read.state.value.answer
         assertNotNull("The day's read published nothing", read)
         val seen = read!!.rows.size to read.heading.total
         assertTrue(

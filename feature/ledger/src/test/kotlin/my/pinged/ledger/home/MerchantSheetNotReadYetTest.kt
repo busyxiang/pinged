@@ -10,10 +10,14 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import my.pinged.data.LocalDates
+import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.MerchantChoice
 import my.pinged.data.dao.MerchantTotal
+import my.pinged.read.Outcome
+import my.pinged.read.ReadRunner
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.HeldBy
 import my.pinged.ui.theme.LocalHeldBy
@@ -157,7 +161,14 @@ class MerchantSheetNotReadYetTest {
      * left to its coroutine is not drawn.
      */
     @Test fun theTapOpensTheSheetBeforeTheReadRuns() {
-        val rows = RowActions({ error("The read ran on a scope that runs nothing") }, CoroutineScope(Held), unavailable = {})
+        val ran = { error("The read ran on a scope that runs nothing") }
+        val rows = RowActions({ ran() }, CoroutineScope(Held), runner = object : ReadRunner {
+            override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> = ran()
+            override suspend fun <T> write(what: String, body: suspend (PingedDatabase) -> T): Outcome<T> = ran()
+        }, screen = object : RowScreen {
+            override fun <R> write(what: String, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>> = ran()
+            override fun refused() = ran()
+        })
         rows.openMerchant(opening)
 
         assertEquals(OpenMerchantSheet(opening, read = null), rows.merchantSheet.value)

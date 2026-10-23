@@ -386,7 +386,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
      * authenticates every page (`Integrity.check`'s KDoc), and the page this
      * query walks need not be the page the earlier check found ok. Uncaught,
      * that exception reaches [load]'s bare `viewModelScope.launch` with no
-     * handler and kills the process -- `SourcesViewModel.refresh`'s KDoc names
+     * handler and kills the process -- `SourcesViewModel.read`'s KDoc names
      * the same hazard -- crashing the one screen built to offer salvage
      * exactly when the damage is real.
      *

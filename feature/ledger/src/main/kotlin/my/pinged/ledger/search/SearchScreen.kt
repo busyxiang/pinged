@@ -56,11 +56,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import my.pinged.charts.MonthsSheet
-import my.pinged.charts.rememberMonthsRead
+import my.pinged.charts.monthsReading
 import my.pinged.charts.model.monthsSheet
-import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.Seed
 import my.pinged.data.SearchTotal
@@ -82,6 +80,7 @@ import my.pinged.ledger.settings.Transfers
 import my.pinged.ledger.settings.grouped
 import my.pinged.parse.Amount
 import my.pinged.parse.Direction
+import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.money
@@ -144,16 +143,11 @@ fun SearchScreen(
     onPickExport: (() -> Unit)? = null,
 ) {
     // Re-read on each foreground and on a delete or restore, as Day's is:
-    // nothing invalidates a list read whole.
-    val rewrites by Databases.rewrites.collectAsState()
-    LifecycleResumeEffect(viewModel, rewrites) {
-        viewModel.refresh()
-        onPauseOrDispose {}
-    }
+    // nothing invalidates a list read whole. `rememberReadState` owns both.
+    val read = viewModel.read.rememberReadState()
+    val asked by viewModel.read.question.collectAsState()
     val query by viewModel.query.collectAsState()
     val choice by viewModel.choice.collectAsState()
-    val read by viewModel.read.collectAsState()
-    val unavailable by viewModel.storageUnavailable.collectAsState()
     var sheet by rememberSaveable { mutableStateOf<FilterSheet?>(null) }
     var exportOpen by rememberSaveable { mutableStateOf(false) }
 
@@ -161,8 +155,11 @@ fun SearchScreen(
         query = query,
         onQuery = viewModel::setQuery,
         choice = choice,
-        read = read,
-        storageUnavailable = unavailable,
+        read = read.answer,
+        // A read for other words or filters is in flight, or the words typed
+        // are still inside the debounce and have not been asked yet.
+        rereading = read.rereading || query != asked.text,
+        storageUnavailable = read.unavailable,
         onBack = onBack,
         onOpenSheet = { sheet = it },
         onOpenEntry = onOpenEntry,
@@ -183,7 +180,7 @@ fun SearchScreen(
         val own = transfers.outcome?.takeIf { it.serial == exported }
         val job = transfers.running?.takeIf { it.operation.isExport } ?: own?.job ?: TransferJob.Idle
         SearchExportSheet(
-            rows = read?.totals?.sumOf { it.rowCount },
+            rows = read.answer?.totals?.sumOf { it.rowCount },
             job = job,
             onPick = onPickExport,
             onCancel = viewModel::cancelExport,
@@ -198,11 +195,11 @@ fun SearchScreen(
     val close = { sheet = null }
     when (sheet) {
         FilterSheet.Month -> {
-            val reading = rememberMonthsRead(viewModel) { viewModel.readMonths() }
-            val months by viewModel.months.collectAsState()
+            LaunchedEffect(viewModel) { viewModel.openMonths() }
+            val months by viewModel.months.state.collectAsState()
             MonthsSheet(
-                items = months?.let(::monthsSheet),
-                reading = reading,
+                items = months.answer?.let(::monthsSheet),
+                reading = monthsReading(months),
                 onPick = { close(); viewModel.setMonth(it) },
                 onDismiss = close,
                 onAny = { close(); viewModel.setMonth(null) },
@@ -211,18 +208,19 @@ fun SearchScreen(
         FilterSheet.Category -> PickSheet(
             title = "Category",
             any = ANY_CATEGORY,
-            options = read?.categories?.map { it.id to it.name },
+            options = read.answer?.categories?.map { it.id to it.name },
             selected = choice.categoryId,
             onPick = { close(); viewModel.setCategory(it) },
             onDismiss = close,
         )
         FilterSheet.App -> {
-            LaunchedEffect(viewModel) { viewModel.readApps() }
-            val apps by viewModel.apps.collectAsState()
+            LaunchedEffect(viewModel) { viewModel.openApps() }
+            val apps by viewModel.apps.state.collectAsState()
             PickSheet(
                 title = "App",
                 any = ANY_APP,
-                options = apps?.map { it to appName(it) },
+                options = apps.answer?.map { it to appName(it) },
+                unavailable = apps.unavailable,
                 selected = choice.app,
                 onPick = { close(); viewModel.setApp(it) },
                 onDismiss = close,
@@ -252,6 +250,8 @@ internal fun SearchScreenContent(
     onBack: () -> Unit,
     onOpenSheet: (FilterSheet) -> Unit,
     modifier: Modifier = Modifier,
+    /** The words or a filter changed and their read has not landed (#285); [read] is the last answer. */
+    rereading: Boolean = false,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onExport: (() -> Unit)? = null,
@@ -267,9 +267,9 @@ internal fun SearchScreenContent(
     val categoryName = choice.categoryId?.let { categoriesById[it]?.name }
     // The rows the totals count, not the ones drawn: the export has no limit.
     val found = read?.takeUnless { storageUnavailable }?.totals?.sumOf { it.rowCount } ?: 0
-    // The words or a filter changed and their read has not landed (#285):
-    // the last answer stays, dimmed under `UPDATING` once 200ms have passed.
-    val updating = rememberUpdating(read != null && (read.text != query || read.choice != choice))
+    // The last answer stays while [rereading], dimmed under `UPDATING` once
+    // 200ms have passed.
+    val updating = rememberUpdating(read != null && rereading)
     Column(modifier.fillMaxSize().background(Paper)) {
         LazyColumn(Modifier.weight(1f)) {
             item { Field(query, onQuery, onBack) }
@@ -659,7 +659,8 @@ private fun Updating(query: String) {
  * [options] null is a read in flight (#284): [any], which needs no read, at
  * once, and under it `ReadingLayout`'s status line and [PICK_PLACES] dotted
  * places, `design/LoadingList.dc.html`'s rows, rather than no options. An
- * empty list is the read's answer and draws at once.
+ * empty list is the read's answer and draws at once. [unavailable] is a read
+ * refused: it says so in place of the options.
  */
 @Composable
 internal fun <T> PickSheet(
@@ -669,10 +670,19 @@ internal fun <T> PickSheet(
     selected: T?,
     onPick: (T?) -> Unit,
     onDismiss: () -> Unit,
+    unavailable: Boolean = false,
 ) {
     ReceiptSheet(onDismissRequest = onDismiss, title = title) {
         PickRow(any, selected == null) { onPick(null) }
-        if (options == null) {
+        if (unavailable) {
+            // In place of any options held: the last opening's are not this one's.
+            Text(
+                CANNOT_READ_YOUR_DATA,
+                style = MonoLabel,
+                color = Stamp,
+                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
+            )
+        } else if (options == null) {
             ReadingLayout {
                 Column {
                     ReadingStatus(Modifier.padding(top = 12.dp, bottom = 4.dp))

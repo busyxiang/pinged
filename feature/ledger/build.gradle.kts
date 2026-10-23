@@ -33,6 +33,8 @@ android {
             kotlin.directories.add("src/sharedTest/kotlin")
             // `HeldClock`, which every not-read-yet test steps its frames with.
             kotlin.directories.add(rootProject.file("core/ui/src/sharedTest/kotlin").path)
+            // `ScriptedRunner`, the runner a `ScreenRead` test answers, refuses or holds on command.
+            kotlin.directories.add(rootProject.file("core/read/src/sharedTest/kotlin").path)
         }
         getByName("androidTest") {
             kotlin.directories.add("src/sharedTest/kotlin")
@@ -61,6 +63,9 @@ dependencies {
     // SourceCounters, CaptureReport -- is used inside this module rather than
     // re-exported. :app depends on :feature:capture directly for the banner.
     implementation(project(":feature:capture"))
+    // `ScreenRead`, which the screens here read the ledger through (#296).
+    // Settings and Home's feed do not: they stay out of that spec's joins.
+    implementation(project(":core:read"))
     // The theme, the fonts and the shared sheet chrome, in their own module so
     // the Charts can use them without depending on this one (#81, Modules).
     implementation(project(":core:ui"))

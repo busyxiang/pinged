@@ -59,11 +59,15 @@ class SearchUpdatingTest {
         compose.setContent {
             PingedTheme {
                 CompositionLocalProvider(LocalHeldBy provides heldBy) {
+                    val words = query.collectAsState().value
+                    val last = shown.collectAsState().value
                     SearchScreenContent(
-                        query = query.collectAsState().value,
+                        query = words,
                         onQuery = {},
                         choice = SearchChoice(month = month),
-                        read = shown.collectAsState().value,
+                        read = last,
+                        // What `SearchScreen` is told by its read: words not yet answered.
+                        rereading = last != null && last.text != words,
                         storageUnavailable = false,
                         onBack = {},
                         onOpenSheet = {},

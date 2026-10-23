@@ -138,7 +138,7 @@ class SourcesAllowListTest {
         }
         val viewModel = sourcesViewModel()
 
-        viewModel.refresh()
+        viewModel.refreshOnMain()
         val whileDisabled = awaitRow(viewModel) { it.seenNotCaptured }
         assertEquals(
             "A disabled, discovered package belongs in the lower list",
@@ -147,7 +147,7 @@ class SourcesAllowListTest {
         )
         assertFalse(whileDisabled.enabled)
 
-        viewModel.setEnabled(pkg, true)
+        viewModel.setEnabledOnMain(pkg, true)
 
         val whileEnabled = awaitRow(viewModel) { it.suggested }
         assertTrue(
@@ -157,7 +157,7 @@ class SourcesAllowListTest {
         )
         assertTrue(
             "The enabled source is still listed under SEEN RECENTLY, NOT CAPTURED",
-            viewModel.state.value.seenNotCaptured.none { it.pkg == pkg },
+            viewModel.current.seenNotCaptured.none { it.pkg == pkg },
         )
         assertTrue(
             "Counting stopped at the gate, so the row it moved to reads 0 SEEN",
@@ -191,16 +191,16 @@ class SourcesAllowListTest {
         val firstReachedTheGate = CompletableDeferred<Unit>()
         val releaseTheGate = CompletableDeferred<Unit>()
         val isTheFirst = AtomicBoolean(true)
-        viewModel.beforeEachOperation = {
+        viewModel.read.beforeEachOperation = {
             if (isTheFirst.compareAndSet(true, false)) {
                 firstReachedTheGate.complete(Unit)
                 releaseTheGate.await()
             }
         }
 
-        val first = viewModel.setEnabled(pkg, true)
+        val first = viewModel.setEnabledOnMain(pkg, true)
         runBlocking { withTimeout(TIMEOUT) { firstReachedTheGate.await() } }
-        val second = viewModel.setEnabled(pkg, false)
+        val second = viewModel.setEnabledOnMain(pkg, false)
 
         // Give the second tap every chance to land its write first, which is
         // what an unordered view model lets it do. Ordered, it cannot: it is
@@ -217,7 +217,7 @@ class SourcesAllowListTest {
         )
         assertFalse(
             "The screen is drawing a state the user did not ask for",
-            viewModel.state.value.suggested.plus(viewModel.state.value.seenNotCaptured)
+            viewModel.current.suggested.plus(viewModel.current.seenNotCaptured)
                 .first { it.pkg == pkg }.enabled,
         )
     }
@@ -241,19 +241,19 @@ class SourcesAllowListTest {
         val entered = AtomicInteger(0)
         val firstReachedTheGate = CompletableDeferred<Unit>()
         val releaseTheGate = CompletableDeferred<Unit>()
-        viewModel.beforeEachOperation = {
+        viewModel.read.beforeEachOperation = {
             if (entered.incrementAndGet() == 1) {
                 firstReachedTheGate.complete(Unit)
                 releaseTheGate.await()
             }
         }
 
-        val holding = viewModel.refresh()
+        val holding = viewModel.refreshOnMain()
         runBlocking { withTimeout(TIMEOUT) { firstReachedTheGate.await() } }
 
-        val cancelled = viewModel.refresh()
+        val cancelled = viewModel.refreshOnMain()
         cancelled.cancel()
-        val behind = viewModel.refresh()
+        val behind = viewModel.refreshOnMain()
 
         // Long enough that an unchained third operation would have finished a
         // whole read; chained, it cannot have begun one.
@@ -270,15 +270,14 @@ class SourcesAllowListTest {
     }
 
     /**
-     * The job `refresh()` hands back does not complete until its read has
+     * The job `read.refresh()` hands back does not complete until its read has
      * published, even when another refresh follows it.
      *
-     * The trap underneath is that `refresh()` cancels the read in flight and
+     * The trap underneath is a read cancelled by the next one asked for:
      * `Job.join()` on a cancelled job returns immediately, so a caller
-     * sequencing a write after a read can be released by the cancellation
-     * rather than by the read. `MainActivity.onResume` rested on this and
-     * probes the database itself now, so the contract stays asserted here
-     * rather than in `MainActivity`, which has no test source set.
+     * sequencing a write after a read would be released by the cancellation
+     * rather than by the read. `ScreenRead` queues the second behind the first
+     * instead.
      */
     @Test fun aRefreshJobDoesNotCompleteUntilItsReadHasPublished() {
         val viewModel = sourcesViewModel()
@@ -286,32 +285,32 @@ class SourcesAllowListTest {
         val reachedTheGate = CompletableDeferred<Unit>()
         val releaseTheGate = CompletableDeferred<Unit>()
         val isTheFirst = AtomicBoolean(true)
-        viewModel.beforeEachOperation = {
+        viewModel.read.beforeEachOperation = {
             if (isTheFirst.compareAndSet(true, false)) {
                 reachedTheGate.complete(Unit)
                 releaseTheGate.await()
             }
         }
 
-        val first = viewModel.refresh()
+        val first = viewModel.refreshOnMain()
         runBlocking { withTimeout(TIMEOUT) { reachedTheGate.await() } }
-        assertFalse("precondition: nothing has been published yet", viewModel.state.value.loaded)
+        assertFalse("precondition: nothing has been published yet", viewModel.current.loaded)
 
-        viewModel.refresh()
+        viewModel.refreshOnMain()
 
         val completed = runBlocking {
             withTimeoutOrNull(SECOND_TAP_BUDGET) { first.join() } != null
         }
         assertFalse(
-            "The job returned by refresh() completed while its read was still " +
+            "The job returned by read.refresh() completed while its read was still " +
                 "held, so anything sequencing a write after a read sees the " +
                 "previous answer",
-            completed && !viewModel.state.value.loaded,
+            completed && !viewModel.current.loaded,
         )
 
         releaseTheGate.complete(Unit)
         runBlocking { withTimeout(TIMEOUT) { first.join() } }
-        assertTrue(viewModel.state.value.loaded)
+        assertTrue(viewModel.current.loaded)
     }
 
     /** The row for [pkg] in the list [pick] selects, once the read has landed. */
@@ -321,11 +320,11 @@ class SourcesAllowListTest {
     ): SourceRow {
         val deadline = System.currentTimeMillis() + TIMEOUT
         while (System.currentTimeMillis() < deadline) {
-            val state = viewModel.state.value
+            val state = viewModel.current
             if (state.loaded) pick(state).firstOrNull { it.pkg == pkg }?.let { return it }
             Thread.sleep(50)
         }
-        throw AssertionError("$pkg never appeared. Last state: ${viewModel.state.value}")
+        throw AssertionError("$pkg never appeared. Last state: ${viewModel.current}")
     }
 
     private companion object {
@@ -361,7 +360,7 @@ class SourcesAllowListTest {
         runBlocking { SourceCounters.countOne(context, pkg, Arrival.POSTED, System.currentTimeMillis(), System.currentTimeMillis()) }
 
         val viewModel = sourcesViewModel()
-        viewModel.refresh()
+        viewModel.refreshOnMain()
         val row = awaitRow(viewModel, pkg)
 
         assertFalse("precondition: the source is off", row.enabled)
@@ -381,7 +380,7 @@ class SourcesAllowListTest {
         dao.setExpectedMonthlyCount(pkg, 40)
         try {
             val viewModel = sourcesViewModel()
-            viewModel.refresh()
+            viewModel.refreshOnMain()
             val row = awaitRow(viewModel, pkg)
 
             assertEquals(20, row.quietDays)
@@ -417,7 +416,7 @@ class SourcesAllowListTest {
         }
         try {
             val viewModel = sourcesViewModel()
-            viewModel.refresh()
+            viewModel.refreshOnMain()
             awaitRow(viewModel, pkg)
 
             assertEquals(9, dao.byPackage(pkg)!!.expectedMonthlyCount)
@@ -449,9 +448,9 @@ class SourcesAllowListTest {
         dao.insertIfNew(CaptureSource(pkg = touched, label = touched, enabled = false, firstSeenAt = longAgo))
 
         val viewModel = sourcesViewModel()
-        runBlocking { viewModel.refresh().join() }
+        runBlocking { viewModel.refreshOnMain().join() }
 
-        val listed = viewModel.state.value.let { it.suggested + it.seenNotCaptured }.map { it.pkg }
+        val listed = viewModel.current.let { it.suggested + it.seenNotCaptured }.map { it.pkg }
         assertTrue("A package first seen today was dropped", young in listed)
         assertTrue("A package the user touched in the picker was dropped", touched in listed)
         assertFalse("An untouched package first seen 31 days ago is still listed", old in listed)
@@ -464,7 +463,7 @@ class SourcesAllowListTest {
     private fun awaitRow(viewModel: SourcesViewModel, pkg: String): SourceRow {
         val deadline = System.currentTimeMillis() + 10_000
         while (System.currentTimeMillis() < deadline) {
-            val state = viewModel.state.value
+            val state = viewModel.current
             if (state.loaded) {
                 (state.suggested + state.seenNotCaptured).firstOrNull { it.pkg == pkg }?.let { return it }
             }
@@ -480,14 +479,14 @@ class SourcesAllowListTest {
      */
     @Test fun theRefreshJobCompletesOnlyAfterItsStateIsPublished() {
         val viewModel = sourcesViewModel()
-        assertFalse("precondition: nothing read yet", viewModel.state.value.loaded)
+        assertFalse("precondition: nothing read yet", viewModel.current.loaded)
 
-        runBlocking { viewModel.refresh().join() }
+        runBlocking { viewModel.refreshOnMain().join() }
 
         assertTrue(
             "The job finished before the read it performed was visible, so anything " +
                 "ordered after it sees the previous answer",
-            viewModel.state.value.loaded,
+            viewModel.current.loaded,
         )
     }
 

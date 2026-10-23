@@ -105,7 +105,7 @@ class ManualRowTapTest {
         val viewModel = DayViewModel(context.applicationContext as Application, DAY)
         compose.setContent {
             LaunchedEffect(viewModel) {
-                viewModel.read.collect { if (Looper.myLooper() != Looper.getMainLooper()) offMain.incrementAndGet() }
+                viewModel.read.state.collect { if (Looper.myLooper() != Looper.getMainLooper()) offMain.incrementAndGet() }
             }
             PingedTheme { DayScreen(viewModel, onBack = {}, onOpenEntry = { opened += it.id }) }
         }

@@ -29,7 +29,8 @@ import org.junit.runner.RunWith
  * the ordinary case, not an edge one. **The subject is the aggregate, not the
  * row.** Room invalidates the `PagingSource` on the insert, so the row appears
  * whatever the screen does about lifecycles; the day subtotal and the month
- * total come from three separate queries that only `refresh()` issues. A screen
+ * total come from separate queries that only a read of
+ * `LedgerViewModel.read` issues. A screen
  * reading them from a `LaunchedEffect(viewModel)` reads them exactly once for
  * the life of the holder -- and `MainActivity` scopes the holder to its
  * `NavEntry`, so it survives backgrounding -- which draws the new row above a
@@ -147,7 +148,7 @@ class LedgerResumeTest {
      * §11.1's *permanent* case behaves correctly either way -- everything
      * stays broken, which is the truth. This is the transient member of the
      * same family, the one `CaptureStorage.guarded`'s own documentation names:
-     * a full disk, an IO error. `refresh()` retries the open on every
+     * a full disk, an IO error. `LedgerViewModel.read` retries the open on every
      * foreground and `MainActivity.onResume` re-probes for the banner, so both
      * of those recover on their own; a feed opened once for the life of the
      * holder does not, and `loadState.refresh` then stays an error with the
@@ -198,7 +199,7 @@ class LedgerResumeTest {
         }.isSuccess
         assertEquals(
             "The ledger still cannot be read on a foreground where the " +
-                "database opens. refresh() and MainActivity's probe both " +
+                "database opens. The summary's read and MainActivity's probe both " +
                 "recovered, so the banner above this body says capture is " +
                 "fine while the body says the data cannot be read",
             true,

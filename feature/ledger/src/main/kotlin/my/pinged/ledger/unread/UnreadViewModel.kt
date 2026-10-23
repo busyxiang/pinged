@@ -1,19 +1,15 @@
 package my.pinged.ledger.unread
 
 import android.app.Application
-import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import my.pinged.capture.CaptureStorage
-import my.pinged.data.Databases
+import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.UnreadCapture
+import my.pinged.read.ReadRunner
+import my.pinged.read.ReadState
+import my.pinged.read.ScreenRead
 
 /** What the unread list draws. */
 data class UnreadState(
@@ -26,38 +22,56 @@ data class UnreadState(
     val storageUnavailable: Boolean = false,
 )
 
+/** What one read of [UnreadViewModel.read] found: the cards, and whether a page past them may hold more. */
+internal data class UnreadPage(val items: List<UnreadCapture>, val more: Boolean)
+
+/**
+ * What the screen draws for [this] read: an unreadable ledger draws no cards,
+ * whatever the last read held, as `LearnedViewModel`'s does.
+ */
+internal fun ReadState<Int, UnreadPage>.toState(): UnreadState {
+    if (unavailable) return UnreadState(loaded = true, storageUnavailable = true)
+    val page = answer ?: return UnreadState()
+    return UnreadState(loaded = true, items = page.items, more = page.more)
+}
+
 /**
  * Spec 5.6's unread list: read a page at a time, newest first, and spec 5.7's
  * "never a transaction".
  *
- * Every read and write takes [turn], as `LearnedViewModel`'s do, so the list
- * never draws a state older than a dismissal that landed.
+ * **The question is how many cards to show**, `:core:read`'s [ScreenRead]
+ * (#296), and [loadMore] asks for one page more. So a re-read on resume, on
+ * `Databases.rewrites` or after a dismissal is at least as long as what is
+ * showing and never shortens the list, and a page more is read in the same
+ * turn as a write, from the top, in one snapshot: a card dismissed meanwhile
+ * can neither repeat nor be skipped at the seam between two pages. The cost is
+ * that a page more reads every card already shown again, as a resume does.
  */
-class UnreadViewModel(app: Application) : AndroidViewModel(app) {
+class UnreadViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, GuardedRunner(app))
 
-    /** A getter, for the reason `SourcesViewModel.context` gives. */
-    private val context: Context get() = getApplication<Application>()
-
-    private val turn = Mutex()
-    private val _state = MutableStateFlow(UnreadState())
-    val state: StateFlow<UnreadState> = _state.asStateFlow()
-
-    /** The list from its top, at least as long as what is showing, so a refresh does not shorten it. */
-    fun refresh(): Job = viewModelScope.launch {
-        turn.withLock { _state.value = read(limit = maxOf(PAGE, _state.value.items.size)) }
-    }
-
-    /** The next page, after the last card showing. */
-    fun loadMore(): Job = viewModelScope.launch {
-        turn.withLock {
-            val shown = _state.value
-            val last = shown.items.lastOrNull()
-            if (!shown.more || last == null) return@withLock
-            val page = guarded("More notifications cannot be read", unavailable = { null }) {
-                Databases.userRejectRuleDao(context).unreadPage(last.postedAt, last.id, PAGE)
-            } ?: return@withLock
-            _state.value = shown.copy(items = shown.items + page, more = page.size == PAGE)
+    /**
+     * The list from its top, as long as the question says, newest first.
+     * `UnreadScreen` reads it on resume and on `Databases.rewrites` through
+     * `rememberReadState`.
+     */
+    internal val read: ScreenRead<Int, UnreadPage> =
+        ScreenRead(viewModelScope, runner, "The notifications Pinged could not read cannot be read", initial = PAGE) { db, limit ->
+            val items = db.userRejectRuleDao().unreadPage(Long.MAX_VALUE, Long.MAX_VALUE, limit)
+            UnreadPage(items, more = items.size == limit)
         }
+
+    /**
+     * One page more than the question holds. Nothing while the last read came
+     * back short, none has landed, or the question has already grown and its
+     * read is still in flight: the card that asked for a page is the last of
+     * a list that is about to be longer.
+     */
+    fun loadMore(): Job = viewModelScope.launch {
+        val held = read.state.value
+        val asked = read.question.value
+        if (held.answered?.question != asked || held.answer?.more != true) return@launch
+        read.ask(asked + PAGE).join()
     }
 
     /**
@@ -66,25 +80,10 @@ class UnreadViewModel(app: Application) : AndroidViewModel(app) {
      * draws that.
      */
     fun neverATransaction(capture: UnreadCapture): Job = viewModelScope.launch {
-        turn.withLock {
-            guarded("The notification could not be marked as never a transaction", unavailable = { 0 }) {
-                Databases.userRejectRuleDao(context).neverATransaction(capture.id, now = System.currentTimeMillis())
-            }
-            _state.value = read(limit = maxOf(PAGE, _state.value.items.size))
-        }
+        read.write("The notification could not be marked as never a transaction") { db ->
+            db.userRejectRuleDao().neverATransaction(capture.id, now = System.currentTimeMillis())
+        }.await()
     }
-
-    private suspend fun read(limit: Int): UnreadState =
-        guarded("The notifications Pinged could not read cannot be read", unavailable = {
-            UnreadState(loaded = true, storageUnavailable = true)
-        }) {
-            val items = Databases.userRejectRuleDao(context).unreadPage(Long.MAX_VALUE, Long.MAX_VALUE, limit)
-            UnreadState(loaded = true, items = items, more = items.size == limit)
-        }
-
-    /** Guarded as every database call in this module is; see `LearnedViewModel.delete`. */
-    private suspend fun <T> guarded(what: String, unavailable: () -> T, block: suspend () -> T): T =
-        CaptureStorage.guarded(context, what = what, unavailable = unavailable, damageStopsCapture = false, block = block)
 
     private companion object {
         /** Cards per read. A page is a few screens of cards, each a whole notification. */

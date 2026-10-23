@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,13 +45,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.ledger.ListNotReadYet
 import my.pinged.parse.FixtureText
+import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
@@ -85,8 +84,9 @@ import my.pinged.ui.theme.dottedRule
  * again only under Things you taught. A word list to tell them apart would be
  * a second parser outside the packs.
  *
- * Read once per foreground, as `LearnedScreen` is, so a capture stage two
- * marked while the user was away is on the list when they come back.
+ * Read on each foreground, so a capture stage two marked while the user was
+ * away is on the list when they come back, and again when a restore or a
+ * delete replaces the ledger while it is open.
  */
 @Composable
 fun UnreadScreen(
@@ -95,14 +95,11 @@ fun UnreadScreen(
     onTeach: (UnreadCapture) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by viewModel.state.collectAsState()
-    LifecycleResumeEffect(viewModel) {
-        viewModel.refresh()
-        onPauseOrDispose { }
-    }
+    // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
+    val read = viewModel.read.rememberReadState()
     val context = LocalContext.current
     UnreadContent(
-        state = state,
+        state = read.toState(),
         onBack = onBack,
         onNeverATransaction = viewModel::neverATransaction,
         onTeach = onTeach,
