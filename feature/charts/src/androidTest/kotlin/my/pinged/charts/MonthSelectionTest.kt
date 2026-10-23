@@ -60,7 +60,7 @@ class MonthSelectionTest {
     fun aReadOfTheMonthLeftBehindDoesNotLandOverThePick() = runBlocking<Unit> {
         seed()
         val charts = withContext(Dispatchers.Main) {
-            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())))
+            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())), today = { today })
         }
         val once = AtomicBoolean(false)
         val picked = AtomicReference<Job?>(null)
@@ -68,18 +68,18 @@ class MonthSelectionTest {
             if (once.compareAndSet(false, true)) {
                 // Not joined here: August's read waits for this one's
                 // transaction to end.
-                picked.set(runBlocking(Dispatchers.Main) { charts.select(august, today) })
+                picked.set(runBlocking(Dispatchers.Main) { charts.select(august) })
             }
         }
 
-        withContext(Dispatchers.Main) { charts.refresh(today) }.join()
+        withContext(Dispatchers.Main) { charts.read.refresh() }.join()
         picked.get()!!.join()
 
-        assertEquals(august, charts.month.value)
+        assertEquals(august, charts.read.question.value)
         assertEquals(
             "September's read landed after August's and drew the month the user left",
             august,
-            charts.read.value?.month,
+            charts.read.state.value.answer?.month,
         )
     }
 
@@ -88,12 +88,12 @@ class MonthSelectionTest {
     fun theMonthsReadCarriesEveryMonthAndTheCapturedDays() = runBlocking<Unit> {
         seed()
         val charts = withContext(Dispatchers.Main) {
-            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())))
+            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())), today = { today })
         }
 
-        withContext(Dispatchers.Main) { charts.readMonths(today) }.join()
+        withContext(Dispatchers.Main) { charts.openMonths() }.join()
 
-        val read = charts.months.value
+        val read = charts.months.state.value.answer
         assertNotNull("The sheet's read published nothing", read)
         assertEquals(august.atDay(30), read!!.historyStart)
         assertEquals(

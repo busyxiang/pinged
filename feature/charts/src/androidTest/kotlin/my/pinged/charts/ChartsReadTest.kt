@@ -77,26 +77,26 @@ class ChartsReadTest {
     fun theReadFinishesThroughAnInstanceReplacedUnderItAndLandsOnce() = runBlocking<Unit> {
         seedSeptember()
         val charts = withContext(Dispatchers.Main) {
-            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())))
+            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())), today = { today })
         }
         val midway = AtomicReference<ChartsRead?>(null)
         val replacing = AtomicReference<Thread?>(null)
         charts.midRead = {
-            midway.set(charts.read.value)
+            midway.set(charts.read.state.value.answer)
             replacing.set(alongside { runBlocking { context.replaceFromAnotherCaller() } })
         }
 
-        withContext(Dispatchers.Main) { charts.refresh(today) }.join()
+        withContext(Dispatchers.Main) { charts.read.refresh() }.join()
         replacing.get()!!.join()
 
         assertNull("The read threw out of the holder: ${uncaught.get()}", uncaught.get())
-        assertFalse("The read was refused", charts.unavailable.value)
+        assertFalse("The read was refused", charts.read.state.value.unavailable)
         assertNull(
             "Part of the read was published before the rest was read, so the " +
                 "screen could draw a figure beside another moment's trust: ${midway.get()}",
             midway.get(),
         )
-        val read = landed(charts.read.value)
+        val read = landed(charts.read.state.value.answer)
         assertEquals(listOf(CurrencyTotal("MYR", -12_000L)), read.monthTotals)
         assertEquals(listOf(MonthSplit("MYR", 4_500L, 16_500L)), read.monthSplit)
         assertEquals(
@@ -125,17 +125,17 @@ class ChartsReadTest {
     fun aCommitLandingMidReadIsWhollyInTheReadOrWhollyOut() = runBlocking<Unit> {
         seedSeptember()
         val charts = withContext(Dispatchers.Main) {
-            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())))
+            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())), today = { today })
         }
         val writer = AtomicReference<Thread?>(null)
         charts.midRead = {
             writer.set(alongside { Databases.shared(context).txnDao().insert(txn(1_000L, Direction.EXPENSE, september2)) })
         }
 
-        withContext(Dispatchers.Main) { charts.refresh(today) }.join()
+        withContext(Dispatchers.Main) { charts.read.refresh() }.join()
         writer.get()!!.join()
 
-        val read = landed(charts.read.value)
+        val read = landed(charts.read.state.value.answer)
         val net = read.monthTotals.single { it.currency == "MYR" }.netSen
         val split = read.monthSplit.single { it.currency == "MYR" }
         assertEquals(
@@ -159,7 +159,7 @@ class ChartsReadTest {
     fun aCommitLandingMidMonthsReadIsWhollyInItOrWhollyOut() = runBlocking<Unit> {
         seedSeptember()
         val charts = withContext(Dispatchers.Main) {
-            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())))
+            ChartsViewModel(app, SavedStateHandle(mapOf(SELECTED_MONTH to september.toString())), today = { today })
         }
         val september3 = september.atDay(3)
         val writer = AtomicReference<Thread?>(null)
@@ -175,10 +175,10 @@ class ChartsReadTest {
             )
         }
 
-        withContext(Dispatchers.Main) { charts.readMonths(today) }.join()
+        withContext(Dispatchers.Main) { charts.openMonths() }.join()
         writer.get()!!.join()
 
-        val read = charts.months.value
+        val read = charts.months.state.value.answer
         assertNotNull("The months read published nothing", read)
         val septemberNet = read!!.totals.single { it.month == 202609 && it.currency == "MYR" }.netSen
         assertEquals(

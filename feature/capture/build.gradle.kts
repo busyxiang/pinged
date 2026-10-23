@@ -45,6 +45,9 @@ dependencies {
     // own surface (Graph hands out DAOs typed on them), so a consumer of
     // :feature:capture needs them on its compile classpath too.
     api(project(":core:data"))
+    // `GuardedRunner`, the production adapter of `:core:read`'s `ReadRunner`
+    // (#296). Not `api`: a screen that builds one depends on `:core:read` itself.
+    implementation(project(":core:read"))
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     // Stage two. `work-runtime`, not `work-runtime-ktx`: as of 2.11.2 the ktx

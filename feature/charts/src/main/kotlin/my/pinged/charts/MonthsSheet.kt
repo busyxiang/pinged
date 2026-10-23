@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.charts.model.MonthsItem
 import my.pinged.charts.model.monthsSheet
+import my.pinged.read.ReadState
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.DashLeader
@@ -44,12 +45,29 @@ import my.pinged.ui.theme.updating
 import kotlinx.coroutines.Deferred
 import java.time.YearMonth
 
-/** The `Months` sheet, read when it opens, so its rows are as of that moment. */
+/**
+ * The `Months` sheet, read when it opens, so its rows are as of that moment.
+ * Each opening is a new question of the holder's read, which keeps the last
+ * opening's months while it runs.
+ */
 @Composable
 internal fun MonthsSheetHost(viewModel: ChartsViewModel, onPick: (YearMonth) -> Unit, onDismiss: () -> Unit) {
-    val reading = rememberMonthsRead(viewModel) { viewModel.readMonths() }
-    val read by viewModel.months.collectAsState()
-    MonthsSheet(read?.let(::monthsSheet), onPick, onDismiss, reading = reading)
+    LaunchedEffect(viewModel) { viewModel.openMonths() }
+    val read by viewModel.months.state.collectAsState()
+    MonthsSheet(read.answer?.let(::monthsSheet), onPick, onDismiss, reading = monthsReading(read))
+}
+
+/**
+ * Where an opening's read stands, as [MonthsSheet] draws it: refused is
+ * [MonthsReading.Unreadable], another opening's months held while this one is
+ * read is [MonthsReading.InFlight], and the rest is [MonthsReading.Landed],
+ * which is also what a first opening is before its read lands, when there
+ * are no months to draw and the sheet says so itself.
+ */
+internal fun monthsReading(state: ReadState<*, *>): MonthsReading = when {
+    state.unavailable -> MonthsReading.Unreadable
+    state.rereading -> MonthsReading.InFlight
+    else -> MonthsReading.Landed
 }
 
 /**
@@ -227,9 +245,10 @@ enum class MonthsReading {
  * Starts this opening's read of the sheet, [read], once per [key], and says
  * where it stands: what [MonthsSheet]'s `reading` takes. [read] completes
  * true once it has published the months, false when they could not be read.
- * Every host opens the sheet through this, so a holder keeps its last read
- * published and the sheet draws it under `UPDATING` rather than `READING`
- * (#285).
+ * Every host that has not joined `:core:read` yet opens the sheet through
+ * this, so a holder keeps its last read published and the sheet draws it
+ * under `UPDATING` rather than `READING` (#285). Charts has joined: see
+ * `MonthsSheetHost` and [monthsReading].
  */
 @Composable
 fun rememberMonthsRead(key: Any?, read: () -> Deferred<Boolean>): MonthsReading {
