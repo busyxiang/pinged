@@ -112,3 +112,19 @@ the keyboard. A lazy item can also be missing from `visibleItemsInfo` for a
 frame while the list shrinks. So scroll by the item's index, or wait for the
 next layout, rather than give up. The fix goes in the screen, not the test.
 A user's keyboard rises the same way.
+
+## Work the compose clock does not drive
+
+`waitForIdle()` waits for compose, not for a thread compose does not drive.
+A read that suspends on DataStore (`captureStore`), a real `Dispatchers.IO`
+or a `runBlocking` finishes on its own clock, and `waitForIdle()` can return
+first. `RewriteRereadTest` counted 2 reads where CI had seen 1: the first
+read still held `ScreenRead`'s turn, so the second had not begun. It passed
+on a dev machine 5 runs of 5. Holding the DataStore step 300ms made it fail
+every time, which is the way to find this before CI does.
+
+A test that follows such a read polls for the thing it asserts on, with a
+deadline (a published answer, a count of runner calls), and then asserts.
+Passing `Dispatchers.Unconfined` to a holder only runs its own steps inline;
+it does not make the DataStore step synchronous. This applies to the JVM
+tests under Robolectric as much as to the device ones.
