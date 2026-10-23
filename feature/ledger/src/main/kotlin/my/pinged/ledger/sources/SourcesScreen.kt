@@ -20,8 +20,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,10 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.util.Locale
-import my.pinged.data.Databases
 import my.pinged.ledger.ListNotReadYet
+import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Body
@@ -75,44 +72,14 @@ fun SourcesScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by viewModel.state.collectAsState()
-    // The screen loads itself, so it is not silently blank in a host that does
-    // not call `refresh()` from a lifecycle callback.
-    //
-    // **Once per foreground, not once per holder, which is the whole point of a
-    // lifecycle effect here.** `MainActivity` scopes each holder to its
-    // `NavEntry` (`rememberViewModelStoreNavEntryDecorator`), so the holder
-    // survives backgrounding and a `LaunchedEffect(viewModel)` fires exactly
-    // once for the life of the entry. A warm resume would then read nothing:
-    // spec 9.6 discovery is "a package appears once it has spoken" -- which the
-    // footer below promises in those words -- so a bank that posted while the
-    // app was away would stay off the lower list, with no pull-to-refresh and
-    // nowhere to navigate to force a read. The same freeze would hold
-    // `storageUnavailable`, which is worse than stale: the screen could say
-    // CANNOT READ YOUR DATA under a banner `onResume`'s `CaptureStorage` probe
-    // had just cleared, the inverse of what that probe exists to prevent.
-    //
-    // `repeatOnLifecycle(RESUMED)` gives the same guarantee and costs a
-    // restarting collector for a `refresh()` that is a one-shot, not a flow.
-    //
-    // Keyed on the view model, so a new entry is a new holder and a new read.
-    // Nothing to undo on pause: `refresh()` is queued and ordered in the holder
-    // (see `SourcesViewModel`), and cancelling it would only lose the read.
-    //
-    // **And on `Databases.rewrites`, so a replaced database is a new read
-    // without a resume.** A delete or restore runs from settings on that
-    // holder's own scope, and the user can open this screen while one is
-    // still going; when it lands nothing resumes, and the screen would go on
-    // drawing the replaced ledger's allow-list -- a source switched ON that
-    // the delete has taken away, which is spec 9.6's consent shown inverted.
-    // Here rather than in the holder because a holder re-reading on its own
-    // opens the database for a screen nobody is looking at, and every holder
-    // left on the back stack would do it at once.
-    val rewrites by Databases.rewrites.collectAsState()
-    LifecycleResumeEffect(viewModel, rewrites) {
-        viewModel.refresh()
-        onPauseOrDispose {}
-    }
+    // Once per foreground and on `Databases.rewrites`, through `rememberReadState`:
+    // `MainActivity` scopes each holder to its `NavEntry`, so the holder survives
+    // backgrounding and a read keyed on the holder alone would read once, and a
+    // bank that posted while the app was away would stay off the lower list (spec
+    // 9.6: a package appears once it has spoken). A delete or restore that lands
+    // while this screen shows would leave a source switched ON that the delete
+    // has taken away, which is consent shown inverted.
+    val state = viewModel.read.rememberReadState().toState()
     SourcesScreenContent(
         state = state,
         onToggle = viewModel::setEnabled,

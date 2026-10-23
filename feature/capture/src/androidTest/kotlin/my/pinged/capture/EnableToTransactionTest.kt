@@ -8,12 +8,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.ListenableWorker
 import androidx.work.WorkManager
 import androidx.work.testing.TestListenableWorkerBuilder
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.sources.SourcesState
 import my.pinged.ledger.sources.SourcesViewModel
+import my.pinged.ledger.sources.toState
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -122,9 +124,9 @@ class EnableToTransactionTest {
 
         // 2. The user enables the source. Production's only allow-list write.
         val viewModel = sourcesViewModel()
-        viewModel.refresh()
+        onMain { viewModel.read.refresh() }
         awaitLoaded(viewModel)
-        viewModel.setEnabled(bank, true)
+        onMain { viewModel.setEnabled(bank, true) }
 
         assertNotNull(
             "The allow-list does not have $bank enabled after the screen's only " +
@@ -216,7 +218,7 @@ class EnableToTransactionTest {
         }
 
         val viewModel = sourcesViewModel()
-        viewModel.refresh()
+        onMain { viewModel.read.refresh() }
         val state = awaitLoaded(viewModel)
         assertTrue(
             "The pack has rules for $bank and the device has heard from it, but " +
@@ -254,9 +256,12 @@ class EnableToTransactionTest {
         SourcesViewModel(context.applicationContext as Application)
 
     private fun awaitLoaded(viewModel: SourcesViewModel): SourcesState {
-        CaptureFixtures.waitForValue { viewModel.state.value.takeIf { it.loaded } }
+        CaptureFixtures.waitForValue { viewModel.read.state.value.toState().takeIf { it.loaded } }
             ?: throw AssertionError("The allow-list screen never finished its first read")
-        return viewModel.state.value
+        return viewModel.read.state.value.toState()
     }
+
+    /** A `ScreenRead`'s calls are made on its scope's thread, which is the main thread for `viewModelScope`. */
+    private fun <T> onMain(block: () -> T): T = runBlocking(Dispatchers.Main) { block() }
 
 }

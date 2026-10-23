@@ -75,7 +75,7 @@ class MainThreadRefreshTest {
         Databases.reset()
 
         val sources = sourcesViewModel()
-        runBlocking { withTimeout(TIMEOUT_MILLIS) { sources.refresh().join() } }
+        runBlocking { withTimeout(TIMEOUT_MILLIS) { sources.refreshOnMain().join() } }
 
         assertNull(
             "A refresh dispatched on viewModelScope threw, and nothing in that " +
@@ -85,31 +85,30 @@ class MainThreadRefreshTest {
         assertTrue(
             "The refresh completed without publishing a loaded state, so it did " +
                 "not read the allow-list at all.",
-            sources.state.value.loaded,
+            sources.current.loaded,
         )
     }
 
     /**
-     * `SourcesViewModel.tail` is documented as needing no lock. Half of that
-     * rests on the queued bodies sharing one thread, which holds only because
-     * `viewModelScope` is `Dispatchers.Main.immediate` -- a choice
-     * androidx.lifecycle makes and nothing in the type system states. So this
-     * reads the thread name out of the queued body rather than trusting it.
+     * `ScreenRead`'s turn is documented as needing no lock: its tail is written by
+     * whoever calls, on `viewModelScope`'s thread, and the queued bodies share it
+     * too. That holds only because `viewModelScope` is `Dispatchers.Main.immediate`
+     * -- a choice androidx.lifecycle makes and nothing in the type system states.
+     * So this reads the thread name out of the turn's hook rather than trusting it.
      *
-     * It does **not** cover the other half: `tail` is written by whoever calls
-     * `enqueue`, on their thread, and that is the instrumentation thread here.
-     * See `tail`'s own KDoc.
+     * It does **not** cover the caller's half: a test makes its calls from the
+     * thread it chooses, which `refreshOnMain` makes the main thread.
      */
-    @Test fun enqueueStillRunsOnTheMainThread() {
+    @Test fun theTurnStillRunsOnTheMainThread() {
         Databases.reset()
         val seen = AtomicReference<String?>(null)
         val sources = sourcesViewModel()
-        sources.beforeEachOperation = { seen.set(Thread.currentThread().name) }
+        sources.read.beforeEachOperation = { seen.set(Thread.currentThread().name) }
 
-        runBlocking { withTimeout(TIMEOUT_MILLIS) { sources.refresh().join() } }
+        runBlocking { withTimeout(TIMEOUT_MILLIS) { sources.refreshOnMain().join() } }
 
         assertEquals(
-            "enqueue no longer runs on the main thread, so `tail`'s documented " +
+            "The turn no longer runs on the main thread, so its documented " +
                 "lock-free invariant is false and two toggles can race",
             "main", seen.get(),
         )

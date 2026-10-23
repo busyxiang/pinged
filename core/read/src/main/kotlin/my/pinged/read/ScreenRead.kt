@@ -1,5 +1,6 @@
 package my.pinged.read
 
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -18,11 +19,27 @@ import my.pinged.data.PingedDatabase
  *
  * **One turn.** Every read, and every write from [write], runs one at a time
  * in the order it was asked for, so an older answer can never land over a
- * newer one and a write is read back by the read that follows it. The turn
- * is `SourcesViewModel`'s `enqueue` chain: the wait for the one before is
- * [NonCancellable], and the chain is a signal rather than the predecessor's
- * `Job`, because a cancelled `Job` completes and a chain built on `join()`
- * severs the moment one link is cancelled.
+ * newer one and a write is read back by the read that follows it. Spec 9.6's
+ * consent rests on it: two taps on one toggle land in the order made, and a
+ * read never publishes a snapshot older than a write that landed. Two holes
+ * would each look like a simplification, and `TurnTest` holds both:
+ *
+ * - **The chain is a signal, and the wait for it is [NonCancellable].** `Job.join()`
+ *   is cancellable and a cancelled `Job` completes, so a chain built on the
+ *   predecessor's `Job` severs the moment a link still waiting is cancelled, and
+ *   everything behind it runs beside the operation that link was waiting for.
+ *   Waiting inside [NonCancellable] means cancelling a link cannot skip its wait,
+ *   and it still cancels promptly at its body's first suspension point. The signal
+ *   completes in a `finally`, so a link that throws or is cancelled releases the
+ *   queue, but only after it has itself waited.
+ * - **A place is claimed by the call, not by the coroutine it launches.** Claimed
+ *   inside the coroutine it is claimed when the dispatcher gets to it, which moves
+ *   the race rather than closing it.
+ *
+ * A read in flight is not cancelled by the next one: cancel-and-restart would
+ * save a read per cold launch and cost the order, because a `join()` on a
+ * cancelled read returns at once. Two reads queue instead, the later publishing
+ * last.
  *
  * **The current question** is [question]. A read of a question that has
  * changed by the time it lands publishes nothing, and one that has not yet
@@ -31,8 +48,10 @@ import my.pinged.data.PingedDatabase
  *
  * **Threads.** [ask], [refresh] and [write] must be called from [scope]'s own
  * thread, which is the main thread for `viewModelScope`: the order of the
- * turn is the order of the calls, and the chain's tail has no lock. [state]
- * is written there too. The read body runs wherever [runner] runs it.
+ * turn is the order of the calls, and the chain's tail has no lock. Nothing
+ * enforces it: a caller on another thread is safe only while it is the only
+ * caller. [state] is written there too. The read body runs wherever [runner]
+ * runs it.
  *
  * **What is not caught.** Only [my.pinged.data.DatabaseUnavailableException]
  * is, by the production runner as `CaptureStorage.guarded` does, and it
@@ -80,6 +99,15 @@ class ScreenRead<Q, A>(
      * ended, whichever way. Only written on [scope]'s thread, as the call is.
      */
     private var tail: CompletableDeferred<Unit>? = null
+
+    /**
+     * Tests only: a suspension point at the head of each operation's turn, after
+     * the one before it has ended and before its own body. The order is invisible
+     * when every operation takes the same few milliseconds, so holding the first
+     * one open is what makes the second's position observable.
+     */
+    @VisibleForTesting
+    var beforeEachOperation: suspend () -> Unit = {}
 
     /**
      * Change the question to [question] and read it. The answer held stays
@@ -208,6 +236,7 @@ class ScreenRead<Q, A>(
         return scope.launch {
             try {
                 withContext(NonCancellable) { previous?.await() }
+                beforeEachOperation()
                 block()
             } finally {
                 mine.complete(Unit)
