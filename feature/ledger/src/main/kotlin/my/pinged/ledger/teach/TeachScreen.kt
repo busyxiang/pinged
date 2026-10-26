@@ -40,7 +40,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.ZoneId
+import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
+import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.unread.postedOf
 import my.pinged.ledger.unread.sourceOf
 import my.pinged.parse.Direction
@@ -60,6 +62,7 @@ import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Quote
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
@@ -80,6 +83,7 @@ import my.pinged.ui.theme.dottedRule
 @Composable
 fun TeachScreen(viewModel: TeachViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsState()
+    val busy by viewModel.busy.collectAsState()
     // Saved: back to the list, which no longer shows what the rule reads.
     LaunchedEffect(state.saved) { if (state.saved) onBack() }
     TeachContent(
@@ -90,10 +94,15 @@ fun TeachScreen(viewModel: TeachViewModel, onBack: () -> Unit, modifier: Modifie
         onDirection = viewModel::direction,
         onSave = { viewModel.save() },
         modifier = modifier,
+        busy = busy,
     )
 }
 
-/** [TeachScreen] without its holder, so a test can draw any state. */
+/**
+ * [TeachScreen] without its holder, so a test can draw any state. While
+ * [busy] runs a ledger replacement the screen says so under its header and
+ * Save is off; the taps and the direction, which write nothing, stay on (#331).
+ */
 @Composable
 internal fun TeachContent(
     state: TeachState,
@@ -104,6 +113,7 @@ internal fun TeachContent(
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault(),
+    busy: Operation? = null,
 ) {
     val capture = state.capture
     val selection = state.selection
@@ -114,7 +124,9 @@ internal fun TeachContent(
             ListNotReadYet(caption = null, icon = false)
             return@Column
         }
+        if (!state.storageUnavailable && !state.replacing && busy != null) ChangedLine(busy)
         val notice = when {
+            state.replacing -> REPLACING_YOUR_DATA
             state.storageUnavailable -> CANNOT_READ_YOUR_DATA
             capture == null || selection == null -> GONE
             else -> null
@@ -179,7 +191,7 @@ internal fun TeachContent(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(FIRST_THREE, style = MonoLabel, color = Faint)
-            val ready = selection.step == TeachSelection.Step.READY && derived != null
+            val ready = selection.step == TeachSelection.Step.READY && derived != null && busy == null
             val shape = RoundedCornerShape(2.dp)
             Box(
                 Modifier
