@@ -69,6 +69,13 @@ A counted transaction still filed under Uncategorized, waiting for the user to g
 _Avoid_: unsorted, uncategorised, needs a category
 
 
+### Backup
+
+**Backup reminder**:
+Spending's one-line notice that the ledger holds transactions and none has been exported in thirty days. It never shows beside a capture banner: a missed export can be taken later, and missed spending cannot. Dismissing it silences it for a week.
+_Avoid_: nudge, export nudge, staleness nudge
+
+
 ### Capture
 
 **Captured day**:
@@ -86,6 +93,14 @@ _Avoid_: missed day, gap, unbound day
 **Not read yet**:
 A figure a screen has not finished reading from the ledger. It says nothing about the money: it is neither zero nor not captured, and it is shown as a dash until the read lands.
 _Avoid_: loading, pending, skeleton, unread (that is an unread capture)
+
+**Heard**:
+When Pinged last saw a notification from any app. It is not a capture: almost no notification heard is one, so a recent "heard" says the listener is alive and nothing about whether a payment was recorded.
+_Avoid_: captured (for this), listening, live
+
+**Capture banner**:
+The strip above every screen saying capture is not known to be working: the data will not open, there is no notification access, the record of what was heard will not read, nothing has been heard yet, or nothing has been heard in a day. One shows at a time, and the order is a claim about what is certain: a fresh install is never told its listener died.
+_Avoid_: status banner, warning, alert (that is spec 10.2's daily notification)
 
 **Untrusted month**:
 A month that contains at least one not-captured day. Every figure drawn from it may be incomplete, in either direction, since a missed refund lowers a total as surely as a missed payment raises it. A month still running is not untrusted merely because it has not ended.
