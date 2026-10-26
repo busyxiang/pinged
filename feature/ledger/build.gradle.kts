@@ -81,6 +81,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
+    // `rememberLauncherForActivityResult` and `LocalActivity`, for the
+    // pickers and permission asks Settings', Search's and Sources' routes own.
+    implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.coroutines.android)
     // `AndroidViewModel`, `viewModelScope` and `CreationExtras` for
     // `SourcesViewModel`. The -compose artifact rather than bare

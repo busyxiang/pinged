@@ -45,7 +45,7 @@ private val Scrim = Ink.copy(alpha = 0.42f)
  * default.
  *
  * **Every sheet of prose in the app goes through here**: `RestoreConfirmSheet`,
- * `OutcomeSheet`, `WipeSheet`, `MonthsSheet` and `MainActivity`'s
+ * `OutcomeSheet`, `WipeSheet`, `MonthsSheet` and `SettingsRoute`'s
  * `ExportSheetHost`. A hand-rolled scrim-plus-card overlay looks like this
  * until it is used -- it is the system back gesture, the drag and the scrim's
  * own dismissal that a copy silently does without -- and four of them drift.
