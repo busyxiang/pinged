@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,7 +29,9 @@ import my.pinged.capture.Corrections
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.BackChevron
+import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
+import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ledger.home.words
@@ -37,6 +42,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Display
+import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
@@ -57,10 +63,15 @@ import my.pinged.ui.theme.dottedRule
 fun CorrectionsScreen(viewModel: CorrectionsViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
-    CorrectionsContent(read.toState(), onBack, viewModel::accept, viewModel::decline, modifier)
+    val busy by viewModel.busy.collectAsState()
+    CorrectionsContent(read.toState(), onBack, viewModel::accept, viewModel::decline, modifier, busy)
 }
 
-/** [CorrectionsScreen] without its holder, so a test can draw any state. */
+/**
+ * [CorrectionsScreen] without its holder, so a test can draw any state. While
+ * [busy] runs a ledger replacement the list says so at its top and no card
+ * can be answered (#331).
+ */
 @Composable
 internal fun CorrectionsContent(
     state: CorrectionsState,
@@ -68,6 +79,7 @@ internal fun CorrectionsContent(
     onAccept: (Corrections.Correction) -> Unit,
     onDecline: (Corrections.Correction) -> Unit,
     modifier: Modifier = Modifier,
+    busy: Operation? = null,
 ) {
     if (!state.loaded) {
         Column(modifier.fillMaxSize().background(Paper)) {
@@ -79,6 +91,7 @@ internal fun CorrectionsContent(
     }
     LazyColumn(modifier.fillMaxSize().background(Paper)) {
         item { Header(onBack) }
+        if (!state.storageUnavailable && !state.replacing && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
         item {
             val notice = when {
                 state.replacing -> REPLACING_YOUR_DATA
@@ -101,13 +114,13 @@ internal fun CorrectionsContent(
             }
         }
         items(state.items, key = { it.captureId }) { correction ->
-            CorrectionCard(correction, onAccept = { onAccept(correction) }, onDecline = { onDecline(correction) })
+            CorrectionCard(correction, busy == null, onAccept = { onAccept(correction) }, onDecline = { onDecline(correction) })
         }
     }
 }
 
 @Composable
-private fun CorrectionCard(correction: Corrections.Correction, onAccept: () -> Unit, onDecline: () -> Unit) {
+private fun CorrectionCard(correction: Corrections.Correction, writable: Boolean, onAccept: () -> Unit, onDecline: () -> Unit) {
     val before = correction.before
     Column(
         Modifier
@@ -139,21 +152,23 @@ private fun CorrectionCard(correction: Corrections.Correction, onAccept: () -> U
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
-            Action(ACCEPT, Ink, onAccept)
-            Action(KEEP, Muted, onDecline)
+            Action(ACCEPT, Ink, writable, onAccept)
+            Action(KEEP, Muted, writable, onDecline)
         }
     }
 }
 
+/** An answer, outlined in [color]; off, in [Faint]. */
 @Composable
-private fun Action(label: String, color: Color, onClick: () -> Unit) {
+private fun Action(label: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
+    val ink = if (enabled) color else Faint
     Text(
         label,
         style = ButtonLabel.copy(fontSize = 14.sp),
-        color = color,
+        color = ink,
         modifier = Modifier
-            .border(1.dp, color, RoundedCornerShape(2.dp))
-            .clickable(role = Role.Button, onClick = onClick)
+            .border(1.dp, ink, RoundedCornerShape(2.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
     )
 }

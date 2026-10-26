@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,10 +35,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.data.dao.CategoryUse
+import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.home.CategorySheet
 import my.pinged.ledger.home.NEW_CATEGORY
 import my.pinged.ledger.home.categoryIcon
+import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.grouped
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.Body
@@ -104,6 +108,7 @@ internal class Arranged(items: List<CategoryUse>) {
 fun CategoriesScreen(viewModel: CategoriesViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
+    val busy by viewModel.busy.collectAsState()
     CategoriesContent(
         state = read.toState(),
         onBack = onBack,
@@ -111,6 +116,7 @@ fun CategoriesScreen(viewModel: CategoriesViewModel, onBack: () -> Unit, modifie
         onEdit = viewModel::edit,
         onDelete = viewModel::delete,
         modifier = modifier,
+        busy = busy,
     )
 }
 
@@ -120,6 +126,10 @@ fun CategoriesScreen(viewModel: CategoriesViewModel, onBack: () -> Unit, modifie
  * Which sheet is open is kept as an id and found among [state]'s rows, so a
  * sheet after a process death opens on what the database now says, and one
  * whose category has gone opens nothing.
+ *
+ * While [busy] runs a ledger replacement the list says so at its top and
+ * New category is off (#331); a row still opens its sheet, which says so
+ * too and saves and deletes nothing.
  */
 @Composable
 internal fun CategoriesContent(
@@ -129,6 +139,7 @@ internal fun CategoriesContent(
     onEdit: (categoryId: Long, name: String, iconKey: String) -> Unit,
     onDelete: (categoryId: Long) -> Unit,
     modifier: Modifier = Modifier,
+    busy: Operation? = null,
 ) {
     var editing by rememberSaveable { mutableStateOf<Long?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
@@ -143,6 +154,7 @@ internal fun CategoriesContent(
             return@Column
         }
         LazyColumn(Modifier.weight(1f).padding(top = 14.dp)) {
+            if (usable && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
             item {
                 val notice = when {
                     state.replacing -> REPLACING_YOUR_DATA
@@ -168,7 +180,7 @@ internal fun CategoriesContent(
         }
         // Pinned below the list, as the board draws it, so the offer is on
         // screen however long the list grows.
-        if (usable) NewCategoryOffer { adding = true }
+        if (usable) NewCategoryOffer(enabled = busy == null) { adding = true }
     }
 
     val open = editing?.let { id -> state.items.firstOrNull { it.category.id == id } }
@@ -187,6 +199,7 @@ internal fun CategoriesContent(
                 onDelete(open.category.id)
             },
             onDismiss = { editing = null },
+            busy = busy,
         )
     }
     if (adding) {
@@ -201,6 +214,7 @@ internal fun CategoriesContent(
             },
             onDelete = null,
             onDismiss = { adding = false },
+            busy = busy,
         )
     }
 }
@@ -279,22 +293,23 @@ private fun Fold(empty: List<CategoryUse>, unfolded: Boolean, onToggle: () -> Un
     }
 }
 
-/** The foot, a dashed [Stamp] box: an offer, as the ledger's "+ CATEGORY" chip is. */
+/** The foot, a dashed [Stamp] box: an offer, as the ledger's "+ CATEGORY" chip is; [Muted] and off unless [enabled]. */
 @Composable
-private fun NewCategoryOffer(onClick: () -> Unit) {
+private fun NewCategoryOffer(enabled: Boolean, onClick: () -> Unit) {
+    val ink = if (enabled) Stamp else Muted
     Row(
         Modifier
             .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 26.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(2.dp))
-            .clickable(role = Role.Button, onClick = onClick)
-            .dashedOutline(Stamp)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .dashedOutline(ink)
             .heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
     ) {
-        PlusMark(size = 17.dp, strokeWidth = 1.9.dp, tint = Stamp)
-        Text(NEW_CATEGORY, fontFamily = Body, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = Stamp)
+        PlusMark(size = 17.dp, strokeWidth = 1.9.dp, tint = ink)
+        Text(NEW_CATEGORY, fontFamily = Body, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = ink)
     }
 }
 

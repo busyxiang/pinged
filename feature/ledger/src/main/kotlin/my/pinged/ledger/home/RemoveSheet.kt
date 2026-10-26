@@ -28,11 +28,13 @@ internal const val REMOVE_NOTE =
 /**
  * Not a payment, asked of a captured row already counted (#132). A sheet and
  * not an immediate write: a captured row is the bank's word, and nothing here
- * can put the row back, so a stray tap must not remove it.
+ * can put the row back, so a stray tap must not remove it. The confirm is
+ * off unless [enabled]: a sheet already open when a ledger replacement starts
+ * stays open, and confirms nothing until it ends (#331).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun RemoveSheet(row: FeedRow, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun RemoveSheet(row: FeedRow, onConfirm: () -> Unit, onDismiss: () -> Unit, enabled: Boolean = true) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -62,6 +64,7 @@ internal fun RemoveSheet(row: FeedRow, onConfirm: () -> Unit, onDismiss: () -> U
         )
         Button(
             onClick = onConfirm,
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).heightIn(min = 44.dp),
         ) {
             Text(REMOVE_CONFIRM)

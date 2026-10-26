@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +51,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import my.pinged.data.dao.UnreadCapture
+import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
+import my.pinged.ledger.settings.Operation
 import my.pinged.parse.FixtureText
 import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
@@ -98,6 +102,7 @@ fun UnreadScreen(
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
+    val busy by viewModel.busy.collectAsState()
     val context = LocalContext.current
     UnreadContent(
         state = read.toState(),
@@ -107,10 +112,15 @@ fun UnreadScreen(
         onCopy = { copyAsFixture(context, it) },
         onEnd = { viewModel.loadMore() },
         modifier = modifier,
+        busy = busy,
     )
 }
 
-/** [UnreadScreen] without its holder, so a test can draw any state. */
+/**
+ * [UnreadScreen] without its holder, so a test can draw any state. While
+ * [busy] runs a ledger replacement the list says so under its header and
+ * Never a transaction is off (#331).
+ */
 @Composable
 internal fun UnreadContent(
     state: UnreadState,
@@ -121,6 +131,7 @@ internal fun UnreadContent(
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault(),
     onTeach: (UnreadCapture) -> Unit = {},
+    busy: Operation? = null,
 ) {
     if (!state.loaded) {
         Column(modifier.fillMaxSize().background(Card)) {
@@ -135,6 +146,7 @@ internal fun UnreadContent(
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         item { Header(onBack) }
+        if (!state.storageUnavailable && !state.replacing && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp)) }
         val notice = when {
             state.replacing -> REPLACING_YOUR_DATA
             state.storageUnavailable -> CANNOT_READ_YOUR_DATA
@@ -151,6 +163,7 @@ internal fun UnreadContent(
                 onTeach = { onTeach(capture) },
                 onNeverATransaction = { onNeverATransaction(capture) },
                 onCopy = { onCopy(capture) },
+                writable = busy == null,
             )
             // The last card composed is the cue for the next page, as a lazy
             // list composes only what is about to show.
@@ -206,6 +219,7 @@ private fun UnreadCard(
     onTeach: () -> Unit,
     onNeverATransaction: () -> Unit,
     onCopy: () -> Unit,
+    writable: Boolean,
 ) {
     val shape = RoundedCornerShape(2.dp)
     Column(
@@ -239,24 +253,27 @@ private fun UnreadCard(
         }
         Row(Modifier.padding(top = 11.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CardAction(TEACH_PINGED_THIS, filled = true, onTeach, Modifier.weight(1f))
-            CardAction(NEVER_A_TRANSACTION, filled = false, onNeverATransaction, Modifier.weight(1f))
+            CardAction(NEVER_A_TRANSACTION, filled = false, onNeverATransaction, Modifier.weight(1f), enabled = writable)
         }
     }
 }
 
-/** One of the card's two actions, the board's 44dp pair: [filled] in [Stamp], else outlined. */
+/**
+ * One of the card's two actions, the board's 44dp pair: [filled] in [Stamp],
+ * else outlined. Off, its label in [Faint].
+ */
 @Composable
-private fun CardAction(label: String, filled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun CardAction(label: String, filled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     val shape = RoundedCornerShape(2.dp)
     Box(
         modifier
             .clip(shape)
             .then(if (filled) Modifier.background(Stamp, shape) else Modifier.border(1.dp, Border, shape))
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 44.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = ButtonLabel.copy(fontSize = 13.sp), color = if (filled) Paper else Muted)
+        Text(label, style = ButtonLabel.copy(fontSize = 13.sp), color = if (!enabled) Faint else if (filled) Paper else Muted)
     }
 }
 

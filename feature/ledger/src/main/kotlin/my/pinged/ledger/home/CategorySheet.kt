@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.data.dao.CategoryDao
 import my.pinged.data.entity.Category
+import my.pinged.ledger.ChangedLine
+import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.grouped
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
@@ -127,6 +129,9 @@ internal const val NEW_CATEGORY_ICON = "tag"
  * while the name is blank or taken, and for an existing category until
  * something has changed.
  *
+ * While [busy] runs a ledger replacement the sheet says so under its header,
+ * and Save and Delete are off (#331); what was typed is kept for when it ends.
+ *
  * Drawn in [ReceiptSheetFrame] with only the icons scrolling, so the name and
  * Save stay on a 640dp screen with all nine groups between them, as the board
  * keeps them with "SEVEN MORE GROUPS BELOW".
@@ -140,6 +145,7 @@ internal fun CategorySheet(
     onSave: (name: String, iconKey: String) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
+    busy: Operation? = null,
 ) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name ?: "") }
     var icon by rememberSaveable(existing?.id) { mutableStateOf(existing?.iconKey ?: NEW_CATEGORY_ICON) }
@@ -154,6 +160,7 @@ internal fun CategorySheet(
             onDismiss,
             Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
         )
+        busy?.let { ChangedLine(it, SHEET_LINE) }
         Column(margins.padding(top = 6.dp)) {
             Text("NAME", style = MonoLabel, color = Muted)
             UnderlinedField(
@@ -192,14 +199,14 @@ internal fun CategorySheet(
             }
         }
         SaveButton(
-            enabled = clean.isNotEmpty() && !taken && changed,
+            enabled = clean.isNotEmpty() && !taken && changed && busy == null,
             onClick = { onSave(clean, icon) },
             margins = PaddingValues(start = 20.dp, end = 20.dp, top = 18.dp, bottom = if (existing == null) 24.dp else 11.dp),
         )
         if (existing != null) {
             val blocked = inUseLine(transactions, rules)
             if (blocked == null && onDelete != null) {
-                DeleteButton(onDelete, margins.padding(bottom = 24.dp))
+                DeleteButton(enabled = busy == null, onDelete, margins.padding(bottom = 24.dp))
             } else if (blocked != null) {
                 Text(
                     blocked,
@@ -258,21 +265,22 @@ private fun IconTile(key: String, chosen: Boolean, onPick: (String) -> Unit, mod
  * The board's secondary control below Save: a 44dp box outlined in [Border]
  * with its label in [Stamp], here the delete an unused category is allowed.
  * Nothing is lost by it -- no money is in a category row -- so it asks no
- * confirmation, and the category can be made again.
+ * confirmation, and the category can be made again. Off, its label [Muted],
+ * while a ledger replacement runs.
  */
 @Composable
-private fun DeleteButton(onDelete: () -> Unit, modifier: Modifier) {
+private fun DeleteButton(enabled: Boolean, onDelete: () -> Unit, modifier: Modifier) {
     val shape = RoundedCornerShape(2.dp)
     Box(
         modifier
             .fillMaxWidth()
             .clip(shape)
             .border(1.dp, Border, shape)
-            .clickable(role = Role.Button, onClick = onDelete)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onDelete)
             .heightIn(min = 44.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(DELETE_CATEGORY, fontFamily = Body, fontSize = 14.sp, color = Stamp)
+        Text(DELETE_CATEGORY, fontFamily = Body, fontSize = 14.sp, color = if (enabled) Stamp else Muted)
     }
 }
 

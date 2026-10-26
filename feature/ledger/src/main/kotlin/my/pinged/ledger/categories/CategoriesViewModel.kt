@@ -6,6 +6,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
+import my.pinged.ledger.LedgerBusy
+import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.settings.TransferState
+import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.CategoryInUseException
@@ -53,8 +58,17 @@ internal fun ReadState<Unit, List<CategoryUse>>.toState(): CategoriesState {
  * never sends a blank icon, so that one would be a programming error caught
  * as a refusal; it is logged, not hidden.
  */
-class CategoriesViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+class CategoriesViewModel internal constructor(
+    app: Application,
+    runner: ReadRunner,
+    transfers: StateFlow<TransferState> = Transfers.state,
+) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
+
+    private val gate = LedgerBusy(viewModelScope, transfers)
+
+    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
+    val busy: StateFlow<Operation?> = gate.busy
 
     /**
      * Every category with what is filed there. `CategoriesScreen` reads it on
@@ -70,16 +84,19 @@ class CategoriesViewModel internal constructor(app: Application, runner: ReadRun
 
     fun delete(categoryId: Long): Job = write("The category could not be deleted") { it.deleteIfUnused(categoryId) }
 
-    private fun write(what: String, change: (CategoryDao) -> Unit): Job = viewModelScope.launch {
-        read.write(what) { db ->
-            try {
-                change(db.categoryDao())
-            } catch (refused: IllegalArgumentException) {
-                Log.i(TAG, "$what: ${refused.message}")
-            } catch (refused: CategoryInUseException) {
-                Log.i(TAG, "$what: ${refused.message}")
-            }
-        }.await()
+    /** Refused outright while the ledger is being replaced, as [busy] says (#331). */
+    private fun write(what: String, change: (CategoryDao) -> Unit): Job = gate.unlessReplacing {
+        viewModelScope.launch {
+            read.write(what) { db ->
+                try {
+                    change(db.categoryDao())
+                } catch (refused: IllegalArgumentException) {
+                    Log.i(TAG, "$what: ${refused.message}")
+                } catch (refused: CategoryInUseException) {
+                    Log.i(TAG, "$what: ${refused.message}")
+                }
+            }.await()
+        }
     }
 
     private companion object {

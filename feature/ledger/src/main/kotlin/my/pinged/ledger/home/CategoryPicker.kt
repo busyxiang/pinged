@@ -20,6 +20,8 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import my.pinged.ledger.ChangedLine
+import my.pinged.ledger.settings.Operation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -176,6 +178,11 @@ internal fun conflictLine(count: Int, categoryNames: List<String>): String {
  * when it is null: manual entry's More (#272) picks for a draft, which has
  * nothing to teach and no merchant to say it lacks.
  *
+ * While [busy] runs a ledger replacement the sheet stays open and says so
+ * under its header, and Save and the New category tile are off (#331): a
+ * category picked then would be wiped. A sheet already open when it starts
+ * turns them off in place, and the pick is kept for when it ends.
+ *
  * Drawn in [ReceiptSheetFrame], the chrome every sheet shares; not in
  * `ReceiptSheet`, whose scrolling `Column` cannot hold this lazy grid.
  */
@@ -192,6 +199,7 @@ internal fun CategoryPicker(
     allNames: List<String> = categories.map { it.name },
     onAdd: (suspend (name: String, iconKey: String) -> Long?)? = null,
     noSwitchNote: String? = NO_MERCHANT_NOTE,
+    busy: Operation? = null,
 ) {
     var adding by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -211,6 +219,7 @@ internal fun CategoryPicker(
     // a chooser that hides most of itself.
     ReceiptSheetFrame(onDismissRequest = onDismiss, modifier = modifier) {
         SheetHeader(PICKER_HEADING, onDismiss, Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp))
+        busy?.let { ChangedLine(it, SHEET_LINE) }
         SubjectStrip(subject)
         // Lazy because fifteen tiles do not fit a short phone, and the sheet's
         // own slot is a `ColumnScope`, which does not scroll. `fill = false`
@@ -227,7 +236,7 @@ internal fun CategoryPicker(
                 CategoryTile(category, chosen = category.id == picked) { selected = it }
             }
             if (onAdd != null) {
-                item(key = NEW_CATEGORY_KEY) { NewCategoryTile { adding = true } }
+                item(key = NEW_CATEGORY_KEY) { NewCategoryTile(enabled = busy == null) { adding = true } }
             }
         }
         val note = Modifier.padding(start = 20.dp, end = 20.dp)
@@ -272,7 +281,7 @@ internal fun CategoryPicker(
                 modifier = note.padding(top = 18.dp),
             )
         }
-        SaveButton(enabled = picked != null, onClick = { picked?.let { onSave(it, teach != null && always) } })
+        SaveButton(enabled = picked != null && busy == null, onClick = { picked?.let { onSave(it, teach != null && always) } })
     }
     if (adding && onAdd != null) {
         CategorySheet(
@@ -289,6 +298,7 @@ internal fun CategoryPicker(
             },
             onDelete = null,
             onDismiss = { adding = false },
+            busy = busy,
         )
     }
 }
@@ -378,25 +388,29 @@ private fun AlwaysSwitch(merchant: String?, category: String?, on: Boolean, onTo
 /**
  * The board's last tile: a dashed [Muted] outline, the plus, and "New
  * category" in [Ink], drawn as an offer rather than a choice. A button, not a
- * radio: it opens a sheet and selects nothing itself.
+ * radio: it opens a sheet and selects nothing itself, and is off while a
+ * ledger replacement runs.
  */
 @Composable
-private fun NewCategoryTile(onClick: () -> Unit) {
+private fun NewCategoryTile(enabled: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(2.dp))
             .dashedOutline(Muted)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 52.dp)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         PlusMark(size = 18.dp, strokeWidth = 1.6.dp, tint = Muted)
-        Text(NEW_CATEGORY, fontFamily = Body, fontSize = 13.sp, lineHeight = 17.sp, color = Ink)
+        Text(NEW_CATEGORY, fontFamily = Body, fontSize = 13.sp, lineHeight = 17.sp, color = if (enabled) Ink else Muted)
     }
 }
+
+/** Where a sheet draws its [ChangedLine]: under the header, above what it is about. */
+internal val SHEET_LINE = PaddingValues(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 12.dp)
 
 /** The New category tile's key in the grid, which no `category.id` can be. */
 private const val NEW_CATEGORY_KEY = "new-category"

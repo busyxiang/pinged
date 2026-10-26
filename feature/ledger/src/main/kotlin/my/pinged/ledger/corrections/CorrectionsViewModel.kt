@@ -8,6 +8,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
+import my.pinged.ledger.LedgerBusy
+import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.settings.TransferState
+import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.Corrections
 import my.pinged.capture.Graph
 import my.pinged.capture.GuardedRunner
@@ -67,8 +72,14 @@ class CorrectionsViewModel internal constructor(
     runner: ReadRunner,
     /** Where the read's own work runs; a JVM test passes the one it drives. */
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    transfers: StateFlow<TransferState> = Transfers.state,
 ) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
+
+    private val gate = LedgerBusy(viewModelScope, transfers)
+
+    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
+    val busy: StateFlow<Operation?> = gate.busy
 
     /** A getter, for the reason `SourcesViewModel.context` gives. */
     private val context: Context get() = getApplication<Application>()
@@ -109,8 +120,11 @@ class CorrectionsViewModel internal constructor(
     fun decline(correction: Corrections.Correction): Job =
         answer("The correction could not be saved") { Corrections.decline(it.rawCaptureDao(), correction) }
 
-    /** A write the guard refuses leaves the row as it was, and the read after it draws that. */
-    private fun answer(what: String, write: (PingedDatabase) -> Boolean): Job = viewModelScope.launch {
-        read.write(what) { db -> write(db) }.await()
+    /**
+     * A write the guard refuses leaves the row as it was, and the read after it
+     * draws that. None is asked for while the ledger is being replaced ([busy]).
+     */
+    private fun answer(what: String, write: (PingedDatabase) -> Boolean): Job = gate.unlessReplacing {
+        viewModelScope.launch { read.write(what) { db -> write(db) }.await() }
     }
 }

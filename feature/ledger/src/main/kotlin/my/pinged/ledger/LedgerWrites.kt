@@ -3,6 +3,7 @@ package my.pinged.ledger
 import android.content.Context
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,8 +15,9 @@ import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 
 /**
- * Whether a restore or a delete-everything is running, which a screen that
- * writes on a tap refuses to do through (`ReviewInbox`, `ManualEntries`).
+ * Whether a ledger replacement -- a restore or a delete-everything -- is
+ * running, which every holder that writes on a tap refuses to write through,
+ * from the claim (#331), and which its screen draws as [busyLine].
  *
  * In `my.pinged.ledger` rather than beside either holder, for the placement
  * rule `AppViewModelFactory` gives.
@@ -36,6 +38,13 @@ internal class LedgerBusy(scope: CoroutineScope, private val transfers: StateFlo
      * a screen's call passes `damageStopsCapture = false` (`GateRefusalTest`).
      */
     val replacing: Boolean get() = transfers.value.replacingLedger != null
+
+    /**
+     * [write], unless the ledger is [replacing]: then nothing is asked of the
+     * ledger, so the screen is not raised `unavailable` either, and the `Job`
+     * returned is already finished.
+     */
+    fun unlessReplacing(write: () -> Job): Job = if (replacing) Job().apply { complete() } else write()
 }
 
 /**
@@ -91,12 +100,19 @@ internal enum class Withheld(val word: String) {
 
     /** The manual entry screen's Save and Delete (#108). */
     SAVED("SAVED"),
+
+    /**
+     * Every other write on a tap (#331): the category chooser's Save, the
+     * merchant sheet's, Detail's and the Settings sub-screens'.
+     */
+    CHANGED("CHANGED"),
 }
 
 /**
  * The line a [busy] operation draws over a screen that refuses writes while
  * it runs: `RESTORING A BACKUP · NOTHING CAN BE ANSWERED UNTIL IT FINISHES`
- * over the review cards, `... SAVED ...` over the entry screen.
+ * over the review cards, `... SAVED ...` over the entry screen, and
+ * `... CHANGED ...` everywhere else ([ChangedLine]).
  */
 internal fun busyLine(busy: Operation, withheld: Withheld): String {
     val doing = when (busy) {

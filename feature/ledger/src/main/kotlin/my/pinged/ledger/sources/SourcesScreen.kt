@@ -20,6 +20,8 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,7 +34,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
+import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
+import my.pinged.ledger.settings.Operation
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Separator
@@ -81,11 +85,13 @@ fun SourcesScreen(
     // while this screen shows would leave a source switched ON that the delete
     // has taken away, which is consent shown inverted.
     val state = viewModel.read.rememberReadState().toState()
+    val busy by viewModel.busy.collectAsState()
     SourcesScreenContent(
         state = state,
         onToggle = viewModel::setEnabled,
         onBack = onBack,
         modifier = modifier,
+        busy = busy,
     )
 }
 
@@ -93,6 +99,9 @@ fun SourcesScreen(
  * Stateless, so the screen test needs no database.
  *
  * Nothing here knows what a `CaptureSource` is or that a `DataStore` exists.
+ *
+ * While [busy] runs a ledger replacement the screen says so under its header
+ * and no switch moves (#331): a restore replaces the allow-list too.
  */
 @Composable
 fun SourcesScreenContent(
@@ -100,6 +109,7 @@ fun SourcesScreenContent(
     onToggle: (String, Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    busy: Operation? = null,
 ) {
     val suggested = state.suggested
     val seenNotCaptured = state.seenNotCaptured
@@ -131,6 +141,7 @@ fun SourcesScreenContent(
             item(key = "header") {
                 Column(Modifier.fillMaxWidth().background(Paper)) {
                     Header(enabledCount = enabledCount, reading = false, onBack = onBack)
+                    if (!state.storageUnavailable && !state.replacing && busy != null) ChangedLine(busy)
                     SectionLabel("ON YOUR PHONE", Modifier.padding(start = 20.dp, top = 26.dp))
                     Spacer(Modifier.height(12.dp))
                 }
@@ -164,6 +175,7 @@ fun SourcesScreenContent(
                         // text on disk is read. See `claimFor`.
                         detail = seenLine(row.seenCount) + claimFor(row),
                         divider = index != suggested.lastIndex,
+                        enabled = busy == null,
                         onToggle = onToggle,
                     )
                 }
@@ -200,6 +212,7 @@ fun SourcesScreenContent(
                         detail = seenLine(row.seenCount) + claimFor(row),
                         divider = index != seenNotCaptured.lastIndex,
                         topPadding = if (index == 0) 14.dp else 12.dp,
+                        enabled = busy == null,
                         onToggle = onToggle,
                     )
                 }
@@ -316,6 +329,7 @@ private fun SourceListRow(
     row: SourceRow,
     detail: String,
     divider: Boolean,
+    enabled: Boolean,
     onToggle: (String, Boolean) -> Unit,
     topPadding: Dp = 12.dp,
 ) {
@@ -327,6 +341,7 @@ private fun SourceListRow(
             // rather than leaving a switch that reads as a button.
             .toggleable(
                 value = row.enabled,
+                enabled = enabled,
                 role = Role.Switch,
                 onValueChange = { onToggle(row.pkg, it) },
             )
