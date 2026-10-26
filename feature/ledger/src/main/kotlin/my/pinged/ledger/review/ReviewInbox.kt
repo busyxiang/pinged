@@ -11,6 +11,7 @@ import my.pinged.data.Databases
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.Answered
 import my.pinged.data.dao.TxnDao
+import my.pinged.data.entity.Category
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.LedgerBusy
@@ -62,7 +63,7 @@ import my.pinged.ledger.settings.Transfers
  */
 class ReviewInbox(
     private val scope: CoroutineScope,
-    runner: ReadRunner,
+    private val runner: ReadRunner,
     private val transfers: StateFlow<TransferState> = Transfers.state,
 ) {
     private val gate = LedgerBusy(scope, transfers)
@@ -105,6 +106,33 @@ class ReviewInbox(
                     _undoable.value = null
                 }
             }
+        }
+    }
+
+    /**
+     * The categories a money-back card's sheet offers, in `sort_order`, or null
+     * when the ledger cannot be read. Read when the sheet opens, not with the
+     * cards: only a money-back card asks, and Settings may have edited the table
+     * since the cards were read. Without `Uncategorized`, for the reason
+     * `chooserChoices` gives.
+     */
+    suspend fun choices(): List<Category>? =
+        (runner.read("The categories could not be read") { db ->
+            val categories = db.categoryDao()
+            val unsorted = categories.uncategorizedIdOrNull()
+            categories.all().filter { it.id != unsorted }
+        } as? Outcome.Done)?.value
+
+    /**
+     * File [card]'s payment under [categoryId] (§9.2), as a one-off, and leave
+     * it awaiting review: `TxnDao.fileAwaiting`, guarded on the card as every
+     * answer is. **Not an answer**, so it offers nothing for Undo and leaves
+     * what is on offer. The cards are read again before it returns, which is how
+     * the card shows its new category, or the row it now is when it had moved.
+     */
+    fun file(card: ReviewCard, categoryId: Long): Job = scope.launch {
+        written("The category could not be set", unavailable = 0) { now ->
+            fileAwaiting(card.txn.id, card.txn.pendingReason, categoryId, now)
         }
     }
 
