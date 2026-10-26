@@ -507,7 +507,7 @@ internal fun LedgerScreenContent(
  * 7dp lower than the board's, the target's height over the chip's.
  *
  * [heard] is spec 10.2's always-visible signal, worded and withheld by
- * `MainActivity.heardLine`, which says why it is not "captured"; null draws
+ * `AppStatus.kt`'s `heardLine`, which says why it is not "captured"; null draws
  * nothing.
  *
  * [onOpenSearch] is spec 9.1's search (#154), the magnifier at the row's end.

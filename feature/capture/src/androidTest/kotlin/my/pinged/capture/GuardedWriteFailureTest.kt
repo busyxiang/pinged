@@ -21,10 +21,10 @@ import org.junit.runner.RunWith
  * an `IOException`, which `guarded` does not catch and which arrives with the
  * block's answer already computed and thrown away.
  *
- * `MainActivity.readExportOverdue` is the caller this is about: it catches
- * `IOException` around the whole `guarded` call rather than inside the block,
+ * `AppStatus`'s backup reminder count is the caller this is about: it catches
+ * `IOException` around the whole runner call rather than inside the block,
  * and the reason it must is exactly this. Nothing pinned that until here.
- * `ExportNudgeGuardTest` pins the other half -- that the catch, given an
+ * `AppStatusTest` pins the other half -- that the catch, given an
  * `IOException`, answers false instead of killing the process.
  */
 @RunWith(AndroidJUnit4::class)
@@ -95,7 +95,7 @@ class GuardedWriteFailureTest {
     }
 
     /**
-     * The same write, with the caller's guard where `readExportOverdue` puts
+     * The same write, with the caller's guard where `AppStatus` puts
      * it: outside the call. Inside the block it would never run, because the
      * block has already returned by the time the write happens.
      */

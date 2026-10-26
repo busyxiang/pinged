@@ -1,10 +1,8 @@
 package my.pinged
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.database.SQLException
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -25,14 +23,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
@@ -42,17 +36,14 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
 import androidx.navigationevent.NavigationEvent
-import java.io.IOException
 import java.time.LocalDate
 import java.time.YearMonth
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.createSavedStateHandle
 import my.pinged.capture.CaptureAlerts
-import my.pinged.capture.CaptureReport
 import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
 import my.pinged.ledger.day.DayScreen
@@ -65,13 +56,10 @@ import my.pinged.ledger.search.SearchViewModel
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.entry.ManualEntryScreen
 import my.pinged.ledger.entry.ManualEntryViewModel
-import my.pinged.capture.CaptureStorage
-import my.pinged.capture.ListenerStatus
 import my.pinged.capture.SourcePrompt
 import my.pinged.capture.Graph
 import my.pinged.tracker.BuildConfig
 import my.pinged.data.Databases
-import my.pinged.data.IntegrityStore
 import my.pinged.ledger.AppViewModelFactory
 import my.pinged.ledger.home.BackupReminder
 import my.pinged.ledger.home.LedgerScreen
@@ -107,7 +95,6 @@ import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.HeldBy
 import my.pinged.ui.theme.LocalHeldBy
 import my.pinged.ui.theme.PingedTheme
-import my.pinged.ledger.transfer.TransferStore
 
 /**
  * The only Activity. It hosts spec 9.1's ledger, which is home; spec 9.5's
@@ -120,33 +107,14 @@ import my.pinged.ledger.transfer.TransferStore
  */
 class MainActivity : ComponentActivity() {
 
-    private val health = MutableStateFlow<CaptureReport?>(null)
-
     /**
-     * [exportIsOverdue]'s answer, alongside [health] because whether the
-     * backup reminder shows is one decision over both ([backupReminderShows]).
-     *
-     * Starts false, so the reminder is never the first thing drawn on a
-     * resume that has not yet reached the database. `null` would be a third
-     * state the reminder has no wording for.
-     *
-     * Sampled in [onResume] and kept in step by [watchTheBackup] after that.
+     * The banner, the heard line, the backup reminder, the tab bar's count
+     * and onboarding, decided outside this Activity, which renders them and
+     * hands in what only it sees. Held by a ViewModel, so a rotation keeps it.
      */
-    private val exportOverdue = MutableStateFlow(false)
-
-    /**
-     * Whether damage is on record, which decides what the backup reminder's
-     * action says and where it leads. Kept in step by [watchTheBackup]; false
-     * when the store will not read, which leaves the reminder offering the
-     * export.
-     */
-    private val ledgerDamaged = MutableStateFlow(false)
-
-    /**
-     * Counts foregrounds, so the tab bar's count of what awaits review is read
-     * again on each; see where it is collected.
-     */
-    private val resumes = MutableStateFlow(0)
+    private val status: AppStatus by lazy {
+        ViewModelProvider(this, AppViewModelFactory(application, ::AppStatusViewModel))[AppStatusViewModel::class.java].status
+    }
 
     /**
      * Whether spec 10.2's daily check could post, for its settings row. Read
@@ -154,19 +122,8 @@ class MainActivity : ComponentActivity() {
      */
     private val alertsAllowed = MutableStateFlow<Boolean?>(null)
 
-    /**
-     * Whether first run's onboarding is drawn instead of the app ([onboards]),
-     * or null before the first [sampleHealth] has said.
-     */
-    private val onboarding = MutableStateFlow<Boolean?>(null)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        watchTheBackup()
-        // A grant means no onboarding, so the app is drawn from the first
-        // frame; only an install without one waits for [onboards] to read
-        // the flag, behind bare Paper.
-        if (ListenerStatus.isGranted(this)) onboarding.value = false
         // Built once, here, rather than per entry: the factory holds the
         // `Application` itself. See `AppViewModelFactory`.
         val sourcesFactory = AppViewModelFactory(application, ::SourcesViewModel)
@@ -183,6 +140,8 @@ class MainActivity : ComponentActivity() {
         val openSources = SourcePrompt.opensSources(intent)
         val settingsStart = settingsStackFor(openSources)
         setContent {
+            // Collected while started, which is when its watchers run.
+            val now by status.state.collectAsStateWithLifecycle()
             WithHolder {
                 // One saved stack per tab and the tab showing, kept in saved
                 // state for the reason `Ledger` gives. `TabStacks` holds the
@@ -221,7 +180,7 @@ class MainActivity : ComponentActivity() {
                     // Null until the first sample, drawn as bare Paper: it is
                     // null only on an install without the grant, and there
                     // the ledger would flash before onboarding replaced it.
-                    val opening = onboarding.collectAsState().value
+                    val opening = now.onboarding
                     // Saved, so a process killed while the user is in
                     // Android's settings still takes them on to sources.
                     var granting by rememberSaveable { mutableStateOf(false) }
@@ -260,7 +219,7 @@ class MainActivity : ComponentActivity() {
                         // selects the tab and unwinds whatever is pushed over it.
                         // On settings' own root it would do nothing, so there is no
                         // button (ruling R35).
-                        GrantBanner(onOpenSettings = tabs::showSettings.takeUnless { tabs.showingSettingsRoot })
+                        GrantBanner(now.banner, onOpenSettings = tabs::showSettings.takeUnless { tabs.showingSettingsRoot })
                         NavDisplay(
                             backStack = tabs.entries,
                             // `entries` always holds both tabs' roots, so NavDisplay
@@ -317,17 +276,25 @@ class MainActivity : ComponentActivity() {
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                         onOpenSearch = { tabs.push(Search()) },
                                         onOpenToSort = { month, id -> tabs.push(Search(month.toString(), id)) },
-                                        heard = heardNow(),
+                                        heard = now.heard,
                                         // Both lead to settings' root, where the
                                         // export sheet is hosted and the
                                         // recovery notice is drawn.
-                                        backupReminder = backupReminderNow(
-                                            onExport = {
-                                                exportAsked = true
-                                                tabs.showSettings()
-                                            },
-                                            onRescue = tabs::showSettings,
-                                        ),
+                                        backupReminder = now.backupReminder?.let { action ->
+                                            BackupReminder(
+                                                damaged = action == BackupReminderAction.Rescue,
+                                                onAction = when (action) {
+                                                    BackupReminderAction.Rescue -> tabs::showSettings
+                                                    BackupReminderAction.Export -> {
+                                                        {
+                                                            exportAsked = true
+                                                            tabs.showSettings()
+                                                        }
+                                                    }
+                                                },
+                                                onDismiss = status::dismissBackupReminder,
+                                            )
+                                        },
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
@@ -457,14 +424,10 @@ class MainActivity : ComponentActivity() {
                                     // for the rest of the visit -- a full disk that
                                     // has cleared, say, with nothing resuming.
                                     // **Keyed on the read, not on what it found**:
-                                    // a capture refused just as a gate lifts can
-                                    // raise the flag between a sample's probe and
-                                    // its report, over a ledger settings reads as
-                                    // healthy again and again. Each read re-samples,
-                                    // and the sample's probe clears it.
+                                    // see `AppStatus`.
                                     val read by settings.state.collectAsState()
                                     LaunchedEffect(read.reads) {
-                                        if (read.reads > 0) sampleHealth()
+                                        if (read.reads > 0) status.settingsRead()
                                     }
                                     // `OpenDocument`, not `GetContent`: `GetContent`
                                     // hands back a transient URI a provider may
@@ -621,17 +584,13 @@ class MainActivity : ComponentActivity() {
                             },
                             modifier = Modifier.weight(1f),
                         )
-                        // Read again whenever the bar may be about to show it: a
-                        // tab change, a return to a tab's root (the inbox pushed
-                        // over Charts answers cards), a foreground and a ledger
-                        // rewrite. A capture landing while Charts shows is not
-                        // counted until one of those; nothing here watches `txn`.
-                        val resumed by resumes.collectAsState()
-                        val rewrites by Databases.rewrites.collectAsState()
-                        val awaitingReview by produceState<Int?>(null, tabs.selected, tabs.showsBar, resumed, rewrites) {
-                            value = readAwaitingReview(applicationContext)
-                        }
+                        // A foreground and a ledger rewrite read it again too;
+                        // see `AppStatus.barMayShow`.
+                        LaunchedEffect(tabs.selected, tabs.showsBar) { status.barMayShow() }
                         if (tabs.showsBar) {
+                            // Null, the dash, while it is not read yet or
+                            // unreadable: 0 would say nothing awaits review (#237).
+                            val awaitingReview = now.awaitingReview.takeUnless { it.unavailable }?.answer
                             TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = awaitingReview)
                         }
                     }
@@ -642,167 +601,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        resumes.value++
         alertsAllowed.value = CaptureAlerts.canPost(applicationContext)
         // Spec 10.1's third rebind path is installed process-wide by
         // ForegroundRebinder; this is the screen catching up with whatever the
         // user did in Settings while it was away.
-        //
-        // The probe first, the report second, and in that order:
-        // `CaptureHealth`'s storage flag is written by whatever opens the
-        // database, so reading the report first describes the *previous*
-        // foreground.
-        //
-        // **`LedgerViewModel.read` opens the database too, and this
-        // explicit probe stays anyway.** The banner is drawn above every
-        // destination, so making the flag behind it depend on which destination
-        // is composed gets the first foreground of a fresh install wrong.
-        //
-        // **Neither line may throw.** This scope carries no
-        // `CoroutineExceptionHandler`, so anything escaping either call reaches
-        // the thread's default handler and kills the process on the home
-        // screen, on every foreground, for as long as the fault lasts. Both
-        // carry their own guard for that reason: [readExportOverdue] below, and
-        // `ListenerStatus.report`, which answers with
-        // `CaptureReport.healthUnreadable` rather than throwing or claiming
-        // health.
-        lifecycleScope.launch { sampleHealth() }
-    }
-
-    /**
-     * [exportOverdue] and [health], read again: [readExportOverdue]'s
-     * `CaptureStorage.guarded` open is the probe [onResume]'s KDoc says must
-     * come first. Neither call may throw; see there.
-     */
-    private suspend fun sampleHealth() {
-        exportOverdue.value = readExportOverdue(applicationContext)
-        betweenProbeAndReport()
-        val report = ListenerStatus.report(applicationContext)
-        health.value = report
-        // From the same report, so first run cannot end on a grant the banner
-        // has not yet heard of.
-        onboarding.value = onboards(applicationContext, report.granted)
-    }
-
-    /**
-     * [heardLine] over [health], re-measured each minute so a ledger left open
-     * does not go on saying "HEARD 5 MIN" for an hour.
-     */
-    @Composable
-    private fun heardNow(): String? {
-        val report = health.collectAsState().value
-        val now by produceState(System.currentTimeMillis()) {
-            while (true) {
-                delay(60_000L)
-                value = System.currentTimeMillis()
-            }
-        }
-        return heardLine(report, now)
-    }
-
-    /**
-     * Spending's backup reminder (#252), or null where [backupReminderShows]
-     * says it may not show. On a damaged ledger its action is [onRescue]: the
-     * export is withdrawn there, and settings' recovery notice offers the
-     * rescue in its place.
-     */
-    @Composable
-    private fun backupReminderNow(onExport: () -> Unit, onRescue: () -> Unit): BackupReminder? {
-        val report = health.collectAsState().value
-        val overdue = exportOverdue.collectAsState().value
-        val damaged = ledgerDamaged.collectAsState().value
-        if (!backupReminderShows(report, overdue)) return null
-        return BackupReminder(
-            damaged = damaged,
-            onAction = if (damaged) onRescue else onExport,
-            onDismiss = ::dismissNudge,
-        )
-    }
-
-    /**
-     * Keep [exportOverdue] in step with the store for as long as the app is on
-     * screen.
-     *
-     * **A watcher and not a second sample, because the reminder's action is
-     * what settles what it reports.** "Export" shows settings in this
-     * Activity's own tabs, so the export that follows happens inside one
-     * foreground: going back to Spending is
-     * navigation, not a resume, and the one resume that does fire -- the
-     * save-file picker returning -- is before `Transfers.export`
-     * records anything. A flag sampled only in [onResume] would go on telling a
-     * user who has just exported that nothing is saved anywhere, for the rest
-     * of the session.
-     *
-     * [TransferStore.lastExportAtChanges] and not a callback on the tap,
-     * because the stored timestamp is what the reminder is about: an export that
-     * failed never records one, so nothing emits and the reminder stays up.
-     * Nothing polls.
-     *
-     * **`Databases.rewrites` too, and it re-samples [health] as well.**
-     * The reminder's other half is the ledger's row count: a delete or restore
-     * that replaces the database and then fails before `TransferStore.forget`
-     * -- a Keystore entry that will not delete, an import that does not
-     * finish -- changes that count with no store write to announce it. And
-     * the storage banner is about the database a restore has just replaced:
-     * sampled only on resume, "Pinged cannot open its database" would stand
-     * over settings' "BACKUP RESTORED" after a restore from key-gone for the
-     * rest of the visit, because nothing in that visit resumes.
-     *
-     * Changes only, and no sample on subscription: the [onResume] that follows
-     * every `onStart` reads the stored value for itself, alongside the database
-     * probe that has to precede [ListenerStatus.report].
-     * [TransferStore.lastExportAtChanges] is where that drop lives and why.
-     */
-    private fun watchTheBackup() {
-        lifecycleScope.launch {
-            // Tied to STARTED so the collection ends with the screen; a plain
-            // `lifecycleScope.launch` per foreground would leave one collector
-            // per foreground running until the Activity is destroyed.
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                // `drop(1)`: the value on subscription is not a change, for
-                // the same reason the store's own first value is not. Its own
-                // collection, so the store's failure below cannot end it.
-                launch { Databases.rewrites.drop(1).collect { sampleHealth() } }
-                // And on the stored flag changing, which is what clears a
-                // banner sampled inside a refusal's window: the clear comes
-                // from whichever open succeeds next, and only this hears it.
-                launch {
-                    ListenerStatus.storageUnavailableChanges(applicationContext)
-                        .catch { thrown -> Log.w(TAG, "Could not watch the storage flag", thrown) }
-                        .collect { sampleHealth() }
-                }
-                launch {
-                    IntegrityStore.damagedUpdates(applicationContext)
-                        .catch { thrown ->
-                            Log.w(TAG, "Could not watch the integrity verdict", thrown)
-                            ledgerDamaged.value = false
-                        }
-                        .collect { ledgerDamaged.value = it }
-                }
-                TransferStore.lastExportAtChanges(applicationContext)
-                    .catch { thrown ->
-                        // The store cannot be read at all. Answering false for
-                        // the same reason [readExportOverdue] does: this scope
-                        // carries no `CoroutineExceptionHandler`, so a throw
-                        // here kills the process on the home screen.
-                        //
-                        // **`catch` is upstream-only and it ends the
-                        // collection.** It sees what the store flow throws and
-                        // nothing the `collect` lambda below throws -- that one
-                        // guards itself -- and once it has run, this collection
-                        // is over: nothing re-subscribes until the next STARTED,
-                        // so the reminder stays down for the rest of this
-                        // foreground however the store recovers. Acceptable
-                        // because the next foreground re-enters
-                        // `repeatOnLifecycle` and `onResume` samples again, and
-                        // because down is the direction that says nothing rather
-                        // than the direction that makes a claim.
-                        Log.w(TAG, "Could not watch the last export", thrown)
-                        exportOverdue.value = false
-                    }
-                    .collect { exportOverdue.value = readExportOverdue(applicationContext) }
-            }
-        }
+        status.resumed()
     }
 
     /**
@@ -817,11 +620,8 @@ class MainActivity : ComponentActivity() {
      * `onCreate`. Null draws the banner without its button.
      */
     @Composable
-    private fun GrantBanner(onOpenSettings: (() -> Unit)?) {
-        val current = health.collectAsState().value ?: return
-        val kind = bannerFor(current) ?: return
-
-        when (kind) {
+    private fun GrantBanner(kind: BannerKind?, onOpenSettings: (() -> Unit)?) {
+        when (kind ?: return) {
             // The button navigates and does not act. Both spec 11.1 remedies --
             // start fresh, or restore from a JSON export -- destroy or replace
             // data, and neither belongs behind a single tap on a banner; each
@@ -881,25 +681,6 @@ class MainActivity : ComponentActivity() {
                 actionLabel = "Check notification access",
                 onAction = ::openListenerSettings,
             )
-        }
-    }
-
-    /**
-     * Silence the backup reminder for [NUDGE_DISMISSED_FOR_MILLIS].
-     *
-     * Re-reads rather than setting [exportOverdue] to false, so the reminder
-     * goes because the stored dismissal says so: a write that failed leaves it
-     * up, which is the truth about what the next foreground will show.
-     */
-    private fun dismissNudge() {
-        lifecycleScope.launch {
-            try {
-                TransferStore.recordNudgeDismissed(applicationContext, System.currentTimeMillis())
-            } catch (thrown: IOException) {
-                // No `CoroutineExceptionHandler` on this scope; see [onResume].
-                Log.w(TAG, "Could not record the backup nudge's dismissal", thrown)
-            }
-            exportOverdue.value = readExportOverdue(applicationContext)
         }
     }
 
@@ -981,222 +762,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** One tag for this file and `FirstRun.kt`: the functions below are `MainActivity`'s own. */
+/** One tag for this file, `AppStatus.kt` and `FirstRun.kt`: what they log is `MainActivity`'s own. */
 internal const val TAG = "PingedMain"
-
-/**
- * Tests only: run inside `MainActivity.sampleHealth` between its probe and
- * its report -- the moment a capture refused elsewhere can raise the storage
- * flag the probe has just cleared. Also the first moment [MainActivity]'s
- * `exportOverdue` holds what this sample read, which `BackupReminderTest`
- * waits for before asserting the reminder is absent.
- */
-@VisibleForTesting @Volatile internal var betweenProbeAndReport: suspend () -> Unit = {}
-
-/**
- * **Thirty days is a guess**, with no evidence behind it, for a ledger that
- * gains roughly 112 transactions a month (spec 15).
- *
- * The 850 in the same sentence of spec 15 counts *captured notifications*, and
- * is not the figure this window is measured against: what [exportIsOverdue]
- * weighs is `TxnDao.countAll()` over the `txn` table, so thirty days here is
- * about a hundred transactions at risk rather than eight hundred rows.
- */
-internal const val EXPORT_STALE_AFTER_MILLIS: Long = 30L * 24 * 60 * 60 * 1000
-
-/**
- * How long the backup reminder's X silences it. Seven days because that is
- * what was asked for; like the thirty above, nothing measured it.
- */
-internal const val NUDGE_DISMISSED_FOR_MILLIS: Long = 7L * 24 * 60 * 60 * 1000
-
-/**
- * Whether to tell the user their data is not backed up anywhere.
- *
- * There has to be something to lose: a banner on an empty ledger is the app
- * inventing a problem.
- *
- * [txns] is `countAll()` and so includes `REJECTED` rows, unlike the delete
- * sheet's count, which excludes them to agree with the feed. The question is
- * different: the sheet itemises what the user would recognise losing, and this
- * asks only whether an export file would carry anything at all.
- */
-internal fun exportIsOverdue(txns: Int, lastExportAt: Long, now: Long, nudgeDismissedAt: Long = 0L): Boolean {
-    if (txns == 0) return false
-    // `now >= nudgeDismissedAt`: a dismissal in the future is a clock set
-    // back, and silencing until the clock catches up could be years.
-    if (now >= nudgeDismissedAt && now - nudgeDismissedAt < NUDGE_DISMISSED_FOR_MILLIS) return false
-    return now - lastExportAt > EXPORT_STALE_AFTER_MILLIS
-}
-
-/**
- * [exportIsOverdue] over the live numbers, or false if any part of reading them
- * fails.
- *
- * **The guard is around the whole computation, and it is wider than
- * [CaptureStorage.guarded]'s own.** That one catches
- * `DatabaseUnavailableException` and nothing else. `TxnDao.countAll` raises
- * `SQLiteException` from a scan that aborts mid-count;
- * [TransferStore.lastExportAt] is a DataStore read, which raises `IOException`
- * -- a `CorruptionException` on a truncated preferences file, or a plain one on
- * a disk that will not read -- and so does the flag-clearing write `guarded`
- * makes *after* the block returns, which is why the `try` is around the call
- * and not inside the block: a guard in there has already returned by the time
- * that write runs. `GuardedWriteFailureTest` is what holds that placement.
- * Every caller is a bare `lifecycleScope.launch` with no
- * `CoroutineExceptionHandler`, so anything escaping here does not fail the
- * nudge: it kills the process, on every foreground of the home screen. The
- * nudge is the least important thing on that screen and false is it saying
- * nothing; a database or a store that cannot be read is something the user
- * hears about from settings. Same hazard, same answer, as
- * `Transfers.deleteEverything`.
- *
- * **Catching outside [CaptureStorage.guarded] narrows what `guarded` does, and
- * that is a cost rather than a detail.** A `SQLiteException` from [countTxns]
- * aborts `guarded`'s own body, so the `CaptureHealth.clearStorageUnavailable`
- * it runs after a successful block never happens here: a flag some earlier
- * failure wrote survives a call that did in fact open the database, and the
- * "CANNOT OPEN YOUR DATA" banner outranks every other. It is not stuck, and the
- * only reason it is not is `LedgerScreen`'s `LifecycleResumeEffect`:
- * `LedgerViewModel.read` runs the same `guarded`, through `GuardedRunner`, over the same database and
- * clears the flag when its own read succeeds, on every foreground the ledger is
- * the destination for. Nothing enforces that, and it does not cover a
- * foreground spent entirely in settings; if the ledger ever stops probing on
- * resume, this has to clear the flag itself.
- *
- * **[countTxns] and [lastExportAt] are parameters because the guard is this
- * function's whole behaviour and nothing else can provoke it.** The `transfer`
- * store is one instance for the process and caches its first successful read,
- * so a test that corrupts the file afterwards is never read from disk again and
- * proves nothing. `ExportNudgeGuardTest` hands the failures in instead.
- */
-internal suspend fun readExportOverdue(
-    context: Context,
-    countTxns: suspend () -> Int = { Databases.txnDao(context).countAll() },
-    lastExportAt: suspend () -> Long = { TransferStore.lastExportAt(context) },
-    nudgeDismissedAt: suspend () -> Long = { TransferStore.nudgeDismissedAt(context) },
-): Boolean = try {
-    CaptureStorage.guarded(
-        context,
-        what = "The ledger cannot be read",
-        unavailable = { false },
-        // A damaged index under this count is not capture stopping, and would
-        // otherwise put that banner up on every foreground.
-        damageStopsCapture = false,
-    ) {
-        exportIsOverdue(
-            txns = countTxns(),
-            lastExportAt = lastExportAt(),
-            now = System.currentTimeMillis(),
-            nudgeDismissedAt = nudgeDismissedAt(),
-        )
-    }
-} catch (thrown: SQLException) {
-    // [SQLException], the superclass, not `SQLiteException`. A count that
-    // aborts on damage raises the latter. The count runs under `guarded`'s
-    // lease, so a delete or restore resetting the database waits for it --
-    // but only for `Databases.RESET_LEASE_WAIT_MILLIS`, and an instance closed
-    // under a count past that answers "Error code: 21, message: connection is
-    // closed" as [SQLException] itself (measured on emulator-5554), which a
-    // `catch (SQLiteException)` never sees.
-    Log.w(TAG, "Could not count the ledger for the backup nudge", thrown)
-    false
-} catch (thrown: IOException) {
-    Log.w(TAG, "Could not read the last export for the backup nudge", thrown)
-    false
-}
-
-/**
- * How many transactions await review, for the Spending tab's count (§9.2's
- * ways in), or null when the ledger cannot be read: not 0, which hides the
- * badge and so says nothing awaits review (#237). Never throws, for the
- * reason [readExportOverdue] gives.
- */
-internal suspend fun readAwaitingReview(context: Context): Int? = try {
-    CaptureStorage.guarded(
-        context,
-        what = "The ledger cannot be read",
-        unavailable = { null },
-        damageStopsCapture = false,
-    ) { Databases.txnDao(context).awaitingReviewCount() }
-} catch (thrown: SQLException) {
-    // As [readExportOverdue]'s: a count past a reset's lease wait.
-    Log.w(TAG, "Could not count what awaits review", thrown)
-    null
-}
-
-/** What the banner strip says, or nothing at all. One is drawn at a time. */
-internal enum class BannerKind {
-    STORAGE_UNAVAILABLE,
-    NOT_GRANTED,
-    HEALTH_UNREADABLE,
-    NOTHING_SEEN,
-    STOPPED,
-}
-
-/**
- * Which banner the strip shows, as a value so the order can be asserted without
- * a device.
- *
- * All five are about capture, and spec 10.2 -- "Detecting a dead listener,
- * honestly" -- is where they come from. [BannerKind.HEALTH_UNREADABLE] is that
- * section read strictly: a report that could not be taken is not a report of
- * health, and drawing nothing would be the one outcome the section exists to
- * prevent.
- *
- * The order is not a formatting choice, and it is the reason this is a
- * function rather than a `when` inside the composable that draws it: a fresh
- * install told its listener died, or a file that would not read drawn as
- * either, is a claim about a past that did not happen.
- */
-internal fun bannerFor(report: CaptureReport): BannerKind? {
-    val neverSeen = report.lastNotificationAt == 0L
-    return when {
-        // First, because it is the only state here where capture is certainly dead
-        // rather than suspected dead -- and the only one every other signal
-        // contradicts. The heartbeat is written before the first database call, so a
-        // phone in this state reads as granted, recently active and not stale while
-        // storing nothing.
-        report.storageUnavailable -> BannerKind.STORAGE_UNAVAILABLE
-        !report.granted -> BannerKind.NOT_GRANTED
-        // Below `granted`, which is still measured when this is true, and above
-        // everything else, all of which is not. `CaptureReport.healthUnreadable`
-        // means `capture_health` would not read, and the never-seen encoding the
-        // report then carries would otherwise be drawn as one of the two
-        // branches below -- telling a phone that has captured for months either
-        // that it is a new install or that its listener died, from a file that
-        // was never read.
-        report.healthUnreadable -> BannerKind.HEALTH_UNREADABLE
-        // Before `looksDead`, and that is why there are three capture states here
-        // rather than two. `looksDead` is true the moment the grant is given and
-        // before anything has arrived, which is correct as a *report* -- nothing has
-        // been seen, and no API distinguishes a silent phone from a dead listener --
-        // and wrong as a *banner*, where it claims a fresh install's phone shut Pinged
-        // down and lost spending, both claims about a past that does not exist yet.
-        // The "stopped" copy is reserved for a report that has seen something and then
-        // stopped.
-        neverSeen -> BannerKind.NOTHING_SEEN
-        report.looksDead -> BannerKind.STOPPED
-        else -> null
-    }
-}
-
-/**
- * Whether Spending's backup reminder (#252) may show: the export is overdue
- * and the strip above has nothing to say, or nothing yet to say it from.
- *
- * **Never beside a capture banner.** Each of those says capture is broken
- * now; the reminder is about the past, and an export can be taken at any
- * later moment while spending going unrecorded cannot be recovered. Beside
- * "CAPTURE STOPPED" it reads as the thing to fix. `BannerPriorityTest` holds
- * it under each.
- *
- * The spec says nothing about backup staleness, so the threshold behind it
- * ([EXPORT_STALE_AFTER_MILLIS]) and the reminder itself are this file's, not
- * the spec's.
- */
-internal fun backupReminderShows(report: CaptureReport?, exportOverdue: Boolean): Boolean =
-    report != null && bannerFor(report) == null && exportOverdue
 
 /**
  * [PingedTheme] with [LocalHeldBy] provided from `Databases.holder` (#279),
@@ -1217,40 +784,6 @@ internal fun heldBy(holder: Databases.Holder?): HeldBy? = when (holder) {
     null -> null
     Databases.Holder.Export -> HeldBy.Export
     Databases.Holder.IntegrityCheck -> HeldBy.IntegrityCheck
-}
-
-/**
- * Spec 10.2's always-visible signal, for the ledger's top bar: when Pinged last
- * heard a notification from any app, or null where [bannerFor] has something
- * truer to say.
- *
- * **"Heard", not the spec's "captured".** The heartbeat counts every app's
- * notifications, and almost none of them are captured; a user who reads
- * "captured 2 min ago" checks for a transaction that was never there.
- *
- * Measured from [now], not from the report's `staleForMillis`, so a screen
- * left open keeps counting. The heartbeat is written at most once per
- * `CaptureHealth.THROTTLE_MILLIS`, so every answer is up to five minutes
- * staler than the truth, never fresher, and nothing finer than five minutes
- * is claimed.
- *
- * **No "ago".** The chip shares the top bar with the month and the magnifier,
- * and at CI's 320dp "HEARD IN THE LAST 5 MIN" wrapped to three lines;
- * `LedgerArtboardTest` holds the widest of these to one. Nor the board's
- * "LISTENING", or a "LIVE": each claims what [CaptureReport.looksDead] says
- * this app cannot know.
- */
-internal fun heardLine(report: CaptureReport?, now: Long): String? {
-    if (report == null || !report.granted || report.storageUnavailable || report.healthUnreadable) return null
-    if (report.lastNotificationAt == 0L) return null
-    val minutes = (now - report.lastNotificationAt) / 60_000L
-    return when {
-        minutes < 5 -> "HEARD <5 MIN"
-        minutes < 60 -> "HEARD $minutes MIN"
-        minutes < 24 * 60 -> "HEARD ${minutes / 60} HR"
-        minutes < 2 * 24 * 60 -> "HEARD 1 DAY"
-        else -> "HEARD ${minutes / (24 * 60)} DAYS"
-    }
 }
 
 /**

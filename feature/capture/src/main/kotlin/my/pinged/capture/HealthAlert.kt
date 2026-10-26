@@ -4,7 +4,7 @@ package my.pinged.capture
  * What spec 10.2's daily check tells a user who is not opening the app, or
  * null for nothing.
  *
- * The order is `MainActivity.bannerFor`'s, for its reason: a statement that
+ * The order is `AppStatus.kt`'s `bannerFor`'s, for its reason: a statement that
  * capture is broken outright outranks one that a single source has gone quiet.
  * Two of the banner's states make no claim about the listener here: a heartbeat
  * that could not be read, and a fresh install that has heard nothing and has

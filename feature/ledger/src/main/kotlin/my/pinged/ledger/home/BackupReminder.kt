@@ -36,8 +36,8 @@ import my.pinged.ui.theme.dottedRule
 /**
  * What Spending's backup reminder (#252) is handed: whether the ledger is
  * damaged, which decides what its action says, and where each of its two
- * controls leads. `MainActivity` decides whether there is one at all
- * (`backupReminderShows`) and owns both destinations.
+ * controls leads. `AppStatus` decides whether there is one at all
+ * (`backupReminderShows`), and `MainActivity` owns both destinations.
  */
 class BackupReminder(
     val damaged: Boolean,

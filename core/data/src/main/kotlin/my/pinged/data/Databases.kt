@@ -112,7 +112,7 @@ object Databases {
      * damage holds the same rows, so nothing needs reading again; and a
      * re-read that meets the same damage replaces the connection again, which
      * on [generation] would re-read again, for as long as the page is
-     * damaged. `MainActivity`'s banner probe and the ledger and allow-list
+     * damaged. `AppStatus`'s banner probe and the ledger and allow-list
      * screens re-read on this.
      */
     val rewrites: StateFlow<Long> = _rewrites.asStateFlow()

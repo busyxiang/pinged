@@ -10,7 +10,6 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
@@ -20,7 +19,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import my.pinged.capture.ListenerStatus
 import my.pinged.capture.PingedComponents
-import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
 import my.pinged.data.entity.Txn
@@ -34,15 +32,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.Rule
 import org.junit.runner.RunWith
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Spending's backup reminder (#252) as a user meets it: where it shows and
- * where it does not, its action reaching what it names, and its X and an
- * export each putting it away. Its wording and its controls' callbacks are
- * `:feature:ledger`'s `BackupReminderTest`, under Robolectric; this is the
- * half that needs the Activity, the stores and the tabs.
+ * where it does not, and its action reaching what it names. Its wording and
+ * its controls' callbacks are `:feature:ledger`'s `BackupReminderTest`, under
+ * Robolectric, and what takes it down -- its X, an export, the ledger
+ * replaced -- is `AppStatusTest`'s; this is the half that needs the
+ * Activity, the stores and the tabs.
  *
  * **The device has to be talked into the one state where the reminder is
  * visible at all**, because it never shows beside a capture banner:
@@ -141,107 +138,6 @@ class BackupReminderTest {
                 compose.waitFor {
                     compose.countOf(SETTINGS_ONLY) == 1 && compose.countOf(NUDGE, substring = true) == 0
                 },
-            )
-        }
-    }
-
-    /**
-     * The export happens in settings and nothing about that is a resume -- so
-     * this is the assertion that the reminder is not still up afterwards,
-     * telling a user who has just saved everything that nothing is saved.
-     *
-     * `recordExport` directly rather than driving the export sheet: the sheet
-     * hands off to the system's save-file picker, which no test can answer.
-     * What is written is what `Transfers.export` writes, at the
-     * moment it writes it, and it is the only thing the reminder reads.
-     */
-    @Test fun theReminderGoesWhenAnExportIsRecordedWhileItIsOnScreen() {
-        captureLooksHealthy()
-        aLedgerWithNothingBackedUp()
-
-        ActivityScenario.launch(MainActivity::class.java).use {
-            awaitTheReminder()
-
-            runBlocking { TransferStore.recordExport(context, System.currentTimeMillis()) }
-
-            assertTrue(
-                "The export was recorded and the reminder stayed up. Nothing " +
-                    "resumes this Activity between the tap and the export " +
-                    "finishing, so a flag read only in `onResume` leaves " +
-                    "\"NO BACKUP\" on screen for the rest of the session",
-                compose.waitFor { compose.countOf(NUDGE, substring = true) == 0 },
-            )
-        }
-    }
-
-    /**
-     * The X hides the reminder now and on the next launch, which is the
-     * difference between a stored snooze and a flag in this Activity.
-     * `ExportNudgeTest` holds when it comes back.
-     */
-    @Test fun theReminderStaysSnoozedAcrossALaunch() {
-        captureLooksHealthy()
-        aLedgerWithNothingBackedUp()
-
-        ActivityScenario.launch(MainActivity::class.java).use {
-            awaitTheReminder()
-
-            compose.onNodeWithContentDescription(REMIND_ME_IN_A_WEEK).performClick()
-
-            assertTrue(
-                "\"$REMIND_ME_IN_A_WEEK\" was tapped and the reminder stayed up",
-                compose.waitFor { compose.countOf(NUDGE, substring = true) == 0 },
-            )
-        }
-        // A miss here is the reminder coming back once `onResume` has read
-        // the store, so the absence is asserted after that read and not
-        // before. The hook runs once `sampleHealth` has set the flag the
-        // reminder is drawn from, which ends the wait at the read rather than
-        // at TIMEOUT: a negative waitFor ran the full 30s on every pass.
-        val sampled = CountDownLatch(1)
-        betweenProbeAndReport = { sampled.countDown() }
-        try {
-            ActivityScenario.launch(MainActivity::class.java).use {
-                assertTrue(
-                    "The second launch never sampled the backup store, so " +
-                        "nothing below is about what it read",
-                    sampled.await(TIMEOUT, TimeUnit.MILLISECONDS),
-                )
-                assertEquals(
-                    "The snoozed reminder came back on the next launch, so the " +
-                        "snooze was never stored",
-                    0,
-                    compose.countOf(NUDGE, substring = true),
-                )
-            }
-        } finally {
-            betweenProbeAndReport = {}
-        }
-    }
-
-    /**
-     * The ledger goes out from under the reminder with nothing written to the
-     * transfer store, which is what a delete leaves when its Keystore step
-     * throws after the files are unlinked, or a restore whose import does not
-     * finish: neither reaches `TransferStore.forget`. The reminder weighs the
-     * ledger's row count as well as the timestamp, so it has to hear about
-     * the database being replaced as well as about an export.
-     */
-    @Test fun theReminderGoesWhenTheLedgerIsReplacedWhileItIsOnScreen() {
-        captureLooksHealthy()
-        aLedgerWithNothingBackedUp()
-
-        ActivityScenario.launch(MainActivity::class.java).use {
-            awaitTheReminder()
-
-            Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
-
-            assertTrue(
-                "The ledger was replaced by an empty one and the reminder " +
-                    "stayed up, telling the user there is something to lose on " +
-                    "a phone that holds nothing. Nothing resumed this Activity " +
-                    "and nothing wrote the transfer store",
-                compose.waitFor { compose.countOf(NUDGE, substring = true) == 0 },
             )
         }
     }
@@ -421,9 +317,6 @@ class BackupReminderTest {
 
         /** Settings' recovery notice's action. */
         const val RESCUE = "Rescue what can still be read"
-
-        /** The reminder's X, by what a screen reader calls it. */
-        const val REMIND_ME_IN_A_WEEK = "Remind me in a week"
 
         /** The export sheet's backup card, chosen when it opens on JSON. */
         const val EVERYTHING = "Everything"

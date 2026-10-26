@@ -53,11 +53,11 @@ internal object FirstRun {
  * **False when the store will not read or write**, the direction that shows the
  * app: its "CAPTURE OFF" banner says what onboarding would, while a store that
  * failed the other way would hold the user on a screen with nothing else on it.
- * Never throws: the only caller is a bare `lifecycleScope.launch`, as
- * `readExportOverdue`'s is.
+ * Never throws: the only caller is `AppStatus`'s sample, on `viewModelScope`
+ * with no `CoroutineExceptionHandler`.
  *
  * [done], [recordDone] and [updated] are parameters for that guard's test, as
- * `readExportOverdue`'s are.
+ * `ListenerStatus.report`'s are.
  */
 internal suspend fun onboards(
     context: Context,
@@ -82,7 +82,7 @@ internal suspend fun onboards(
  * are a fresh install, and an `adb install` after an uninstall is one.
  * False if the package manager will not say, which leaves the flag to decide.
  *
- * A `var` for `OnboardingTest`, as `betweenProbeAndReport` is: a connected
+ * A `var` for `OnboardingTest`: a connected
  * run installs over the last build, so on a dev emulator every install is an
  * update and first run could never be reached.
  */
