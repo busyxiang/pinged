@@ -9,6 +9,7 @@ import my.pinged.data.SearchTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.HeldBy
@@ -71,6 +72,7 @@ class SearchUpdatingTest {
                         storageUnavailable = false,
                         onBack = {},
                         onOpenSheet = {},
+                        categories = FakeCategoryActions(),
                         onExport = {},
                     )
                 }

@@ -9,6 +9,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
@@ -84,7 +86,8 @@ class DayScreenContentTest {
                     ),
                     storageUnavailable = false,
                     onBack = {},
-                    onAssign = { _, _, _ -> },
+                    categories = FakeCategoryActions(),
+                    merchants = FakeMerchantActions(),
                     onStep = onStep,
                     today = today,
                 )

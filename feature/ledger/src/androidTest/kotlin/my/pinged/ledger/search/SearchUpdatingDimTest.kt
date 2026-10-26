@@ -11,6 +11,7 @@ import my.pinged.data.SearchTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.test.ink
@@ -57,6 +58,7 @@ class SearchUpdatingDimTest {
                     storageUnavailable = false,
                     onBack = {},
                     onOpenSheet = {},
+                    categories = FakeCategoryActions(),
                 )
             }
         }

@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.YearMonth
+import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ui.monthName
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
@@ -39,6 +40,7 @@ class SearchChipsTest {
                     storageUnavailable = false,
                     onBack = {},
                     onOpenSheet = {},
+                    categories = FakeCategoryActions(),
                     modifier = Modifier.requiredWidth(411.dp),
                 )
             }

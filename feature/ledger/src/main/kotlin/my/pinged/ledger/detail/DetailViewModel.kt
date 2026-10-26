@@ -5,15 +5,11 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.DetailRow
-import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
 import my.pinged.ledger.home.ChooserRead
-import my.pinged.ledger.home.MerchantOpening
-import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
 import my.pinged.read.Outcome
@@ -50,21 +46,13 @@ class DetailViewModel(app: Application, val txnId: Long, val createdAt: Long) : 
         DetailRead(row = row, chooser = rows.readChooser())
     }
 
-    /** The category chooser and the merchant sheet, shared with the list. */
-    private val rows = RowActions(
+    /** The category chooser and the merchant sheet, shared with the list; the row is read again after each write. */
+    val rows = RowActions(
         context = { context },
         scope = viewModelScope,
         runner = runner,
         screen = read.rowScreen(),
     )
-
-    val merchantSheet: StateFlow<OpenMerchantSheet?> = rows.merchantSheet
-
-    /** See [RowActions.assignCategory]; the row is re-read after. */
-    fun assignCategory(categoryId: Long, teach: Boolean): Job = rows.assignCategory(txnId, categoryId, teach)
-
-    /** See [RowActions.retroPreview]. */
-    suspend fun retroPreview(categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
 
     /** `TxnDao.setCapturedNote`. */
     fun saveNote(note: String): Job = write("The note could not be saved") { it.setCapturedNote(txnId, note, now()) }
@@ -85,16 +73,6 @@ class DetailViewModel(app: Application, val txnId: Long, val createdAt: Long) : 
     fun remove(then: () -> Unit): Job = write("The payment could not be removed", after = { removed -> if (removed) then() }) {
         it.removeCaptured(txnId, now())
     }
-
-    fun openMerchant(opening: MerchantOpening): Job = rows.openMerchant(opening)
-
-    fun closeMerchant() = rows.closeMerchant()
-
-    fun renameMerchant(name: String): Job = rows.renameMerchant(name)
-
-    fun mergeMerchant(targetKey: String): Job = rows.mergeMerchant(targetKey)
-
-    fun separateMerchant(key: String): Job = rows.separateMerchant(key)
 
     /**
      * One statement as [read]'s write, which reads the row again in its turn,

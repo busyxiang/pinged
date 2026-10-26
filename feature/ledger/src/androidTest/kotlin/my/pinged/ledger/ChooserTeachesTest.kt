@@ -23,6 +23,10 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.SavedStateHandle
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -33,6 +37,9 @@ import my.pinged.data.entity.Category
 import my.pinged.data.entity.MatchType
 import my.pinged.data.entity.RuleOrigin
 import my.pinged.ledger.home.CATEGORY_CHIP
+import my.pinged.ledger.home.CategoryActions
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
@@ -77,7 +84,12 @@ class ChooserTeachesTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @After fun leaveNothingBehind() = context.discardTheDatabase()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    @After fun leaveNothingBehind() {
+        scope.cancel()
+        context.discardTheDatabase()
+    }
 
     // ---- the switch's starting position, per row state -------------------
 
@@ -119,8 +131,8 @@ class ChooserTeachesTest {
     }
 
     @Test fun aRowWithNoMerchantKeyHasNoSwitchAndItsSaveIsAOneOff() {
-        val saves = mutableListOf<Triple<Long, Long, Boolean>>()
-        content(row(UNCATEGORIZED_ID, key = null), onAssign = { t, c, teach -> saves += Triple(t, c, teach) })
+        val chooser = FakeCategoryActions()
+        content(row(UNCATEGORIZED_ID, key = null), categories = chooser)
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
 
@@ -129,31 +141,31 @@ class ChooserTeachesTest {
         compose.onNodeWithText("Groceries").performClick()
         save()
 
-        assertEquals(listOf(Triple(ROW_ID, GROCERIES_ID, false)), saves)
+        assertEquals(listOf(Triple(ROW_ID, GROCERIES_ID, false)), chooser.assigned)
     }
 
     // ---- what a tap reports ----------------------------------------------
 
     @Test fun aTapReportsTheSwitchAsItStands() {
-        val saves = mutableListOf<Triple<Long, Long, Boolean>>()
-        content(row(UNCATEGORIZED_ID), onAssign = { t, c, teach -> saves += Triple(t, c, teach) })
+        val chooser = FakeCategoryActions()
+        content(row(UNCATEGORIZED_ID), categories = chooser)
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
         compose.onNodeWithText("Groceries").performClick()
         save()
-        assertEquals("The switch started on and was never touched", listOf(Triple(ROW_ID, GROCERIES_ID, true)), saves)
+        assertEquals("The switch started on and was never touched", listOf(Triple(ROW_ID, GROCERIES_ID, true)), chooser.assigned)
     }
 
     @Test fun aTapAfterTurningTheSwitchOffReportsAOneOff() {
-        val saves = mutableListOf<Triple<Long, Long, Boolean>>()
-        content(row(UNCATEGORIZED_ID), onAssign = { t, c, teach -> saves += Triple(t, c, teach) })
+        val chooser = FakeCategoryActions()
+        content(row(UNCATEGORIZED_ID), categories = chooser)
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
         compose.onNode(isToggleable()).performClick()
         compose.onNode(isToggleable()).assertIsOff()
         compose.onNodeWithText("Groceries").performClick()
         save()
-        assertEquals(listOf(Triple(ROW_ID, GROCERIES_ID, false)), saves)
+        assertEquals(listOf(Triple(ROW_ID, GROCERIES_ID, false)), chooser.assigned)
     }
 
     @Test fun theSwitchNamesTheCategoryPickedNotTheMerchant() {
@@ -173,18 +185,18 @@ class ChooserTeachesTest {
     // ---- pick, then save -------------------------------------------------
 
     @Test fun aTapOnACategoryOnlySelectsItAndSaveIsOffUntilOneIsPicked() {
-        val saves = mutableListOf<Triple<Long, Long, Boolean>>()
-        content(row(UNCATEGORIZED_ID), onAssign = { t, c, teach -> saves += Triple(t, c, teach) })
+        val chooser = FakeCategoryActions()
+        content(row(UNCATEGORIZED_ID), categories = chooser)
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
         compose.onNodeWithText(SAVE_LABEL).assertIsNotEnabled()
 
         compose.onNodeWithText("Groceries").performClick()
 
-        assertEquals("A tap on a category wrote", emptyList<Triple<Long, Long, Boolean>>(), saves)
+        assertEquals("A tap on a category wrote", emptyList<Triple<Long, Long, Boolean>>(), chooser.assigned)
         compose.onNodeWithText(SAVE_LABEL).assertIsEnabled()
         compose.onNodeWithText(SAVE_LABEL).performClick()
-        assertEquals(listOf(Triple(ROW_ID, GROCERIES_ID, true)), saves)
+        assertEquals(listOf(Triple(ROW_ID, GROCERIES_ID, true)), chooser.assigned)
     }
 
     @Test fun aCategorisedRowOpensWithItsOwnCategorySelected() {
@@ -240,7 +252,7 @@ class ChooserTeachesTest {
     // ---- the retroactive count (#49) --------------------------------------
 
     @Test fun theCountShowsOnlyWhileTheSwitchIsOnAndACategoryIsPicked() {
-        content(row(UNCATEGORIZED_ID), retro = { _, _ -> RetroPreview(5, emptyList()) })
+        content(row(UNCATEGORIZED_ID), categories = FakeCategoryActions(preview = { _, _ -> RetroPreview(5, emptyList()) }))
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
         assertEquals("A count with no category picked", 0, compose.countOf(hasText(fixLine(5))))
@@ -259,10 +271,12 @@ class ChooserTeachesTest {
         val asked = mutableListOf<Long>()
         content(
             row(UNCATEGORIZED_ID),
-            retro = { _, category ->
-                asked += category
-                if (category == GROCERIES_ID) RetroPreview(3, emptyList()) else RetroPreview(1, emptyList())
-            },
+            categories = FakeCategoryActions(
+                preview = { _, category ->
+                    asked += category
+                    if (category == GROCERIES_ID) RetroPreview(3, emptyList()) else RetroPreview(1, emptyList())
+                },
+            ),
         )
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
@@ -281,14 +295,16 @@ class ChooserTeachesTest {
         val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
         content(
             row(UNCATEGORIZED_ID),
-            retro = { _, category ->
-                if (category == GROCERIES_ID) {
-                    RetroPreview(3, emptyList())
-                } else {
-                    gate.await()
-                    RetroPreview(1, emptyList())
-                }
-            },
+            categories = FakeCategoryActions(
+                preview = { _, category ->
+                    if (category == GROCERIES_ID) {
+                        RetroPreview(3, emptyList())
+                    } else {
+                        gate.await()
+                        RetroPreview(1, emptyList())
+                    }
+                },
+            ),
         )
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
@@ -311,7 +327,7 @@ class ChooserTeachesTest {
     @Test fun aConflictIsNamedAndReplacesTheCount() {
         content(
             row(UNCATEGORIZED_ID),
-            retro = { _, _ -> RetroPreview(2, listOf(CategoryCount(PETROL_ID, 6))) },
+            categories = FakeCategoryActions(preview = { _, _ -> RetroPreview(2, listOf(CategoryCount(PETROL_ID, 6))) }),
         )
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
@@ -403,16 +419,16 @@ class ChooserTeachesTest {
         compose.onNode(isToggleable()).assertIsOn()
     }
 
-    /** No merchant key: the view model saves the one-off the sheet promised, even if asked to teach. */
+    /** No merchant key: the holder saves the one-off the sheet promised, even if asked to teach. */
     @Test fun aKeylessRowIsSavedAsAOneOffEvenWhenAskedToTeach() {
         val dao = context.freshLedger()
         val id = dao.insert(
             ledgerTxn(amountSen = 5_000L, occurredAt = now(), categoryId = categoryId(UNCATEGORIZED))
                 .copy(merchantRaw = null, merchantDisplay = null, merchantKey = null),
         )
-        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
+        val rows = context.rowActions(scope)
 
-        runBlocking { withTimeout(TIMEOUT) { viewModel.assignCategory(id, categoryId(FOOD), teach = true).join() } }
+        runBlocking { withTimeout(TIMEOUT) { rows.assignCategory(id, categoryId(FOOD), teach = true).join() } }
 
         val row = requireNotNull(Databases.txnDao(context).byId(id))
         assertEquals(categoryId(FOOD), row.categoryId)
@@ -587,9 +603,8 @@ class ChooserTeachesTest {
         learned: Map<String, Long> = emptyMap(),
         aliases: Map<String, String> = emptyMap(),
         dictionary: Long? = null,
-        onAssign: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
-        retro: suspend (Long, Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
-    ) = contentOf(listOf(row), learned, aliases, dictionary, onAssign, retro)
+        categories: CategoryActions = FakeCategoryActions(),
+    ) = contentOf(listOf(row), learned, aliases, dictionary, categories)
 
     private fun contentOf(
         rows: List<LedgerItem>,
@@ -597,8 +612,7 @@ class ChooserTeachesTest {
         aliases: Map<String, String> = emptyMap(),
         /** The category id the dictionary files [KEY] under; null files nothing. */
         dictionary: Long? = null,
-        onAssign: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
-        retro: suspend (Long, Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
+        categories: CategoryActions = FakeCategoryActions(),
     ) {
         val read = LedgerRead(
             categories = listOf(
@@ -632,9 +646,9 @@ class ChooserTeachesTest {
                     items = flow.collectAsLazyPagingItems(),
                     read = read,
                     storageUnavailable = false,
-                    onAssign = onAssign,
+                    categories = categories,
+                    merchants = FakeMerchantActions(),
                     onOpenSettings = {},
-                    retroPreview = retro,
                 )
             }
         }
@@ -653,9 +667,9 @@ class ChooserTeachesTest {
                     items = items,
                     read = read.answer ?: LedgerRead(),
                     storageUnavailable = false,
-                    onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
+                    categories = viewModel.rows,
+                    merchants = viewModel.rows,
                     onOpenSettings = {},
-                    retroPreview = viewModel::retroPreview,
                 )
             }
         }

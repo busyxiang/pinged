@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +54,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
@@ -189,18 +192,35 @@ data class MerchantOpening(val ownKey: String, val name: String, val on: LocalDa
  */
 data class OpenMerchantSheet(val opening: MerchantOpening, val read: MerchantSheetState? = null)
 
-/** The sheet's writes, so `LedgerScreenContent` takes one parameter for all of them. */
-internal class MerchantActions(
-    val open: (MerchantOpening) -> Unit,
-    val rename: (name: String) -> Unit,
-    val merge: (targetKey: String) -> Unit,
-    val separate: (key: String) -> Unit,
-    val close: () -> Unit,
-) {
-    companion object {
-        /** No sheet: a screen test that is not about merchants. */
-        val None = MerchantActions({}, {}, {}, {}, {})
-    }
+/**
+ * Spec 6.4's merchant sheet's half of [RowActions]: the sheet that is open,
+ * and what a row and the sheet do to it. [MerchantSheet] consumes it.
+ */
+interface MerchantActions {
+    /** The sheet while one is open, else null. */
+    val merchantSheet: StateFlow<OpenMerchantSheet?>
+
+    /** Open the sheet on the tap; see [RowActions.openMerchant]. */
+    fun openMerchant(opening: MerchantOpening): Job
+
+    /** Close the sheet; a read still in flight for it then draws nothing. */
+    fun closeMerchant()
+
+    /** Rename the open sheet's merchant; see [RowActions.renameMerchant]. */
+    fun renameMerchant(name: String): Job
+
+    /** Merge the open sheet's merchant into [targetKey]; see [RowActions.mergeMerchant]. */
+    fun mergeMerchant(targetKey: String): Job
+
+    /** Undo the merge of [key]; see [RowActions.separateMerchant]. */
+    fun separateMerchant(key: String): Job
+}
+
+/** The sheet [actions] holds open, if one is: what a screen draws over its rows. */
+@Composable
+internal fun MerchantSheet(actions: MerchantActions) {
+    val sheet by actions.merchantSheet.collectAsState()
+    sheet?.let { MerchantSheet(it, actions) }
 }
 
 /**
@@ -230,7 +250,7 @@ internal fun MerchantSheet(
     actions: MerchantActions,
     modifier: Modifier = Modifier,
 ) {
-    ReceiptSheetFrame(onDismissRequest = actions.close, modifier = modifier) { MerchantSheetRead(sheet, actions) }
+    ReceiptSheetFrame(onDismissRequest = actions::closeMerchant, modifier = modifier) { MerchantSheetRead(sheet, actions) }
 }
 
 /**
@@ -247,9 +267,9 @@ internal fun MerchantSheet(
     actions: MerchantActions,
     modifier: Modifier = Modifier,
 ) {
-    ReceiptSheetFrame(onDismissRequest = actions.close, modifier = modifier) {
+    ReceiptSheetFrame(onDismissRequest = actions::closeMerchant, modifier = modifier) {
         val read = sheet.read
-        if (read != null) MerchantSheetRead(read, actions) else MerchantSheetNotReadYet(sheet.opening, actions.close)
+        if (read != null) MerchantSheetRead(read, actions) else MerchantSheetNotReadYet(sheet.opening, actions::closeMerchant)
     }
 }
 
@@ -264,7 +284,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
 
     SheetHeader(
         sheet.name,
-        actions.close,
+        actions::closeMerchant,
         Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
         subtitle = sheet.month?.let { monthLine(it, sheet.monthTotals) },
     )
@@ -311,7 +331,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(reach(sheet.txnCount), style = MonoLabel, color = Faint, modifier = Modifier.weight(1f))
-                    SaveNameButton(enabled = name.trim() != sheet.name, onClick = { actions.rename(name) })
+                    SaveNameButton(enabled = name.trim() != sheet.name, onClick = { actions.renameMerchant(name) })
                 }
             }
         }
@@ -322,7 +342,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
                     Text("Counted as $canonical.", fontFamily = Body, fontSize = 15.sp, color = Ink)
                     OutlineButton(
                         "$SEPARATE from $canonical",
-                        onClick = { actions.separate(sheet.ownKey) },
+                        onClick = { actions.separateMerchant(sheet.ownKey) },
                         modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
                     )
                     if (sheet.noOwnRule && sheet.ruleCategory != null) RuleNote(SEPARATE_NO_RULE)
@@ -382,7 +402,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
                     }
                     FilledButton(
                         countItAs(chosen),
-                        onClick = { actions.merge(chosen.identityKey) },
+                        onClick = { actions.mergeMerchant(chosen.identityKey) },
                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp).fillMaxWidth(),
                     )
                 }
@@ -403,7 +423,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
             }
             items(sheet.members, key = { "member-" + it.merchantKey }) { member ->
                 KeyRow(member.merchantKey, member.txnCount) {
-                    OutlineButton(SEPARATE, onClick = { actions.separate(member.merchantKey) })
+                    OutlineButton(SEPARATE, onClick = { actions.separateMerchant(member.merchantKey) })
                 }
                 if (member.noOwnRule && sheet.ruleCategory != null) {
                     Box(Modifier.padding(horizontal = 20.dp)) { RuleNote(SEPARATE_NO_RULE) }

@@ -14,6 +14,7 @@ import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.CATEGORY_CHIP as ROW_CATEGORY_CHIP
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.PICKER_HEADING
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.theme.PingedTheme
@@ -39,7 +40,7 @@ class SearchSortTest {
     private val excluded = ledgerTxn(900L, categoryId = uncategorized.id, isExcluded = true, id = 2L)
     private val filed = ledgerTxn(650L, categoryId = groceries.id, id = 3L)
 
-    private val assigned = mutableListOf<Pair<Long, Long>>()
+    private val categories = FakeCategoryActions()
     private val opened = mutableListOf<Long>()
 
     private fun draw() = compose.setContent {
@@ -59,7 +60,7 @@ class SearchSortTest {
                 onBack = {},
                 onOpenSheet = {},
                 onOpenDetail = { opened += it.id },
-                onAssign = { txnId, categoryId, _ -> assigned += txnId to categoryId },
+                categories = categories,
             )
         }
     }
@@ -82,7 +83,7 @@ class SearchSortTest {
         compose.onNode(isSelectable() and hasText(groceries.name)).performClick()
         compose.onNode(hasText("Save") and hasClickAction()).performClick()
 
-        assertEquals("The chooser did not save the row the chip is on", listOf(toSort.id to groceries.id), assigned)
+        assertEquals("The chooser did not save the row the chip is on", listOf(toSort.id to groceries.id), categories.assigned.map { (txnId, categoryId) -> txnId to categoryId })
         assertEquals("The chip opened Detail as well", emptyList<Long>(), opened)
     }
 

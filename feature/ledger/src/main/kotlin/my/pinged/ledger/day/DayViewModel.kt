@@ -5,19 +5,14 @@ import android.content.Context
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.StateFlow
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.CaptureRecord
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
-import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.ChooserRead
-import my.pinged.ledger.home.MerchantOpening
-import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
 import my.pinged.read.ScreenRead
@@ -62,15 +57,13 @@ class DayViewModel(
         readDay(db, today())
     }
 
-    /** The row's category and merchant actions, shared with the Ledger. */
-    private val rows = RowActions(
+    /** The row's category and merchant actions, shared with the Ledger; the day is read again after each write. */
+    val rows = RowActions(
         context = { context },
         scope = viewModelScope,
         runner = runner,
         screen = read.rowScreen(),
     )
-
-    val merchantSheet: StateFlow<OpenMerchantSheet?> = rows.merchantSheet
 
     /**
      * The day's rows, its counted total, #89's "not in the total" aggregate
@@ -112,25 +105,6 @@ class DayViewModel(
             chooser = chooser,
         )
     }
-
-    /** See [RowActions.assignCategory]; the day is re-read after. */
-    fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job = rows.assignCategory(txnId, categoryId, teach)
-
-    /** See [RowActions.retroPreview]. */
-    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
-
-    /** See [RowActions.addCategory]; the day, and so the chooser, is re-read after. */
-    suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey)
-
-    fun openMerchant(opening: MerchantOpening): Job = rows.openMerchant(opening)
-
-    fun closeMerchant() = rows.closeMerchant()
-
-    fun renameMerchant(name: String): Job = rows.renameMerchant(name)
-
-    fun mergeMerchant(targetKey: String): Job = rows.mergeMerchant(targetKey)
-
-    fun separateMerchant(key: String): Job = rows.separateMerchant(key)
 }
 
 /**

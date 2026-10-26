@@ -387,7 +387,7 @@ interface TxnDao {
      * returns an edited row.
      *
      * Returns the rows written, which is 0 when the row is gone. The caller
-     * decides what that means -- see `LedgerViewModel.assignCategory`.
+     * decides what that means -- see `RowActions.assignCategory`.
      */
     @Query(
         """

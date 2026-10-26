@@ -67,7 +67,7 @@ import my.pinged.data.dao.SourceApp
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.entry.EditTarget
-import my.pinged.data.dao.RetroPreview
+import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.CategoryChip
 import my.pinged.ledger.home.CheckMark
 import my.pinged.ledger.home.ENTERED_BY_HAND
@@ -166,9 +166,7 @@ fun SearchScreen(
         onOpenDetail = onOpenDetail,
         modifier = modifier,
         onExport = onPickExport?.let { { exportOpen = true } },
-        onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
-        retroPreview = viewModel::retroPreview,
-        addCategory = viewModel::addCategory,
+        categories = viewModel.chooser,
     )
 
     if (exportOpen && onPickExport != null) {
@@ -249,15 +247,13 @@ internal fun SearchScreenContent(
     storageUnavailable: Boolean,
     onBack: () -> Unit,
     onOpenSheet: (FilterSheet) -> Unit,
+    categories: CategoryActions,
     modifier: Modifier = Modifier,
     /** The words or a filter changed and their read has not landed (#285); [read] is the last answer. */
     rereading: Boolean = false,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onExport: (() -> Unit)? = null,
-    onAssign: (txnId: Long, categoryId: Long, teach: Boolean) -> Unit = { _, _, _ -> },
-    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
-    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
 ) {
     // Hoisted out of the list for the reason `LedgerScreenContent` gives.
     var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -315,13 +311,8 @@ internal fun SearchScreenContent(
         RowCategoryChooser(
             row = chosenRow,
             chooser = chooser,
-            retroPreview = retroPreview,
-            onSave = { categoryId, teach ->
-                categorizing = null
-                onAssign(chosen, categoryId, teach)
-            },
-            onDismiss = { categorizing = null },
-            addCategory = addCategory,
+            actions = categories,
+            onClose = { categorizing = null },
         )
     }
 }
