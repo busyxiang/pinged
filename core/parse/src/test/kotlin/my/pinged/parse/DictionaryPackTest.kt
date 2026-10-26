@@ -153,8 +153,8 @@ class DictionaryPackTest {
         observed.forEach { o ->
             assertEquals(
                 "${o.entry} does not file the key of ${o.fixture}",
-                Filing(o.category, FilingSource.DICTIONARY),
-                categorizer.file(keyOf(o.fixture), learned = null),
+                o.category,
+                categorizer.categoryOf(keyOf(o.fixture)),
             )
         }
     }
@@ -191,8 +191,8 @@ class DictionaryPackTest {
             keys.forEach { key ->
                 assertEquals(
                     "$key must not be filed by $entry",
-                    Filing(null, FilingSource.NONE),
-                    categorizer.file(key, learned = null),
+                    null,
+                    categorizer.categoryOf(key),
                 )
             }
         }
@@ -223,8 +223,8 @@ class DictionaryPackTest {
             val key = Merchant.clean(it.raw, normalization).value
             assertEquals(
                 "${it.raw} (key $key) is another merchant and must file as NONE",
-                Filing(null, FilingSource.NONE),
-                categorizer.file(key, learned = null),
+                null,
+                categorizer.categoryOf(key),
             )
         }
     }

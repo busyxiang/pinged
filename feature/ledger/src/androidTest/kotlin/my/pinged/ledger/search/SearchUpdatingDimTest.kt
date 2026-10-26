@@ -40,7 +40,7 @@ class SearchUpdatingDimTest {
         choice = SearchChoice(month = month),
         rows = listOf(ledgerTxn(1_840L, id = 1L)).map { FeedRow(it, it.merchantKey, "Grab") },
         totals = listOf(SearchTotal("MYR", rowCount = 18, countedCount = 18, paymentCount = 18, netSen = 31_240L)),
-        chooser = ChooserRead(listOf(Category(2, "Groceries", "shopping-basket", 1, seedName = "Groceries")), null, emptyMap(), emptySet()) { null },
+        chooser = ChooserRead(listOf(Category(2, "Groceries", "shopping-basket", 1, seedName = "Groceries")), null),
     )
 
     @Test fun theLastAnswersHeroDrawsAt45PercentWhileTheWordsTypedAreRead() {

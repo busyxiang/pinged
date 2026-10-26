@@ -1,7 +1,6 @@
 package my.pinged.ledger.home
 
-import my.pinged.parse.DictionaryEntry
-import my.pinged.parse.MatchMode
+import my.pinged.parse.Filing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -26,8 +25,7 @@ class TeachSwitchTest {
         categoryId = categoryId,
         userEdited = userEdited,
         uncategorizedId = uncategorized,
-        learnedCategoryId = learned,
-        dictionaryCategoryId = dictionary,
+        filing = Filing(learned = learned, dictionary = dictionary),
     )
 
     @Test fun anUncategorizedRowStartsOn() = assertEquals(true, default(categoryId = uncategorized))
@@ -64,20 +62,11 @@ class TeachSwitchTest {
         assertNull(default(categoryId = food, userEdited = true, hasKey = false))
     }
 
-    @Test fun theDictionaryMarksOnlyWhatItWouldFile() {
-        val filing = dictionaryCategoryIds(
-            dictionary = listOf(
-                DictionaryEntry("DIGI", "Telco & internet"),
-                DictionaryEntry("MY50", "Transport", MatchMode.PREFIX),
-                DictionaryEntry("GONE", "Deleted category"),
-            ),
-            categoryIds = mapOf("Telco & internet" to 10L, "Transport" to transport),
-        )
-
-        assertEquals(10L, filing("DIGI PREPAID"))
-        assertEquals(transport, filing("MY50 PASS"))
-        assertNull("A key the dictionary does not know", filing("MR DIY"))
-        assertNull("An entry whose category is gone files nothing", filing("GONE"))
-        assertNull("No key, no dictionary hit", filing(null))
-    }
+    /**
+     * Both halves, not the winner: the dictionary filed this row as Transport
+     * before the user taught Food, so it starts off, where the winner alone
+     * (Food) would turn it on.
+     */
+    @Test fun aRowTheDictionaryFiledBeforeTheUserTaughtStartsOff() =
+        assertEquals(false, default(categoryId = transport, learned = food, dictionary = transport))
 }

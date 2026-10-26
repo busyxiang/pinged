@@ -145,19 +145,19 @@ internal fun RowCategoryChooser(
 ) {
     val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
     val categoriesById = remember(chooser.categories) { chooser.categories.associateBy { it.id } }
+    // One key, so the two halves cannot come from different rows' keys.
+    val filing = chooser.filer.file(row.txn.merchantKey)
     val startsOn = teachSwitchDefault(
         hasKey = row.identityKey != null,
         categoryId = row.txn.categoryId,
         userEdited = row.txn.userEdited,
         uncategorizedId = chooser.uncategorizedId,
-        learnedCategoryId = row.identityKey?.let(chooser.learnedRules::get),
-        dictionaryCategoryId = chooser.dictionaryFiling(row.txn.merchantKey),
+        filing = filing,
     )
     // Merged: this key is aliased away, or other keys are aliased to it.
     // Either way the one rule on the identity files them all.
-    val mergedRuleCategory = row.identityKey
-        ?.takeIf { it != row.txn.merchantKey || it in chooser.mergedIdentities }
-        ?.let(chooser.learnedRules::get)
+    val mergedRuleCategory = filing.learned
+        ?.takeIf { row.identityKey != row.txn.merchantKey || row.identityKey in chooser.filer.learned.mergedIdentities }
         ?.let { ruleId -> categoriesById[ruleId]?.name }
     CategoryPicker(
         categories = choices,

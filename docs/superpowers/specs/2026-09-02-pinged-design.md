@@ -164,7 +164,7 @@ STAGE 2 — parse worker, reads raw_capture where parse_status = NEW
   │      and the collision is logged for rule review — see 5.3)
   │
   ├─ Normalizer      amount → sen, occurred_at, local_date, merchant cleanup
-  ├─ Categorizer     learned rule → bundled dictionary → Uncategorized
+  ├─ Filer           learned rule → bundled dictionary → Uncategorized
   ├─ DuplicateDetector  layer 2: same amount, different package, ±10 min
   ├─ ConfidenceGate  → COMMITTED, or PENDING with the pending_reason that
   │                    fired; a PENDING row with no reason is refused

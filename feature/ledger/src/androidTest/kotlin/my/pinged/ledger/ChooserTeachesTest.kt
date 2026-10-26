@@ -47,7 +47,11 @@ import my.pinged.ledger.home.fixLine
 import my.pinged.ledger.home.mergedRuleNote
 import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
+import my.pinged.parse.DictionaryEntry
 import my.pinged.parse.ExclusionReason
+import my.pinged.parse.Filer
+import my.pinged.parse.LearnedRules.Snapshot
+import my.pinged.parse.MatchMode
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -86,21 +90,21 @@ class ChooserTeachesTest {
     }
 
     @Test fun aOneOffRowStartsOn() {
-        content(row(GROCERIES_ID, userEdited = true), dictionary = { GROCERIES_ID })
+        content(row(GROCERIES_ID, userEdited = true), dictionary = GROCERIES_ID)
         openCategorised()
 
         compose.onNode(isToggleable()).assertIsOn()
     }
 
     @Test fun aRowFiledByTheUsersRuleStartsOn() {
-        content(row(GROCERIES_ID), learned = mapOf(KEY to GROCERIES_ID), dictionary = { GROCERIES_ID })
+        content(row(GROCERIES_ID), learned = mapOf(KEY to GROCERIES_ID), dictionary = GROCERIES_ID)
         openCategorised()
 
         compose.onNode(isToggleable()).assertIsOn()
     }
 
     @Test fun aRowFiledByTheDictionaryStartsOff() {
-        content(row(GROCERIES_ID), dictionary = { key -> if (key == KEY) GROCERIES_ID else null })
+        content(row(GROCERIES_ID), dictionary = GROCERIES_ID)
         openCategorised()
 
         compose.onNode(isToggleable()).assertIsOff()
@@ -108,7 +112,7 @@ class ChooserTeachesTest {
 
     @Test fun anOldRuleRowStartsOn() {
         // The dictionary files this key under Petrol now; the row says Groceries.
-        content(row(GROCERIES_ID), dictionary = { PETROL_ID })
+        content(row(GROCERIES_ID), dictionary = PETROL_ID)
         openCategorised()
 
         compose.onNode(isToggleable()).assertIsOn()
@@ -197,6 +201,7 @@ class ChooserTeachesTest {
         content(
             row(UNCATEGORIZED_ID, identity = CANONICAL),
             learned = mapOf(CANONICAL to GROCERIES_ID),
+            aliases = mapOf(KEY to CANONICAL),
         )
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
@@ -208,7 +213,7 @@ class ChooserTeachesTest {
         content(
             row(UNCATEGORIZED_ID),
             learned = mapOf(KEY to GROCERIES_ID),
-            merged = setOf(KEY),
+            aliases = mapOf("WARUNG ALI" to KEY),
         )
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
@@ -225,7 +230,7 @@ class ChooserTeachesTest {
     }
 
     @Test fun aMergedShopWithNoRuleSaysNothingAboutOne() {
-        content(row(UNCATEGORIZED_ID, identity = CANONICAL), merged = setOf(CANONICAL))
+        content(row(UNCATEGORIZED_ID, identity = CANONICAL), aliases = mapOf(KEY to CANONICAL))
         compose.onNodeWithText(CATEGORY_CHIP).performClick()
         compose.waitForSheet()
 
@@ -580,17 +585,18 @@ class ChooserTeachesTest {
     private fun content(
         row: LedgerItem.Row,
         learned: Map<String, Long> = emptyMap(),
-        merged: Set<String> = emptySet(),
-        dictionary: (String?) -> Long? = { null },
+        aliases: Map<String, String> = emptyMap(),
+        dictionary: Long? = null,
         onAssign: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
         retro: suspend (Long, Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
-    ) = contentOf(listOf(row), learned, merged, dictionary, onAssign, retro)
+    ) = contentOf(listOf(row), learned, aliases, dictionary, onAssign, retro)
 
     private fun contentOf(
         rows: List<LedgerItem>,
         learned: Map<String, Long> = emptyMap(),
-        merged: Set<String> = emptySet(),
-        dictionary: (String?) -> Long? = { null },
+        aliases: Map<String, String> = emptyMap(),
+        /** The category id the dictionary files [KEY] under; null files nothing. */
+        dictionary: Long? = null,
         onAssign: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
         retro: suspend (Long, Long) -> RetroPreview = { _, _ -> RetroPreview(0, emptyList()) },
     ) {
@@ -604,9 +610,11 @@ class ChooserTeachesTest {
                 ),
             ),
             uncategorizedId = UNCATEGORIZED_ID,
-            learnedRules = learned,
-            mergedIdentities = merged,
-            dictionaryFiling = dictionary,
+            filer = Filer(
+                dictionary = listOf(DictionaryEntry(KEY, "Dictionary", MatchMode.EXACT)),
+                categoryIds = listOfNotNull(dictionary?.let { "Dictionary" to it }).toMap(),
+                learned = Snapshot(learned, aliases),
+            ),
         )
         val flow = flowOf(
             PagingData.from(

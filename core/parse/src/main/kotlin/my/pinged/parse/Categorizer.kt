@@ -36,22 +36,14 @@ data class DictionaryEntry(
     val mode: MatchMode = MatchMode.PREFIX,
 )
 
-/** The category the user taught for a merchant identity, by name. */
-data class LearnedRule(val categoryName: String)
-
-/** Which of the three lookups answered, in the order they are tried. */
-enum class FilingSource { LEARNED, DICTIONARY, NONE }
-
-/** [categoryName] is null exactly when [source] is [FilingSource.NONE]. */
-data class Filing(val categoryName: String?, val source: FilingSource)
-
 /**
- * Spec 6's resolution order as a pure function: the learned rule, then the
- * pack's dictionary, then nothing (the caller files that under Uncategorized).
+ * The pack's dictionary as a matcher: which entry's category name a merchant
+ * key falls under, and nothing about the learned rule, the seeded ids or
+ * Uncategorized. [Filer] is the only way in, so no caller can rebuild spec 6's
+ * resolution order around it.
  *
- * **No I/O and no regex.** The caller resolves the learned rule by merchant
- * identity and maps [Filing.categoryName] to a `category.id`; the dictionary
- * is matched against the capture's **own** key, not the canonical one.
+ * **No I/O and no regex.** The dictionary is matched against the capture's
+ * **own** key, not the canonical one.
  *
  * Matching is `regionMatches` on the key, so `\d`, `\w`, `\s` and `\b` never
  * come into it: those classes read ASCII on the JVM and Unicode under ICU, and
@@ -59,37 +51,32 @@ data class Filing(val categoryName: String?, val source: FilingSource)
  * a character that is not a letter or digit, decided by
  * [Character.isLetterOrDigit] on the code point either side -- the table
  * `SameShop` already uses. `CategorizerDeviceTest` runs the same table on
- * Android.
+ * Android, through [Filer].
  *
- * Built once per pack: [file] scans the entries per call, which at the eight
- * brands the first dictionary holds is not worth an index.
+ * Built once per [Filer]: [categoryOf] scans the entries per call, which at the
+ * eight brands the first dictionary holds is not worth an index.
  */
-class Categorizer(dictionary: List<DictionaryEntry>) {
+internal class Categorizer(dictionary: List<DictionaryEntry>) {
     private class Candidate(val entry: DictionaryEntry, val order: Int)
 
     private val candidates: List<Candidate> =
         dictionary.mapIndexed { i, e -> Candidate(e, i) }.filter { it.entry.text.isNotEmpty() }
 
     /**
-     * The longest matching entry wins; a tie in length goes to the more
-     * specific mode (exact, prefix, contains), then to the entry listed first,
-     * so no result depends on the order anything is iterated in.
-     *
-     * A learned rule is not compared with the dictionary at all: it answers
-     * first, however long a dictionary hit is. [key] is null for a payment with
-     * no merchant, which no dictionary entry can match.
+     * The category name of the longest matching entry; a tie in length goes to
+     * the more specific mode (exact, prefix, contains), then to the entry listed
+     * first, so no result depends on the order anything is iterated in. [key] is
+     * null for a payment with no merchant, which no dictionary entry can match.
      */
-    fun file(key: String?, learned: LearnedRule?): Filing {
-        if (learned != null) return Filing(learned.categoryName, FilingSource.LEARNED)
-        if (key == null) return NONE
-        val best = candidates
+    fun categoryOf(key: String?): String? {
+        if (key == null) return null
+        return candidates
             .filter { matches(it.entry, key) }
             .minWithOrNull(
                 compareByDescending<Candidate> { it.entry.text.length }
                     .thenBy { it.entry.mode.ordinal }
                     .thenBy { it.order },
-            ) ?: return NONE
-        return Filing(best.entry.category, FilingSource.DICTIONARY)
+            )?.entry?.category
     }
 
     private fun matches(entry: DictionaryEntry, key: String): Boolean {
@@ -113,8 +100,4 @@ class Categorizer(dictionary: List<DictionaryEntry>) {
     /** True when no letter or digit sits before [index] to continue the word after it. */
     private fun boundaryBefore(key: String, index: Int): Boolean =
         index == 0 || !Character.isLetterOrDigit(key.codePointBefore(index))
-
-    private companion object {
-        val NONE = Filing(null, FilingSource.NONE)
-    }
 }
