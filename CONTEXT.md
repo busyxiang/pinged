@@ -79,6 +79,10 @@ _Avoid_: unsorted, uncategorised, needs a category
 Spending's one-line notice that the ledger holds transactions and none has been exported in thirty days. It never shows beside a capture banner: a missed export can be taken later, and missed spending cannot. Dismissing it silences it for a week.
 _Avoid_: nudge, export nudge, staleness nudge
 
+**Ledger replacement**:
+A restore or a delete-everything, from the moment the user starts it until it finishes. Nothing the user does to the ledger meanwhile would last, so nothing is saved, and a screen that cannot read says the ledger is being replaced, not that it cannot be read. An export, a check or a rescue is not one: it leaves the ledger as it was.
+_Avoid_: busy, transfer (that covers exports too), gate (that is the mechanism)
+
 
 ### Capture
 
