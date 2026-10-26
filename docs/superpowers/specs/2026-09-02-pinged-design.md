@@ -1796,6 +1796,22 @@ The actions per reason:
 | `TRANSFER_SUSPECT` | **Leave out** (the default), **Keep as expense**, **Not a payment** |
 | `DUPLICATE_SUSPECT` | **Merge**, **Keep both**; a card whose pair cannot be found is a plain card |
 
+**A plain card of money coming back asks which category it counts against.**
+A `REFUND` that reaches the inbox is often a friend paying a bill back, which
+arrives under the friend's name and files under Uncategorized while the bill
+it lowers sits in Food. The card draws one line, `COUNTS AGAINST` and the
+category it is filed under (`Choose a category` while that is Uncategorized),
+between the reading and the answers, and a tap opens the chooser of section 9.1
+without its "Always call this" switch, since a friend's name is not a merchant
+to teach. A pick is one targeted `UPDATE` of `category_id` and `user_edited`
+(`TxnDao.fileAwaiting`), guarded on the row still being `PENDING` for the
+reason the card showed and on the category still existing. **It is not an
+answer**: the card stays, nothing is offered for Undo and what was on offer
+stays, and the category stays on the row through Accept, Not a payment and an
+Undo of either. Payment, transfer and duplicate cards do not ask. Drawn as
+`design/InboxMoneyBack.dc.html`; the line adds 44dp to a money-back card and
+to no other.
+
 Each answer is one targeted `UPDATE` of `state`, `pending_reason`,
 `is_excluded` and `exclusion_reason`, guarded on the row still being
 `PENDING` for the reason the card showed; an answer that writes nothing

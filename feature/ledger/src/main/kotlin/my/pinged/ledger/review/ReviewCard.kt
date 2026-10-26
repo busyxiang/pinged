@@ -6,6 +6,7 @@ import my.pinged.data.dao.ReviewRow
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.parse.Direction
 import my.pinged.ui.ringgit
 
 /**
@@ -44,6 +45,17 @@ data class ReviewCard(
      * [pair] is a plain card: Merge would have nothing to keep.
      */
     val kind: CardKind get() = CardKind.of(txn.pendingReason).let { if (it == CardKind.DUPLICATE && pair == null) CardKind.PLAIN else it }
+
+    /**
+     * Whether the card asks which category the money counts against: a plain
+     * card of money coming back. A friend paying a bill back arrives under the
+     * friend's name, which files under `Uncategorized`, while the bill it
+     * lowers is under Food; filing it now keeps that bill's category honest
+     * without a trip to the ledger. A payment out is not asked: its merchant
+     * says where it belongs, and a transfer or duplicate card is about
+     * something else.
+     */
+    val asksCategory: Boolean get() = kind == CardKind.PLAIN && txn.direction == Direction.REFUND
 }
 
 /**
