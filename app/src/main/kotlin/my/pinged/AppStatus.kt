@@ -3,6 +3,7 @@ package my.pinged
 import android.app.Application
 import android.database.SQLException
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
@@ -144,6 +145,7 @@ internal class AppStatus(
      * true, then first run from that same report.
      */
     private suspend fun sample() = sampling.withLock {
+        beforeSample()
         probe()
         readBackup()
         val report = sources.report()
@@ -297,6 +299,15 @@ internal class AppStatus(
         const val AWAITING_REVIEW = "What awaits review cannot be counted"
 
         private const val MINUTE_MILLIS = 60_000L
+
+        /**
+         * Tests only: runs at the head of every [sample], inside its lock. On
+         * an install without the grant, as CI's emulator is, the app is bare
+         * Paper until the first sample ends, so holding it makes a test that
+         * taps the tab bar before it exists fail every time rather than on
+         * CI's slower runs. `TabBarWaitTest` holds it.
+         */
+        @VisibleForTesting @Volatile internal var beforeSample: suspend () -> Unit = {}
     }
 }
 

@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsSelected
 import my.pinged.capture.Graph
 import my.pinged.tracker.BuildConfig
 import my.pinged.ui.test.boundedWaitUntil
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
@@ -25,6 +26,8 @@ import org.junit.Test
  */
 class SettingsNavigationTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Before fun awaitTheApp() = compose.awaitTheTabBar()
 
     @Test fun theSettingsTabReachesSettingsAndSettingsReachesSources() {
         compose.onNodeWithText("SETTINGS").performClick()

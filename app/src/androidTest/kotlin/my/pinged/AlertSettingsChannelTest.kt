@@ -45,6 +45,7 @@ class AlertSettingsChannelTest {
         try {
             manager.deleteNotificationChannel(SourcePrompt.CHANNEL_ID)
 
+            compose.awaitTheTabBar()
             compose.onNodeWithText("SETTINGS").performClick()
             compose.onNodeWithText(CAPTURE_ALERTS).performScrollTo().performClick()
             compose.waitForIdle()

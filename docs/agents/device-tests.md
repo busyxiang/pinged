@@ -136,6 +136,39 @@ Passing `Dispatchers.Unconfined` to a holder only runs its own steps inline;
 it does not make the DataStore step synchronous. This applies to the JVM
 tests under Robolectric as much as to the device ones.
 
+## The app before its first sample
+
+A test that launches `MainActivity` calls `compose.awaitTheTabBar()` before
+its first tap or read of the app. A class whose rule launches it does this in
+`@Before`. Without notification access, which is how CI's emulator starts,
+`AppStatus` does not yet know whether first run shows onboarding. Until its
+first sample has run the probe, the backup count and `onboards`, the window
+is bare Paper. That sample is work the compose clock does not drive (above).
+The rule there was missed because the read is the app's own, started by
+`onResume`, and no line of the test asks for it.
+`AlertSettingsChannelTest` tapped SETTINGS 0.49s into its run on CI and found
+no node. On the shared emulator, without the grant, the bar was drawn 230 to
+266ms after launch, and it was already there after `waitForIdle()` in 8
+launches of 8. So a dev run passes, and only CI's slower emulator loses the
+race.
+
+To catch a test that skips the wait, pass
+`-Pandroid.testInstrumentationRunnerArguments.holdSampleMs=1500`. It holds
+every sample, so the race fails every time instead of only on CI.
+`BackupReminderTest` grants notification access and leaves it on, so in a
+whole run every class after it starts granted, with the bar drawn from the
+first frame. In one lease's script, under `--priority low`, revoke the grant
+and then run the classes in question:
+`adb shell cmd notification disallow_listener
+my.pinged.tracker/my.pinged.capture.PingedNotificationListener`.
+Held 1.5s without the grant, 22 tests in 11 classes failed at a tap or read
+of the bar straight after launch. The other 5 tests in those classes waited
+for something else first. With the wait, all 27 passed.
+`TabBarWaitTest` holds the sample 3s, and takes the grant away for its run.
+Under the hold, `BackupReminderTest` also fails 3 or 4 of its 4 tests. The
+reminder is never composed, and why is not yet understood, so a whole run
+with the hold is not clean.
+
 ## A holder that reads on arrival
 
 A holder built with a read in its `init` (`ManualEntries` ranks the chips

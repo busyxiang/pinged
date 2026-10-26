@@ -104,6 +104,7 @@ class RescueFromSettingsTest {
 
     @Test fun aDamagedLedgerIsRescuedFromSettingsIntoAFileItReports() {
         ActivityScenario.launch(MainActivity::class.java).use {
+            compose.awaitTheTabBar()
             compose.onNodeWithText("SETTINGS").performClick()
             assertTrue("settings never said the ledger is damaged", compose.waitFor { compose.countOf(RESCUE) == 1 })
             assertEquals("a damaged ledger is offered Export everything", 0, compose.countOf("Export everything"))

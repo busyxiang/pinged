@@ -83,6 +83,7 @@ class EditRouteTest {
 
     @Test fun onTheDayScreenAManualRowOpensFilledInAndACapturedRowOpensItsDetail() {
         ActivityScenario.launch(MainActivity::class.java).use {
+            compose.awaitTheTabBar()
             compose.onNodeWithText("CHARTS").performClick()
             val month = "${today.month.name} ${today.year}"
             assertTrue("Charts did not open on $month", compose.waitFor { compose.countOf(month) == 1 })

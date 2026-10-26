@@ -85,6 +85,7 @@ class ToSortRouteTest {
 
     @Test fun chartsUncategorizedBarOpensTheSameSearchAndBackReturnsToCharts() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            compose.awaitTheTabBar()
             compose.onNodeWithText("CHARTS").performClick()
             val bar = hasText("Uncategorized") and hasClickAction()
             assertTrue("Charts never drew a tappable Uncategorized bar", compose.waitFor { compose.onAllNodes(bar).fetchSemanticsNodes().size == 1 })

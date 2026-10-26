@@ -28,6 +28,7 @@ import java.time.LocalDate
 import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
@@ -48,6 +49,8 @@ import org.junit.Test
  */
 class BackTransitionTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Before fun awaitTheApp() = compose.awaitTheTabBar()
 
     /** The rows [leavingADayPlaysTheSameTransitionEitherWay] wrote are not the next class's. */
     @After fun leaveAnOpenableDatabase() {

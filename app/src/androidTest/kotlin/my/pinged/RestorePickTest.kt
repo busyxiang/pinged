@@ -65,6 +65,7 @@ class RestorePickTest {
 
     @Test fun aPickedDocumentThatWillNotOpenIsReportedAndChangesNothing() {
         ActivityScenario.launch(MainActivity::class.java).use {
+            compose.awaitTheTabBar()
             compose.onNodeWithText("SETTINGS").performClick()
             compose.onNodeWithText("Replace everything from a backup").performScrollTo().performClick()
             compose.onNodeWithText("Continue").performClick()

@@ -101,6 +101,7 @@ class DayRouteTest {
 
     /** Charts, last month by the `Months` sheet, then the 3rd's square. */
     private fun openTheDayOnLastMonth() {
+        compose.awaitTheTabBar()
         compose.onNodeWithText("CHARTS").performClick()
         assertTrue("Charts did not open on ${header(now)}", compose.waitFor { compose.countOf(header(now)) == 1 })
         compose.onNodeWithText(header(now)).performScrollTo().performClick()
