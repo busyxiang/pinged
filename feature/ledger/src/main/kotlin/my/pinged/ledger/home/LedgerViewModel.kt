@@ -1,7 +1,6 @@
 package my.pinged.ledger.home
 
 import android.app.Application
-import android.content.Context
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -27,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import my.pinged.capture.GuardedRunner
 import my.pinged.charts.MonthsRead
+import my.pinged.data.DatabaseAccess
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 import my.pinged.data.LocalDate
@@ -63,8 +63,8 @@ class LedgerViewModel(
     private val handle: SavedStateHandle,
 ) : AndroidViewModel(app) {
 
-    /** A getter, not a field, for the reason `SourcesViewModel` records. */
-    private val context: Context get() = getApplication<Application>()
+    /** What the feed's pages and the day subtotals lease the instance through. */
+    private val access = DatabaseAccess.production(app)
 
     /** Opens, leases and guards every read and write this screen makes. */
     private val runner = GuardedRunner(app)
@@ -80,7 +80,7 @@ class LedgerViewModel(
         scope = viewModelScope,
         runner = runner,
         handle = handle,
-        chooser = { rows.readChooser() },
+        chooser = { db -> rows.readChooser(db) },
     )
 
     /** The month's summary, and the category chooser's half; see [SpendingRead.read]. */
@@ -107,7 +107,6 @@ class LedgerViewModel(
      * It runs in the write's own turn, for the month asked.
      */
     val rows: RowActions = RowActions(
-        context = { context },
         scope = viewModelScope,
         runner = runner,
         screen = spending.read.rowScreen(),
@@ -228,6 +227,7 @@ class LedgerViewModel(
                 LeasedFeed(
                     it.txnDao().feed(feedThrough()),
                     it.invalidationTracker,
+                    access,
                     onWrite = feedWrites::saw,
                     onObserving = feedWrites::observing,
                     beforeLoad = { beforePage() },
@@ -237,7 +237,7 @@ class LedgerViewModel(
                     withContext(Dispatchers.IO) {
                         runCatching {
                             val generation = Databases.generation.value
-                            Bound(Databases.shared(context), generation)
+                            access.leased { db -> Bound(db, generation) }
                                 .also { afterOpen() }
                         }
                     }
@@ -273,7 +273,7 @@ class LedgerViewModel(
      * separator is made, so a write that invalidates the feed re-reads it with
      * the rows, and no refresh has to remember it.
      *
-     * Under [Databases.leasing] for the reason [LeasedFeed] records, and on IO
+     * Under [DatabaseAccess.leased] for the reason [LeasedFeed] records, and on IO
      * because the separator runs on the collector's dispatcher. A failure --
      * a database being deleted, or damaged -- draws no number: the rows' own
      * load reports it, and a subtotal is not worth taking the list down for.
@@ -281,7 +281,7 @@ class LedgerViewModel(
     private suspend fun subtotalOf(date: LocalDate): List<CurrencyTotal>? =
         withContext(Dispatchers.IO) {
             runCatching {
-                Databases.leasing { Databases.txnDao(context).dayTotals(date, date) }
+                access.leased { db -> db.txnDao().dayTotals(date, date) }
             }.getOrNull()
         }?.map { CurrencyTotal(it.currency, it.netSen) }?.ifEmpty { null }
 
@@ -374,7 +374,7 @@ class LedgerViewModel(
 private class Bound(val db: PingedDatabase, val generation: Long)
 
 /**
- * Room's `PagingSource`, with each page read under `Databases.leasing`, and
+ * Room's `PagingSource`, with each page read under [DatabaseAccess.leased], and
  * invalidated by every write to `txn` after its first page is read.
  *
  * **Room's first page is a transaction** -- `CommonLimitOffsetImpl.initialLoad`
@@ -413,6 +413,7 @@ private class Bound(val db: PingedDatabase, val generation: Long)
 internal class LeasedFeed(
     private val room: PagingSource<Int, FeedRow>,
     private val tracker: InvalidationTracker,
+    private val access: DatabaseAccess,
     private val onWrite: () -> Unit = {},
     private val onObserving: () -> Unit = {},
     private val beforeLoad: suspend () -> Unit = {},
@@ -451,24 +452,34 @@ internal class LeasedFeed(
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, FeedRow> =
         withContext(Dispatchers.IO) {
             beforeLoad()
-            Databases.leasing {
-                if (observing.compareAndSet(false, true)) {
-                    val failed = runCatching { tracker.addObserver(observer) }.exceptionOrNull()
-                    if (failed != null) {
-                        // Room has the observer before the sync that threw, and a
-                        // second `addObserver` of it would not sync again; a retry
-                        // has to start clean.
-                        stopObserving()
-                        observing.set(false)
-                        return@withContext LoadResult.Error(failed)
-                    }
-                    // Invalidated while adding: the callback's removal may have
-                    // run first and found nothing to remove.
-                    if (invalid) stopObserving() else onObserving()
-                }
-                room.load(params)
+            try {
+                // The instance it hands over is not read: [room] is bound to the
+                // one this feed was built on, and the lease is what is wanted.
+                // A gate or a database that will not open is the page's error,
+                // as it was when Room's source read a closed instance.
+                access.leased { loadLeased(params) }
+            } catch (unavailable: DatabaseUnavailableException) {
+                LoadResult.Error(unavailable)
             }
         }
+
+    private suspend fun loadLeased(params: LoadParams<Int>): LoadResult<Int, FeedRow> {
+        if (observing.compareAndSet(false, true)) {
+            val failed = runCatching { tracker.addObserver(observer) }.exceptionOrNull()
+            if (failed != null) {
+                // Room has the observer before the sync that threw, and a
+                // second `addObserver` of it would not sync again; a retry
+                // has to start clean.
+                stopObserving()
+                observing.set(false)
+                return LoadResult.Error(failed)
+            }
+            // Invalidated while adding: the callback's removal may have
+            // run first and found nothing to remove.
+            if (invalid) stopObserving() else onObserving()
+        }
+        return room.load(params)
+    }
 
     override fun getRefreshKey(state: PagingState<Int, FeedRow>): Int? = room.getRefreshKey(state)
 

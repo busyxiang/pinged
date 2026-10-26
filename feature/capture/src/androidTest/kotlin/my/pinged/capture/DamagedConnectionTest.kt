@@ -6,9 +6,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.ListenableWorker
 import java.io.RandomAccessFile
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
@@ -531,6 +536,44 @@ class DamagedConnectionTest {
     }
 
     /**
+     * **A run that replaces more than once records once and announces once**,
+     * after its last pass (#302, decision 4). Three captures on a damaged
+     * leaf are three replacements, each on the pass that reads the next one.
+     * Announced at each, the ledger feed rebinds onto a new instance and can
+     * read its damaged page there before the next pass has run on it.
+     *
+     * Records are counted by clearing the flag as it rises and counting the
+     * rises, since a second write of `damaged = true` over a true one is not
+     * a change DataStore emits.
+     */
+    @Test(timeout = 120_000)
+    fun aRunThatReplacesThreeTimesMovesTheGenerationOnceAndRecordsOnce() = runBlocking<Unit> {
+        val onTheDamage = damagedLedger(newOnTheDamagedLeaf = true, newOnTheLeaf = 3)
+        assertEquals("fixture: captures on the damage", 3, onTheDamage.size)
+        IntegrityStore.record(context, at = System.currentTimeMillis(), ok = true)
+        val records = AtomicInteger()
+        val watcher = launch(Dispatchers.IO) {
+            IntegrityStore.damagedUpdates(context).collect { damaged ->
+                if (damaged) {
+                    records.incrementAndGet()
+                    IntegrityStore.record(context, at = System.currentTimeMillis(), ok = true)
+                }
+            }
+        }
+        val before = Databases.generation.value
+
+        val result = ParseFixtures.runWorker(context)
+
+        withTimeout(10_000) { while (records.get() == 0) delay(20) }
+        // A second record, if there were one, lands within a run's own time.
+        delay(1_000)
+        watcher.cancel()
+        assertEquals("stage two's run", ListenableWorker.Result.success(), result)
+        assertEquals("the run's replacements were announced other than once", before + 1, Databases.generation.value)
+        assertEquals("the run's damage was recorded other than once", 1, records.get())
+    }
+
+    /**
      * **A capture whose layer-two lookup meets damage is a suspect, not
      * stuck.** A transaction on the damaged page may be this purchase seen
      * through another app, and nothing can say; parsed as new it could
@@ -664,12 +707,16 @@ class DamagedConnectionTest {
      *   index; the first of its leaves is damaged, where every `NEW` entry
      *   begins.
      * @param leaves how many leaves in a row, from the middle, are damaged.
+     * @param newOnTheLeaf with [newOnTheDamagedLeaf], how many of the damaged
+     *   leaves' captures are left at `NEW`, from the first: each is one
+     *   replacement for the run that parses it, so this sets how many it makes.
      */
     private fun damagedLedger(
         tree: String = "raw_capture",
         newOnTheDamagedLeaf: Boolean = false,
         allNew: Boolean = false,
         leaves: Int = 1,
+        newOnTheLeaf: Int = Int.MAX_VALUE,
     ): List<Long> {
         ParseFixtures.prepare(context)
         var onTheLeaf = emptyList<Long>()
@@ -689,7 +736,7 @@ class DamagedConnectionTest {
                 // Ids are 1..3,000 in leaf order, so the middle leaf's are
                 // one past every cell before it.
                 val first = 1L + all.take(middle).sumOf { it.second }
-                onTheLeaf = (first until first + damaged.sumOf { it.second }).toList()
+                onTheLeaf = (first until first + damaged.sumOf { it.second }).toList().take(newOnTheLeaf)
                 onTheLeaf.forEach { id ->
                     db.openHelper.writableDatabase.execSQL(
                         "UPDATE raw_capture SET parse_status = 'NEW' WHERE id = ?",

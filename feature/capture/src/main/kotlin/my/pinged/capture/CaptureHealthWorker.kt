@@ -12,7 +12,7 @@ import androidx.work.WorkerParameters
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
-import my.pinged.data.Databases
+import my.pinged.data.PingedDatabase
 
 /**
  * Spec 10.2's daily check, which is **best-effort and not a guarantee**: it runs
@@ -33,7 +33,7 @@ class CaptureHealthWorker(context: Context, params: WorkerParameters) :
             what = "The daily check cannot read the sources",
             unavailable = { emptyList() },
             damageStopsCapture = false,
-        ) { HealthCheck.quietSources(app, now) }
+        ) { db -> HealthCheck.quietSources(db, now) }
         HealthCheck.settle(app, ListenerStatus.report(app, now), quiet)
         return Result.success()
     }
@@ -65,11 +65,12 @@ internal object HealthCheck {
 
     /**
      * Every enabled source gone quiet, after bringing their expectations up to
-     * date. Callers run this inside `CaptureStorage.guarded`.
+     * date. Callers run this inside `CaptureStorage.guarded`, and hand it the
+     * instance that block received.
      */
-    fun quietSources(context: Context, now: Long): List<SourceGaps.Quiet> {
-        val sources = Databases.captureSourceDao(context)
-        SourceGaps.refresh(sources, Databases.rawCaptureDao(context), now)
+    fun quietSources(db: PingedDatabase, now: Long): List<SourceGaps.Quiet> {
+        val sources = db.captureSourceDao()
+        SourceGaps.refresh(sources, db.rawCaptureDao(), now)
         return sources.enabled().mapNotNull { SourceGaps.quiet(it, now) }
     }
 

@@ -106,7 +106,7 @@ object ImportJson {
      * without the check an import handed a stale handle writes a ledger
      * outside `Databases` and outside its gate.
      *
-     * [Databases.requireLive] rather than [Databases.whileLive]: [db] is always
+     * [Databases.requireLive] rather than [WholeFile.export]: [db] is always
      * its caller's own -- `Restore`'s probe or its rebuild -- which
      * `Databases` never serves and so never closes, and holding that object's
      * monitor across a whole import would stall every open of the shared

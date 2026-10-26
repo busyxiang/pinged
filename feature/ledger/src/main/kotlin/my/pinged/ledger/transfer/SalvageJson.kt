@@ -2,10 +2,9 @@ package my.pinged.ledger.transfer
 
 import android.content.Context
 import java.io.OutputStream
-import my.pinged.data.DatabaseKey
-import my.pinged.data.Databases
 import my.pinged.data.PingedDatabase
 import my.pinged.data.Seed
+import my.pinged.data.WholeFile
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.ParseStatus
@@ -18,7 +17,7 @@ import my.pinged.data.entity.UserRejectRule
  * damaged ledger will still give up, **and restorable**.
  *
  * Read through [RowReader] on instances of its own
- * ([Databases.openAside]), never the one `Databases.shared` serves: every
+ * ([WholeFile.salvage]), never the one `Databases.shared` serves: every
  * damaged read poisons its connection, and on the shared one that is
  * capture's insert gone with it. No transaction (design 5): the file is kept
  * consistent by the filter below, and a transaction across a walk expected
@@ -131,8 +130,8 @@ object SalvageJson {
      * told rows written plus ids stepped over, since a page over damage can
      * step for seconds without writing one.
      *
-     * Throws whatever [DatabaseKey.existingRawKeyPassphrase] and
-     * [Databases.openAside] refuse for, and damage the reader has nothing to
+     * Throws whatever [WholeFile.salvage] and its instances' opens refuse
+     * for (the key gone, a gate up, no file), and damage the reader has nothing to
      * bound by (`RowReader.bind`); either leaves [out] incomplete,
      * and the caller deletes it, as for [TransferCancelledException].
      */
@@ -145,13 +144,10 @@ object SalvageJson {
         var written = 0
         var stepped = 0L
         val references = References()
-        // Once for every reopen, and wiped once the reader has closed the
-        // last instance it keyed; see `Databases.openAside`.
-        val key = DatabaseKey.existingRawKeyPassphrase(context)
-        try {
+        return WholeFile.salvage(context) { instances ->
             RowReader(
-                open = { Databases.openAside(context, key) },
-                close = { Databases.closeAside(it) },
+                open = instances::open,
+                close = instances::close,
                 isCancelled = isCancelled,
                 onStep = { soFar ->
                     stepped = soFar
@@ -169,10 +165,8 @@ object SalvageJson {
                     },
                     isCancelled = isCancelled,
                 )
-                return references.report(rows, reader.unreadable)
+                references.report(rows, reader.unreadable)
             }
-        } finally {
-            key.fill(0)
         }
     }
 

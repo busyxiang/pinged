@@ -1,7 +1,7 @@
 package my.pinged.capture
 
+import my.pinged.data.DatabaseAccess
 import my.pinged.data.Databases
-import my.pinged.data.IntegrityStore
 import my.pinged.data.PingedDatabase
 import android.content.Context
 import android.util.Log
@@ -75,8 +75,8 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                 // is storing beside it, and a banner saying otherwise came and
                 // went with every notification.
                 damageStopsCapture = false,
-            ) {
-                val captures = Databases.rawCaptureDao(app)
+            ) { db ->
+                val captures = db.rawCaptureDao()
                 val matcher = Graph.ruleMatcher()
 
                 // Before the drain, so what it requeues is parsed by this same
@@ -100,10 +100,11 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                 // next notification a run that starts after the delete.
                 PeriodicIntegrity.checkIfDue(app, System.currentTimeMillis())
 
+                // Damage this run meets, here and in [compare], is recorded
+                // and announced once, when `guarded`'s scope exits after the
+                // last pass. What [KnownDamage] already held was recorded by
+                // the run that found it.
                 val summary = drain(app, matcher, progress)
-                // Only for damage this run met: what [KnownDamage] already
-                // held was recorded by the run that found it.
-                if (progress.replacements > 0) IntegrityStore.recordDamage(app)
 
                 // After the drain, which is money not yet in the ledger; this
                 // only revisits money that is.
@@ -149,48 +150,57 @@ class ParseWorker(context: Context, params: WorkerParameters) :
      * three file descriptors each (`SharedInstanceUnderUseTest`) -- and the
      * next run skips what this one found, from [KnownDamage].
      *
-     * **Announced once, after the last pass**, as `CaptureStorage.guarded`
-     * does after its retry: announced at each replacement, the feed rebinds
-     * onto the new instance and can read its damaged page there before the
-     * next pass has run on it.
+     * **Recorded and announced once, after the last pass**, by the scope this
+     * joins: announced at each replacement, the feed rebinds onto the new
+     * instance and can read its damaged page there before the next pass has
+     * run on it (`DamagedConnectionTest`).
      */
-    private fun drain(app: Context, matcher: my.pinged.parse.RuleMatcher, progress: ParsePass.Progress): ParsePass.Summary {
-        var replaced = false
-        try {
-            while (true) {
-                val db = Databases.shared(app)
-                try {
-                    return ParsePass(
-                        captures = db.rawCaptureDao(),
-                        txns = db.txnDao(),
-                        merchants = db.merchantIdentityDao(),
-                        matcher = matcher,
-                        // Read per pass, as the categories below are, so a rule
-                        // saved or deleted between two runs counts on the next.
-                        taught = TaughtTemplate.matcher(db.userTemplateRuleDao().all().map { it.stored() }),
-                        // requireUncategorizedId, not the nullable form: spec 7.1
-                        // files an unknown merchant here, and a missing seed row
-                        // must fail saying so rather than send a 0 down the money
-                        // path into a foreign-key error far from the cause.
-                        uncategorizedId = db.categoryDao().requireUncategorizedId(),
-                        sourceLabel = sourceLabels(db),
-                        // Read per pass, so a category deleted between two
-                        // runs stops its entries filing on the next one.
-                        dictionary = Graph.parsePack().dictionary,
-                        categoryIds = db.categoryDao().seededIds(),
-                        isStopped = { isStopped },
-                        progress = progress,
-                    ).run()
-                } catch (skipped: ParsePass.DamagedCaptureException) {
-                    Log.e(TAG, "Stage two meets a damaged page at capture ${skipped.captureId}", skipped)
-                    if (Databases.retire(db)) replaced = true
-                    if (++progress.replacements >= MAX_REPLACEMENTS_PER_RUN) {
-                        return progress.summary(remaining = true)
+    private suspend fun drain(
+        app: Context,
+        matcher: my.pinged.parse.RuleMatcher,
+        progress: ParsePass.Progress,
+    ): ParsePass.Summary {
+        val access = DatabaseAccess.production(app)
+        return access.damageScope {
+            var finished: ParsePass.Summary? = null
+            while (finished == null) {
+                // Each pass is on the instance served now, which after a
+                // replacement is a new one: `leased` asks for it inside the
+                // run's own lease, as the guard's block cannot.
+                finished = access.leased { db ->
+                    try {
+                        ParsePass(
+                            captures = db.rawCaptureDao(),
+                            txns = db.txnDao(),
+                            merchants = db.merchantIdentityDao(),
+                            matcher = matcher,
+                            // Read per pass, as the categories below are, so a rule
+                            // saved or deleted between two runs counts on the next.
+                            taught = TaughtTemplate.matcher(db.userTemplateRuleDao().all().map { it.stored() }),
+                            // requireUncategorizedId, not the nullable form: spec 7.1
+                            // files an unknown merchant here, and a missing seed row
+                            // must fail saying so rather than send a 0 down the money
+                            // path into a foreign-key error far from the cause.
+                            uncategorizedId = db.categoryDao().requireUncategorizedId(),
+                            sourceLabel = sourceLabels(db),
+                            // Read per pass, so a category deleted between two
+                            // runs stops its entries filing on the next one.
+                            dictionary = Graph.parsePack().dictionary,
+                            categoryIds = db.categoryDao().seededIds(),
+                            isStopped = { isStopped },
+                            progress = progress,
+                        ).run()
+                    } catch (skipped: ParsePass.DamagedCaptureException) {
+                        Log.e(TAG, "Stage two meets a damaged page at capture ${skipped.captureId}", skipped)
+                        replace(db)
+                        null
                     }
                 }
+                if (finished == null && ++progress.replacements >= MAX_REPLACEMENTS_PER_RUN) {
+                    finished = progress.summary(remaining = true)
+                }
             }
-        } finally {
-            if (replaced) Databases.announceReplacement()
+            finished
         }
     }
 
@@ -208,22 +218,26 @@ class ParseWorker(context: Context, params: WorkerParameters) :
      * rows, which is where a damaged page usually is. So the instance it
      * poisoned is replaced and the damage recorded, as [drain] does, and the
      * run keeps the drain's verdict. [Corrections.sweep] ends its pack's sweep
-     * on damage, so the next run does not meet the page again.
+     * on damage, so the next run does not meet the page again. Recorded and
+     * announced by the run's scope, as [drain]'s are.
      */
     private suspend fun compare(app: Context, matcher: my.pinged.parse.RuleMatcher): Corrections.Swept {
-        val db = Databases.shared(app)
-        return try {
-            Corrections.sweep(app, db.rawCaptureDao(), matcher, isStopped = { isStopped })
-        } catch (failure: RuntimeException) {
-            if (failure is java.util.concurrent.CancellationException) throw failure
-            if (Databases.poisons(failure)) {
-                Log.e(TAG, "Re-reading matched captures meets a damaged page", failure)
-                if (Databases.retire(db)) Databases.announceReplacement()
-                IntegrityStore.recordDamage(app)
-            } else {
-                Log.e(TAG, "Re-reading matched captures failed", failure)
+        val access = DatabaseAccess.production(app)
+        return access.damageScope {
+            access.leased { db ->
+                try {
+                    Corrections.sweep(app, db.rawCaptureDao(), matcher, isStopped = { isStopped })
+                } catch (failure: RuntimeException) {
+                    if (failure is java.util.concurrent.CancellationException) throw failure
+                    if (Databases.poisons(failure)) {
+                        Log.e(TAG, "Re-reading matched captures meets a damaged page", failure)
+                        replace(db)
+                    } else {
+                        Log.e(TAG, "Re-reading matched captures failed", failure)
+                    }
+                    Corrections.Swept(compared = 0, offered = 0, more = false)
+                }
             }
-            Corrections.Swept(compared = 0, offered = 0, more = false)
         }
     }
 

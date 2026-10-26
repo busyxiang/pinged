@@ -242,7 +242,7 @@ class ManualEntryViewModel internal constructor(
             // and it may have replaced the ledger, taking the entry or giving
             // its id to another payment. Their end, not `Databases.rewrites`:
             // they are the only production replacements, and the test
-            // fixtures' ungated `Databases.reset` moves `rewrites` too, where
+            // fixtures' ungated reset moves `rewrites` too, where
             // a read can meet the file mid-delete ("no such table: txn"),
             // which `CaptureStorage` rethrows out of this scope.
             viewModelScope.launch {

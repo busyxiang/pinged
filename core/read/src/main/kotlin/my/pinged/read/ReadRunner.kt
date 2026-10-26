@@ -29,15 +29,18 @@ interface ReadRunner {
     suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T>
 
     /**
-     * Run [body] on the database, guarded and leased as [read] is but in **no
-     * transaction of its own**: a write whose statements are separate, and
-     * whose atomicity is its own business, as `SourcesViewModel`'s allow-list
-     * write is. [body] may run twice, on a new connection, if the first met
-     * damage.
+     * Run [body] on the database, guarded and leased as [read] is but, unless
+     * [oneTransaction], in **no transaction of its own**: a write whose
+     * statements are separate, and whose atomicity is its own business, as
+     * `SourcesViewModel`'s allow-list write is. [body] may run twice, on a new
+     * connection, if the first met damage.
      *
      * @param what the refusal's name in the log.
+     * @param oneTransaction a write that checks something and writes on what
+     *   it found, as `RowActions.assignCategory` does: [body] runs in one
+     *   transaction as [read]'s does, and blocks without switching threads.
      */
-    suspend fun <T> write(what: String, body: suspend (PingedDatabase) -> T): Outcome<T>
+    suspend fun <T> write(what: String, oneTransaction: Boolean = false, body: suspend (PingedDatabase) -> T): Outcome<T>
 }
 
 /**

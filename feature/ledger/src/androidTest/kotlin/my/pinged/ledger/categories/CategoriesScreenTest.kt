@@ -1,5 +1,7 @@
 package my.pinged.ledger.categories
 
+import my.pinged.capture.GuardedRunner
+import my.pinged.read.Outcome
 import android.app.Application
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -38,14 +40,16 @@ class CategoriesScreenTest {
      */
     @Test fun aRenameReachesTheChooserOfAHolderThatAlreadyReadTheTable() = runBlocking {
         val scope = CoroutineScope(Dispatchers.IO)
+        val runner = GuardedRunner(app)
         val rows = app.rowActions(scope)
         val shopping = Databases.categoryDao(app).all().first { it.name == "Shopping" }.id
-        assertTrue(rows.readChooser().categories.any { it.name == "Shopping" })
+        suspend fun chooser() = (runner.read("The test cannot read") { db -> rows.readChooser(db) } as Outcome.Done).value
+        assertTrue(chooser().categories.any { it.name == "Shopping" })
 
         val model = CategoriesViewModel(app)
         model.edit(shopping, "Beli-belah", "shopping-cart").join()
 
-        val after = rows.readChooser().categories.single { it.id == shopping }
+        val after = chooser().categories.single { it.id == shopping }
         assertEquals("Beli-belah" to "shopping-cart", after.name to after.iconKey)
         assertEquals("Beli-belah", model.read.state.value.toState().items.single { it.category.id == shopping }.category.name)
     }

@@ -51,7 +51,7 @@ internal fun Context.discardTheDatabase() {
  */
 internal fun Context.rowActions(scope: CoroutineScope): RowActions {
     val runner = GuardedRunner(applicationContext as Application)
-    return RowActions({ this }, scope, runner, ScreenRead.fixed(scope, runner, "The test cannot be read") {}.rowScreen())
+    return RowActions(scope, runner, ScreenRead.fixed(scope, runner, "The test cannot be read") {}.rowScreen())
 }
 
 /**

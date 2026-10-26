@@ -110,7 +110,6 @@ class SearchViewModel(
      * a result row opens no merchant sheet.
      */
     private val rows = RowActions(
-        context = { context },
         scope = viewModelScope,
         runner = runner,
         screen = read.rowScreen(),
@@ -196,9 +195,8 @@ class SearchViewModel(
             choice = question.choice,
             rows = txns.searchRows(question.text, filter, ROW_LIMIT),
             totals = txns.searchTotals(question.text, filter),
-            // Through `Databases`' DAOs, which inside the transaction's
-            // monitor are [db]'s, as Day's is.
-            chooser = rows.readChooser(),
+            // Through [db], as Day's is.
+            chooser = rows.readChooser(db),
         )
     }
 

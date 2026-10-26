@@ -68,7 +68,8 @@ object Databases {
     /**
      * How many times the database [shared] serves has been replaced,
      * announced once the replacement is in place -- by a delete or a restore,
-     * which close it, and by [replacePoisoned] and [retire], which do not.
+     * which close it, and by a replacement for damage ([retire], then
+     * [announceReplacement]), which does not.
      *
      * **For any holder that keeps something bound to one instance** -- a DAO,
      * a `PagingSource`, a `Flow` from Room, or an answer read through one --
@@ -125,6 +126,7 @@ object Databases {
      * device-transfer state. `CaptureStorage.guarded` in `:feature:capture` is
      * the one place that says what to do about that.
      */
+    @RawDatabaseAccess
     fun shared(context: Context): PingedDatabase {
         refuseWhileGated()
         return db ?: synchronized(this) {
@@ -139,6 +141,13 @@ object Databases {
         }
     }
 
+    /**
+     * The instance [shared] is serving, or null if none has been built since
+     * the last [reset] or [retire]. Never builds one: for `DatabaseAccess`'s
+     * check on the caller's thread, which must not open a database on the main thread.
+     */
+    internal fun current(): PingedDatabase? = db
+
     private fun refuseWhileGated() {
         if (gated) {
             throw DatabaseBeingDeletedException(
@@ -148,15 +157,15 @@ object Databases {
         }
     }
 
-    fun rawCaptureDao(context: Context): RawCaptureDao = shared(context).rawCaptureDao()
-    fun txnDao(context: Context): TxnDao = shared(context).txnDao()
-    fun categoryDao(context: Context): CategoryDao = shared(context).categoryDao()
-    fun captureSourceDao(context: Context): CaptureSourceDao = shared(context).captureSourceDao()
-    fun captureDayDao(context: Context): CaptureDayDao = shared(context).captureDayDao()
-    fun merchantIdentityDao(context: Context): MerchantIdentityDao = shared(context).merchantIdentityDao()
-    fun userRejectRuleDao(context: Context): UserRejectRuleDao = shared(context).userRejectRuleDao()
-    fun userTemplateRuleDao(context: Context): UserTemplateRuleDao = shared(context).userTemplateRuleDao()
-    fun merchantRuleDao(context: Context): MerchantRuleDao = shared(context).merchantRuleDao()
+    @RawDatabaseAccess fun rawCaptureDao(context: Context): RawCaptureDao = shared(context).rawCaptureDao()
+    @RawDatabaseAccess fun txnDao(context: Context): TxnDao = shared(context).txnDao()
+    @RawDatabaseAccess fun categoryDao(context: Context): CategoryDao = shared(context).categoryDao()
+    @RawDatabaseAccess fun captureSourceDao(context: Context): CaptureSourceDao = shared(context).captureSourceDao()
+    @RawDatabaseAccess fun captureDayDao(context: Context): CaptureDayDao = shared(context).captureDayDao()
+    @RawDatabaseAccess fun merchantIdentityDao(context: Context): MerchantIdentityDao = shared(context).merchantIdentityDao()
+    @RawDatabaseAccess fun userRejectRuleDao(context: Context): UserRejectRuleDao = shared(context).userRejectRuleDao()
+    @RawDatabaseAccess fun userTemplateRuleDao(context: Context): UserTemplateRuleDao = shared(context).userTemplateRuleDao()
+    @RawDatabaseAccess fun merchantRuleDao(context: Context): MerchantRuleDao = shared(context).merchantRuleDao()
 
     /**
      * Closes the database and forces the next call to rebuild, then announces
@@ -221,6 +230,7 @@ object Databases {
      * serving the instance, which also waits out any [whileLive] or [aside]
      * block.
      */
+    @RawDatabaseAccess
     fun reset() {
         synchronized(this) {
             db?.let { current ->
@@ -270,6 +280,7 @@ object Databases {
      * dead for the life of the process, under a banner blaming a transfer that
      * never happened.
      */
+    @OptIn(RawDatabaseAccess::class)
     inline fun <T> whileDeleting(block: () -> T): T {
         raiseGate()
         try {
@@ -420,7 +431,15 @@ object Databases {
      * wait for [block]. Only short, bounded reads belong here; the caller
      * records its own measured duration. The same deadlock rule as
      * [whileLive]'s applies: never call this from inside a transaction.
+     *
+     * **Public and unmarked because `SettingsViewModel.readSpreadsheet` still
+     * calls it**, and [DatabaseAccess.read] is not the same read: it leases,
+     * retries onto a new instance on damage, and retires, records and
+     * announces, where the spreadsheet card's count takes what this throws
+     * and publishes null. Marking it [RawDatabaseAccess] would need that
+     * caller to opt in, which `RawDatabaseAccessTest` refuses.
      */
+    @OptIn(RawDatabaseAccess::class)
     fun <T> inOneTransaction(context: Context, block: (PingedDatabase) -> T): T = synchronized(this) {
         val database = shared(context)
         database.runInTransaction(Callable { block(database) })
@@ -641,6 +660,7 @@ object Databases {
      * Never waits for anything but [leaseLock], and the release closes
      * retired instances under it.
      */
+    @RawDatabaseAccess
     inline fun <T> leasing(block: () -> T): T {
         lease()
         try {
@@ -693,6 +713,7 @@ object Databases {
      * Not from inside a transaction on the current instance, as for
      * [whileLive], and it waits for a [whileLive] or [aside] block to finish.
      */
+    @RawDatabaseAccess
     fun retire(poisoned: PingedDatabase): Boolean = synchronized(this) {
         if (db !== poisoned) return false
         db = null
@@ -704,15 +725,6 @@ object Databases {
             // not here, where Room's own coroutine may be the caller.
         }
         true
-    }
-
-    /**
-     * [retire] and its announcement, for a caller with nothing to retry.
-     * The announcement is [announceReplacement]'s: [generation] and not
-     * [rewrites].
-     */
-    fun replacePoisoned(poisoned: PingedDatabase) {
-        if (retire(poisoned)) announceReplacement()
     }
 
     /**
@@ -759,6 +771,7 @@ object Databases {
      * [reset]. A failure inside the interval replaces once it ends rather
      * than being dropped, which would leave the feed deaf for good.
      */
+    @OptIn(RawDatabaseAccess::class)
     internal fun roomWorkFailed(instance: PingedDatabase, thrown: Throwable) {
         if (poisons(thrown)) return
         val clock = roomFailureClock

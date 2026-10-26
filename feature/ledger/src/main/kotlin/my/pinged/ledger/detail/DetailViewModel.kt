@@ -60,12 +60,11 @@ class DetailViewModel internal constructor(
      */
     internal val read: ScreenRead<Unit, DetailRead> = ScreenRead.fixed(viewModelScope, runner, "The payment cannot be read") { db ->
         val row = db.txnDao().detail(txnId)?.takeIf { it.row.txn.createdAt == createdAt }
-        DetailRead(row = row, chooser = rows.readChooser())
+        DetailRead(row = row, chooser = rows.readChooser(db))
     }
 
     /** The category chooser and the merchant sheet, shared with the list; the row is read again after each write. */
     val rows = RowActions(
-        context = { context },
         scope = viewModelScope,
         runner = runner,
         screen = read.rowScreen(),

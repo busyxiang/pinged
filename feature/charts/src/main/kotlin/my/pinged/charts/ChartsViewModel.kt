@@ -78,7 +78,8 @@ class ChartsViewModel(
      * transaction holds Room's one connection, so a capture waits for it.
      * Measured on emulator-5554 over 20,000 constructed rows across 24 months,
      * 500 merchants and 730 bound days: 45ms median, 51ms at the longest of 40
-     * -- under stage two's longest single capture (66ms, `Databases.reset`).
+     * -- under stage two's longest single capture (66ms over 6,000 parsed, measured
+     * for `Databases.reset`'s lease wait).
      */
     private fun readMonth(db: PingedDatabase, month: YearMonth, today: LocalDate): ChartsRead {
         val range = LocalDates.monthRange(month)

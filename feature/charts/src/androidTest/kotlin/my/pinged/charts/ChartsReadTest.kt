@@ -22,6 +22,7 @@ import my.pinged.data.dao.NotInTotalLine
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.data.retireAndAnnounce
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import org.junit.After
@@ -255,7 +256,7 @@ class ChartsReadTest {
     /** Another caller meets code 26 on the shared instance, replaces it, and is done. */
     private suspend fun Context.replaceFromAnotherCaller() {
         CaptureStorage.guarded(this, "another read", { Unit }, damageStopsCapture = false) {
-            Databases.replacePoisoned(Databases.shared(this))
+            retireAndAnnounce(Databases.shared(this))
         }
     }
 

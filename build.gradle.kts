@@ -42,3 +42,27 @@ subprojects {
         }
     }
 }
+
+// Raw database access is opt-in, and only tests opt in (#302, decision 11).
+// `Databases.shared`, its DAO accessors, `leasing`, `retire` and `reset` carry
+// `@RawDatabaseAccess`, an ERROR-level marker, so a `main` compilation that
+// calls one does not compile and its author reaches for `DatabaseAccess` or
+// `WholeFile`. Matched by task name because AGP 9's built-in Kotlin exposes no
+// per-source-set compiler options: `compile<Variant>UnitTestKotlin` and
+// `compile<Variant>AndroidTestKotlin`, and no `compile<Variant>Kotlin`.
+//
+// Only the modules with `:core:data` on their classpath: the marker is
+// unresolvable elsewhere, and a compilation that opts into a class it cannot
+// see warns. `:core:data` itself opts in at each use, in `main`.
+val modulesThatSeeCoreData = setOf(
+    ":core:data", ":core:read", ":feature:capture", ":feature:ledger", ":feature:charts", ":app",
+)
+subprojects {
+    if (path in modulesThatSeeCoreData) {
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            if (Regex("compile.*(UnitTest|AndroidTest)Kotlin").matches(name)) {
+                compilerOptions.optIn.add("my.pinged.data.RawDatabaseAccess")
+            }
+        }
+    }
+}

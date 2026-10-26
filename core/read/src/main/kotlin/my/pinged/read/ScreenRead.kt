@@ -179,14 +179,15 @@ class ScreenRead<Q, A> private constructor(
      * connection.
      *
      * @param what the write's name in the log, for example "The allow-list cannot be changed".
+     * @param oneTransaction see [ReadRunner.write].
      */
-    fun <R> write(what: String, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>> {
+    fun <R> write(what: String, oneTransaction: Boolean = false, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>> {
         val result = CompletableDeferred<Outcome<R>>()
         val asked = _question.value
         val own = open(asked)
         turn {
             try {
-                val written = runner.write(what, body)
+                val written = runner.write(what, oneTransaction, body)
                 if (written !is Outcome.Done) emit { it.refusedBy(written) }
                 readInTurn(asked, own)
                 result.complete(written)

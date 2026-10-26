@@ -29,6 +29,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        // Robolectric's `DatabaseAccessTest` builds a Room database, which
+        // wants the framework's resources merged in.
+        unitTests.isIncludeAndroidResources = true
+    }
+
     sourceSets {
         // MigrationTestHelper reads the schema JSON out of the test APK's
         // assets, so without this every migration test fails with "Cannot find
@@ -64,6 +70,10 @@ dependencies {
     // Plain JVM: `notCapturedDays` and anything else here that is a pure
     // function of its arguments, tested without a device.
     testImplementation(libs.junit)
+    // `DatabaseAccessTest`: the access policy over an in-memory
+    // `PingedDatabase`, off the shared emulator (#302, decision 13).
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 
     androidTestImplementation(libs.androidx.room.testing)
     // `runBlocking`, for the suspend surface DataStore gives IntegrityStore

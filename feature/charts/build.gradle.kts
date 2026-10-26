@@ -35,7 +35,11 @@ android {
     // `boundedWaitUntil`, which every androidTest `waitUntil` goes through;
     // :feature:ledger's build file includes the same directory.
     sourceSets {
-        getByName("androidTest") { kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path) }
+        getByName("androidTest") {
+            kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path)
+            // `retireAndAnnounce`, which the tests that replace an instance as another caller go through.
+            kotlin.directories.add(rootProject.file("core/data/src/sharedAndroidTest/kotlin").path)
+        }
         // `HeldClock`, which every not-read-yet test steps its frames with.
         getByName("test") { kotlin.directories.add(rootProject.file("core/ui/src/sharedTest/kotlin").path) }
     }

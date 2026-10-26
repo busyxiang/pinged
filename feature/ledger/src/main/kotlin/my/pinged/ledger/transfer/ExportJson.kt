@@ -5,8 +5,8 @@ import android.util.JsonWriter
 import java.io.OutputStream
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
-import my.pinged.data.Databases
 import my.pinged.data.PingedDatabase
+import my.pinged.data.WholeFile
 import my.pinged.data.entity.CaptureDay
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
@@ -69,7 +69,7 @@ object ExportJson {
      * ImportJson deliberately has no BufferedReader: android.util.JsonReader
      * carries its own 1024-char buffer and pulls in 1 KB chunks.
      *
-     * **Inside [Databases.whileLive].** `runInTransaction` and the
+     * **Inside [WholeFile.export].** `runInTransaction` and the
      * `openHelper` read of the schema version both reopen a closed instance's
      * file (ruling R42), so a handle `Databases` has replaced is refused
      * before either runs, and none can be replaced while the export holds it.
@@ -79,7 +79,7 @@ object ExportJson {
         out: OutputStream,
         onProgress: (Int) -> Unit = {},
         isCancelled: () -> Boolean = { false },
-    ): Int = Databases.whileLive(db, Databases.Holder.Export) {
+    ): Int = WholeFile.export(db) {
         db.runInTransaction(
             Callable {
                 writeDocument(out, db.openHelper.readableDatabase.version, everyRowOf(db), onProgress, isCancelled)

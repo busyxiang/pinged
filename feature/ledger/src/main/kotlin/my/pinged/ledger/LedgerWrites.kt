@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import my.pinged.capture.CaptureStorage
+import my.pinged.data.PingedDatabase
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 
@@ -73,9 +74,9 @@ internal class LedgerWrites(
      * [block] under `CaptureStorage.guarded`, which leases the instance; a
      * database that will not open sets [storageUnavailable] and answers
      * [unavailable]. Damage never stops capture from here: a tap on a screen
-     * is not stage one.
+     * is not stage one. [block] receives the instance the attempt opened.
      */
-    suspend fun <T> guarded(what: String, unavailable: T, block: suspend () -> T): T =
+    suspend fun <T> guarded(what: String, unavailable: T, block: suspend (PingedDatabase) -> T): T =
         CaptureStorage.guarded(
             context(),
             what = what,

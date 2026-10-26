@@ -162,11 +162,11 @@ class MerchantSheetNotReadYetTest {
      */
     @Test fun theTapOpensTheSheetBeforeTheReadRuns() {
         val ran = { error("The read ran on a scope that runs nothing") }
-        val rows = RowActions({ ran() }, CoroutineScope(Held), runner = object : ReadRunner {
+        val rows = RowActions(CoroutineScope(Held), runner = object : ReadRunner {
             override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> = ran()
-            override suspend fun <T> write(what: String, body: suspend (PingedDatabase) -> T): Outcome<T> = ran()
+            override suspend fun <T> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> T): Outcome<T> = ran()
         }, screen = object : RowScreen {
-            override fun <R> write(what: String, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>> = ran()
+            override fun <R> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>> = ran()
             override fun refused() = ran()
         })
         rows.openMerchant(opening)

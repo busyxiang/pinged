@@ -11,7 +11,6 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import my.pinged.data.LocalDates
 import my.pinged.data.CaptureDays
-import my.pinged.data.Databases
 import my.pinged.data.entity.Arrival
 
 /**
@@ -37,10 +36,10 @@ class PingedNotificationListener : NotificationListenerService() {
                 applicationContext,
                 what = "Cannot record that the listener bound",
                 unavailable = {},
-            ) {
+            ) { db ->
                 CaptureDays.markListenerBound(
                     LocalDates.of(System.currentTimeMillis()),
-                ) { Databases.captureDayDao(applicationContext) }
+                ) { db.captureDayDao() }
             }
             // Narrows the gap after a kill: bank notifications often sit in the shade for
             // hours (spec 3). This does not close it -- history cannot be recovered beyond
