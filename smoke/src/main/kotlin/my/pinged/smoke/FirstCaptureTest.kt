@@ -123,7 +123,7 @@ class FirstCaptureTest {
  *
  * **One tap is not enough, because the screen can move between UiAutomator
  * reading [target]'s bounds and the tap arriving.** On a fresh install the
- * banner strip is drawn only once `MainActivity.sampleHealth` has opened the
+ * banner strip is drawn only once `AppStatus`'s first sample has opened the
  * database, which can be seconds after the first frame, and it pushes the top
  * bar 208px down: a tap aimed at SETTINGS then lands on the banner's text.
  * Measured on a 320x640 emulator tapping at first sight: 2 misses in 20

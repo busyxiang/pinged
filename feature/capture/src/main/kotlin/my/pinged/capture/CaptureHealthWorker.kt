@@ -26,7 +26,7 @@ class CaptureHealthWorker(context: Context, params: WorkerParameters) :
     override suspend fun doWork(): Result {
         val app = applicationContext
         val now = System.currentTimeMillis()
-        // Before the report, as `MainActivity.sampleHealth` orders it: this open
+        // Before the report, as `AppStatus.sample` orders it: this open
         // is the probe that sets or clears the storage flag the report reads.
         val quiet = CaptureStorage.guarded(
             app,

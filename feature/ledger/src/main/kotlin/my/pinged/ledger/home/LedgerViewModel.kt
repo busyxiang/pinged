@@ -189,7 +189,7 @@ class LedgerViewModel(
      * It is also what makes the failure **recoverable**: a full disk or a
      * transient IO error at the wrong moment must not leave `loadState.refresh`
      * an error for the life of the holder while [read] and
-     * `MainActivity.onResume` re-probe and clear the banner -- the screen would
+     * `AppStatus`'s probe on resume clear the banner -- the screen would
      * read CANNOT READ YOUR DATA under a banner saying capture was fine.
      * `LedgerScreen`'s resume effect calls `retry()`, which re-enters the open.
      *

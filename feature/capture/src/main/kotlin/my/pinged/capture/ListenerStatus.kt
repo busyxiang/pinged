@@ -56,7 +56,7 @@ data class CaptureReport(
      * that [looksDead] and [needsUserAction] stay true rather than false: a
      * report that could not be read must not read as a healthy one. Nothing
      * may treat those three as facts without checking this first, which is why
-     * `MainActivity.bannerFor` answers this before it answers either of them.
+     * `AppStatus.kt`'s `bannerFor` answers this before it answers either of them.
      *
      * [granted] is still a measurement: it comes from `NotificationManager`
      * and not from the store that failed.
@@ -213,8 +213,8 @@ object ListenerStatus {
      *
      * **Both DataStore reads are guarded, and the answer is a report that says
      * it could not read rather than one that says everything is fine.** The
-     * only caller is `MainActivity.onResume`, on a bare `lifecycleScope.launch`
-     * with no `CoroutineExceptionHandler`: a `CorruptionException` from a
+     * only caller is `AppStatus`'s sample, on `viewModelScope` with no
+     * `CoroutineExceptionHandler`: a `CorruptionException` from a
      * truncated `capture_health` file -- or a plain `IOException` from a disk
      * that will not read -- does not fail the banner there, it reaches the
      * thread's default handler and kills the process, on the home screen, on

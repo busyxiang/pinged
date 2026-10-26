@@ -13,16 +13,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import my.pinged.capture.CaptureStorage
 import my.pinged.capture.ListenerStatus
-import my.pinged.data.DatabaseKeyUnavailableException
 import my.pinged.data.Databases
-import my.pinged.data.IntegrityStore
 import my.pinged.ledger.settings.Transfers
 import my.pinged.ledger.transfer.ExportJson
 import my.pinged.ui.test.boundedWaitUntil
@@ -108,44 +104,14 @@ class StorageBannerFollowsTheLedgerTest {
     }
 
     /**
-     * **A restore from key-gone takes the banner down.** There is no resume
-     * after it, so a banner sampled only on resume said "Pinged cannot open
-     * its database" over "BACKUP RESTORED" for the rest of the visit. The
-     * restore is `Transfers`' own, with the backup this device's ledger was
-     * exported to before its key went; the picker is the only part skipped.
-     *
-     * Two things take it down here -- the database being replaced, and
-     * settings' read after the restore -- so this is the user's sequence
-     * rather than the test of either; the two below take one each away.
-     */
-    @Test fun aRestoreFromAGoneKeyTakesTheBannerDown() {
-        val backup = ByteArrayOutputStream().also { ExportJson.write(Databases.shared(context), it) }.toByteArray()
-        var restored = false
-        withTheKeyGone(putTheKeyBack = { !restored }) {
-            ActivityScenario.launch(MainActivity::class.java).use {
-                assertEventually("precondition: the storage banner never appeared") { compose.countOf(LABEL) == 1 }
-                compose.onNodeWithText(ACTION).performClick()
-                assertTrue("precondition: settings never said the key is gone", compose.waitFor { compose.countOf(KEY_GONE) == 1 })
-
-                restored = true
-                runBlocking {
-                    withTimeout(TIMEOUT) { Transfers.restoreFrom(context, { ByteArrayInputStream(backup) }, Job()).await() }
-                }
-                assertTrue("precondition: the restore did not finish", compose.waitFor { compose.countOf(RESTORED) == 1 })
-
-                assertEventually(
-                    "The ledger was restored and opens, and the banner still says Pinged " +
-                        "cannot open its database",
-                ) { compose.countOf(LABEL) == 0 }
-            }
-        }
-    }
-
-    /**
-     * **And one that finishes after its screen went.** A restore outlives the
-     * settings screen that started it (ruling R41), so the user can be back
-     * on the ledger when it lands, with no settings read to take the banner
-     * down and no resume either: only the database being replaced says so.
+     * **A restore from key-gone takes the banner down, even one that finishes
+     * after its screen went.** A restore outlives the settings screen that
+     * started it (ruling R41), so the user can be back on the ledger when it
+     * lands, with no settings read to take the banner down and no resume
+     * either: only the database being replaced says so. The restore is
+     * `Transfers`' own, with the backup this device's ledger was exported to
+     * before its key went; the picker is the only part skipped. What else
+     * re-samples the banner is `AppStatusTest`'s.
      */
     @Test fun aRestoreThatFinishesUnderTheLedgerTakesTheBannerDown() {
         val backup = ByteArrayOutputStream().also { ExportJson.write(Databases.shared(context), it) }.toByteArray()
@@ -164,134 +130,6 @@ class StorageBannerFollowsTheLedgerTest {
                         "cannot open its database",
                 ) { compose.countOf(LABEL) == 0 }
                 assertEquals("precondition: settings was opened after all", 0, compose.countOf(SETTINGS_ONLY))
-            }
-        }
-    }
-
-    /**
-     * **A clear that lands after the banner sampled takes it down.** A sample
-     * can read the flag inside a refusal's window -- a ledger read refused
-     * mid-restore raises it, and the next one that opens clears it 2-3ms
-     * later -- and nothing samples again: the banner stood over a healthy
-     * ledger for the rest of the visit (issue #16, 3 in 40 under load). Here
-     * the refusal is put inside the sample through [betweenProbeAndReport].
-     * The clear is left to whichever open comes next, as it was there: what
-     * decides the banner is whether anything samples after it.
-     */
-    @Test fun aClearAfterTheBannerSampledTakesItDown() {
-        // Counted so the refusal is armed only once the launch's own sample
-        // is past it; met there, the reset's sample reads a clean flag.
-        val samples = AtomicInteger()
-        val refuse = AtomicBoolean(false)
-        betweenProbeAndReport = {
-            samples.incrementAndGet()
-            if (refuse.compareAndSet(true, false)) {
-                CaptureStorage.guarded(context, what = "a read refused mid-restore", unavailable = { }) {
-                    throw DatabaseKeyUnavailableException("simulated: refused mid-restore")
-                }
-            }
-        }
-        try {
-            ActivityScenario.launch(MainActivity::class.java).use {
-                assertTrue("precondition: the launch never sampled", compose.waitFor { samples.get() >= 1 })
-                assertEquals("precondition: a banner over a healthy ledger", 0, compose.countOf(LABEL))
-                refuse.set(true)
-                Databases.reset()
-                // The refusal having run, not the banner having shown: with
-                // the flag watched, the banner can come down before a wait
-                // for it to be up sees it.
-                assertTrue("precondition: the sample never met the refusal", compose.waitFor { !refuse.get() })
-
-                assertEventually(
-                    "The flag was cleared after the banner sampled it, and the banner still " +
-                        "says Pinged cannot open its database",
-                ) { compose.countOf(LABEL) == 0 }
-            }
-        } finally {
-            betweenProbeAndReport = {}
-            runBlocking { CaptureStorage.guarded(context, what = "clearing the flag", unavailable = { }) { } }
-        }
-    }
-
-    /**
-     * **A cause that clears while the user is on settings takes the banner
-     * down with the screen's own reading.** A transient full disk is the
-     * case: the database opens again, settings reads HEALTHY, and "Settings
-     * says more" is false. Here the key comes back with no reset, so nothing
-     * but settings' own read reaches the database.
-     */
-    @Test fun aBannerThatSettingsNoLongerBearsOutGoesAway() = withTheKeyGone { key ->
-        ActivityScenario.launch(MainActivity::class.java).use {
-            assertEventually("precondition: the storage banner never appeared") { compose.countOf(LABEL) == 1 }
-            keyFile.writeBytes(key)
-            compose.onNodeWithText(ACTION).performClick()
-            assertTrue(
-                "precondition: settings never reached the database once the cause cleared",
-                compose.waitFor { compose.countOf(SETTINGS_ONLY) == 1 && compose.countOf(KEY_GONE) == 0 },
-            )
-
-            assertEventually(
-                "Settings reads the database as healthy, and the banner above it still " +
-                    "says it cannot be opened and that settings says more",
-            ) { compose.countOf(LABEL) == 0 }
-        }
-    }
-
-    /**
-     * **Every settings read samples the banner again, not only one that found
-     * something new.** A capture refused just as a gate lifts can raise the
-     * storage flag between a sample's probe and its report, putting the
-     * banner up over a ledger settings reads as healthy -- and every read
-     * after that finds it healthy again. The refusal lands there through
-     * [betweenProbeAndReport], by the `CaptureStorage.guarded` path a capture
-     * takes; the database being replaced is what samples, and the read that
-     * follows is settings' own, after "Check my data".
-     */
-    @Test fun aSettingsReadThatFindsNothingNewStillTakesAStaleBannerDown() {
-        // Counted so the refusal is armed only once the samples already under
-        // way -- the launch's resume, settings' first read -- are past it.
-        val samples = AtomicInteger()
-        val refuse = AtomicBoolean(false)
-        betweenProbeAndReport = {
-            samples.incrementAndGet()
-            if (refuse.compareAndSet(true, false)) {
-                CaptureStorage.guarded(context, what = "a capture refused as the gate lifts", unavailable = { }) {
-                    throw DatabaseKeyUnavailableException("simulated: refused as the gate lifts")
-                }
-            }
-        }
-        try {
-            ActivityScenario.launch(MainActivity::class.java).use {
-                assertTrue("precondition: the launch never sampled", compose.waitFor { samples.get() >= 1 })
-                compose.onNodeWithText(SETTINGS_TAB).performClick()
-                assertTrue("precondition: settings' first read never sampled", compose.waitFor { samples.get() >= 2 })
-                assertEquals("precondition: a banner over a healthy ledger", 0, compose.countOf(LABEL))
-
-                refuse.set(true)
-                Databases.reset()
-                // As in [aClearAfterTheBannerSampledTakesItDown]: the
-                // refusal having run, since the watched flag can take the
-                // banner down before a wait for it to be up sees it.
-                assertTrue("precondition: the sample never met the refusal", compose.waitFor { !refuse.get() })
-                // Scrolled to: on CI's 320x640 emulator the row starts below
-                // the fold, and a click on an off-screen node does nothing.
-                compose.onNodeWithText(CHECK_ROW).performScrollTo().performClick()
-                assertTrue(
-                    "precondition: the check never settled",
-                    compose.waitFor { Transfers.state.value.outcome != null && Transfers.state.value.running == null },
-                )
-
-                assertEventually(
-                    "Settings read the ledger as healthy after its check, and the banner above " +
-                        "it still says Pinged cannot open its database",
-                ) { compose.countOf(LABEL) == 0 }
-            }
-        } finally {
-            betweenProbeAndReport = {}
-            Transfers.state.value.outcome?.let { Transfers.acknowledge(it.serial) }
-            runBlocking {
-                IntegrityStore.forget(context)
-                CaptureStorage.guarded(context, what = "clearing the flag", unavailable = { }) { }
             }
         }
     }
@@ -354,16 +192,9 @@ class StorageBannerFollowsTheLedgerTest {
         const val LABEL = "CANNOT OPEN YOUR DATA"
         const val ACTION = "What can I do about this?"
         const val KEY_GONE = "THE KEY IS GONE"
-        const val RESTORED = "BACKUP RESTORED"
 
         /** See `BackupReminderTest.SETTINGS_ONLY`. */
         const val SETTINGS_ONLY = "Delete everything"
-
-        /** The bottom bar's settings tab; see `SettingsNavigationTest`. */
-        const val SETTINGS_TAB = "SETTINGS"
-
-        /** Settings' row that runs a check, drawn only over a readable ledger. */
-        const val CHECK_ROW = "Check my data"
 
         /** Settings' row that opens the allow-list. */
         const val SOURCES_ROW = "Capture sources"

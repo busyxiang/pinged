@@ -118,6 +118,8 @@ android {
     // :feature:ledger's build file includes the same directory.
     sourceSets {
         getByName("androidTest") { kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path) }
+        // `ScriptedRunner`, the runner `AppStatusTest` answers, refuses or holds on command.
+        getByName("test") { kotlin.directories.add(rootProject.file("core/read/src/sharedTest/kotlin").path) }
     }
 
     // `BuildConfig.VERSION_NAME` is what Settings' footer prints (design 9.2).
@@ -151,6 +153,9 @@ dependencies {
     implementation(project(":feature:charts"))
     // The theme, the fonts and the shared sheet chrome.
     implementation(project(":core:ui"))
+    // `AppStatus`'s ledger reads: the probe, the backup reminder's count and
+    // the awaiting-review count, through `ReadRunner` (#304).
+    implementation(project(":core:read"))
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
@@ -180,10 +185,16 @@ dependencies {
     // is popped. `MainActivity` passes both decorators explicitly for that
     // reason.
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+    // `collectAsStateWithLifecycle`, so `AppStatus`'s watchers run while the
+    // Activity is started and no longer.
+    implementation(libs.androidx.lifecycle.runtime.compose)
 
     // `Destinations.kt`'s two back-stack rules, which are decisions about a
     // `MutableList<NavKey>` and need no device. See `BackStackRuleTest`.
     testImplementation(libs.junit)
+    // `AppStatusTest`, on Robolectric for `ScriptedRunner`'s in-memory ledger.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 
     // `MainActivity` lives here, so `LaunchTest` is the only place the
     // application itself can be started.

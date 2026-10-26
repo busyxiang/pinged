@@ -72,7 +72,7 @@ interface ExportSink {
  * in a DataStore: an interface so a test can hand in one that throws.
  * **Handed in rather than provoked on disk** because DataStore caches its
  * first successful read, so a preferences file corrupted from a test is never
- * read again -- see `ExportNudgeGuardTest`.
+ * read again -- as `StatusSources` in `:app` says.
  */
 internal interface StoredSettings {
     suspend fun damaged(context: Context): Boolean

@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 /**
  * What [ListenerStatus.report] does when `capture_health` will not read.
  *
- * Its caller is `MainActivity.onResume`, on a `lifecycleScope.launch` with no
+ * Its caller is `AppStatus`'s sample, on `viewModelScope` with no
  * `CoroutineExceptionHandler`: a throw from here does not fail the banner, it
  * reaches the thread's default handler and kills the process -- on the home
  * screen, on every foreground, for as long as the file stays unreadable. So
