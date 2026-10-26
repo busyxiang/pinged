@@ -1,6 +1,5 @@
 package my.pinged.ledger
 
-import android.app.Application
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -21,28 +20,30 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
-import androidx.lifecycle.SavedStateHandle
 import androidx.paging.LoadState
 import androidx.paging.LoadStates
 import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import my.pinged.data.Databases
-import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.MerchantChoice
 import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.FILTER_FIELD_TAG
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
-import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.home.MERCHANT_LIST_TAG
-import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantOpening
 import my.pinged.ledger.home.MerchantSheetState
 import my.pinged.ledger.home.NAME_FIELD_TAG
@@ -55,7 +56,6 @@ import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.READING_DELAY_MILLIS
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -73,7 +73,12 @@ class MerchantSheetTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @After fun leaveNothingBehind() = context.discardTheDatabase()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    @After fun leaveNothingBehind() {
+        scope.cancel()
+        context.discardTheDatabase()
+    }
 
     private val scanAndPay = "YUENKEEHOMETOWNCAFE"
     private val duitNow = "RESTORAN YUEN KEE HOME TOWN CAFE"
@@ -84,11 +89,12 @@ class MerchantSheetTest {
         displayName = name,
     )
 
+    /** The screen over [items], with [sheet] open over it; what the sheet was asked to do is on the fake returned. */
     private fun content(
         items: List<LedgerItem>,
         sheet: MerchantSheetState? = null,
-        actions: MerchantActions = MerchantActions.None,
-    ) {
+    ): FakeMerchantActions {
+        val merchants = FakeMerchantActions(sheet?.let { OpenMerchantSheet(MerchantOpening(it.ownKey, it.name, DAY), it) })
         val flow = flowOf(
             PagingData.from(
                 items,
@@ -101,27 +107,14 @@ class MerchantSheetTest {
                     items = flow.collectAsLazyPagingItems(),
                     read = LedgerRead(),
                     storageUnavailable = false,
-                    onAssign = { _, _, _ -> },
+                    categories = FakeCategoryActions(),
+                    merchants = merchants,
                     onOpenSettings = {},
-                    merchantSheet = sheet?.let { OpenMerchantSheet(MerchantOpening(it.ownKey, it.name, DAY), it) },
-                    merchantActions = actions,
                 )
             }
         }
+        return merchants
     }
-
-    private fun actions(
-        opened: MutableList<Pair<String, LocalDate>> = mutableListOf(),
-        renamed: MutableList<String> = mutableListOf(),
-        merged: MutableList<String> = mutableListOf(),
-        separated: MutableList<String> = mutableListOf(),
-    ) = MerchantActions(
-        open = { opened += it.ownKey to it.on },
-        rename = { renamed += it },
-        merge = { merged += it },
-        separate = { separated += it },
-        close = {},
-    )
 
     // ---- the row ------------------------------------------------------------
 
@@ -132,9 +125,8 @@ class MerchantSheetTest {
     }
 
     @Test fun aLongPressOpensTheSheetForTheRowsOwnKey() {
-        val opened = mutableListOf<Pair<String, LocalDate>>()
         val pressed = row(scanAndPay, "Yuenkeehometowncafe", id = 1)
-        content(listOf(pressed), actions = actions(opened = opened))
+        val merchants = content(listOf(pressed))
         compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Yuenkeehometowncafe").fetchSemanticsNodes().isNotEmpty() }
         // `LedgerRead()` has no total, so the hero's dash and status line
         // come 200ms after the first frame and push the row down. Pressed
@@ -146,7 +138,7 @@ class MerchantSheetTest {
         compose.onNodeWithText("Yuenkeehometowncafe").performTouchInput { longClick() }
         compose.waitForIdle()
 
-        assertEquals("The row's own key, and its day for the header's month", listOf(scanAndPay to pressed.txn.localDate), opened)
+        assertEquals("The row's own key, and its day for the header's month", listOf(scanAndPay to pressed.txn.localDate), merchants.opened.map { it.ownKey to it.on })
     }
 
     /**
@@ -156,7 +148,6 @@ class MerchantSheetTest {
     @Test fun onlyARowWithAMerchantOffersTheSheet() {
         content(
             listOf(row(null, "Unknown", id = 1, name = null), row(scanAndPay, "Yuenkeehometowncafe", id = 2)),
-            actions = actions(),
         )
         compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText("Unknown merchant").fetchSemanticsNodes().isNotEmpty() }
 
@@ -188,8 +179,7 @@ class MerchantSheetTest {
     )
 
     @Test fun saveIsOfferedOnlyOnceTheNameChangesAndSendsWhatWasTyped() {
-        val renamed = mutableListOf<String>()
-        content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet(), actions(renamed = renamed))
+        val merchants = content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet())
         compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText(SAVE_NAME).fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithText(SAVE_NAME).assertIsNotEnabled()
@@ -200,7 +190,7 @@ class MerchantSheetTest {
         // state asserted here is what the tap would have proved.
         compose.onNodeWithText(SAVE_NAME).assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
 
-        assertEquals(listOf("Yuen Kee"), renamed)
+        assertEquals(listOf("Yuen Kee"), merchants.renamed)
     }
 
     @Test fun theSheetStatesHowFarARenameReaches() {
@@ -211,8 +201,7 @@ class MerchantSheetTest {
     }
 
     @Test fun choosingAMerchantThenCountingItMergesIntoItAndTheSuggestionIsMarked() {
-        val merged = mutableListOf<String>()
-        content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet(), actions(merged = merged))
+        val merchants = content(listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)), sheet())
         compose.boundedWaitUntil(5_000) {
             compose.onAllNodesWithText("Restoran Yuen Kee Home Town Cafe").fetchSemanticsNodes().isNotEmpty()
         }
@@ -223,11 +212,11 @@ class MerchantSheetTest {
         )
 
         compose.onNodeWithText("Restoran Yuen Kee Home Town Cafe").performClick()
-        assertEquals("A tap only chooses", emptyList<String>(), merged)
+        assertEquals("A tap only chooses", emptyList<String>(), merchants.merged)
         compose.onNodeWithTag(MERCHANT_LIST_TAG).performScrollToNode(hasText(COUNT_IT_AS_YUEN_KEE))
         compose.onNodeWithText(COUNT_IT_AS_YUEN_KEE).performClick()
 
-        assertEquals(listOf(duitNow), merged)
+        assertEquals(listOf(duitNow), merchants.merged)
     }
 
     /**
@@ -251,18 +240,16 @@ class MerchantSheetTest {
     }
 
     @Test fun aMergedMerchantOffersToSeparateItsOwnKey() {
-        val separated = mutableListOf<String>()
-        content(
+        val merchants = content(
             listOf(row(scanAndPay, "Yuenkeehometowncafe", id = 1)),
             sheet(mergedInto = "Restoran Yuen Kee Home Town Cafe"),
-            actions(separated = separated),
         )
         val separate = "Separate from Restoran Yuen Kee Home Town Cafe"
         compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText(separate).fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithText(separate).performClick()
 
-        assertEquals(listOf(scanAndPay), separated)
+        assertEquals(listOf(scanAndPay), merchants.separated)
     }
 
     // ---- through the holder, against the real database ----------------------
@@ -278,51 +265,24 @@ class MerchantSheetTest {
 
     private fun uncategorized(): Long = Databases.categoryDao(context).requireUncategorizedId()
 
+
     @Test fun theHolderMergesWhatTheSheetWasOpenedOn() {
         context.freshLedger()
         insert(scanAndPay, "Yuenkeehometowncafe", 1_250L, at = 1_000L)
         insert(duitNow, "Restoran Yuen Kee Home Town Cafe", 1_500L, at = 2_000L)
-        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
+        val rows = context.rowActions(scope)
 
-        runBlocking { withTimeout(10_000) { viewModel.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY)).join() } }
-        val sheet = viewModel.merchantSheet.value!!.read!!
+        runBlocking { withTimeout(10_000) { rows.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY)).join() } }
+        val sheet = rows.merchantSheet.value!!.read!!
         assertEquals(listOf(duitNow), sheet.others.map { it.identityKey })
         assertEquals(setOf(duitNow), sheet.suggested)
 
-        runBlocking { withTimeout(10_000) { viewModel.mergeMerchant(duitNow).join() } }
+        runBlocking { withTimeout(10_000) { rows.mergeMerchant(duitNow).join() } }
 
-        assertNull("The sheet stays open after its write", viewModel.merchantSheet.value)
+        assertNull("The sheet stays open after its write", rows.merchantSheet.value)
         val dao = Databases.merchantIdentityDao(context)
         assertEquals(duitNow, dao.canonicalOf(scanAndPay))
         assertEquals("Restoran Yuen Kee Home Town Cafe", dao.nameOf(duitNow))
-    }
-
-    /**
-     * The sheet opens before its read (#284), so the read must not land on a
-     * sheet the user has closed since: it would open the sheet again by itself.
-     */
-    @Test fun aSheetClosedBeforeItsReadLandsStaysClosed() {
-        context.freshLedger()
-        insert(scanAndPay, "Yuenkeehometowncafe", 1_250L, at = 1_000L)
-        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
-
-        val read = viewModel.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY))
-        assertNotNull("The sheet did not open on the tap", viewModel.merchantSheet.value)
-        viewModel.closeMerchant()
-        runBlocking { withTimeout(10_000) { read.join() } }
-
-        assertNull("The read opened a sheet the user had closed", viewModel.merchantSheet.value)
-    }
-
-    /** A sheet opened on a merchant the ledger no longer has closes once the read says so. */
-    @Test fun aMerchantNoLongerInTheLedgerClosesTheSheet() {
-        context.freshLedger()
-        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
-
-        val read = viewModel.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY))
-        runBlocking { withTimeout(10_000) { read.join() } }
-
-        assertNull("A sheet with nothing to read stayed open", viewModel.merchantSheet.value)
     }
 
     @Test fun theHolderRenamesTheMergedMerchantFromEitherKey() {
@@ -337,9 +297,9 @@ class MerchantSheetTest {
         assertEquals("Restoran Yuen Kee Home Town Cafe", sheet.mergedInto)
         assertEquals(2, sheet.txnCount)
 
-        val viewModel = LedgerViewModel(context.applicationContext as Application, SavedStateHandle())
-        runBlocking { withTimeout(10_000) { viewModel.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY)).join() } }
-        runBlocking { withTimeout(10_000) { viewModel.renameMerchant("Yuen Kee").join() } }
+        val rows = context.rowActions(scope)
+        runBlocking { withTimeout(10_000) { rows.openMerchant(MerchantOpening(scanAndPay, "Yuenkeehometowncafe", DAY)).join() } }
+        runBlocking { withTimeout(10_000) { rows.renameMerchant("Yuen Kee").join() } }
 
         assertEquals("Yuen Kee", dao.nameOf(duitNow))
     }

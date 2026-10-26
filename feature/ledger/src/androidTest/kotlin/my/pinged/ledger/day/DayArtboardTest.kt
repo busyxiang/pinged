@@ -10,6 +10,8 @@ import my.pinged.ledger.ArtboardProbe.close
 import my.pinged.ledger.ArtboardProbe.isDp
 import my.pinged.ledger.ArtboardProbe.settledScreen
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.PingedTheme
@@ -75,7 +77,8 @@ class DayArtboardTest {
                     ),
                     storageUnavailable = false,
                     onBack = {},
-                    onAssign = { _, _, _ -> },
+                    categories = FakeCategoryActions(),
+                    merchants = FakeMerchantActions(),
                     onStep = {},
                     today = DATE.plusDays(20),
                 )

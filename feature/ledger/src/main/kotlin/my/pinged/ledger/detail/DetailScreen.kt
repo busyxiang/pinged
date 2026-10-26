@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,15 +54,14 @@ import my.pinged.parse.TaughtTemplate
 import my.pinged.read.rememberReadState
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.DetailRow
-import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.HeroSerif
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.MerchantOpening
-import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.RemoveSheet
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.UnderlinedField
@@ -128,46 +126,36 @@ fun DetailScreen(
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
-    val merchantSheet by viewModel.merchantSheet.collectAsState()
     DetailScreenContent(
         read = read.answer,
         storageUnavailable = read.unavailable,
         onBack = onBack,
+        categories = viewModel.rows,
+        merchants = viewModel.rows,
         actions = remember(viewModel, onBack) {
             DetailActions(
-                assign = viewModel::assignCategory,
-                retroPreview = viewModel::retroPreview,
                 saveNote = { viewModel.saveNote(it) },
                 notSpending = { viewModel.notSpending() },
                 countAsSpending = { viewModel.countAsSpending() },
                 remove = { viewModel.remove(then = onBack) },
             )
         },
-        merchantSheet = merchantSheet,
-        merchantActions = remember(viewModel) {
-            MerchantActions(
-                open = viewModel::openMerchant,
-                rename = viewModel::renameMerchant,
-                merge = viewModel::mergeMerchant,
-                separate = viewModel::separateMerchant,
-                close = viewModel::closeMerchant,
-            )
-        },
         modifier = modifier,
     )
 }
 
-/** What the screen's controls call; [None] for a test that is not about them. */
+/**
+ * The screen's own writes, beside the row's halves `DetailScreenContent` is
+ * handed apart; [None] for a test that is not about them.
+ */
 internal class DetailActions(
-    val assign: (categoryId: Long, teach: Boolean) -> Unit,
-    val retroPreview: suspend (categoryId: Long) -> RetroPreview?,
     val saveNote: (String) -> Unit,
     val notSpending: () -> Unit,
     val countAsSpending: () -> Unit,
     val remove: () -> Unit,
 ) {
     companion object {
-        val None = DetailActions({ _, _ -> }, { RetroPreview(0, emptyList()) }, {}, {}, {}, {})
+        val None = DetailActions({}, {}, {}, {})
     }
 }
 
@@ -177,10 +165,10 @@ internal fun DetailScreenContent(
     read: DetailRead?,
     storageUnavailable: Boolean,
     onBack: () -> Unit,
+    categories: CategoryActions,
+    merchants: MerchantActions,
     modifier: Modifier = Modifier,
     actions: DetailActions = DetailActions.None,
-    merchantSheet: OpenMerchantSheet? = null,
-    merchantActions: MerchantActions = MerchantActions.None,
     zone: ZoneId = ZoneId.systemDefault(),
 ) {
     var categorizing by rememberSaveable { mutableStateOf(false) }
@@ -204,7 +192,7 @@ internal fun DetailScreenContent(
                 onCategorize = { categorizing = true },
                 onRemove = { removing = true },
                 actions = actions,
-                merchantActions = merchantActions,
+                merchants = merchants,
             )
         }
     }
@@ -213,12 +201,10 @@ internal fun DetailScreenContent(
         RowCategoryChooser(
             row = row.row,
             chooser = chooser,
-            retroPreview = { _, categoryId -> actions.retroPreview(categoryId) },
-            onSave = { categoryId, teach ->
-                categorizing = false
-                actions.assign(categoryId, teach)
-            },
-            onDismiss = { categorizing = false },
+            actions = categories,
+            onClose = { categorizing = false },
+            // Detail offers no New category tile; whether it should is undecided (#307).
+            addCategory = null,
         )
     }
     if (removing && row != null) {
@@ -231,7 +217,7 @@ internal fun DetailScreenContent(
             onDismiss = { removing = false },
         )
     }
-    if (merchantSheet != null) MerchantSheet(merchantSheet, merchantActions)
+    MerchantSheet(merchants)
 }
 
 /** The chevron, and the artboard's eyebrow at the right. */
@@ -299,7 +285,7 @@ private fun DetailBody(
     onCategorize: () -> Unit,
     onRemove: () -> Unit,
     actions: DetailActions,
-    merchantActions: MerchantActions,
+    merchants: MerchantActions,
 ) {
     val txn = row.row.txn
     val name = row.row.displayName
@@ -329,7 +315,7 @@ private fun DetailBody(
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(2.dp))
-                        .clickable(role = Role.Button) { merchantActions.open(MerchantOpening(key, name ?: key, row.row.txn.localDate)) }
+                        .clickable(role = Role.Button) { merchants.openMerchant(MerchantOpening(key, name ?: key, row.row.txn.localDate)) }
                         .size(44.dp)
                         .semantics { contentDescription = EDIT_MERCHANT },
                     contentAlignment = Alignment.Center,

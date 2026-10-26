@@ -66,7 +66,8 @@ class SpendingNotReadYetTest {
                         items = feed.collectAsLazyPagingItems(),
                         read = LedgerRead(summary = null, categories = emptyList(), uncategorizedId = null),
                         storageUnavailable = unavailable.collectAsState().value,
-                        onAssign = { _, _, _ -> },
+                        categories = FakeCategoryActions(),
+                        merchants = FakeMerchantActions(),
                         onOpenSettings = {},
                     )
                 }

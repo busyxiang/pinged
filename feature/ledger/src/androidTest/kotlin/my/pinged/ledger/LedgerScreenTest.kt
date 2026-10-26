@@ -36,6 +36,9 @@ import my.pinged.data.entity.Category
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.CATEGORY_CHIP
+import my.pinged.ledger.home.CategoryActions
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreen
@@ -1024,13 +1027,13 @@ class LedgerScreenTest {
         val row = LedgerItem.Row(
             ledgerTxn(amountSen = 1_234L, localDate = SEP_7, categoryId = UNCATEGORIZED_ID, id = 77L),
         )
-        val assigned = mutableListOf<Pair<Long, Long>>()
+        val chooser = FakeCategoryActions()
         content(
             items = listOf(LedgerItem.DayHeader(SEP_7, row.txn.id), row),
             refresh = LoadState.NotLoading(true),
             categories = TWO_CATEGORIES,
             uncategorizedId = UNCATEGORIZED_ID,
-            onAssign = { txnId, categoryId, _ -> assigned += txnId to categoryId },
+            chooser = chooser,
         )
         compose.waitForText("12.34", "The row was never drawn")
 
@@ -1044,7 +1047,7 @@ class LedgerScreenTest {
                 "more than once -- and a chip that assigns the category of a " +
                 "row the user did not tap is worse than one that does nothing",
             listOf(77L to 42L),
-            assigned,
+            chooser.assigned.map { (txnId, categoryId) -> txnId to categoryId },
         )
     }
 
@@ -1322,7 +1325,7 @@ class LedgerScreenTest {
         val viewModel = ledgerViewModel()
 
         runBlocking {
-            withTimeout(TIMEOUT) { viewModel.assignCategory(1L, 1L).join() }
+            withTimeout(TIMEOUT) { viewModel.rows.assignCategory(1L, 1L, teach = false).join() }
         }
 
         assertTrue(
@@ -1631,9 +1634,8 @@ class LedgerScreenTest {
                     // The write is read back for the month asked below, and
                     // a read of today's month would empty the summary this
                     // fixture is dated for.
-                    onAssign = { txnId, categoryId, teach ->
-                        viewModel.assignCategory(txnId, categoryId, teach)
-                    },
+                    categories = viewModel.rows,
+                    merchants = viewModel.rows,
                     onOpenSettings = {},
                     // Somewhere to lead, so the summary draws `N TO SORT`.
                     onOpenToSort = { _, _ -> },
@@ -1660,7 +1662,7 @@ class LedgerScreenTest {
         storageUnavailable: Boolean = false,
         categories: List<Category> = emptyList(),
         uncategorizedId: Long? = null,
-        onAssign: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
+        chooser: CategoryActions = FakeCategoryActions(),
         onOpenSettings: () -> Unit = {},
         heard: String? = null,
         picked: YearMonth? = null,
@@ -1689,7 +1691,8 @@ class LedgerScreenTest {
                     items = flow.collectAsLazyPagingItems(),
                     read = read,
                     storageUnavailable = storageUnavailable,
-                    onAssign = onAssign,
+                    categories = chooser,
+                    merchants = FakeMerchantActions(),
                     onOpenSettings = onOpenSettings,
                     heard = heard,
                     picked = picked,

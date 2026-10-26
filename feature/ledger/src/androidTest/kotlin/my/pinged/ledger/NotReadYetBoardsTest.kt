@@ -19,6 +19,8 @@ import my.pinged.ledger.detail.DetailScreenContent
 import my.pinged.ledger.detail.VERBATIM_NOT_READ_YET
 import my.pinged.ledger.entry.ManualEntryScreenContent
 import my.pinged.ledger.entry.ManualEntryState
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.home.HeroSerif
 import my.pinged.ledger.review.CARD_NOT_READ_YET
@@ -117,10 +119,10 @@ class NotReadYetBoardsTest {
     }
 
     private fun day() = show {
-        DayScreenContent(date = LocalDate.of(2026, 9, 25), read = null, storageUnavailable = false, onBack = {}, onAssign = { _, _, _ -> })
+        DayScreenContent(date = LocalDate.of(2026, 9, 25), read = null, storageUnavailable = false, onBack = {}, categories = FakeCategoryActions(), merchants = FakeMerchantActions())
     }
 
-    private fun detail() = show { DetailScreenContent(read = null, storageUnavailable = false, onBack = {}) }
+    private fun detail() = show { DetailScreenContent(read = null, storageUnavailable = false, onBack = {}, categories = FakeCategoryActions(), merchants = FakeMerchantActions()) }
 
     private fun editPayment() = show {
         ManualEntryScreenContent(

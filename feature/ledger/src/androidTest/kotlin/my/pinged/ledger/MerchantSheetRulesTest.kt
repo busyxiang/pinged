@@ -17,10 +17,11 @@ import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.entity.MatchType
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RuleOrigin
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
 import my.pinged.ledger.home.NAME_HEADING
-import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantOpening
 import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.MerchantSheetState
@@ -86,10 +87,9 @@ class MerchantSheetRulesTest {
                     items = flow.collectAsLazyPagingItems(),
                     read = LedgerRead(),
                     storageUnavailable = false,
-                    onAssign = { _, _, _ -> },
+                    categories = FakeCategoryActions(),
+                    merchants = FakeMerchantActions(OpenMerchantSheet(MerchantOpening(sheet.ownKey, sheet.name, ANY_DAY), sheet)),
                     onOpenSettings = {},
-                    merchantSheet = OpenMerchantSheet(MerchantOpening(sheet.ownKey, sheet.name, ANY_DAY), sheet),
-                    merchantActions = MerchantActions.None,
                 )
             }
         }

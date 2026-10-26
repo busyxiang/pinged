@@ -31,8 +31,7 @@ import java.time.YearMonth
 class MerchantSheetArtboardTest {
     @get:Rule val compose = createComposeRule()
 
-    private val merged = mutableListOf<String>()
-    private var closed = 0
+    private val actions = FakeMerchantActions()
 
     private val sheet = MerchantSheetState(
         ownKey = "TNG*99SPEEDMART",
@@ -52,7 +51,6 @@ class MerchantSheetArtboardTest {
     )
 
     private fun draw(shown: MerchantSheetState = sheet) {
-        val actions = MerchantActions({}, {}, { merged += it }, {}, { closed++ })
         compose.setContent { MerchantSheet(shown, actions) }
     }
 
@@ -66,7 +64,7 @@ class MerchantSheetArtboardTest {
         draw()
         assertEquals("No drag handle", 0, compose.onAllNodesWithContentDescription("Drag handle").fetchSemanticsNodes().size)
         compose.onNodeWithContentDescription(CLOSE).performClick()
-        assertEquals(1, closed)
+        assertEquals(1, actions.closed)
     }
 
     @Test fun theHeaderCountsTheRowsMonth() {
@@ -135,10 +133,10 @@ class MerchantSheetArtboardTest {
     @Test fun choosingACandidateMergesNothingUntilTheCommitButton() {
         draw()
         scrollTo("Speedmart 99 Kepong").performClick()
-        assertEquals("A tap on a candidate only chooses it", emptyList<String>(), merged)
+        assertEquals("A tap on a candidate only chooses it", emptyList<String>(), actions.merged)
 
         scrollTo("Count it as Speedmart 99 Kepong").assertIsEnabled().performClick()
-        assertEquals(listOf("TNG*SPEEDMART99"), merged)
+        assertEquals(listOf("TNG*SPEEDMART99"), actions.merged)
     }
 
     @Test fun suggestionsSitUnderTheirOwnHeading() {

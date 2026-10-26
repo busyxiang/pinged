@@ -56,6 +56,8 @@ import my.pinged.ledger.home.ADD_PAYMENT_BUTTON
 import my.pinged.ledger.home.CASH_OFFER
 import my.pinged.ledger.home.EMPTY_HERO
 import my.pinged.ledger.home.ENTERED_BY_HAND
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.HEARD_CHIP
 import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.home.LedgerItem
@@ -623,7 +625,8 @@ class LedgerArtboardTest {
                         items = flow.collectAsLazyPagingItems(),
                         read = LedgerRead(summary = summary, categories = listOf(FOOD, GROCERIES, PETROL)),
                         storageUnavailable = false,
-                        onAssign = { _, _, _ -> },
+                        categories = FakeCategoryActions(),
+                        merchants = FakeMerchantActions(),
                         onOpenSettings = {},
                         onAddPayment = { added++ },
                         heard = heard,

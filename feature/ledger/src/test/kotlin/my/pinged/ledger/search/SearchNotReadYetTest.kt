@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import my.pinged.data.SearchTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.monthName
@@ -44,6 +45,7 @@ class SearchNotReadYetTest {
             storageUnavailable = false,
             onBack = {},
             onOpenSheet = {},
+            categories = FakeCategoryActions(),
             onExport = {},
         )
     }

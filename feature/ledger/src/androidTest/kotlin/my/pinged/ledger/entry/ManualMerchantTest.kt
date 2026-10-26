@@ -1,9 +1,5 @@
 package my.pinged.ledger.entry
 
-import android.app.Application
-import my.pinged.read.ScreenRead
-import my.pinged.ledger.home.rowScreen
-import my.pinged.capture.GuardedRunner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayInputStream
@@ -30,6 +26,7 @@ import my.pinged.ledger.freshLedger
 import my.pinged.ledger.home.MerchantOpening
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.ledgerTxn
+import my.pinged.ledger.rowActions
 import my.pinged.ledger.transfer.ImportJson
 import my.pinged.ledger.transfer.Restore
 import my.pinged.ledger.transfer.SalvageJson
@@ -127,13 +124,7 @@ class ManualMerchantTest {
         dao.insert(captured(raw = "TNG*99 SPEEDMART", display = "99 Speedmart", key = "99 SPEEDMART"))
         val typed = saved(merchant = "Speedmart 99").merchantKey
             ?: throw AssertionError("The typed merchant has no key for a sheet to open on")
-        val runner = GuardedRunner(context.applicationContext as Application)
-        val rows = RowActions(
-            context = { context },
-            scope = scope,
-            runner = runner,
-            screen = ScreenRead.fixed(scope, runner, "The test cannot be read") {}.rowScreen(),
-        )
+        val rows = context.rowActions(scope)
 
         open(rows, typed)
         rows.mergeMerchant("99 SPEEDMART").join()

@@ -1,10 +1,16 @@
 package my.pinged.ledger
 
+import android.app.Application
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import my.pinged.capture.GuardedRunner
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.dao.TxnDao
 import java.io.RandomAccessFile
+import my.pinged.ledger.home.RowActions
+import my.pinged.ledger.home.rowScreen
+import my.pinged.read.ScreenRead
 
 // What the ledger's instrumented classes need of a database, in one place.
 // They are several classes in one package and one source set, so a fixture
@@ -36,6 +42,16 @@ internal const val FIRST_PAGE = 4_096
  */
 internal fun Context.discardTheDatabase() {
     Databases.whileDeleting { deleteDatabase(DatabaseFactory.NAME) }
+}
+
+/**
+ * The holder every row writes through, with no screen around it: for a test
+ * about what its writes leave in the real database. The screen it reads again
+ * after each write reads nothing.
+ */
+internal fun Context.rowActions(scope: CoroutineScope): RowActions {
+    val runner = GuardedRunner(applicationContext as Application)
+    return RowActions({ this }, scope, runner, ScreenRead.fixed(scope, runner, "The test cannot be read") {}.rowScreen())
 }
 
 /**

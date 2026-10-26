@@ -117,7 +117,8 @@ class TopBarTotalTest {
                             items = feed.collectAsLazyPagingItems(),
                             read = LedgerRead(summary = septemberSummary(), categories = listOf(FEED_FOOD)),
                             storageUnavailable = false,
-                            onAssign = { _, _, _ -> },
+                            categories = FakeCategoryActions(),
+                            merchants = FakeMerchantActions(),
                             onOpenSettings = {},
                             picks = picks,
                         )
@@ -146,7 +147,8 @@ class TopBarTotalTest {
                     items = feed.collectAsLazyPagingItems(),
                     read = LedgerRead(summary = summary, categories = listOf(FEED_FOOD)),
                     storageUnavailable = unavailable(),
-                    onAssign = { _, _, _ -> },
+                    categories = FakeCategoryActions(),
+                    merchants = FakeMerchantActions(),
                     onOpenSettings = {},
                 )
             }

@@ -7,7 +7,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.LocalDates
-import my.pinged.ledger.home.MerchantActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.MerchantOpening
 import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.MerchantSheetState
@@ -42,7 +42,7 @@ class MerchantNameUnderlineTest {
 
     private fun draw(sheet: OpenMerchantSheet) {
         compose.mainClock.autoAdvance = false
-        compose.setContent { PingedTheme { MerchantSheet(sheet, MerchantActions.None) } }
+        compose.setContent { PingedTheme { MerchantSheet(sheet, FakeMerchantActions()) } }
         // Frame by frame, and past the sheet's slide-in as well as the
         // reading delay: a capture of a sheet still entering failed
         // PixelCopy once in two runs.

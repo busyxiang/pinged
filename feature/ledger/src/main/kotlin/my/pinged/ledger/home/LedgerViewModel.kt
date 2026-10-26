@@ -34,7 +34,6 @@ import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
-import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
 import my.pinged.read.ScreenRead
 import java.time.YearMonth
@@ -99,8 +98,14 @@ class LedgerViewModel(
      * The row's category and merchant actions, shared with any other screen
      * that draws ledger rows. Every write is read back through [read] in its
      * own turn, and a refusal raises the banner through it.
+     *
+     * **The re-read after §9.1's chip is not tidiness.** The aggregates are separate queries that
+     * only the feed's `txn` observer re-reads (see [FeedWrites]), and an
+     * observer is not guaranteed to fire before the chip's own read of them;
+     * without it the top three can keep naming the category the money just left.
+     * It runs in the write's own turn, for the month asked.
      */
-    private val rows: RowActions = RowActions(
+    val rows: RowActions = RowActions(
         context = { context },
         scope = viewModelScope,
         runner = runner,
@@ -109,9 +114,6 @@ class LedgerViewModel(
 
     /** The month Spending's header picked, or null to follow the clock; see [SpendingRead.picked]. */
     val picked: StateFlow<YearMonth?> get() = spending.picked
-
-    /** Spec 6.4's merchant sheet, while one is open; see [openMerchant]. */
-    val merchantSheet: StateFlow<OpenMerchantSheet?> = rows.merchantSheet
 
     /**
      * The DAO once the database has opened, with the `Databases.generation`
@@ -349,36 +351,6 @@ class LedgerViewModel(
 
     /** The `Months` sheet has opened; see [SpendingRead.openMonths]. */
     fun openMonths(): Job = spending.openMonths()
-
-    /**
-     * Move one transaction to [categoryId] and read the month again (§9.1's chip);
-     * see [RowActions.assignCategory].
-     *
-     * **The re-read is not tidiness.** The aggregates are separate queries that
-     * only the feed's `txn` observer re-reads (see [FeedWrites]), and an
-     * observer is not guaranteed to fire before the chip's own read of them;
-     * without it the top three can keep naming the category the money just left.
-     * It runs in the write's own turn, for the month asked.
-     */
-    fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean = false): Job =
-        rows.assignCategory(txnId, categoryId, teach)
-
-    /** See [RowActions.retroPreview]. */
-    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
-
-    /** See [RowActions.addCategory]; the month, and so the chooser, is read again after. */
-    suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey)
-
-    /** See [RowActions.openMerchant]. */
-    fun openMerchant(opening: MerchantOpening): Job = rows.openMerchant(opening)
-
-    fun closeMerchant() = rows.closeMerchant()
-
-    fun renameMerchant(name: String): Job = rows.renameMerchant(name)
-
-    fun mergeMerchant(targetKey: String): Job = rows.mergeMerchant(targetKey)
-
-    fun separateMerchant(key: String): Job = rows.separateMerchant(key)
 
     companion object {
         /** §9.1 says three. The query takes it as a parameter so the two cannot disagree. */

@@ -6,6 +6,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.MutableStateFlow
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -42,6 +44,8 @@ class DetailNotReadYetTest {
                         read = read.collectAsState().value,
                         storageUnavailable = unavailable.collectAsState().value,
                         onBack = {},
+                        categories = FakeCategoryActions(),
+                        merchants = FakeMerchantActions(),
                     )
                 }
             }
