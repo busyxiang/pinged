@@ -21,19 +21,20 @@ import kotlinx.coroutines.withContext
 import my.pinged.capture.Graph
 import my.pinged.capture.MerchantColumns
 import my.pinged.data.Databases
+import my.pinged.data.LiveLearnedRules
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.ManualEdit
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.LedgerWrites
-import my.pinged.ledger.home.dictionaryCategoryIds
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.Amount
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
+import my.pinged.parse.Filer
 import my.pinged.parse.MerchantNormalization
 
 /**
@@ -155,27 +156,28 @@ class ManualEntries(
 
     /**
      * The category a rule files merchant [key] under, in stage two's order
-     * (`ParsePass`): the learned rule for its identity, which resolves
-     * through a merge (`MerchantRuleDao.learnedCategoryFor`), then the
-     * shipped dictionary; null for neither. The one lookup both the entry
-     * screen's pre-selection and an edit's re-filing (#105) make.
+     * (`ParsePass`): [Filer]'s, so the learned rule for its identity, which
+     * resolves through a merge, then the shipped dictionary; null for neither.
+     * The one lookup both the entry screen's pre-selection and an edit's
+     * re-filing (#105) make.
      *
      * Blocking, so only inside a `LedgerWrites.guarded` block, which leases
      * the instance.
      */
-    internal fun ruleFiling(key: String): Long? =
-        Databases.merchantRuleDao(context()).learnedCategoryFor(key) ?: dictionaryFiling()(key)
+    internal fun ruleFiling(key: String): Long? = filer().file(key).categoryId
 
     /**
-     * The dictionary's filing by `category.id`, read on every lookup: Settings
-     * renames and deletes categories (#155) without moving
-     * `Databases.generation`, so a memo keyed on it would offer a deleted
-     * category's id, which the save then refuses without a word. Through
-     * `seed_name`, so a renamed seeded category keeps its merchants, as stage
-     * two files them.
+     * Built on every lookup, over the live rule port: Settings renames and
+     * deletes categories (#155) without moving `Databases.generation`, so a memo
+     * keyed on it would offer a deleted category's id, which the save then
+     * refuses without a word. Seeded ids go through `seed_name`, so a renamed
+     * seeded category keeps its merchants, as stage two files them.
      */
-    private fun dictionaryFiling(): (String?) -> Long? =
-        dictionaryCategoryIds(Graph.parsePack().dictionary, Databases.categoryDao(context()).seededIds())
+    private fun filer() = Filer(
+        Graph.parsePack().dictionary,
+        Databases.categoryDao(context()).seededIds(),
+        LiveLearnedRules(Databases.merchantRuleDao(context())),
+    )
 
     /**
      * Write [draft] as a new manual entry, dated now or on its past day at

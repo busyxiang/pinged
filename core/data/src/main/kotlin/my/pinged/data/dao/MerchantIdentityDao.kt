@@ -380,14 +380,6 @@ interface MerchantIdentityDao : MerchantDecisions {
         scopedPackage: String = MerchantRule.UNSCOPED,
     ): String?
 
-    /**
-     * Every canonical key that has at least one key merged into it: the shops
-     * the user merged, by identity. Read whole, for the chooser's note that a
-     * rule files every key of a merged shop; a person makes each row by hand.
-     */
-    @Query("SELECT DISTINCT canonical_key FROM merchant_alias")
-    fun mergedIdentities(): List<String>
-
     @Query("SELECT COUNT(*) FROM merchant_alias")
     fun countAliases(): Int
 

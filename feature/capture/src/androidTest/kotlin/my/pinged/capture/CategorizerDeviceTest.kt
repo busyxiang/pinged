@@ -1,9 +1,10 @@
 package my.pinged.capture
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import my.pinged.parse.Categorizer
 import my.pinged.parse.DictionaryEntry
+import my.pinged.parse.Filer
 import my.pinged.parse.FilingSource
+import my.pinged.parse.LearnedRules
 import my.pinged.parse.MatchMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -13,9 +14,10 @@ import org.junit.runner.RunWith
 /**
  * The dictionary's word boundary, on the engine that ships.
  *
- * `Categorizer` decides a boundary with `Character.isLetterOrDigit` and never
- * with a regex class, because `\w` is ASCII under `java.util.regex` and
- * Unicode under ICU, and `:core:parse`'s tests run on the first. This file runs
+ * `Categorizer` (reached through `Filer`, which is all `:core:parse` exposes)
+ * decides a boundary with `Character.isLetterOrDigit` and never with a regex
+ * class, because `\w` is ASCII under `java.util.regex` and Unicode under ICU,
+ * and `:core:parse`'s tests run on the first. This file runs
  * **the same table** (`categorizer-boundary-table.tsv`, read from
  * `:core:parse`'s `sharedTest` resources) on Android, extended there with
  * full-width Latin, accented letters, a full-width digit beside a keyword and a
@@ -28,6 +30,12 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class CategorizerDeviceTest {
+    private companion object {
+        val SHOPPING = mapOf("Shopping" to 1L)
+
+        /** The dictionary alone is under test, so no learned rule answers. */
+        val NO_RULES = LearnedRules { null }
+    }
 
     /** The premise, asserted before anything is built on it. */
     @Test
@@ -51,8 +59,8 @@ class CategorizerDeviceTest {
         val rows = rows()
         assertTrue("the table is not being read", rows.size >= 38)
         val failures = rows.mapNotNull { row ->
-            val got = Categorizer(listOf(DictionaryEntry(row.entry, "Shopping", row.mode)))
-                .file(row.key, learned = null).source
+            val got = Filer(listOf(DictionaryEntry(row.entry, "Shopping", row.mode)), SHOPPING, NO_RULES)
+                .file(row.key).source
             val want = if (row.matches) FilingSource.DICTIONARY else FilingSource.NONE
             if (got == want) null else "${row.mode} '${row.entry}' against '${row.key}': expected $want, got $got"
         }

@@ -6,6 +6,8 @@ import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
+import my.pinged.parse.Filer
+import my.pinged.parse.LearnedRules.Snapshot
 import java.time.YearMonth
 
 /**
@@ -162,25 +164,13 @@ data class LedgerRead(
      */
     val uncategorizedId: Long? = null,
     /**
-     * Every learned rule, by merchant identity, to the `category.id` it files
-     * under. Read with the rest so the chooser's "filed by the user's rule"
-     * marking is of the same moment as the rows it marks; one row per merchant
-     * the user has taught, so the whole table is cheap.
+     * How a merchant key is filed, of the same moment as the rows it marks: the
+     * learned rules and the merges as they stood in the read's transaction, and
+     * the shipped dictionary over the seeded ids read then. A data class, so two
+     * reads of an unchanged ledger carry equal filers and `LedgerRead`'s
+     * equality does not churn.
      */
-    val learnedRules: Map<String, Long> = emptyMap(),
-    /**
-     * The canonical keys that have another key merged into them, read with
-     * [learnedRules] so the chooser can say, before the tap, that a rule on
-     * such an identity files every key of the merged shop.
-     */
-    val mergedIdentities: Set<String> = emptySet(),
-    /**
-     * The `category.id` the dictionary files a merchant key under, null where
-     * it files nothing; see [dictionaryCategoryIds]. A function, built once per
-     * database and not per read, so two reads of one database carry the same
-     * instance and `LedgerRead`'s equality does not churn.
-     */
-    val dictionaryFiling: (String?) -> Long? = NO_DICTIONARY,
+    val filer: Filer<Snapshot> = Filer.EMPTY,
     /**
      * How many transactions are awaiting review, every currency: the pinned
      * `N AWAITING REVIEW` row, drawn only above zero (§9.2).
@@ -197,10 +187,5 @@ data class LedgerRead(
 ) {
     /** The chooser's half of this read, for `RowCategoryChooser`. */
     val chooser: ChooserRead
-        get() = ChooserRead(categories, uncategorizedId, learnedRules, mergedIdentities, dictionaryFiling)
-
-    companion object {
-        /** The dictionary of a read that has not resolved one: it files nothing. */
-        val NO_DICTIONARY: (String?) -> Long? = { null }
-    }
+        get() = ChooserRead(categories, uncategorizedId, filer)
 }

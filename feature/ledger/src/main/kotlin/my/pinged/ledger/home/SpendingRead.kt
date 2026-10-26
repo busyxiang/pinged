@@ -158,9 +158,7 @@ internal fun readLedger(db: PingedDatabase, month: YearMonth, chooser: ChooserRe
         ),
         categories = chooser.categories,
         uncategorizedId = chooser.uncategorizedId,
-        learnedRules = chooser.learnedRules,
-        mergedIdentities = chooser.mergedIdentities,
-        dictionaryFiling = chooser.dictionaryFiling,
+        filer = chooser.filer,
         awaitingReview = txns.awaitingReviewCount(),
         awaitingReviewInMonth = txns.notInTotal(range.start, range.endInclusive)
             .filter { it.line == NotInTotalLine.PENDING }

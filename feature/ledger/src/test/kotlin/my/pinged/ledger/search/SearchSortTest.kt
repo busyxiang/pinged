@@ -53,7 +53,7 @@ class SearchSortTest {
                     choice = SearchChoice(month = YearMonth.of(2026, 10)),
                     rows = listOf(toSort, excluded, filed).map { FeedRow(it, it.merchantKey, "Row ${it.id}") },
                     totals = listOf(SearchTotal("MYR", rowCount = 3, countedCount = 2, paymentCount = 2, netSen = 2_490L)),
-                    chooser = ChooserRead(listOf(groceries, uncategorized), uncategorized.id, emptyMap(), emptySet()) { null },
+                    chooser = ChooserRead(listOf(groceries, uncategorized), uncategorized.id),
                 ),
                 storageUnavailable = false,
                 onBack = {},
