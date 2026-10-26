@@ -1,5 +1,5 @@
 {
-  "pack_version": 16,
+  "pack_version": 17,
   "fragments": {
     "amount": "(?:RM|MYR)\\s?(?<amount>[0-9,]+(?:\\.[0-9]{1,2})?)"
   },
@@ -153,6 +153,16 @@
             "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
           },
           "pattern": "You.ve received {{amount}} from (?<merchant>.+?)\\. REF"
+        },
+        {
+          "id": "mae-transferred-v1", "priority": 100,
+          "direction": "EXPENSE", "confidence": "REVIEW",
+          "kind": "TRANSFER_SUSPECT", "exclusion_reason": "TRANSFER",
+          "requires": {
+            "text_contains_all": ["transferred"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
+          },
+          "pattern": "You.ve transferred {{amount}} to (?<merchant>.+?)\\. REF"
         },
         {
           "id": "mae-scan-pay-v1", "priority": 100,

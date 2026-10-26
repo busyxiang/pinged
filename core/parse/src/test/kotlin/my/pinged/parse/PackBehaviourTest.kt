@@ -59,6 +59,8 @@ class PackBehaviourTest {
         "You've received RM12.50 from STARBUCKS KLCC. REF: 000000000Q.",
         // TnG's incoming money, bounded by " for " and the recipient's name after it.
         "RM12.50 received from STARBUCKS KLCC for SAMPLE ACCOUNT HOLDER.",
+        // MAE's transfer to a person, bounded by the stop and the reference after the payee.
+        "You've transferred RM12.50 to STARBUCKS KLCC. REF: 000000000Q.",
         // MAE's card bill, the QR shape with a card for a payee.
         "Successful payment of RM12.50 to Maybank Master Card. REF:000000000M",
         // MAE's FPX wording, bounded by the date after the payee.

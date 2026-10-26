@@ -1,0 +1,28 @@
+package: com.maybank2u.life
+title: Maybank2u: Scan & Pay
+expect: matched
+rule: mae-transferred-v1
+amount_sen: 2877
+merchant: SAMPLE PAYEE NAME
+merchant_display: Sample Payee Name
+direction: EXPENSE
+confidence: REVIEW
+kind: TRANSFER_SUSPECT
+exclusion_reason: TRANSFER
+# A real MAE notification, from a phone screenshot, of money the user sent to
+# a person. The payee's name is replaced with a made-up one of the same shape
+# (all capitals, three words), as in mae-received-from-person.txt:
+# CONTRIBUTING.md's masks cover digits and references only, and a private
+# person's name is not ours to publish. The screenshot wrapped it over two
+# lines; the bank sent one.
+# TRANSFER_SUSPECT on purpose: a transfer to a person is a bill share, a loan,
+# a move between the user's own accounts or a payment for something, and the
+# notification cannot say which. Leave out is the default; Keep as expense
+# counts it. Moving money between one's own accounts also sends a "received"
+# on the other app, which mae-received-v1 and tng-received-v1 hold as a
+# refund, so the two answers have to agree.
+# The title is recorded because it is evidence; no rule reads it.
+# The transaction reference is masked to zeros of the same shape (CLAUDE.md,
+# fixtures). No rule reads it.
+
+You've transferred RM 28.77 to SAMPLE PAYEE NAME. REF: 000000000Q.
