@@ -70,7 +70,7 @@ class MerchantSheetNotReadYetTest {
         compose.setContent {
             PingedTheme {
                 CompositionLocalProvider(LocalHeldBy provides heldBy) {
-                    MerchantSheet(shown.collectAsState().value, MerchantActions.None)
+                    MerchantSheet(shown.collectAsState().value, FakeMerchantActions())
                 }
             }
         }

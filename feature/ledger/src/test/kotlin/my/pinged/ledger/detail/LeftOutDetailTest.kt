@@ -14,6 +14,8 @@ import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
 import my.pinged.ledger.MERCHANT
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.ledgerTxn
 import my.pinged.parse.ExclusionReason
 import my.pinged.ui.theme.Faint
@@ -48,7 +50,14 @@ class LeftOutDetailTest {
         )
         val chooser = ChooserRead(categories = listOf(Category(id = 1L, name = GROCERIES, iconKey = "cart", sortOrder = 0)))
         compose.setContent {
-            DetailScreenContent(DetailRead(row, chooser), storageUnavailable = false, onBack = {}, zone = ZoneOffset.UTC)
+            DetailScreenContent(
+                DetailRead(row, chooser),
+                storageUnavailable = false,
+                onBack = {},
+                categories = FakeCategoryActions(),
+                merchants = FakeMerchantActions(),
+                zone = ZoneOffset.UTC,
+            )
         }
     }
 

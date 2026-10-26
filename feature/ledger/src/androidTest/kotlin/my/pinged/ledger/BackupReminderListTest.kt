@@ -16,6 +16,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.flowOf
 import my.pinged.ledger.home.BACKUP_REMINDER
 import my.pinged.ledger.home.BackupReminder
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
@@ -73,7 +75,8 @@ class BackupReminderListTest {
                     items = flow.collectAsLazyPagingItems(),
                     read = LedgerRead(),
                     storageUnavailable = false,
-                    onAssign = { _, _, _ -> },
+                    categories = FakeCategoryActions(),
+                    merchants = FakeMerchantActions(),
                     onOpenSettings = {},
                     backupReminder = reminder,
                 )

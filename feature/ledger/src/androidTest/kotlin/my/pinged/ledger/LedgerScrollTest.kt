@@ -3,6 +3,7 @@ package my.pinged.ledger
 import android.app.Application
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -23,6 +24,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import my.pinged.data.Databases
 import my.pinged.ledger.home.CATEGORY_CHIP
+import my.pinged.ledger.home.CategoryActions
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerScreenContent
@@ -119,7 +123,8 @@ class LedgerScrollTest {
                     items = pages.collectAsLazyPagingItems(),
                     read = LedgerRead(),
                     storageUnavailable = false,
-                    onAssign = { _, _, _ -> },
+                    categories = FakeCategoryActions(),
+                    merchants = FakeMerchantActions(),
                     onOpenSettings = {},
                 )
             }
@@ -154,11 +159,15 @@ class LedgerScrollTest {
                     items = items,
                     read = read.answer ?: LedgerRead(),
                     storageUnavailable = false,
-                    onAssign = { txnId, categoryId, teach ->
-                        saved.set(viewModel.assignCategory(txnId, categoryId, teach))
+                    // The rows' own actions, keeping the save's `Job` for the test to join.
+                    categories = remember {
+                        object : CategoryActions by viewModel.rows {
+                            override fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
+                                viewModel.rows.assignCategory(txnId, categoryId, teach).also(saved::set)
+                        }
                     },
+                    merchants = viewModel.rows,
                     onOpenSettings = {},
-                    retroPreview = viewModel::retroPreview,
                 )
             }
         }

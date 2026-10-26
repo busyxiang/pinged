@@ -27,6 +27,8 @@ import my.pinged.ledger.detail.DetailScreenContent
 import my.pinged.ledger.home.CategoryPicker
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.ChooserSubject
+import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.search.APPLY
 import my.pinged.ledger.search.AmountSheet
@@ -107,7 +109,16 @@ class SharedControlsTest {
         )
         val chooser = ChooserRead(categories = listOf(Category(id = 1L, name = "Groceries", iconKey = "cart", sortOrder = 0)))
         compose.setContent {
-            PingedTheme { DetailScreenContent(DetailRead(row, chooser), storageUnavailable = false, onBack = {}, zone = ZoneOffset.UTC) }
+            PingedTheme {
+                DetailScreenContent(
+                    DetailRead(row, chooser),
+                    storageUnavailable = false,
+                    onBack = {},
+                    categories = FakeCategoryActions(),
+                    merchants = FakeMerchantActions(),
+                    zone = ZoneOffset.UTC,
+                )
+            }
         }
         // The merged node: the clickable box that draws the edge, not its label.
         val image = compose.onNodeWithText(DELETE).performScrollTo().captureToImage().toPixelMap()

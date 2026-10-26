@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.sp
 import my.pinged.data.LocalDate
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.data.dao.FeedRow
-import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
@@ -132,16 +131,17 @@ internal fun chooserChoices(chooser: ChooserRead): List<Category> =
  * person decided this one payment (§5.5).
  *
  * The caller draws it only when [chooserChoices] is not empty: a sheet whose
- * every row was filtered out still draws its heading and its handle.
+ * every row was filtered out still draws its heading and its handle. [onClose]
+ * is called on a save, before [actions] writes it, as on a dismiss.
+ * [addCategory] is the New category tile's write, null for no tile.
  */
 @Composable
 internal fun RowCategoryChooser(
     row: FeedRow,
     chooser: ChooserRead,
-    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview?,
-    onSave: (categoryId: Long, teach: Boolean) -> Unit,
-    onDismiss: () -> Unit,
-    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
+    actions: CategoryActions,
+    onClose: () -> Unit,
+    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = actions::addCategory,
 ) {
     val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
     val categoriesById = remember(chooser.categories) { chooser.categories.associateBy { it.id } }
@@ -167,9 +167,12 @@ internal fun RowCategoryChooser(
         ),
         teach = startsOn?.let { TeachOffer(row.displayName, it, mergedRuleCategory) },
         initial = row.txn.categoryId.takeIf { it != chooser.uncategorizedId },
-        preview = { categoryId -> retroPreview(row.txn.id, categoryId) },
-        onSave = onSave,
-        onDismiss = onDismiss,
+        preview = { categoryId -> actions.retroPreview(row.txn.id, categoryId) },
+        onSave = { categoryId, teach ->
+            onClose()
+            actions.assignCategory(row.txn.id, categoryId, teach)
+        },
+        onDismiss = onClose,
         allNames = chooser.categories.map { it.name },
         onAdd = addCategory,
     )

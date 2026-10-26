@@ -88,7 +88,6 @@ import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
-import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ledger.RowNotReadYet
 import my.pinged.ledger.entry.ADD_PAYMENT
@@ -177,7 +176,6 @@ fun LedgerScreen(
     backupReminder: BackupReminder? = null,
 ) {
     val items = viewModel.items.collectAsLazyPagingItems()
-    val merchantSheet by viewModel.merchantSheet.collectAsState()
     val picked by viewModel.picked.collectAsState()
     // Saveable, so a sheet open at a process death is open again after it,
     // as Charts' is.
@@ -215,9 +213,8 @@ fun LedgerScreen(
         items = items,
         read = state.answer ?: LedgerRead(),
         storageUnavailable = state.unavailable,
-        onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
-        retroPreview = viewModel::retroPreview,
-        addCategory = viewModel::addCategory,
+        categories = viewModel.rows,
+        merchants = viewModel.rows,
         onOpenSettings = onOpenSettings,
         onOpenReview = onOpenReview,
         onAddPayment = onAddPayment,
@@ -233,16 +230,6 @@ fun LedgerScreen(
         // read is in flight, since `pick` asks the month it names.
         rereading = state.rereading,
         onOpenMonths = { monthsOpen = true },
-        merchantSheet = merchantSheet,
-        merchantActions = remember(viewModel) {
-            MerchantActions(
-                open = viewModel::openMerchant,
-                rename = viewModel::renameMerchant,
-                merge = viewModel::mergeMerchant,
-                separate = viewModel::separateMerchant,
-                close = viewModel::closeMerchant,
-            )
-        },
         modifier = modifier,
     )
 
@@ -280,14 +267,10 @@ internal fun LedgerScreenContent(
     items: LazyPagingItems<LedgerItem>,
     read: LedgerRead,
     storageUnavailable: Boolean,
-    onAssign: (txnId: Long, categoryId: Long, teach: Boolean) -> Unit,
+    categories: CategoryActions,
+    merchants: MerchantActions,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
-    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
-    /** The chooser's New category (#155); null draws no tile. */
-    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
-    merchantSheet: OpenMerchantSheet? = null,
-    merchantActions: MerchantActions = MerchantActions.None,
     onOpenReview: (focus: Long?) -> Unit = {},
     onAddPayment: (() -> Unit)? = null,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
@@ -423,7 +406,7 @@ internal fun LedgerScreenContent(
                     uncategorizedId = read.uncategorizedId,
                     hasChoices = choices.isNotEmpty(),
                     onCategorize = { txnId -> categorizing = txnId },
-                    onOpenMerchant = merchantActions.open,
+                    onOpenMerchant = { merchants.openMerchant(it) },
                     awaitingReview = read.awaitingReview,
                     awaitingReviewInMonth = read.awaitingReviewInMonth,
                     onOpenReview = onOpenReview,
@@ -477,20 +460,15 @@ internal fun LedgerScreenContent(
         RowCategoryChooser(
             row = chosenRow.feedRow,
             chooser = chooser,
-            retroPreview = retroPreview,
-            onSave = { categoryId, teach ->
-                categorizing = null
-                onAssign(chosen, categoryId, teach)
-            },
-            onDismiss = { categorizing = null },
-            addCategory = addCategory,
+            actions = categories,
+            onClose = { categorizing = null },
         )
     }
 
     // A sibling for the same reason as the picker. Its state is the holder's,
     // not saved here: it is a read of the database, and after a process death
     // it would be a read of a ledger that may have moved.
-    if (merchantSheet != null) MerchantSheet(merchantSheet, merchantActions)
+    MerchantSheet(merchants)
 }
 
 /**

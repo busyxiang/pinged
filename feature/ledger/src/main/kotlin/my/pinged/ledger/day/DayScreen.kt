@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,12 +44,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import my.pinged.ledger.entry.EditTarget
-import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
-import my.pinged.ledger.home.OpenMerchantSheet
 import my.pinged.ledger.home.OPEN_REVIEW
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
@@ -107,7 +105,6 @@ fun DayScreen(
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
-    val merchantSheet by viewModel.merchantSheet.collectAsState()
     DayScreenContent(
         date = viewModel.date,
         read = read.answer,
@@ -117,19 +114,8 @@ fun DayScreen(
         onOpenEntry = onOpenEntry,
         onOpenDetail = onOpenDetail,
         onStep = onStep,
-        onAssign = { txnId, categoryId, teach -> viewModel.assignCategory(txnId, categoryId, teach) },
-        retroPreview = viewModel::retroPreview,
-        addCategory = viewModel::addCategory,
-        merchantSheet = merchantSheet,
-        merchantActions = remember(viewModel) {
-            MerchantActions(
-                open = viewModel::openMerchant,
-                rename = viewModel::renameMerchant,
-                merge = viewModel::mergeMerchant,
-                separate = viewModel::separateMerchant,
-                close = viewModel::closeMerchant,
-            )
-        },
+        categories = viewModel.rows,
+        merchants = viewModel.rows,
         modifier = modifier,
     )
 }
@@ -141,14 +127,10 @@ internal fun DayScreenContent(
     read: DayRead?,
     storageUnavailable: Boolean,
     onBack: () -> Unit,
-    onAssign: (txnId: Long, categoryId: Long, teach: Boolean) -> Unit,
+    categories: CategoryActions,
+    merchants: MerchantActions,
     modifier: Modifier = Modifier,
     onOpenReview: (focus: Long?) -> Unit = {},
-    retroPreview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
-    /** The chooser's New category (#155); null draws no tile. */
-    addCategory: (suspend (name: String, iconKey: String) -> Long?)? = null,
-    merchantSheet: OpenMerchantSheet? = null,
-    merchantActions: MerchantActions = MerchantActions.None,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onStep: ((LocalDate) -> Unit)? = null,
@@ -194,7 +176,7 @@ internal fun DayScreenContent(
                             uncategorizedId = read.chooser.uncategorizedId,
                             canCategorize = choices.isNotEmpty(),
                             onCategorize = { categorizing = it },
-                            onOpenMerchant = merchantActions.open,
+                            onOpenMerchant = { merchants.openMerchant(it) },
                             onOpenReview = onOpenReview,
                             onOpenEntry = onOpenEntry,
                             onOpenDetail = onOpenDetail,
@@ -213,16 +195,11 @@ internal fun DayScreenContent(
         RowCategoryChooser(
             row = chosenRow,
             chooser = chooser,
-            retroPreview = retroPreview,
-            onSave = { categoryId, teach ->
-                categorizing = null
-                onAssign(chosen, categoryId, teach)
-            },
-            onDismiss = { categorizing = null },
-            addCategory = addCategory,
+            actions = categories,
+            onClose = { categorizing = null },
         )
     }
-    if (merchantSheet != null) MerchantSheet(merchantSheet, merchantActions)
+    MerchantSheet(merchants)
 }
 
 /**

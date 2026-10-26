@@ -30,9 +30,9 @@ import my.pinged.data.SearchFilter
 import my.pinged.data.SearchTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.SourceApp
-import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.ChooserRead
+import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
 import my.pinged.ledger.settings.ExportSink
@@ -105,13 +105,19 @@ class SearchViewModel(
         initial = SearchQuestion(_query.value, _choice.value),
     ) { db, question -> readSearch(db, question) }
 
-    /** The result rows' category chooser, shared with the Ledger. */
+    /**
+     * Private, so the screen is handed [chooser] and never the merchant half:
+     * a result row opens no merchant sheet.
+     */
     private val rows = RowActions(
         context = { context },
         scope = viewModelScope,
         runner = runner,
         screen = read.rowScreen(),
     )
+
+    /** The result rows' category chooser, shared with the Ledger; the search is read again after each write. */
+    val chooser: CategoryActions = rows
 
     /**
      * The month filter's sheet. Each opening is a new question, numbered from
@@ -176,15 +182,6 @@ class SearchViewModel(
         handle[MIN] = next.minSen
         handle[MAX] = next.maxSen
     }
-
-    /** See [RowActions.assignCategory]; the search is re-read after. */
-    fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job = rows.assignCategory(txnId, categoryId, teach)
-
-    /** See [RowActions.retroPreview]. */
-    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? = rows.retroPreview(txnId, categoryId)
-
-    /** See [RowActions.addCategory]; the search, and so the chooser, is re-read after. */
-    suspend fun addCategory(name: String, iconKey: String): Long? = rows.addCategory(name, iconKey)
 
     /**
      * The rows of [question], at most [ROW_LIMIT] of them, their totals from

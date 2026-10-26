@@ -60,13 +60,17 @@ import java.time.YearMonth
  * [context] is a function so the holder can keep reading its `Application`
  * through a getter: a `Context` field is what lint's `StaticFieldLeak` fails
  * the build on (see `SourcesViewModel`).
+ *
+ * A view model hands it to its screen whole, and the screen hands each
+ * `*ScreenContent` only the halves that screen offers: [CategoryActions] and
+ * [MerchantActions] (#307).
  */
 class RowActions(
     private val context: () -> Context,
     private val scope: CoroutineScope,
     private val runner: ReadRunner,
     private val screen: RowScreen,
-) {
+) : CategoryActions, MerchantActions {
     /**
      * Spec 6.4's merchant sheet's read: its question is the opening, or null
      * while no sheet is open. A tap on another row, or a close, changes the
@@ -84,7 +88,7 @@ class RowActions(
     private val _merchantSheet = MutableStateFlow<OpenMerchantSheet?>(null)
 
     /** Spec 6.4's merchant sheet, while one is open; see [openMerchant]. */
-    val merchantSheet: StateFlow<OpenMerchantSheet?> = _merchantSheet.asStateFlow()
+    override val merchantSheet: StateFlow<OpenMerchantSheet?> = _merchantSheet.asStateFlow()
 
     /**
      * What the sheet draws now: the opening the question names, and the read
@@ -146,7 +150,7 @@ class RowActions(
      * actually in the database rather than reporting a failure about a row
      * the user can no longer see.
      */
-    fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
+    override fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
         screen.write("The category could not be assigned") { db ->
             val at = System.currentTimeMillis()
             // The check and the write in one transaction, so a delete from
@@ -178,7 +182,7 @@ class RowActions(
      * opened, or the name was taken since the sheet checked it. The screen is
      * read again before this returns, which is how the new tile appears.
      */
-    suspend fun addCategory(name: String, iconKey: String): Long? {
+    override suspend fun addCategory(name: String, iconKey: String): Long? {
         val written = screen.write("The category could not be added") { db ->
             try {
                 db.categoryDao().add(name, iconKey)
@@ -195,7 +199,7 @@ class RowActions(
      * count of 0, which the chooser would draw as a fact (#237). The save
      * re-checks inside its own transaction either way.
      */
-    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? =
+    override suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? =
         (runner.read("The past payments could not be counted") { db -> db.merchantIdentityDao().retroPreview(txnId, categoryId) } as? Outcome.Done)
             ?.value
 
@@ -213,7 +217,7 @@ class RowActions(
      * opened from another row, while it ran stays as the user left it. That is
      * the module's question, not a check made here.
      */
-    fun openMerchant(opening: MerchantOpening): Job {
+    override fun openMerchant(opening: MerchantOpening): Job {
         val read = merchant.ask(opening)
         publish()
         return scope.launch {
@@ -230,13 +234,13 @@ class RowActions(
         }
     }
 
-    fun closeMerchant() {
+    override fun closeMerchant() {
         merchant.setQuestion(null)
         publish()
     }
 
     /** Spec 6.4's rename, of the merchant the open sheet is about. */
-    fun renameMerchant(name: String): Job = writeMerchant("The merchant could not be renamed") { dao, sheet ->
+    override fun renameMerchant(name: String): Job = writeMerchant("The merchant could not be renamed") { dao, sheet ->
         dao.rename(sheet.identityKey, name, sheet.derivedName)
     }
 
@@ -244,13 +248,13 @@ class RowActions(
      * Spec 6.4's merge of the open sheet's merchant into [targetKey], under the
      * name the sheet showed for it.
      */
-    fun mergeMerchant(targetKey: String): Job = writeMerchant("The merchants could not be merged") { dao, sheet ->
+    override fun mergeMerchant(targetKey: String): Job = writeMerchant("The merchants could not be merged") { dao, sheet ->
         val target = sheet.others.firstOrNull { it.identityKey == targetKey } ?: return@writeMerchant
         dao.merge(source = sheet.ownKey, target = targetKey, targetName = target.displayName ?: targetKey)
     }
 
     /** Undo the merge of [key]. */
-    fun separateMerchant(key: String): Job = writeMerchant("The merchants could not be separated") { dao, _ ->
+    override fun separateMerchant(key: String): Job = writeMerchant("The merchants could not be separated") { dao, _ ->
         dao.separate(key)
     }
 
@@ -269,6 +273,21 @@ class RowActions(
         closeMerchant()
         return screen.write(what) { db -> write(db.merchantIdentityDao(), sheet) }
     }
+}
+
+/**
+ * The category chooser's half of [RowActions], which `RowCategoryChooser`
+ * calls. Search is handed only this: its rows open no merchant sheet.
+ */
+interface CategoryActions {
+    /** File one transaction under [categoryId], teaching its merchant when [teach]; see [RowActions.assignCategory]. */
+    fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job
+
+    /** What teaching would also fix, or null when it could not be counted; see [RowActions.retroPreview]. */
+    suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview?
+
+    /** The New category tile's write: the new id, or null where none was written; see [RowActions.addCategory]. */
+    suspend fun addCategory(name: String, iconKey: String): Long?
 }
 
 /**
