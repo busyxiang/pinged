@@ -71,16 +71,24 @@ _Avoid_: unsorted, uncategorised, needs a category
 
 ### Capture
 
+**Capture evidence**:
+Proof that Pinged was watching at some moment: the listener was recorded bound, or Pinged kept a notification, whatever became of it -- a transaction, an unread capture, or one the user said is never a transaction. A manual entry is never capture evidence, since Pinged did not see it.
+_Avoid_: proof of capture
+
 **Captured day**:
-A past day on which Pinged has evidence it was watching: the listener was recorded bound at some moment that day, or the day has a transaction captured from a notification, whatever its status. A manual entry is not evidence. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
+A past day that holds capture evidence. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
 _Avoid_: watched day, covered day, live day
 
 **History start**:
 The first day Pinged has any capture evidence for, whether gathered on this device or on one whose backup was restored onto it. Days before it are outside the record, not missing from it. A restore carries it over, deleting everything resets it, and a manual entry never moves it.
 _Avoid_: install date, first install
 
+**Capture record**:
+Every day from the history start to yesterday, each one either captured or not captured. Days before the history start are outside the record, and today joins it when it ends. With no history start there is no record, and no day is captured or not captured.
+_Avoid_: coverage, capture history, watch log
+
 **Not captured**:
-A past day, on or after the history start, with no evidence Pinged was watching. Nothing is known about its spending, which is different from nothing spent.
+A past day, on or after the history start, with no capture evidence. Nothing is known about its spending, which is different from nothing spent.
 _Avoid_: missed day, gap, unbound day
 
 **Not read yet**:
