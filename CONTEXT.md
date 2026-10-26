@@ -19,7 +19,7 @@ The merchant a transaction belongs to: its merchant key, or the key that one is 
 _Avoid_: canonical merchant, resolved key
 
 **Merge**:
-The user's statement that one merchant key is the same shop as another, made from the merchant sheet. It changes no transaction, so separating restores the split exactly: every transaction groups under its own key again, and the source gets back its own name and learned rule. What the merge gave the target, a name it lacked and a copy of the source's learned rule, is the target's own from then on.
+The user's statement that one merchant key is the same shop as another, made from the merchant sheet. It changes no transaction, so separating restores the split exactly: the source groups under its own key again and gets back its own name and learned rule. What the merge gave the target is the target's own from then on: a name it lacked, a copy of the source's learned rule, and any keys that had already been merged into the source, which are separated one by one.
 _Avoid_: link, combine, dedupe (that is spec 7.2's duplicate detection)
 
 **Merchant display**:
