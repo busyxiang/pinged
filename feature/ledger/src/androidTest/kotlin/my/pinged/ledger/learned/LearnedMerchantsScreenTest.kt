@@ -96,7 +96,7 @@ class LearnedMerchantsScreenTest {
                 ledgerTxn(amountSen = 1_000L, occurredAt = 1_000L + i, categoryId = uncategorized)
                     .copy(id = 0, merchantRaw = key, merchantDisplay = key, merchantKey = key),
             )
-            db.merchantRuleDao().teach(id, shopping, 5_000L)
+            db.merchantIdentityDao().teach(id, shopping, 5_000L)
         }
     }
 
@@ -120,7 +120,7 @@ class LearnedMerchantsScreenTest {
 
         assertEquals(listOf("ZUS COFFEE"), model.read.state.value.toState().items.map { it.name })
         assertEquals("Delete changed a transaction", 2, Databases.txnDao(app).countAll())
-        assertEquals(null, Databases.merchantRuleDao(app).learnedCategoryFor("MR DIY"))
+        assertEquals(null, Databases.merchantIdentityDao(app).learnedCategoryFor("MR DIY"))
     }
 
     @Test fun anUnopenableDatabaseIsStorageUnavailableNotEmpty() = runBlocking {

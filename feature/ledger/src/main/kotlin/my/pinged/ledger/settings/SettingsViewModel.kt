@@ -413,7 +413,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
 
     /** The live learned rules (#50), or null where the read fails, as [countEnabledSources]'s does. */
     private fun countLearned(db: PingedDatabase, met: Met): Int? = try {
-        db.merchantRuleDao().learnedCount()
+        db.merchantIdentityDao().learnedCount()
     } catch (thrown: SQLException) {
         met.record(thrown)
         null

@@ -50,7 +50,7 @@ internal fun ReadState<Unit, Taught>.toState(): LearnedState {
  *
  * The read is `:core:read`'s [ScreenRead] (#296), and each delete is its
  * `write`, so the list never draws a state older than a delete that landed.
- * Delete is `MerchantRuleDao.deleteLearnedOfIdentity` and nothing else: it
+ * Delete is `MerchantIdentityDao.deleteLearnedOfIdentity` and nothing else: it
  * touches no `txn` row and re-files nothing.
  */
 class LearnedViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
@@ -63,7 +63,7 @@ class LearnedViewModel internal constructor(app: Application, runner: ReadRunner
     internal val read: ScreenRead<Unit, Taught> =
         ScreenRead.fixed(viewModelScope, runner, "Learned merchants cannot be read") { db ->
             Taught(
-                items = db.merchantRuleDao().learnedMerchants(),
+                items = db.merchantIdentityDao().learnedMerchants(),
                 messages = db.userTemplateRuleDao().rows(),
                 ignored = db.userRejectRuleDao().rules(),
             )
@@ -75,7 +75,7 @@ class LearnedViewModel internal constructor(app: Application, runner: ReadRunner
      */
     fun delete(merchant: LearnedMerchant): Job = viewModelScope.launch {
         read.write("The learned merchant could not be deleted") { db ->
-            db.merchantRuleDao().deleteLearnedOfIdentity(merchant.identity)
+            db.merchantIdentityDao().deleteLearnedOfIdentity(merchant.identity)
         }.await()
     }
 

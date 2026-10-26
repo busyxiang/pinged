@@ -60,8 +60,8 @@ class MerchantRuleCarryTest {
 
         merge()
 
-        assertEquals(food, rules.learnedCategoryFor(target))
-        assertEquals("A capture under the source key must file under the target's rule", food, rules.learnedCategoryFor(source))
+        assertEquals(food, merchants.learnedCategoryFor(target))
+        assertEquals("A capture under the source key must file under the target's rule", food, merchants.learnedCategoryFor(source))
     }
 
     @Test fun whenBothHalvesHaveRulesTheSourcesStaysStoredAndSeparateRestoresIt() {
@@ -76,8 +76,8 @@ class MerchantRuleCarryTest {
 
         merchants.separate(source)
 
-        assertEquals(shopping, rules.learnedCategoryFor(source))
-        assertEquals(food, rules.learnedCategoryFor(target))
+        assertEquals(shopping, merchants.learnedCategoryFor(source))
+        assertEquals(food, merchants.learnedCategoryFor(target))
     }
 
     @Test fun whenOnlyTheSourceHasARuleItIsCopiedToTheTargetWithAHitCountOfZero() {
@@ -93,8 +93,8 @@ class MerchantRuleCarryTest {
         assertEquals(RuleOrigin.LEARNED, copy.origin)
         assertEquals("", copy.scopedPackage)
         assertEquals("The source's own rule must stay where it is", 7, rules.pageFrom(0L, 10).single { it.pattern == source }.hitCount)
-        assertEquals(shopping, rules.learnedCategoryFor(target))
-        assertEquals(shopping, rules.learnedCategoryFor(source))
+        assertEquals(shopping, merchants.learnedCategoryFor(target))
+        assertEquals(shopping, merchants.learnedCategoryFor(source))
     }
 
     @Test fun separateAfterASourceOnlyMergeGivesTheSourceItsOwnRuleBack() {
@@ -104,7 +104,7 @@ class MerchantRuleCarryTest {
 
         merchants.separate(source)
 
-        assertEquals(shopping, rules.learnedCategoryFor(source))
+        assertEquals(shopping, merchants.learnedCategoryFor(source))
     }
 
     @Test fun whenOnlyTheTargetHasARuleBothKeysFileUnderItAndSeparateLeavesTheSourceWithNone() {
@@ -112,20 +112,20 @@ class MerchantRuleCarryTest {
         teach(target, food)
 
         merge()
-        assertEquals(food, rules.learnedCategoryFor(source))
+        assertEquals(food, merchants.learnedCategoryFor(source))
         assertEquals("A merge wrote a rule nobody had", 1, rules.countAll())
 
         merchants.separate(source)
 
-        assertNull("A source with no rule of its own goes back to no rule", rules.learnedCategoryFor(source))
-        assertEquals(food, rules.learnedCategoryFor(target))
+        assertNull("A source with no rule of its own goes back to no rule", merchants.learnedCategoryFor(source))
+        assertEquals(food, merchants.learnedCategoryFor(target))
     }
 
     @Test fun whenNeitherHasARuleNothingIsWritten() {
         pay(source, 1_000L); pay(target, 2_000L)
         merge()
         assertEquals(0, rules.countAll())
-        assertNull(rules.learnedCategoryFor(source))
+        assertNull(merchants.learnedCategoryFor(source))
     }
 
     @Test fun aMergeThatDoesNothingBecauseTheKeysAreOneShopCopiesNoRule() {
@@ -160,7 +160,7 @@ class MerchantRuleCarryTest {
 
         merge()
 
-        assertEquals(shopping, rules.learnedCategoryFor(member))
-        assertEquals(shopping, rules.learnedCategoryFor(target))
+        assertEquals(shopping, merchants.learnedCategoryFor(member))
+        assertEquals(shopping, merchants.learnedCategoryFor(target))
     }
 }

@@ -235,7 +235,7 @@ class ManualEntriesTest {
         val captured = Databases.txnDao(context).insert(
             ledgerTxn(amountSen = 900L, occurredAt = NOON - HOUR, categoryId = Databases.categoryDao(context).requireUncategorizedId()),
         )
-        Databases.merchantRuleDao(context).teachAndFix(captured, to, NOON)
+        Databases.merchantIdentityDao(context).teachAndFix(captured, to, NOON)
     }
 
     private fun categoryId(name: String): Long = Databases.categoryDao(context).all().first { it.name == name }.id
