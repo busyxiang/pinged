@@ -42,7 +42,7 @@ The category the user taught for a merchant identity, by saving the category cho
 _Avoid_: merchant rule, auto-category
 
 **Dormant rule**:
-A learned rule left on a merchant key that has since been merged away. It is stored so that separating gives it back, and until then it is never read to file a payment, never listed under "Learned merchants" and never counted. Forgetting the merchant deletes it with the rest.
+A learned rule left on a merchant key that has since been merged away. It is stored so that separating gives it back, and until then it is never read to file a payment, never listed under "Learned merchants" and never counted, so it does not keep its category from being deleted. Forgetting the merchant deletes it with the rest, and deleting its category deletes it; merging its category moves it.
 _Avoid_: shadowed rule, inactive rule, old rule
 
 **Filing**:
