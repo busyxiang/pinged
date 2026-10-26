@@ -68,6 +68,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.DashLeader
@@ -112,6 +113,7 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
     ReviewInboxScreenContent(
         cards = read.answer,
         storageUnavailable = read.unavailable,
+        replacing = read.replacing,
         busy = busy,
         onBack = onBack,
         onAnswer = { card, answer -> viewModel.answer(card, answer) },
@@ -166,6 +168,8 @@ fun ReviewInboxScreenContent(
     onAcceptAll: () -> Unit = {},
     choices: suspend () -> List<Category>? = { null },
     onFile: (ReviewCard, Long) -> Unit = { _, _ -> },
+    /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
+    replacing: Boolean = false,
 ) {
     val acceptAll = cards?.let(AcceptAll::of)
     // The card whose sheet is open, by its row's id, and what the sheet offers
@@ -184,8 +188,8 @@ fun ReviewInboxScreenContent(
     }
     val list = rememberLazyListState()
     var focused by rememberSaveable(focus) { mutableStateOf(focus == null) }
-    LaunchedEffect(focus, cards, storageUnavailable) {
-        if (focused || cards == null || storageUnavailable) return@LaunchedEffect
+    LaunchedEffect(focus, cards, storageUnavailable, replacing) {
+        if (focused || cards == null || storageUnavailable || replacing) return@LaunchedEffect
         focused = true
         val at = cards.indexOfFirst { it.txn.id == focus }
         // Items above the cards: the header, which holds Accept all, and the busy line.
@@ -194,7 +198,7 @@ fun ReviewInboxScreenContent(
     // The board's two grounds: the header on Paper, the list beneath it on Card.
     Box(modifier.fillMaxSize().background(Card)) {
         Cards(
-            cards, storageUnavailable, busy, onBack, onAnswer, list,
+            cards, storageUnavailable, replacing, busy, onBack, onAnswer, list,
             bottom = if (undoable != null) UNDO_BAR_ROOM else 0.dp,
             acceptAll = acceptAll,
             onAcceptAll = onAcceptAll,
@@ -232,6 +236,7 @@ fun ReviewInboxScreenContent(
 private fun Cards(
     cards: List<ReviewCard>?,
     storageUnavailable: Boolean,
+    replacing: Boolean,
     busy: Operation?,
     onBack: () -> Unit,
     onAnswer: (ReviewCard, ReviewAnswer) -> Unit,
@@ -242,18 +247,22 @@ private fun Cards(
     onChooseCategory: (ReviewCard) -> Unit,
 ) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = bottom + CARD_GAP)) {
+        val refused = storageUnavailable || replacing
         item {
-            val offer = acceptAll.takeIf { !storageUnavailable && !cards.isNullOrEmpty() }
-            Header(cards?.size, onBack, offer, enabled = busy == null, onAcceptAll, reading = cards == null && !storageUnavailable)
+            val offer = acceptAll.takeIf { !refused && !cards.isNullOrEmpty() }
+            Header(cards?.size, onBack, offer, enabled = busy == null, onAcceptAll, reading = cards == null && !refused)
         }
-        if (busy != null) item { Notice(busyLine(busy, Withheld.ANSWERED), Stamp) }
+        // One line at a time (#328): a replacement's notice stands alone, and
+        // the busy line, which withholds answers, goes with the cards.
         when {
             // First, for the reason `DayScreenContent` gives: stale cards
             // under a ledger that cannot be read would be answers to nothing.
+            replacing -> item { Notice(REPLACING_YOUR_DATA, Stamp) }
             storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
             cards == null -> item { NotReadYet() }
             cards.isEmpty() -> item { Notice(NOTHING_AWAITING_REVIEW, Muted) }
             else -> {
+                if (busy != null) item { Notice(busyLine(busy, Withheld.ANSWERED), Stamp) }
                 itemsIndexed(cards, key = { _, card -> "review-" + card.txn.id }) { index, card ->
                     // The board's list: 14 above the first card, 12 between, 16 at the sides.
                     val margin = PaddingValues(start = 16.dp, end = 16.dp, top = if (index == 0) 14.dp else CARD_GAP)

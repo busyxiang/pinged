@@ -18,6 +18,17 @@ package my.pinged.ui.theme
 const val CANNOT_READ_YOUR_DATA: String = "CANNOT READ YOUR DATA"
 
 /**
+ * What a screen says in [CANNOT_READ_YOUR_DATA]'s place when its read was
+ * turned away by a ledger replacement -- a restore or a delete-everything the
+ * user started (#328). Nothing is wrong with the ledger, so the unreadable line
+ * would be false; and what the screen held is the ledger going away, so it
+ * draws none of it. Here for [CANNOT_READ_YOUR_DATA]'s reason: every screen
+ * that reads the ledger, and its tests, say it. The dot is [Separator]'s,
+ * escaped for ASCII.
+ */
+const val REPLACING_YOUR_DATA: String = "REPLACING YOUR DATA \u00B7 NOTHING CAN BE SHOWN UNTIL IT FINISHES"
+
+/**
  * The damaged ledger's one way to a file: the recovery notice's action, which
  * Spending's backup reminder leads to on a damaged ledger. Here for
  * [CANNOT_READ_YOUR_DATA]'s reason: the settings screen and `:app`'s tests

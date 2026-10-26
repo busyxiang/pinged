@@ -8,8 +8,9 @@ import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
 
 /**
- * A [ReadRunner] a test drives: each call answers at once, is refused, or
- * is held until the test says (#296, decision 8).
+ * A [ReadRunner] a test drives: each call answers at once, is refused, is
+ * refused by a ledger replacement, or is held until the test says (#296,
+ * decision 8).
  *
  * **The database it hands a body is in memory**, on Robolectric's SQLite and not
  * SQLCipher, and Room builds it lazily: a body that touches no DAO costs
@@ -35,9 +36,12 @@ internal class ScriptedRunner(context: Context) : ReadRunner {
     /** New calls that are not held are refused. */
     var refusing = false
 
+    /** New calls that are not held are refused as a ledger replacement's gate refuses them. Wins over [refusing]. */
+    var replacing = false
+
     /** One read or write [ScriptedRunner] has been asked for. */
     inner class Call(val what: String, val write: Boolean) {
-        private val verdict = CompletableDeferred<Boolean>()
+        private val verdict = CompletableDeferred<Outcome<Unit>>()
 
         /** The body ran, and the caller was handed its answer. */
         var ran = false
@@ -49,17 +53,22 @@ internal class ScriptedRunner(context: Context) : ReadRunner {
 
         /** Let a held call run its body and answer. */
         fun release() {
-            verdict.complete(true)
+            verdict.complete(Outcome.Done(Unit))
         }
 
         /** Refuse a held call as an unopenable database would. */
         fun refuse() {
-            verdict.complete(false)
+            verdict.complete(Outcome.Refused)
         }
 
-        internal suspend fun waited(): Boolean = verdict.await()
+        /** Refuse a held call as a ledger replacement's gate would. */
+        fun replace() {
+            verdict.complete(Outcome.Replacing)
+        }
 
-        internal fun decided(answer: Boolean) {
+        internal suspend fun waited(): Outcome<Unit> = verdict.await()
+
+        internal fun decided(answer: Outcome<Unit>) {
             verdict.complete(answer)
         }
     }
@@ -73,9 +82,20 @@ internal class ScriptedRunner(context: Context) : ReadRunner {
     private suspend fun <T> enter(what: String, write: Boolean, run: suspend () -> T): Outcome<T> {
         val call = Call(what, write)
         calls += call
-        if (!holding) call.decided(!refusing)
-        val answer = call.waited()
-        val outcome = if (answer) Outcome.Done(run().also { call.ran = true }) else Outcome.Refused
+        if (!holding) {
+            call.decided(
+                when {
+                    replacing -> Outcome.Replacing
+                    refusing -> Outcome.Refused
+                    else -> Outcome.Done(Unit)
+                },
+            )
+        }
+        val outcome = when (val answer = call.waited()) {
+            is Outcome.Done -> Outcome.Done(run().also { call.ran = true })
+            Outcome.Refused -> Outcome.Refused
+            Outcome.Replacing -> Outcome.Replacing
+        }
         call.finished = true
         return outcome
     }

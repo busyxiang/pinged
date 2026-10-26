@@ -73,7 +73,8 @@ class LedgerViewModel(
      * Spending's two one-shot reads, through `:core:read`: the month's summary
      * and the `Months` sheet. See [SpendingRead]; the screen reads [read]
      * through `rememberReadState`, which is also what raises and clears the
-     * storage banner (`ReadState.unavailable`).
+     * screen's own notice: `ReadState.unavailable`, or `ReadState.replacing`
+     * under a ledger replacement. Never the capture banner.
      */
     private val spending: SpendingRead = SpendingRead(
         scope = viewModelScope,
@@ -97,7 +98,7 @@ class LedgerViewModel(
     /**
      * The row's category and merchant actions, shared with any other screen
      * that draws ledger rows. Every write is read back through [read] in its
-     * own turn, and a refusal raises the banner through it.
+     * own turn, and a refusal raises the screen's own notice through it.
      *
      * **The re-read after §9.1's chip is not tidiness.** The aggregates are separate queries that
      * only the feed's `txn` observer re-reads (see [FeedWrites]), and an

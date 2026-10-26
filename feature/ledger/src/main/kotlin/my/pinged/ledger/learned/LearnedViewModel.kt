@@ -24,6 +24,8 @@ data class LearnedState(
     val ignored: List<RejectRuleRow> = emptyList(),
     /** Spec 11.1: the database could not be opened, which is not "nothing taught". */
     val storageUnavailable: Boolean = false,
+    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
+    val replacing: Boolean = false,
 )
 
 /** What one read of [LearnedViewModel.read] found, in one transaction. */
@@ -39,6 +41,7 @@ internal data class Taught(
  * supports.
  */
 internal fun ReadState<Unit, Taught>.toState(): LearnedState {
+    if (replacing) return LearnedState(loaded = true, replacing = true)
     if (unavailable) return LearnedState(loaded = true, storageUnavailable = true)
     val taught = answer ?: return LearnedState()
     return LearnedState(loaded = true, items = taught.items, messages = taught.messages, ignored = taught.ignored)

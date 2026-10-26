@@ -9,6 +9,7 @@ import my.pinged.read.Answered
 import my.pinged.read.ReadState
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.READING
 import my.pinged.ui.theme.READING_DELAY_MILLIS
@@ -135,6 +136,19 @@ class MonthsSheetUpdatingTest {
 
         assertEquals("A failed first opening did not say it cannot read: ${texts()}", 1, count(CANNOT_READ_YOUR_DATA))
         assertEquals("A failed first opening was drawn as still being read", 0, count(READING))
+    }
+
+    /** #328: the months held are the ledger going away, so they go, and the line says why. */
+    @Test fun aReopeningRefusedByAReplacementSaysSoInPlaceOfTheMonthsHeld() {
+        open(lastOpening)
+
+        at(48)
+        state = state.copy(rereading = false, replacing = true)
+        at(READING_DELAY_MILLIS + 40)
+
+        assertEquals("A reopening refused by a replacement did not say so: ${texts()}", 1, count(REPLACING_YOUR_DATA))
+        assertEquals("A reopening refused by a replacement said it cannot read", 0, count(CANNOT_READ_YOUR_DATA))
+        assertEquals("A reopening refused by a replacement drew the last opening's months", 0, count("September 2026"))
     }
 
     @Test fun aFirstOpeningIsNotAReReadInPlace() {

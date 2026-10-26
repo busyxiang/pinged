@@ -3,7 +3,7 @@ package my.pinged.read
 /**
  * What a [ScreenRead] has published (#296): the answer and the question it
  * answered, whether a read for a different question is in flight, and whether
- * the database could not be read.
+ * the database could not be read, or is being replaced.
  *
  * **Every read keeps its last answer** while it reads again (#285), so a screen
  * draws [answer] dimmed under `UPDATING` while [rereading], rather than the
@@ -20,11 +20,17 @@ package my.pinged.read
  *   not be opened; the screen says so in place of whatever [answer] holds. A successful read
  *   clears it. [answered] is kept, so the next successful read of its question can be told
  *   from the one before.
+ * @property replacing the last read, or a write, was turned away by a restore or a
+ *   delete-everything (`Outcome.Replacing`, #328): the screen says the ledger is being
+ *   replaced, and draws nothing of [answer], which describes the ledger going away. A
+ *   successful read clears it. Each refusal sets one of this and [unavailable] and clears
+ *   the other, so the two are never both true.
  */
 data class ReadState<out Q, out A>(
     val answered: Answered<Q, A>?,
     val rereading: Boolean,
     val unavailable: Boolean,
+    val replacing: Boolean = false,
 ) {
     /** [answered]'s answer; null before the first lands, and for a read whose answer is null. */
     val answer: A? get() = answered?.answer

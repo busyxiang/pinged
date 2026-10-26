@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.HeldBy
 import my.pinged.ui.theme.LocalHeldBy
 import my.pinged.ui.theme.PingedTheme
@@ -102,6 +103,22 @@ class PickSheetTest {
         at(READING_DELAY_MILLIS + 40)
         compose.onNodeWithText(READING).assertDoesNotExist()
         assertEquals(0, places())
+    }
+
+    /** #328: as a refusal, but saying a replacement turned it away, not that the ledger cannot be read. */
+    @Test fun aReadRefusedByAReplacementSaysSoInPlaceOfTheOptionsHeld() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            PingedTheme {
+                PickSheet("Category", ANY_CATEGORY, listOf(FOOD_ID to FOOD), null, {}, {}, replacing = true)
+            }
+        }
+        at(HeldClock.FRAME)
+
+        compose.onNodeWithText(REPLACING_YOUR_DATA).assertExists()
+        compose.onNodeWithText(CANNOT_READ_YOUR_DATA).assertDoesNotExist()
+        compose.onNodeWithText(FOOD).assertDoesNotExist()
+        compose.onNodeWithTag(PICK + ANY_CATEGORY).assertExists()
     }
 
     private fun notReadYet(heldBy: HeldBy?) {

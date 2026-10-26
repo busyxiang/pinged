@@ -18,6 +18,8 @@ import my.pinged.read.ReadRunner
  *
  * **Only `DatabaseUnavailableException` is caught**, as `guarded` catches it.
  * Anything else -- `SQLiteFullException` among it -- escapes to the caller.
+ * A delete's or a restore's gate answers [Outcome.Replacing], every other
+ * refusal [Outcome.Refused] (#328).
  */
 class GuardedRunner(private val context: Context) : ReadRunner {
 
@@ -28,7 +30,7 @@ class GuardedRunner(private val context: Context) : ReadRunner {
      * duration its caller measures.
      */
     override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> =
-        CaptureStorage.guarded<Outcome<T>>(context, what, unavailable = { Outcome.Refused }, damageStopsCapture = false) {
+        CaptureStorage.guarded<Outcome<T>>(context, what, unavailable = { Outcome.Refused }, damageStopsCapture = false, replacing = { Outcome.Replacing }) {
             Outcome.Done(Databases.inOneTransaction(context, body))
         }
 
@@ -38,7 +40,7 @@ class GuardedRunner(private val context: Context) : ReadRunner {
      * be safe to run twice.
      */
     override suspend fun <T> write(what: String, body: suspend (PingedDatabase) -> T): Outcome<T> =
-        CaptureStorage.guarded<Outcome<T>>(context, what, unavailable = { Outcome.Refused }, damageStopsCapture = false) {
+        CaptureStorage.guarded<Outcome<T>>(context, what, unavailable = { Outcome.Refused }, damageStopsCapture = false, replacing = { Outcome.Replacing }) {
             Outcome.Done(body(Databases.shared(context)))
         }
 }

@@ -75,6 +75,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.DashLeader
@@ -129,6 +130,7 @@ fun DetailScreen(
     DetailScreenContent(
         read = read.answer,
         storageUnavailable = read.unavailable,
+        replacing = read.replacing,
         onBack = onBack,
         categories = viewModel.rows,
         merchants = viewModel.rows,
@@ -170,6 +172,8 @@ internal fun DetailScreenContent(
     modifier: Modifier = Modifier,
     actions: DetailActions = DetailActions.None,
     zone: ZoneId = ZoneId.systemDefault(),
+    /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
+    replacing: Boolean = false,
 ) {
     var categorizing by rememberSaveable { mutableStateOf(false) }
     var removing by rememberSaveable { mutableStateOf(false) }
@@ -182,6 +186,7 @@ internal fun DetailScreenContent(
         when {
             // First: a row drawn under a ledger that cannot be read would be a
             // claim about money no read supports.
+            replacing -> Notice(REPLACING_YOUR_DATA, Stamp)
             storageUnavailable -> Notice(CANNOT_READ_YOUR_DATA, Stamp)
             read == null -> NotReadYet()
             row == null -> Notice(GONE, Muted)

@@ -61,6 +61,7 @@ import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
@@ -109,6 +110,7 @@ fun DayScreen(
         date = viewModel.date,
         read = read.answer,
         storageUnavailable = read.unavailable,
+        replacing = read.replacing,
         onBack = onBack,
         onOpenReview = onOpenReview,
         onOpenEntry = onOpenEntry,
@@ -135,6 +137,8 @@ internal fun DayScreenContent(
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onStep: ((LocalDate) -> Unit)? = null,
     today: LocalDate = LocalDate.now(),
+    /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
+    replacing: Boolean = false,
 ) {
     // Hoisted out of the list for the reason `LedgerScreenContent` gives.
     var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -145,8 +149,9 @@ internal fun DayScreenContent(
     // Card under a read day, its summary items laying Paper over it, so the
     // board's Card runs from the torn edge to the foot however few rows. A
     // notice draws no torn edge, and so stays on Paper.
-    val ground = if (read != null && !storageUnavailable) Card else Paper
-    if (read == null && !storageUnavailable) {
+    val refused = storageUnavailable || replacing
+    val ground = if (read != null && !refused) Card else Paper
+    if (read == null && !refused) {
         // Not the list: the board's Card runs to the foot under rows that
         // stand for rows, so they are clipped rather than scrolled.
         Column(modifier.fillMaxSize().background(Paper)) {
@@ -159,6 +164,7 @@ internal fun DayScreenContent(
             // First: stale rows under a ledger that cannot be read would be a
             // claim about money no read supports. A null read lands here only
             // with it.
+            replacing -> item { Notice(REPLACING_YOUR_DATA, Stamp) }
             storageUnavailable || read == null -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
             else -> {
                 // The day's first held row in the order drawn, which is

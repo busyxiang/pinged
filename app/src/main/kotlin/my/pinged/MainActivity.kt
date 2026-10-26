@@ -588,10 +588,7 @@ class MainActivity : ComponentActivity() {
                         // see `AppStatus.barMayShow`.
                         LaunchedEffect(tabs.selected, tabs.showsBar) { status.barMayShow() }
                         if (tabs.showsBar) {
-                            // Null, the dash, while it is not read yet or
-                            // unreadable: 0 would say nothing awaits review (#237).
-                            val awaitingReview = current.awaitingReview.takeUnless { it.unavailable }?.answer
-                            TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = awaitingReview)
+                            TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = current.awaitingReviewCount)
                         }
                     }
                 }

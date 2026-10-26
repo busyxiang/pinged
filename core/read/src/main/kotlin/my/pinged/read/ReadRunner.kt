@@ -5,7 +5,8 @@ import my.pinged.data.PingedDatabase
 /**
  * How a [ScreenRead] reaches the ledger (#296): open the database, lease it,
  * run the statements, and turn a database that cannot be opened into
- * [Outcome.Refused]. A seam, so that the ordering, staleness and refusal of
+ * [Outcome.Refused], or one a ledger replacement holds into
+ * [Outcome.Replacing]. A seam, so that the ordering, staleness and refusal of
  * a read are tested once, with a runner that answers, refuses or holds on
  * command (`ScriptedRunner`), and a device only has to prove what needs a
  * real database: snapshot consistency and the lease.
@@ -39,11 +40,21 @@ interface ReadRunner {
     suspend fun <T> write(what: String, body: suspend (PingedDatabase) -> T): Outcome<T>
 }
 
-/** What a [ReadRunner] did with a body: ran it, or could not open the database to. */
+/**
+ * What a [ReadRunner] did with a body: ran it, could not open the database to,
+ * or was turned away by a ledger replacement.
+ */
 sealed interface Outcome<out T> {
     /** The body ran, and this is what it returned. */
     data class Done<out T>(val value: T) : Outcome<T>
 
     /** The database could not be opened or has met damage; the body's work was not done. */
     data object Refused : Outcome<Nothing>
+
+    /**
+     * A restore or a delete-everything holds the gate (`DatabaseBeingDeletedException`),
+     * so the body's work was not done (#328). Not [Refused]: nothing is wrong
+     * with the ledger, the user is replacing it, and a screen says that instead.
+     */
+    data object Replacing : Outcome<Nothing>
 }
