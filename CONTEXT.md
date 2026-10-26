@@ -19,7 +19,7 @@ The merchant a transaction belongs to: its merchant key, or the key that one is 
 _Avoid_: canonical merchant, resolved key
 
 **Merge**:
-The user's statement that one merchant key is the same shop as another, made from the merchant sheet. It changes no transaction, so separating restores the split exactly.
+The user's statement that one merchant key is the same shop as another, made from the merchant sheet. It changes no transaction, so separating restores the split exactly: every transaction groups under its own key again, and the source gets back its own name and learned rule. What the merge gave the target, a name it lacked and a copy of the source's learned rule, is the target's own from then on.
 _Avoid_: link, combine, dedupe (that is spec 7.2's duplicate detection)
 
 **Merchant display**:
@@ -40,6 +40,10 @@ _Avoid_: bundled rules, shipped rules, seeded rules
 **Learned rule**:
 The category the user taught for a merchant identity, by saving the category chooser with "Always call this" on. It files every later payment of that merchant, whichever of its keys the payment arrives under, and outranks the dictionary. A merge or a pack change carries it with the merchant. The UI calls it a "learned merchant", and settings lists them under "Learned merchants" (read and delete only). Deleting one forgets the teaching for the whole identity, dormant source rules included, and re-files nothing.
 _Avoid_: merchant rule, auto-category
+
+**Dormant rule**:
+A learned rule left on a merchant key that has since been merged away. It is stored so that separating gives it back, and until then it is never read to file a payment, never listed under "Learned merchants" and never counted. Forgetting the merchant deletes it with the rest.
+_Avoid_: shadowed rule, inactive rule, old rule
 
 **Filing**:
 Where a payment from a merchant goes, and what put it there: the learned rule for its identity, else the dictionary's entry for the key it arrived under, else nothing, which leaves it Uncategorized. A row's category may differ from its merchant's filing today: a one-off, or a rule or pack that has since changed.
