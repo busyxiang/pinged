@@ -28,6 +28,7 @@ class RetroactiveFixTest {
     @After fun tearDown() { db.close() }
 
     private val rules get() = db.merchantRuleDao()
+    private val merchants get() = db.merchantIdentityDao()
     private val txns get() = db.txnDao()
     private val food get() = db.categoryId("Food & Drinks")
     private val shopping get() = db.categoryId("Shopping")
@@ -59,7 +60,7 @@ class RetroactiveFixTest {
         pay(category = food) // already there
         pay(category = food, oneOff = true) // a one-off already there: neither N nor conflict
 
-        val preview = rules.retroPreview(tapped, food)
+        val preview = merchants.retroPreview(tapped, food)
 
         assertEquals(3, preview.movable)
         assertEquals(emptyList<CategoryCount>(), preview.conflicts)
@@ -72,7 +73,7 @@ class RetroactiveFixTest {
         pay(category = shopping, oneOff = true)
         pay(category = petrol, oneOff = true)
 
-        val preview = rules.retroPreview(tapped, food)
+        val preview = merchants.retroPreview(tapped, food)
 
         assertEquals(1, preview.movable)
         assertEquals(
@@ -91,7 +92,7 @@ class RetroactiveFixTest {
             pay(category = shopping, state = TxnState.REJECTED, oneOff = oneOff)
         }
 
-        val preview = rules.retroPreview(tapped, food)
+        val preview = merchants.retroPreview(tapped, food)
 
         assertEquals(0, preview.movable)
         assertEquals(emptyList<CategoryCount>(), preview.conflicts)
@@ -100,7 +101,7 @@ class RetroactiveFixTest {
     @Test fun theTappedRowIsNotCounted() {
         val tapped = pay(category = shopping)
 
-        assertEquals(0, rules.retroPreview(tapped, food).movable)
+        assertEquals(0, merchants.retroPreview(tapped, food).movable)
     }
 
     @Test fun anotherMerchantsRowsAreNotCounted() {
@@ -109,7 +110,7 @@ class RetroactiveFixTest {
         pay(key = "OTHER SHOP", category = shopping, oneOff = true)
         pay(key = null, category = shopping)
 
-        val preview = rules.retroPreview(tapped, food)
+        val preview = merchants.retroPreview(tapped, food)
 
         assertEquals(0, preview.movable)
         assertEquals(emptyList<CategoryCount>(), preview.conflicts)
@@ -122,7 +123,7 @@ class RetroactiveFixTest {
         pay(key = "MRDIY KL SENTRAL", category = shopping, oneOff = true)
         db.merchantIdentityDao().merge(source = "MRDIY KL SENTRAL", target = "MR DIY", targetName = "Mr DIY")
 
-        val preview = rules.retroPreview(tapped, food)
+        val preview = merchants.retroPreview(tapped, food)
 
         assertEquals("The merged-away key's row was left out of N", 2, preview.movable)
         assertEquals("The merged-away key's one-off was not a conflict", listOf(CategoryCount(shopping, 1)), preview.conflicts)
@@ -133,7 +134,7 @@ class RetroactiveFixTest {
         val tapped = pay(key = "MRDIY KL SENTRAL")
         db.merchantIdentityDao().merge(source = "MRDIY KL SENTRAL", target = "MR DIY", targetName = "Mr DIY")
 
-        assertEquals(1, rules.retroPreview(tapped, food).movable)
+        assertEquals(1, merchants.retroPreview(tapped, food).movable)
     }
 
     // ---- the save ----------------------------------------------------------
@@ -145,12 +146,12 @@ class RetroactiveFixTest {
         val already = pay(category = food)
         val oneOffHere = pay(category = food, oneOff = true)
 
-        val outcome = rules.teachAndFix(tapped, food, now = 9_000L)
+        val outcome = merchants.teachAndFix(tapped, food, now = 9_000L)
 
         assertTrue(outcome.taught)
         assertEquals(2, outcome.moved)
         assertEquals(0, outcome.conflicts)
-        assertEquals(food, rules.learnedCategoryFor("SHOP"))
+        assertEquals(food, merchants.learnedCategoryFor("SHOP"))
         for (id in listOf(tapped, a, b, already, oneOffHere)) assertEquals(food, row(id).categoryId)
         assertFalse("The tapped row became a one-off", row(tapped).userEdited)
         assertTrue("A one-off already in the category lost its flag", row(oneOffHere).userEdited)
@@ -161,7 +162,7 @@ class RetroactiveFixTest {
         val moved = pay(category = shopping)
         val before = row(moved)
 
-        rules.teachAndFix(tapped, food, now = 9_000L)
+        merchants.teachAndFix(tapped, food, now = 9_000L)
 
         assertEquals(
             "A column other than category_id changed (updated_at included)",
@@ -177,12 +178,12 @@ class RetroactiveFixTest {
         val other = pay(category = petrol)
         val confirmed = pay(category = shopping, oneOff = true)
 
-        val outcome = rules.teachAndFix(tapped, food, now = 9_000L)
+        val outcome = merchants.teachAndFix(tapped, food, now = 9_000L)
 
         assertTrue(outcome.taught)
         assertEquals(0, outcome.moved)
         assertEquals(1, outcome.conflicts)
-        assertEquals("The rule was lost to the conflict", food, rules.learnedCategoryFor("SHOP"))
+        assertEquals("The rule was lost to the conflict", food, merchants.learnedCategoryFor("SHOP"))
         assertEquals(food, row(tapped).categoryId)
         assertEquals("A row moved despite a conflict", uncategorized, row(uncat).categoryId)
         assertEquals(petrol, row(other).categoryId)
@@ -197,15 +198,15 @@ class RetroactiveFixTest {
     @Test fun aConflictThatLandsBetweenTheCountAndTheSaveMovesNothingAndSavesTheRule() {
         val tapped = pay()
         val movable = pay(category = shopping)
-        assertEquals("The fixture's premise: no conflict at count time", emptyList<CategoryCount>(), rules.retroPreview(tapped, food).conflicts)
+        assertEquals("The fixture's premise: no conflict at count time", emptyList<CategoryCount>(), merchants.retroPreview(tapped, food).conflicts)
         val late = pay(category = uncategorized)
         txns.setCategory(late, petrol, 5_000L)
 
-        val outcome = rules.teachAndFix(tapped, food, now = 9_000L)
+        val outcome = merchants.teachAndFix(tapped, food, now = 9_000L)
 
         assertEquals(0, outcome.moved)
         assertEquals(1, outcome.conflicts)
-        assertEquals(food, rules.learnedCategoryFor("SHOP"))
+        assertEquals(food, merchants.learnedCategoryFor("SHOP"))
         assertEquals("The save moved a row past a conflict it should have seen", shopping, row(movable).categoryId)
     }
 
@@ -218,7 +219,7 @@ class RetroactiveFixTest {
         val confirmed = pay(category = shopping, oneOff = true)
         val movable = pay(category = petrol)
 
-        val moved = rules.moveToCategory("SHOP", tapped, food)
+        val moved = merchants.moveToCategory("SHOP", tapped, food)
 
         assertEquals(1, moved)
         assertEquals(shopping, row(confirmed).categoryId)
@@ -229,7 +230,7 @@ class RetroactiveFixTest {
         val tapped = pay(key = null)
         val other = pay(key = null, category = shopping)
 
-        val outcome = rules.teachAndFix(tapped, food, now = 9_000L)
+        val outcome = merchants.teachAndFix(tapped, food, now = 9_000L)
 
         assertFalse(outcome.taught)
         assertEquals(0, outcome.moved)
@@ -242,7 +243,7 @@ class RetroactiveFixTest {
         val viaSource = pay(key = "MRDIY KL SENTRAL", category = shopping)
         db.merchantIdentityDao().merge(source = "MRDIY KL SENTRAL", target = "MR DIY", targetName = "Mr DIY")
 
-        val outcome = rules.teachAndFix(tapped, food, now = 9_000L)
+        val outcome = merchants.teachAndFix(tapped, food, now = 9_000L)
 
         assertEquals(1, outcome.moved)
         assertEquals(food, row(viaSource).categoryId)

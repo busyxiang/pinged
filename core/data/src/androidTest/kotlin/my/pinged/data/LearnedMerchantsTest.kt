@@ -24,6 +24,7 @@ class LearnedMerchantsTest {
     @After fun tearDown() { db.close() }
 
     private val rules get() = db.merchantRuleDao()
+    private val merchants get() = db.merchantIdentityDao()
     private val txns get() = db.txnDao()
     private val identities get() = db.merchantIdentityDao()
     private val food get() = db.categoryId("Food & Drinks")
@@ -43,7 +44,7 @@ class LearnedMerchantsTest {
         ).copy(merchantRaw = key, merchantDisplay = key, merchantKey = key),
     )
 
-    private fun teach(key: String, category: Long, at: Long = 1_000L) = rules.teach(pay(key, at), category, 5_000L)
+    private fun teach(key: String, category: Long, at: Long = 1_000L) = merchants.teach(pay(key, at), category, 5_000L)
 
     private fun mergeYuenKee() =
         identities.merge("YUENKEEHOMETOWNCAFE", "RESTORAN YUEN KEE HOME TOWN CAFE", "Yuen Kee")
@@ -53,7 +54,7 @@ class LearnedMerchantsTest {
         teach("99 SPEEDMART", food)
         teach("mr diy", shopping)
 
-        assertEquals(listOf("99 SPEEDMART", "mr diy", "ZUS COFFEE"), rules.learnedMerchants().map { it.name })
+        assertEquals(listOf("99 SPEEDMART", "mr diy", "ZUS COFFEE"), merchants.learnedMerchants().map { it.name })
     }
 
     @Test fun aRowShowsTheUsersNameElseTheMerchantDisplay() {
@@ -61,7 +62,7 @@ class LearnedMerchantsTest {
         teach("ZUS COFFEE", food)
         identities.rename("MR DIY", "Hardware shop", derivedName = "MR DIY")
 
-        val rows = rules.learnedMerchants()
+        val rows = merchants.learnedMerchants()
 
         assertEquals(listOf("Hardware shop", "ZUS COFFEE"), rows.map { it.name })
         assertEquals(listOf("Shopping", "Food & Drinks"), rows.map { it.categoryName })
@@ -73,7 +74,7 @@ class LearnedMerchantsTest {
         val later = pay("MR DIY", at = 2_000L)
         db.openHelper.writableDatabase.execSQL("UPDATE txn SET merchant_display = 'Mr DIY Cheras' WHERE id = $later")
 
-        assertEquals("Mr DIY Cheras", rules.learnedMerchants().single().name)
+        assertEquals("Mr DIY Cheras", merchants.learnedMerchants().single().name)
     }
 
     @Test fun aRuleReKeyedByAPackUpgradeIsNamedByTheRowsUnderItsNewKey() {
@@ -83,7 +84,7 @@ class LearnedMerchantsTest {
         )
         identities.carry("MR DIY", "MR DIY MY")
 
-        val row = rules.learnedMerchants().single()
+        val row = merchants.learnedMerchants().single()
         assertEquals("MR DIY MY", row.identity)
         assertEquals("Mr DIY Malaysia", row.name)
     }
@@ -92,7 +93,7 @@ class LearnedMerchantsTest {
         teach("MR DIY", shopping)
         db.openHelper.writableDatabase.execSQL("DELETE FROM txn")
 
-        assertEquals("MR DIY", rules.learnedMerchants().single().name)
+        assertEquals("MR DIY", merchants.learnedMerchants().single().name)
     }
 
     @Test fun aRejectedRowDoesNotNameTheRule() {
@@ -100,7 +101,7 @@ class LearnedMerchantsTest {
         val rejected = pay("MR DIY", at = 9_000L, state = TxnState.REJECTED)
         db.openHelper.writableDatabase.execSQL("UPDATE txn SET merchant_display = 'Not a payment' WHERE id = $rejected")
 
-        assertEquals("MR DIY", rules.learnedMerchants().single().name)
+        assertEquals("MR DIY", merchants.learnedMerchants().single().name)
     }
 
     @Test fun paymentsAreTheCommittedNonExcludedRowsOfTheIdentity() {
@@ -111,7 +112,7 @@ class LearnedMerchantsTest {
         pay("MR DIY", at = 5_000L, state = TxnState.REJECTED)
         pay("OTHER SHOP", at = 6_000L)
 
-        assertEquals(2, rules.learnedMerchants().single().payments)
+        assertEquals(2, merchants.learnedMerchants().single().payments)
     }
 
     @Test fun paymentsAreLiveAndCountAMergedIdentityAcrossItsKeys() {
@@ -119,26 +120,26 @@ class LearnedMerchantsTest {
         pay("RESTORAN YUEN KEE HOME TOWN CAFE", at = 2_000L)
         pay("RESTORAN YUEN KEE HOME TOWN CAFE", at = 3_000L)
         mergeYuenKee()
-        rules.teach(source, food, 5_000L)
+        merchants.teach(source, food, 5_000L)
 
-        val row = rules.learnedMerchants().single()
+        val row = merchants.learnedMerchants().single()
         assertEquals("Yuen Kee", row.name)
         assertEquals("A merged identity's payments were not counted across its keys", 3, row.payments)
 
         pay("YUENKEEHOMETOWNCAFE", at = 7_000L)
-        assertEquals("The count was not live", 4, rules.learnedMerchants().single().payments)
+        assertEquals("The count was not live", 4, merchants.learnedMerchants().single().payments)
     }
 
     @Test fun aDormantSourceRuleIsNeverListedOrCounted() {
         val source = pay("YUENKEEHOMETOWNCAFE")
         val target = pay("RESTORAN YUEN KEE HOME TOWN CAFE", at = 2_000L)
-        rules.teach(source, food, 5_000L)
-        rules.teach(target, shopping, 5_000L)
+        merchants.teach(source, food, 5_000L)
+        merchants.teach(target, shopping, 5_000L)
         mergeYuenKee()
 
         assertEquals("The fixture's dormant rule is not stored", 2, rules.countAll())
-        assertEquals(1, rules.learnedMerchants().size)
-        assertEquals(1, rules.learnedCount())
+        assertEquals(1, merchants.learnedMerchants().size)
+        assertEquals(1, merchants.learnedCount())
     }
 
     @Test fun onlyExactLearnedUnscopedRulesAreListed() {
@@ -147,30 +148,30 @@ class LearnedMerchantsTest {
         db.insertMerchantRule("DIGI", shopping, matchType = MatchType.CONTAINS)
         db.insertMerchantRule("TNG", shopping, scopedPackage = "my.bank.app")
 
-        assertEquals(listOf("MR DIY"), rules.learnedMerchants().map { it.identity })
-        assertEquals(1, rules.learnedCount())
+        assertEquals(listOf("MR DIY"), merchants.learnedMerchants().map { it.identity })
+        assertEquals(1, merchants.learnedCount())
     }
 
     @Test fun deleteRemovesTheRuleAndTheDormantSourceRuleAndNothingElse() {
         val source = pay("YUENKEEHOMETOWNCAFE")
         val target = pay("RESTORAN YUEN KEE HOME TOWN CAFE", at = 2_000L)
-        rules.teach(source, food, 5_000L)
+        merchants.teach(source, food, 5_000L)
         mergeYuenKee()
-        rules.teach(target, shopping, 6_000L)
+        merchants.teach(target, shopping, 6_000L)
         teach("MR DIY", shopping)
         assertEquals("The fixture should hold a dormant, a live and an unrelated rule", 3, rules.countAll())
 
-        assertEquals(2, rules.deleteLearnedOfIdentity("RESTORAN YUEN KEE HOME TOWN CAFE"))
+        assertEquals(2, merchants.deleteLearnedOfIdentity("RESTORAN YUEN KEE HOME TOWN CAFE"))
 
-        assertEquals(listOf("MR DIY"), rules.learnedRules().map { it.pattern })
+        assertEquals(listOf("MR DIY"), merchants.learnedRules().map { it.pattern })
     }
 
     @Test fun deleteTouchesNoTransactionAndLeavesTheRowsItFiledUnconfirmed() {
         val id = pay("MR DIY")
-        rules.teach(id, food, 5_000L)
+        merchants.teach(id, food, 5_000L)
         val before = txns.byId(id)
 
-        rules.deleteLearnedOfIdentity("MR DIY")
+        merchants.deleteLearnedOfIdentity("MR DIY")
 
         assertEquals("Delete changed a txn row", before, txns.byId(id))
         assertFalse("Delete confirmed history", requireNotNull(txns.byId(id)).userEdited)
@@ -179,26 +180,26 @@ class LearnedMerchantsTest {
     @Test fun separateAfterDeleteRestoresNoRule() {
         val source = pay("YUENKEEHOMETOWNCAFE")
         pay("RESTORAN YUEN KEE HOME TOWN CAFE", at = 2_000L)
-        rules.teach(source, food, 5_000L)
+        merchants.teach(source, food, 5_000L)
         mergeYuenKee()
 
-        rules.deleteLearnedOfIdentity("RESTORAN YUEN KEE HOME TOWN CAFE")
+        merchants.deleteLearnedOfIdentity("RESTORAN YUEN KEE HOME TOWN CAFE")
         identities.separate("YUENKEEHOMETOWNCAFE")
 
         assertEquals(0, rules.countAll())
-        assertNull(rules.learnedCategoryFor("YUENKEEHOMETOWNCAFE"))
-        assertNull(rules.learnedCategoryFor("RESTORAN YUEN KEE HOME TOWN CAFE"))
+        assertNull(merchants.learnedCategoryFor("YUENKEEHOMETOWNCAFE"))
+        assertNull(merchants.learnedCategoryFor("RESTORAN YUEN KEE HOME TOWN CAFE"))
     }
 
     @Test fun aDeletedRuleFilesNothingAndTeachingAgainWritesOneFresh() {
         val id = pay("MR DIY")
-        rules.teach(id, food, 5_000L)
-        rules.deleteLearnedOfIdentity("MR DIY")
-        assertNull("A later capture would still be filed by the deleted rule", rules.learnedCategoryFor("MR DIY"))
+        merchants.teach(id, food, 5_000L)
+        merchants.deleteLearnedOfIdentity("MR DIY")
+        assertNull("A later capture would still be filed by the deleted rule", merchants.learnedCategoryFor("MR DIY"))
 
-        rules.teach(pay("MR DIY", at = 2_000L), shopping, 6_000L)
+        merchants.teach(pay("MR DIY", at = 2_000L), shopping, 6_000L)
 
-        assertEquals(shopping, rules.learnedCategoryFor("MR DIY"))
-        assertEquals(1, rules.learnedCount())
+        assertEquals(shopping, merchants.learnedCategoryFor("MR DIY"))
+        assertEquals(1, merchants.learnedCount())
     }
 }

@@ -76,8 +76,8 @@ class MerchantRoundTripTest {
     )
 
     private fun seen(vararg keys: String): Seen {
-        val snapshot = readLearnedRules(rules, merchants)
-        val live = LiveLearnedRules(rules)
+        val snapshot = readLearnedRules(merchants)
+        val live = LiveLearnedRules(merchants)
         return Seen(
             txns = db.txnDao().pageFrom(0L, 100),
             canonical = keys.associateWith(merchants::canonicalOf),
@@ -86,7 +86,7 @@ class MerchantRoundTripTest {
             filedLive = keys.associateWith(live::categoryFor),
             filedSnapshot = keys.associateWith(snapshot::categoryFor),
             choices = merchants.choices().map { Triple(it.identityKey, it.displayName, it.txnCount) }.sortedBy { it.first },
-            learned = rules.learnedMerchants().map { it.identity to it.categoryId }.sortedBy { it.first },
+            learned = merchants.learnedMerchants().map { it.identity to it.categoryId }.sortedBy { it.first },
         )
     }
 

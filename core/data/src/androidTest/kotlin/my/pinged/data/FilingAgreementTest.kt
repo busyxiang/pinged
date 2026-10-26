@@ -87,8 +87,8 @@ class FilingAgreementTest {
                 learned = learned,
             )
         }
-        val live = filer(LiveLearnedRules(rules))
-        val snapshot = filer(readLearnedRules(rules, merchants))
+        val live = filer(LiveLearnedRules(merchants))
+        val snapshot = filer(readLearnedRules(merchants))
 
         val keys = listOf(source, target, aliasOnly, "MY50 PASS", "GONE", "KEDAI KOPI", "UNKNOWN SHOP", null)
         keys.forEach { key ->

@@ -130,7 +130,7 @@ class ManualEditTest {
         Databases.txnDao(context).insert(
             ledgerTxn(amountSen = 900L, occurredAt = NOON - HOUR, categoryId = transport)
                 .copy(merchantRaw = "GRAB", merchantDisplay = "Grab", merchantKey = "GRAB"),
-        ).let { Databases.merchantRuleDao(context).teachAndFix(it, transport, NOON) }
+        ).let { Databases.merchantIdentityDao(context).teachAndFix(it, transport, NOON) }
 
         entries(LATER).update(target(id), entries(LATER).read(id).draft.copy(merchant = "Grab")).await()
         assertEquals("A learned rule did not file the corrected merchant", transport, dao.byId(id)!!.categoryId)

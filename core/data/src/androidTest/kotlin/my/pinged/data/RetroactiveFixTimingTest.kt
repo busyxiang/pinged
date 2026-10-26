@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 
 /**
  * #49: how long the retroactive fix holds the write lock, against `CLAUDE.md`'s
- * lease discipline. The figures are recorded on `MerchantRuleDao.teachAndFix`.
+ * lease discipline. The figures are recorded on `MerchantIdentityDao.teachAndFix`.
  *
  * What is asserted is the bound they have to stay under,
  * [Databases.RESET_LEASE_WAIT_MILLIS]: how long a gate waits for a lease before
@@ -73,7 +73,7 @@ class RetroactiveFixTimingTest {
 
         val millis = listOf(food, petrol, food, petrol, food).mapIndexed { i, category ->
             val start = System.nanoTime()
-            val outcome = db.merchantRuleDao().teachAndFix(tapped, category, now = 5_000L + i)
+            val outcome = db.merchantIdentityDao().teachAndFix(tapped, category, now = 5_000L + i)
             val took = (System.nanoTime() - start) / 1_000_000
             assertEquals(movable, outcome.moved)
             took

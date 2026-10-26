@@ -156,7 +156,7 @@ internal object ParseFixtures {
             categoryIds = categoryIds ?: Databases.categoryDao(context).seededIds(),
             captures = Databases.rawCaptureDao(context),
             txns = Databases.txnDao(context),
-            rules = Databases.merchantRuleDao(context),
+            merchants = Databases.merchantIdentityDao(context),
             matcher = matcher,
             uncategorizedId = Databases.categoryDao(context).requireUncategorizedId(),
             sourceLabel = sourceLabel ?: { pkg -> sources.byPackage(pkg)?.label },

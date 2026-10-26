@@ -61,7 +61,7 @@ class SettingsStateTest {
                 val id = db.txnDao().insert(
                     ledgerTxn(amountSen = 1_000L).copy(id = 0, merchantRaw = key, merchantDisplay = key, merchantKey = key),
                 )
-                rules.teach(id, shopping, 2_000L)
+                db.merchantIdentityDao().teach(id, shopping, 2_000L)
             }
             db.merchantIdentityDao().merge("ZUS COFFEE", "MR DIY", "Mr DIY")
             rules.insert(

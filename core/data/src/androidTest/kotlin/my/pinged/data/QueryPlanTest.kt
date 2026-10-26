@@ -4,7 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.dao.CaptureDayDao
 import my.pinged.data.dao.CategoryDao
-import my.pinged.data.dao.MerchantRuleDao
+import my.pinged.data.dao.MerchantSql
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.dao.UserRejectRuleDao
@@ -230,15 +230,51 @@ class QueryPlanTest {
     }
 
     /**
-     * The retroactive fix's row filter ([MerchantRuleDao.ELIGIBLE]), as the count
+     * The retroactive fix's row filter ([MerchantSql.ELIGIBLE]), as the count
      * and the move both use it: `merchant_key IN (...)` is a seek on
      * `index_txn_merchant_key` and not a scan of every payment. The bare
      * `COUNT(*)` is a proxy for the grouped count and the `UPDATE`, which add
      * columns to the same `WHERE`.
      */
     @Test fun theRetroEligibilityFilterSeeksTheMerchantKeyIndex() {
-        val p = plan(bindable("SELECT COUNT(*) FROM txn WHERE " + MerchantRuleDao.ELIGIBLE), "SHOP", "SHOP")
+        val p = plan(bindable("SELECT COUNT(*) FROM txn WHERE " + MerchantSql.ELIGIBLE), "SHOP", "SHOP")
         assertUsesIndex("index_txn_merchant_key", p)
+    }
+
+    /**
+     * Key to identity ([MerchantSql.IDENTITY_OF_KEY]), stage two's per-capture
+     * read of a learned rule: the alias by its primary key, then the rule by
+     * the unique `(match_type, pattern, scoped_package)` index.
+     */
+    @Test fun aKeyResolvesToItsIdentityByPrimaryKeyAndFindsItsRuleByTheUniqueIndex() {
+        val sql = "SELECT category_id FROM merchant_rule WHERE " + MerchantSql.LEARNED +
+            " AND pattern = " + MerchantSql.IDENTITY_OF_KEY
+        val p = plan(bindable(sql), "EXACT", "LEARNED", "", "SHOP", "SHOP")
+        assertUsesIndex("index_merchant_rule_match_type_pattern_scoped_package", p, table = "merchant_rule")
+        assertLooksUpByKey(p, tables = listOf("merchant_alias"))
+    }
+
+    /**
+     * Identity to rows, over the rule table ([MerchantSql.KEYS_OF_IDENTITY]),
+     * as forgetting a merchant uses it: its keys are sought in the unique rule
+     * index and not read out of the whole table.
+     */
+    @Test fun forgettingAnIdentitySeeksItsKeysInTheRuleIndex() {
+        val sql = "DELETE FROM merchant_rule WHERE " + MerchantSql.LEARNED +
+            " AND pattern IN " + MerchantSql.KEYS_OF_IDENTITY
+        val p = plan(bindable(sql), "EXACT", "LEARNED", "", "SHOP", "SHOP")
+        assertUsesIndex("index_merchant_rule_match_type_pattern_scoped_package", p, table = "merchant_rule")
+    }
+
+    /** A dormant rule is told by a primary-key lookup of its pattern in `merchant_alias` ([MerchantSql.LIVE_RULE]). */
+    @Test fun aLiveRuleIsToldByThePrimaryKeyOfItsAlias() {
+        val sql = "SELECT COUNT(*) FROM merchant_rule WHERE " + MerchantSql.LEARNED + " AND " + MerchantSql.LIVE_RULE
+        val p = plan(bindable(sql), "EXACT", "LEARNED", "")
+        // Covering, because the subquery reads only the key it looks up.
+        assertTrue(
+            "merchant_alias is not looked up by its key:\n$p",
+            p.contains("SEARCH merchant_alias USING COVERING INDEX sqlite_autoindex_merchant_alias_1 (merchant_key=?)"),
+        )
     }
 
     /**

@@ -57,6 +57,9 @@ fun interface LearnedRules {
         val mergedIdentities: Set<String> = aliases.values.toSet()
 
         override fun categoryFor(key: String): Long? = rules[aliases[key] ?: key]
+
+        /** Whether [key] is one the user merged away, or an identity other keys were merged into. */
+        fun isMerged(key: String): Boolean = key in aliases || key in mergedIdentities
     }
 }
 
