@@ -5,6 +5,25 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.14.0](https://github.com/busyxiang/pinged/compare/v0.13.0...v0.14.0) (2026-10-26)
+
+
+### Features
+
+* ask about MAE transfers to a person before counting them ([#316](https://github.com/busyxiang/pinged/issues/316)) ([9a21c21](https://github.com/busyxiang/pinged/commit/9a21c212b07ed5aa572acbfb2c6c9cd2d82d4f4b))
+* let a money-back review card say which category it counts against ([#319](https://github.com/busyxiang/pinged/issues/319)) ([5ead800](https://github.com/busyxiang/pinged/commit/5ead80059f64c99984fa5721957d1672cfbea366))
+* read incoming money from MAE and Touch 'n Go as a refund held for review ([#310](https://github.com/busyxiang/pinged/issues/310)) ([06d2ef7](https://github.com/busyxiang/pinged/commit/06d2ef79ef3577464088f0ca22a1efb3a495a004))
+
+
+### Bug Fixes
+
+* count a kept notification as capture evidence, from one capture record ([#327](https://github.com/busyxiang/pinged/issues/327)) ([6e2aa2d](https://github.com/busyxiang/pinged/commit/6e2aa2d0cbdb0446f0ef05dd9cb289145e640652))
+* refuse a ledger change from the moment a restore or delete-everything is claimed ([#331](https://github.com/busyxiang/pinged/issues/331)) ([#337](https://github.com/busyxiang/pinged/issues/337)) ([8089757](https://github.com/busyxiang/pinged/commit/8089757ebe772bba92b750e9483e35f2fd8958a1))
+* refuse Teach's save from the moment a restore or delete-everything is claimed ([#340](https://github.com/busyxiang/pinged/issues/340)) ([b2e1e35](https://github.com/busyxiang/pinged/commit/b2e1e358ec9ecd782e0249874578612132ee7e2e))
+* say a screen is being replaced, not unreadable, during a restore or delete ([#336](https://github.com/busyxiang/pinged/issues/336)) ([fe7d12c](https://github.com/busyxiang/pinged/commit/fe7d12cb2c945c9609b716b7ecbc3dacf3e7b9e1)), closes [#328](https://github.com/busyxiang/pinged/issues/328)
+* take a stale "cannot open your data" banner down when the backup count fails ([#325](https://github.com/busyxiang/pinged/issues/325)) ([329bfdd](https://github.com/busyxiang/pinged/commit/329bfdd85f2fd70113300752703627079d290b24))
+* word Teach's second direction as money back, not a refund ([#317](https://github.com/busyxiang/pinged/issues/317)) ([74e73e5](https://github.com/busyxiang/pinged/commit/74e73e5fdea6ff55206073257b1ee6d81c722c45))
+
 ## [0.13.0](https://github.com/busyxiang/pinged/compare/v0.12.0...v0.13.0) (2026-10-23)
 
 
