@@ -124,6 +124,7 @@ jobs:
       # invocation it runs testDebugUnitTest once, in verify mode, rather than
       # a second time.
       - name: Unit tests, screenshots, lint and assemble
+        id: gradle
         run: >-
           ./gradlew --stacktrace
           test verifyRoborazziDebug lint :app:assembleDebug :app:processReleaseMainManifest
@@ -157,6 +158,9 @@ jobs:
       # are tested here, against this repository's own module graph.
       - name: The emulator job chooses the suites a change can reach
         run: python3 .github/scripts/affected_suites_test.py
+
+      - name: A failed test is named on the run's page
+        run: python3 .github/scripts/test_failures_test.py
 
       # Room only rewrites the schema when the committed file's identity hash
       # differs from the entities, so a drifted `createSql` under an unchanged
@@ -196,6 +200,13 @@ jobs:
             echo "$untracked"
             exit 1
           fi
+
+      # Named in the job summary and as annotations, so the run's page says
+      # which test failed without the artifact below. Only after the Gradle
+      # step itself failed: a later step's failure has no test to name.
+      - name: Name the failed tests
+        if: failure() && steps.gradle.outcome == 'failure'
+        run: python3 .github/scripts/test_failures.py
 
       - name: Keep the reports from a failed run
         if: failure()
@@ -337,6 +348,7 @@ jobs:
       # `-no-snapshot-save` so a run that dirtied the device does not write that
       # state back over the clean snapshot.
       - name: Instrumented tests
+        id: instrumented
         if: steps.suites.outputs.tasks != ''
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -360,6 +372,11 @@ jobs:
             echo "::error:::smoke reported no tests. Its runner died before the first one, so nothing has checked the R8 build."
             exit 1
           fi
+
+      # AGP logs only "There were failing tests" and a path on the runner.
+      - name: Name the failed tests
+        if: failure() && steps.instrumented.outcome == 'failure'
+        run: python3 .github/scripts/test_failures.py
 
       - name: Keep the reports from a failed run
         if: failure()
