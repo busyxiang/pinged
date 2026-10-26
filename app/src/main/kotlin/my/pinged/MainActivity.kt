@@ -141,7 +141,7 @@ class MainActivity : ComponentActivity() {
         val settingsStart = settingsStackFor(openSources)
         setContent {
             // Collected while started, which is when its watchers run.
-            val now by status.state.collectAsStateWithLifecycle()
+            val current by status.state.collectAsStateWithLifecycle()
             WithHolder {
                 // One saved stack per tab and the tab showing, kept in saved
                 // state for the reason `Ledger` gives. `TabStacks` holds the
@@ -180,7 +180,7 @@ class MainActivity : ComponentActivity() {
                     // Null until the first sample, drawn as bare Paper: it is
                     // null only on an install without the grant, and there
                     // the ledger would flash before onboarding replaced it.
-                    val opening = now.onboarding
+                    val opening = current.onboarding
                     // Saved, so a process killed while the user is in
                     // Android's settings still takes them on to sources.
                     var granting by rememberSaveable { mutableStateOf(false) }
@@ -219,7 +219,7 @@ class MainActivity : ComponentActivity() {
                         // selects the tab and unwinds whatever is pushed over it.
                         // On settings' own root it would do nothing, so there is no
                         // button (ruling R35).
-                        GrantBanner(now.banner, onOpenSettings = tabs::showSettings.takeUnless { tabs.showingSettingsRoot })
+                        GrantBanner(current.banner, onOpenSettings = tabs::showSettings.takeUnless { tabs.showingSettingsRoot })
                         NavDisplay(
                             backStack = tabs.entries,
                             // `entries` always holds both tabs' roots, so NavDisplay
@@ -276,11 +276,11 @@ class MainActivity : ComponentActivity() {
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                         onOpenSearch = { tabs.push(Search()) },
                                         onOpenToSort = { month, id -> tabs.push(Search(month.toString(), id)) },
-                                        heard = now.heard,
+                                        heard = current.heard,
                                         // Both lead to settings' root, where the
                                         // export sheet is hosted and the
                                         // recovery notice is drawn.
-                                        backupReminder = now.backupReminder?.let { action ->
+                                        backupReminder = current.backupReminder?.let { action ->
                                             BackupReminder(
                                                 damaged = action == BackupReminderAction.Rescue,
                                                 onAction = when (action) {
@@ -590,7 +590,7 @@ class MainActivity : ComponentActivity() {
                         if (tabs.showsBar) {
                             // Null, the dash, while it is not read yet or
                             // unreadable: 0 would say nothing awaits review (#237).
-                            val awaitingReview = now.awaitingReview.takeUnless { it.unavailable }?.answer
+                            val awaitingReview = current.awaitingReview.takeUnless { it.unavailable }?.answer
                             TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = awaitingReview)
                         }
                     }

@@ -149,7 +149,7 @@ class LedgerResumeTest {
      * stays broken, which is the truth. This is the transient member of the
      * same family, the one `CaptureStorage.guarded`'s own documentation names:
      * a full disk, an IO error. `LedgerViewModel.read` retries the open on every
-     * foreground and `MainActivity.onResume` re-probes for the banner, so both
+     * foreground and `AppStatus` re-probes for the banner on each, so both
      * of those recover on their own; a feed opened once for the life of the
      * holder does not, and `loadState.refresh` then stays an error with the
      * body reading [CANNOT_READ_YOUR_DATA] under a banner that has cleared.

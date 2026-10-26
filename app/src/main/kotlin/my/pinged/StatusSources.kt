@@ -37,10 +37,10 @@ internal interface StatusSources {
     fun lastExportAtChanges(): Flow<Long>
 
     /** When the backup reminder was last dismissed, 0 for never. Throws `IOException`. */
-    suspend fun nudgeDismissedAt(): Long
+    suspend fun reminderDismissedAt(): Long
 
     /** Record a dismissal of the backup reminder at [at]. Throws `IOException`. */
-    suspend fun recordNudgeDismissed(at: Long)
+    suspend fun recordReminderDismissed(at: Long)
 
     /** Whether damage is on record, now and on each change. May fail. */
     fun damagedUpdates(): Flow<Boolean>
@@ -64,8 +64,8 @@ internal interface StatusSources {
         override fun storageUnavailableChanges() = ListenerStatus.storageUnavailableChanges(context)
         override suspend fun lastExportAt() = TransferStore.lastExportAt(context)
         override fun lastExportAtChanges() = TransferStore.lastExportAtChanges(context)
-        override suspend fun nudgeDismissedAt() = TransferStore.nudgeDismissedAt(context)
-        override suspend fun recordNudgeDismissed(at: Long) = TransferStore.recordNudgeDismissed(context, at)
+        override suspend fun reminderDismissedAt() = TransferStore.nudgeDismissedAt(context)
+        override suspend fun recordReminderDismissed(at: Long) = TransferStore.recordNudgeDismissed(context, at)
         override fun damagedUpdates() = IntegrityStore.damagedUpdates(context)
         override suspend fun onboards(granted: Boolean) = onboards(context, granted)
         override val rewrites: Flow<Long> = Databases.rewrites

@@ -68,7 +68,7 @@ class AppStatusTest {
         scope.launch { status.state.collect {} }
     }
 
-    private val AppStatus.now get() = state.value
+    private val AppStatus.current get() = state.value
 
     // -- The capture banner --------------------------------------------------
 
@@ -82,13 +82,13 @@ class AppStatusTest {
         val status = shown()
         sources.afterProbe = { sources.flag = true }
         status.resumed()
-        assertEquals("precondition: the refusal never reached the banner", BannerKind.STORAGE_UNAVAILABLE, status.now.banner)
+        assertEquals("precondition: the refusal never reached the banner", BannerKind.STORAGE_UNAVAILABLE, status.current.banner)
 
         sources.afterProbe = {}
         sources.flag = false
         sources.flagChanges.tryEmit(false)
 
-        assertNull("The flag was cleared after the banner sampled it, and the banner stayed up", status.now.banner)
+        assertNull("The flag was cleared after the banner sampled it, and the banner stayed up", status.current.banner)
     }
 
     /**
@@ -100,7 +100,7 @@ class AppStatusTest {
         val status = shown()
         scripted.refusing = true
         status.resumed()
-        assertEquals("precondition: no storage banner", BannerKind.STORAGE_UNAVAILABLE, status.now.banner)
+        assertEquals("precondition: no storage banner", BannerKind.STORAGE_UNAVAILABLE, status.current.banner)
 
         scripted.refusing = false
         status.settingsRead()
@@ -108,7 +108,7 @@ class AppStatusTest {
         assertEquals(
             "Settings read the database and the banner over it still says it cannot be opened",
             null,
-            status.now.banner,
+            status.current.banner,
         )
     }
 
@@ -121,33 +121,72 @@ class AppStatusTest {
     @Test fun aSettingsReadThatFindsNothingNewStillTakesAStaleBannerDown() {
         val status = shown()
         status.resumed()
-        assertNull("precondition: a banner over a healthy ledger", status.now.banner)
+        assertNull("precondition: a banner over a healthy ledger", status.current.banner)
         // The sample a rewrite makes, as the gate lifts.
         sources.afterProbe = { sources.flag = true }
         sources.rewrites.value++
-        assertEquals("precondition: the refusal never reached the banner", BannerKind.STORAGE_UNAVAILABLE, status.now.banner)
+        assertEquals("precondition: the refusal never reached the banner", BannerKind.STORAGE_UNAVAILABLE, status.current.banner)
 
         sources.afterProbe = {}
         status.settingsRead()
 
-        assertNull("A Settings read found the ledger healthy, and the stale banner stayed up", status.now.banner)
+        assertNull("A Settings read found the ledger healthy, and the stale banner stayed up", status.current.banner)
     }
 
     /**
      * **A rewrite samples again.** A restore from key-gone replaces the
-     * database and no resume follows, so a banner sampled only on resume
-     * said "cannot open" over "BACKUP RESTORED" for the rest of the visit.
+     * database and no resume follows, so without it "cannot open" stands over
+     * Settings' "BACKUP RESTORED" for the rest of the visit.
      */
     @Test fun aRewriteOfTheLedgerSamplesTheBannerAgain() {
         val status = shown()
         scripted.refusing = true
         status.resumed()
-        assertEquals("precondition: no storage banner", BannerKind.STORAGE_UNAVAILABLE, status.now.banner)
+        assertEquals("precondition: no storage banner", BannerKind.STORAGE_UNAVAILABLE, status.current.banner)
 
         scripted.refusing = false
         sources.rewrites.value++
 
-        assertNull("The ledger was replaced by one that opens, and the banner still says it cannot", status.now.banner)
+        assertNull("The ledger was replaced by one that opens, and the banner still says it cannot", status.current.banner)
+    }
+
+    /**
+     * **A count that throws still clears the flag.** A scan that aborts
+     * mid-count raises `SQLiteException` out of `guarded`'s body, so the
+     * clear it makes after a body that returned never happens for the count.
+     * A foreground spent entirely in Settings has no ledger read to clear it
+     * either, so the probe has to.
+     */
+    @Test fun aCountThatThrowsInASettingsOnlyForegroundStillTakesTheBannerDown() {
+        val status = shown()
+        scripted.refusing = true
+        status.resumed()
+        assertEquals("precondition: no storage banner", BannerKind.STORAGE_UNAVAILABLE, status.current.banner)
+
+        scripted.refusing = false
+        runner.countFails = true
+        status.settingsRead()
+
+        assertNull(
+            "The database opened and the banner stayed up, because the reminder's count threw before " +
+                "the flag was cleared",
+            status.current.banner,
+        )
+    }
+
+    /**
+     * **A flag that will not write leaves the sample to finish.** `guarded`
+     * clears the flag with a DataStore write after the body returns, and a
+     * disk that will not write raises `IOException` from it, out of the
+     * probe's read.
+     */
+    @Test fun aFlagThatWillNotWriteStillLetsTheSampleReport() {
+        val status = shown()
+        runner.flagWriteFails = true
+
+        status.settingsRead()
+
+        assertEquals("The sample stopped at the probe and never reached the report", "HEARD <5 MIN", status.current.heard)
     }
 
     /**
@@ -163,10 +202,46 @@ class AppStatusTest {
         // opens the database too, and is not the sample's.
         status.settingsRead()
 
-        val opened = sources.events.indexOfFirst { it.startsWith("read:") }
+        val opened = sources.events.indexOf("read:${AppStatus.PROBE}")
         val reported = sources.events.indexOf("report")
         assertTrue("A sample never opened the database: ${sources.events}", opened >= 0)
         assertTrue("A sample read the report before it opened the database: ${sources.events}", opened < reported)
+    }
+
+    /**
+     * **Onboarding is decided from the report the sample read, after it**, so
+     * first run cannot end on a grant the banner has not yet heard of; and
+     * before the first sample, an install without the grant draws neither.
+     */
+    @Test fun onboardingFollowsTheGrantTheSampleReported() {
+        sources.granted = false
+        val status = shown()
+        assertNull("Onboarding was decided before anything was sampled", status.current.onboarding)
+
+        status.resumed()
+        assertEquals("No grant and first run not over, and onboarding was not drawn", true, status.current.onboarding)
+
+        // The grant lands after this sample's report and before its first
+        // run is decided: the banner has not heard of it, so neither has
+        // onboarding.
+        sources.afterReport = { sources.granted = true }
+        status.resumed()
+        assertEquals(
+            "Onboarding ended on a grant the banner it would uncover has not heard of",
+            true to BannerKind.NOT_GRANTED,
+            status.current.onboarding to status.current.banner,
+        )
+        sources.afterReport = {}
+
+        sources.events.clear()
+        status.resumed()
+
+        assertEquals("The grant was reported and onboarding stayed", false, status.current.onboarding)
+        assertEquals(
+            "Onboarding was not decided once, after the report: ${sources.events}",
+            listOf("report", "onboards:true"),
+            sources.events.filter { it == "report" || it.startsWith("onboards") },
+        )
     }
 
     // -- The backup reminder -------------------------------------------------
@@ -181,7 +256,7 @@ class AppStatusTest {
         sources.lastExport = sources.time
         sources.exportChanges.tryEmit(sources.time)
 
-        assertNull("The export was recorded and the reminder stayed up", status.now.backupReminder)
+        assertNull("The export was recorded and the reminder stayed up", status.current.backupReminder)
     }
 
     /**
@@ -195,10 +270,10 @@ class AppStatusTest {
         status.dismissBackupReminder()
 
         assertEquals("The X stored no dismissal", sources.time, sources.dismissedAt)
-        assertNull("The X was tapped and the reminder stayed up", status.now.backupReminder)
+        assertNull("The X was tapped and the reminder stayed up", status.current.backupReminder)
         val relaunched = shown()
         relaunched.resumed()
-        assertNull("The snoozed reminder came back on the next launch", relaunched.now.backupReminder)
+        assertNull("The snoozed reminder came back on the next launch", relaunched.current.backupReminder)
     }
 
     /** A dismissal that did not store leaves the reminder up: that is what the next launch will show. */
@@ -211,7 +286,7 @@ class AppStatusTest {
         assertEquals(
             "The reminder went though its dismissal was never stored, so it comes back on the next launch",
             BackupReminderAction.Export,
-            status.now.backupReminder,
+            status.current.backupReminder,
         )
     }
 
@@ -227,7 +302,7 @@ class AppStatusTest {
         seed { db -> db.openHelper.writableDatabase.execSQL("DELETE FROM txn") }
         sources.rewrites.value++
 
-        assertNull("The ledger was replaced by an empty one and the reminder stayed up", status.now.backupReminder)
+        assertNull("The ledger was replaced by an empty one and the reminder stayed up", status.current.backupReminder)
     }
 
     /** On a damaged ledger its action is the rescue, which Settings offers there in place of the export. */
@@ -236,7 +311,7 @@ class AppStatusTest {
 
         sources.damaged.value = true
 
-        assertEquals(BackupReminderAction.Rescue, status.now.backupReminder)
+        assertEquals(BackupReminderAction.Rescue, status.current.backupReminder)
     }
 
     /**
@@ -250,7 +325,7 @@ class AppStatusTest {
 
         status.resumed()
 
-        assertNull("The reminder answered \"overdue\" for a store it could not read", status.now.backupReminder)
+        assertNull("The reminder answered \"overdue\" for a store it could not read", status.current.backupReminder)
     }
 
     /**
@@ -264,7 +339,7 @@ class AppStatusTest {
 
         status.resumed()
 
-        assertNull("The reminder answered \"overdue\" over a ledger it could not count", status.now.backupReminder)
+        assertNull("The reminder answered \"overdue\" over a ledger it could not count", status.current.backupReminder)
     }
 
     // -- The heard line ------------------------------------------------------
@@ -274,11 +349,11 @@ class AppStatusTest {
         sources.lastHeard = sources.time - 4 * MINUTE
         val status = shown()
         status.resumed()
-        assertEquals("precondition", "HEARD <5 MIN", status.now.heard)
+        assertEquals("precondition", "HEARD <5 MIN", status.current.heard)
 
         sources.aMinutePasses()
 
-        assertEquals("A minute passed and the heard line did not move", "HEARD 5 MIN", status.now.heard)
+        assertEquals("A minute passed and the heard line did not move", "HEARD 5 MIN", status.current.heard)
     }
 
     // -- Helpers -------------------------------------------------------------
@@ -295,7 +370,7 @@ class AppStatusTest {
         assertEquals(
             "precondition: no reminder over a ledger with a row and a month-old export",
             BackupReminderAction.Export,
-            status.now.backupReminder,
+            status.current.backupReminder,
         )
         return status
     }
@@ -329,12 +404,16 @@ class AppStatusTest {
         /** The backup reminder's count throws as a scan aborting mid-count does. */
         var countFails = false
 
+        /** The flag's write after a read throws, as a disk that will not write does. */
+        var flagWriteFails = false
+
         override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> {
             sources.events += "read:$what"
             val outcome = scripted.read(what) { db ->
                 if (countFails && what == AppStatus.COUNTING) throw SQLiteException("simulated scan that aborts mid-count")
                 body(db)
             }
+            if (flagWriteFails) throw IOException("simulated capture_health file that will not write")
             sources.flag = outcome is Outcome.Refused
             sources.afterProbe()
             return outcome
@@ -349,8 +428,10 @@ class AppStatusTest {
         val events = ArrayList<String>()
 
         var time = 1_800_000_000_000L
+        var granted = true
         var flag = false
         var afterProbe: suspend () -> Unit = {}
+        var afterReport: () -> Unit = {}
         var lastHeard = time - MINUTE
         var lastExport = 0L
         var dismissedAt = 0L
@@ -373,16 +454,16 @@ class AppStatusTest {
             passed.complete(Unit)
         }
 
-        override fun isGranted() = true
+        override fun isGranted() = granted
 
         override suspend fun report(): CaptureReport {
             events += "report"
             return CaptureReport(
-                granted = true,
+                granted = granted,
                 lastNotificationAt = lastHeard,
                 staleForMillis = time - lastHeard,
                 storageUnavailable = flag,
-            )
+            ).also { afterReport() }
         }
 
         override fun storageUnavailableChanges(): Flow<Boolean> = flagChanges
@@ -394,16 +475,19 @@ class AppStatusTest {
 
         override fun lastExportAtChanges(): Flow<Long> = exportChanges
 
-        override suspend fun nudgeDismissedAt() = dismissedAt
+        override suspend fun reminderDismissedAt() = dismissedAt
 
-        override suspend fun recordNudgeDismissed(at: Long) {
+        override suspend fun recordReminderDismissed(at: Long) {
             if (dismissalFails) throw IOException("simulated preferences file that will not write")
             dismissedAt = at
         }
 
         override fun damagedUpdates(): Flow<Boolean> = damaged
 
-        override suspend fun onboards(granted: Boolean) = !granted
+        override suspend fun onboards(granted: Boolean): Boolean {
+            events += "onboards:$granted"
+            return !granted
+        }
 
         override fun now() = time
 

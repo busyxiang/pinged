@@ -58,10 +58,14 @@ import my.pinged.read.ScreenRead
  * it, and so does a delete or a restore that replaces the ledger and fails
  * before `TransferStore.forget`.
  *
- * Nothing here may throw into [scope], which in production is
+ * Nothing the samples read may throw into [scope], which in production is
  * `viewModelScope` with no `CoroutineExceptionHandler`: a throw there kills
  * the process on the home screen, on every foreground, for as long as the
- * fault lasts. Each read carries its own guard; see [exportOverdue].
+ * fault lasts. Each read carries its own guard; see [exportOverdue]. The tab
+ * bar's count is a [ScreenRead], and lets through what every screen's read
+ * does: an instance closed under it is `CaptureStorage.guarded`'s to retry
+ * and then refuse, and only a failure that is not the database being
+ * unreadable escapes.
  *
  * @param scope where samples and watchers run; its thread is the one the
  *   inputs are called from, which [ScreenRead] requires.
@@ -77,7 +81,7 @@ internal class AppStatus(
      * only an install without one waits for [StatusSources.onboards], behind
      * bare Paper.
      */
-    private val held = MutableStateFlow(Held(onboarding = if (sources.isGranted()) false else null))
+    private val readings = MutableStateFlow(Readings(onboarding = if (sources.isGranted()) false else null))
 
     /**
      * The tab bar's count (§9.2's ways in). It duplicates the count
@@ -94,9 +98,9 @@ internal class AppStatus(
     /** The decisions `MainActivity` draws. See [AppStatusState]. */
     val state: StateFlow<AppStatusState> = channelFlow {
         launch { watch() }
-        combine(held, awaitingReview.state, minutes()) { held, review, now -> held.decide(review, now) }
+        combine(readings, awaitingReview.state, minutes()) { readings, review, now -> readings.decide(review, now) }
             .collect { send(it) }
-    }.stateIn(scope, SharingStarted.WhileSubscribed(), held.value.decide(awaitingReview.state.value, sources.now()))
+    }.stateIn(scope, SharingStarted.WhileSubscribed(), readings.value.decide(awaitingReview.state.value, sources.now()))
 
     /** The Activity came to the foreground: the user may have changed anything in system settings. */
     fun resumed() {
@@ -117,7 +121,7 @@ internal class AppStatus(
     fun dismissBackupReminder() {
         scope.launch {
             try {
-                sources.recordNudgeDismissed(sources.now())
+                sources.recordReminderDismissed(sources.now())
             } catch (thrown: IOException) {
                 Log.w(TAG, "Could not record the backup reminder's dismissal", thrown)
             }
@@ -135,20 +139,46 @@ internal class AppStatus(
         awaitingReview.refresh()
     }
 
-    /** The database, then the report from it, then first run from that same report. */
+    /**
+     * The probe, the backup reminder's count, the report the probe makes
+     * true, then first run from that same report.
+     */
     private suspend fun sample() = sampling.withLock {
-        // The backup reminder's count opens the database, and is the probe.
+        probe()
         readBackup()
         val report = sources.report()
         // From the same report, so first run cannot end on a grant the banner
         // has not yet heard of.
         val opening = sources.onboards(report.granted)
-        held.update { it.copy(report = report, onboarding = opening) }
+        readings.update { it.copy(report = report, onboarding = opening) }
+    }
+
+    /**
+     * Open the database and run nothing, so the runner sets or clears the
+     * storage flag for this foreground.
+     *
+     * **Its own read, and not the backup reminder's count.** A count that
+     * throws `SQLiteException` aborts `CaptureStorage.guarded`'s body, and
+     * `guarded` clears the flag only after a body that returned; so a probe
+     * that counts leaves "CANNOT OPEN YOUR DATA" over a database that opens,
+     * for as long as nothing else opens it.
+     *
+     * Guarded as [exportOverdue] is, for the flag's own write: what it
+     * answers is in the flag, which [sample] reads next.
+     */
+    private suspend fun probe() {
+        try {
+            runner.read(PROBE) {}
+        } catch (thrown: SQLException) {
+            Log.w(TAG, "Could not open the ledger to sample capture", thrown)
+        } catch (thrown: IOException) {
+            Log.w(TAG, "Could not record whether the ledger opens", thrown)
+        }
     }
 
     private suspend fun readBackup() {
         val overdue = exportOverdue()
-        held.update { it.copy(exportOverdue = overdue) }
+        readings.update { it.copy(exportOverdue = overdue) }
     }
 
     /**
@@ -177,7 +207,7 @@ internal class AppStatus(
                 txns = txns.value,
                 lastExportAt = sources.lastExportAt(),
                 now = sources.now(),
-                nudgeDismissedAt = sources.nudgeDismissedAt(),
+                nudgeDismissedAt = sources.reminderDismissedAt(),
             )
         }
     } catch (thrown: SQLException) {
@@ -214,16 +244,16 @@ internal class AppStatus(
             sources.damagedUpdates()
                 .catch { thrown ->
                     Log.w(TAG, "Could not watch the integrity verdict", thrown)
-                    held.update { it.copy(damaged = false) }
+                    readings.update { it.copy(damaged = false) }
                 }
-                .collect { damaged -> held.update { it.copy(damaged = damaged) } }
+                .collect { damaged -> readings.update { it.copy(damaged = damaged) } }
         }
         // The stored timestamp and not a callback on the tap: an export that
         // failed records none, so nothing emits and the reminder stays up.
         sources.lastExportAtChanges()
             .catch { thrown ->
                 Log.w(TAG, "Could not watch the last export", thrown)
-                held.update { it.copy(exportOverdue = false) }
+                readings.update { it.copy(exportOverdue = false) }
             }
             .collect { readBackup() }
     }
@@ -237,7 +267,7 @@ internal class AppStatus(
     }
 
     /** What the samples and watchers last read, before any decision is made from it. */
-    private data class Held(
+    private data class Readings(
         val report: CaptureReport? = null,
         val exportOverdue: Boolean = false,
         val damaged: Boolean = false,
@@ -257,7 +287,10 @@ internal class AppStatus(
     }
 
     companion object {
-        /** The probe's and the backup reminder's count's name in the log. */
+        /** The probe's name in the log. */
+        const val PROBE = "The ledger cannot be opened to sample capture"
+
+        /** The backup reminder's count's name in the log. */
         const val COUNTING = "The ledger cannot be counted for the backup reminder"
 
         /** The tab bar's count's name in the log. */

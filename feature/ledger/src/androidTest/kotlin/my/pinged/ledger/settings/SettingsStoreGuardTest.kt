@@ -28,7 +28,7 @@ import org.junit.runner.RunWith
  * a claim.
  *
  * **The failures are handed in** through [SettingsViewModel.stored], for
- * `ExportNudgeGuardTest`'s reason: DataStore caches its first successful
+ * `StoredSettings`' reason: DataStore caches its first successful
  * read, so a file corrupted from here would never be read again.
  */
 @RunWith(AndroidJUnit4::class)

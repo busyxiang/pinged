@@ -203,7 +203,7 @@ fun LedgerScreen(
         // Paging does not re-attempt a load that failed, so the feed's half of
         // the catch-up has to be asked for. Without it a transient failure is
         // permanent on this screen alone, while the summary's read and
-        // `MainActivity.onResume` clear the banner -- leaving the body reading
+        // `AppStatus`'s probe on resume clear the banner -- leaving the body reading
         // "cannot be read" under a banner saying otherwise.
         items.retry()
         onPauseOrDispose {}

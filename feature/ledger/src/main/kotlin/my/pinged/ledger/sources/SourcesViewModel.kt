@@ -124,7 +124,7 @@ class SourcesViewModel internal constructor(app: Application, runner: ReadRunner
      * cannot be opened (spec 11.1): the runner turns it into
      * `ReadState.unavailable`, where unguarded it reached the thread's uncaught
      * handler and killed the process on every launch. The banner does not wait
-     * on this read: `MainActivity.onResume` runs its own probe, because this
+     * on this read: `AppStatus` runs its own probe on resume, because this
      * screen may not be composed at all.
      */
     val read: ScreenRead<Unit, SourcesState> =

@@ -47,7 +47,7 @@ import org.junit.runner.RunWith
  * beside a capture banner and this device's capture may not be healthy.
  */
 @RunWith(AndroidJUnit4::class)
-class ExportNudgeGuardTest {
+class BackupReminderGuardTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val escaped = CopyOnWriteArrayList<Throwable>()
 
@@ -64,7 +64,7 @@ class ExportNudgeGuardTest {
             withTheReminderUp(GuardedRunner(context)) { status ->
                 Databases.shared(context).close()
 
-                status.settingsRead()
+                onMain { status.settingsRead() }
 
                 assertTrue(
                     "The reminder stayed up over a count on a closed connection, or the count " +
@@ -91,7 +91,7 @@ class ExportNudgeGuardTest {
             withTheReminderUp(runner) { status ->
                 runner.damaged = true
 
-                status.settingsRead()
+                onMain { status.settingsRead() }
 
                 assertTrue("The reminder stayed up over a count it could not read: $escaped", awaitReminder(status, null))
                 assertFalse(
@@ -115,7 +115,7 @@ class ExportNudgeGuardTest {
         try {
             val status = AppStatus(scope, runner, HealthyCapture(StatusSources.OnDisk(context)))
             scope.launch { status.state.collect {} }
-            status.settingsRead()
+            onMain { status.settingsRead() }
             assertTrue(
                 "precondition: no reminder over a ledger with a row and no export",
                 awaitReminder(status, BackupReminderAction.Export),
@@ -126,6 +126,9 @@ class ExportNudgeGuardTest {
             scope.cancel()
         }
     }
+
+    /** [AppStatus]'s inputs are called from its scope's thread, which here is the main one. */
+    private fun onMain(input: () -> Unit) = InstrumentationRegistry.getInstrumentation().runOnMainSync(input)
 
     private fun awaitReminder(status: AppStatus, action: BackupReminderAction?): Boolean {
         val deadline = System.currentTimeMillis() + TIMEOUT
@@ -169,7 +172,7 @@ class ExportNudgeGuardTest {
 
         override suspend fun lastExportAt() = 0L
 
-        override suspend fun nudgeDismissedAt() = 0L
+        override suspend fun reminderDismissedAt() = 0L
     }
 
     /** [guarded], with the reminder's count meeting code 11 once [damaged] is set. */
