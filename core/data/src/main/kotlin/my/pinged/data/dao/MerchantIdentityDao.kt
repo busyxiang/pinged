@@ -120,55 +120,52 @@ interface MerchantDecisions {
      *   holds and no identity is left that only aliases resolve to. A learned
      *   rule on [from] has its pattern moved to [to] in the same write.
      *
-     * **A [to] the user already decided about is left alone**: one in another
-     * merge, one with members, one with a name of its own, or one with a learned
-     * rule in a category other than the one it would join (issue #52). Folding
-     * it in would merge two shops the user kept apart, or shadow the rule that
-     * files [to]'s new captures, which is theirs to do. The row then resolves
-     * to [to]'s identity, as it would with no carry at all; no stored
-     * `category_id` moves and [from]'s rule stays where it is.
-     *
-     * A [from] with no decision -- unmerged, no members, no name, no rule --
-     * writes nothing, and returns after the four reads that say so.
+     * [planCarry] decides, including which [to] the user already decided about
+     * is left alone (issue #52); this reads what it asks and makes the writes it
+     * returns. A [from] with no decision -- unmerged, no members, no name, no
+     * rule -- writes nothing, and returns after the four reads that say so.
      */
     fun carry(from: String, to: String) {
         if (from == to) return
-        val fromCanonical = canonicalOf(from)
-        val name = if (fromCanonical == null) nameOf(from) else null
-        // A merged [from]'s own rule is dormant: its identity's is read instead.
-        val rule = if (fromCanonical == null) learnedCategoryOn(from) else null
-        if (fromCanonical == null && name == null && rule == null && memberCount(from) == 0) return
-
-        val toCanonical = canonicalOf(to)
-        val stillKept = keyInUse(from)
-        // Already one shop: [to] is `c` or merged into it, or aliased to a [from] rows still keep.
-        if ((toCanonical ?: to) == (fromCanonical ?: from) && (fromCanonical != null || stillKept)) return
-        val ours = toCanonical == from
-        if (!ours && (toCanonical != null || memberCount(to) > 0 || nameOf(to) != null)) return
-        val toRule = learnedCategoryOn(to)
-        if (!ours && toRule != null && toRule != (rule ?: learnedCategoryOn(fromCanonical ?: from))) return
-
-        if (fromCanonical != null || stillKept) {
-            insertAlias(MerchantAlias(merchantKey = to, canonicalKey = fromCanonical ?: from))
-            return
+        val canonical = canonicalOf(from)
+        // A merged [from]'s own name, members and rule are dormant or moot: its identity's are read instead.
+        val source = CarrySource(
+            canonical = canonical,
+            name = if (canonical == null) nameOf(from) else null,
+            rule = if (canonical == null) learnedCategoryOn(from) else null,
+            members = if (canonical == null) memberCount(from) else 0,
+        )
+        val plan = planCarry(from, to, source) {
+            CarryTarget(
+                canonical = canonicalOf(to),
+                members = memberCount(to),
+                name = nameOf(to),
+                rule = learnedCategoryOn(to),
+                stillKept = keyInUse(from),
+                identityRule = if (canonical == null) source.rule else learnedCategoryOn(canonical),
+            )
         }
-        // [to] may be aliased to [from] by an earlier row of this sweep, or be
-        // a member the user merged in; either way it is canonical from here.
-        separate(to)
-        repoint(from = from, to = to)
-        if (name != null) {
-            setName(to, name)
-            deleteName(from)
-        }
-        if (rule != null) {
-            // The unique index allows one rule per pattern. A rule already on
-            // [to] in [from]'s category makes [from]'s redundant; a dormant one
-            // from a merge into [from] is not the rule that was in force.
-            if (toRule == rule) {
-                deleteLearnedOn(from)
-            } else {
-                if (toRule != null) deleteLearnedOn(to)
-                moveLearned(from = from, to = to)
+        when (plan) {
+            CarryPlan.None -> Unit
+            is CarryPlan.Alias -> insertAlias(MerchantAlias(merchantKey = plan.key, canonicalKey = plan.canonical))
+            is CarryPlan.TakeOver -> {
+                // [to] may be aliased to [from] by an earlier row of this sweep, or be
+                // a member the user merged in; either way it is canonical from here.
+                separate(to)
+                repoint(from = from, to = to)
+                if (plan.name != null) {
+                    setName(to, plan.name)
+                    deleteName(from)
+                }
+                when (plan.rule) {
+                    RuleMove.NONE -> Unit
+                    RuleMove.DROP_SOURCE -> deleteLearnedOn(from)
+                    RuleMove.MOVE_SOURCE -> moveLearned(from = from, to = to)
+                    RuleMove.REPLACE_TARGET -> {
+                        deleteLearnedOn(to)
+                        moveLearned(from = from, to = to)
+                    }
+                }
             }
         }
     }
