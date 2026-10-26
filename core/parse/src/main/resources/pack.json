@@ -1,5 +1,5 @@
 {
-  "pack_version": 15,
+  "pack_version": 16,
   "fragments": {
     "amount": "(?:RM|MYR)\\s?(?<amount>[0-9,]+(?:\\.[0-9]{1,2})?)"
   },
@@ -115,6 +115,15 @@
             "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
           },
           "pattern": "Reload of {{amount}}"
+        },
+        {
+          "id": "tng-received-v1", "priority": 95,
+          "direction": "REFUND", "confidence": "REVIEW",
+          "requires": {
+            "text_contains_all": ["received from"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
+          },
+          "pattern": "{{amount}} received from (?<merchant>.+?) for [^.]+\\."
         }
       ]
     },
@@ -135,6 +144,15 @@
             "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
           },
           "pattern": "(?:Bayaran balik|Pemulangan wang) {{amount}} daripada (?<merchant>.+?) telah"
+        },
+        {
+          "id": "mae-received-v1", "priority": 95,
+          "direction": "REFUND", "confidence": "REVIEW",
+          "requires": {
+            "text_contains_all": ["received"],
+            "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]
+          },
+          "pattern": "You.ve received {{amount}} from (?<merchant>.+?)\\. REF"
         },
         {
           "id": "mae-scan-pay-v1", "priority": 100,
