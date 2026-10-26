@@ -1,11 +1,11 @@
 package my.pinged.ledger.entry
 
 import android.content.Context
-import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
@@ -38,11 +38,18 @@ import org.junit.runner.RunWith
  * in the ledger the delete leaves, and it never keeps the delete waiting out
  * `Databases.RESET_LEASE_WAIT_MILLIS` for its lease.
  *
- * The delete is started from inside the save's own lease: [ManualEntries]
- * asks its `context` provider for the ledger first on the caller's thread,
- * then off it under `CaptureStorage.guarded`, so once the chips' read is
- * done, the provider's next call off the main thread is the moment Save has
- * its lease and has not yet written. That is the race the busy check before the guard cannot close.
+ * **A save that has its lease when the gate rises is handed its instance and
+ * finishes**, in the milliseconds its two statements take: the delete's reset
+ * waits for that lease and then closes the instance and removes the file,
+ * the row with it. Nothing in the block asks the gate again: its DAOs come
+ * from the instance it was handed. One that asks after the gate is up is
+ * refused at the open.
+ *
+ * The delete is started from inside the save's lease through
+ * [ManualEntries.midSave], where the save holds its lease and has not yet
+ * written, or as the save enters its guard, through the `context` provider
+ * [ManualEntries] asks for the ledger there. That is the race the busy check
+ * before the guard cannot close.
  */
 @RunWith(AndroidJUnit4::class)
 class EntryGateRaceTest {
@@ -56,8 +63,19 @@ class EntryGateRaceTest {
         context.discardTheDatabase()
     }
 
-    @Test fun aSaveThatMeetsTheRaisedGateIsRefusedAndNotQueued() = runBlocking {
-        val race = race(untilGated = true)
+    @Test fun aSaveThatHasItsLeaseWhenTheGateRisesFinishesAndTheDeleteLeavesNoRow() = runBlocking {
+        val race = race(Start.IN_THE_LEASE, untilGated = true)
+
+        val saved = checkNotNull(race.saved) { "A save that held its lease when the gate rose was refused" }
+        assertNull(
+            "The row the save wrote ($saved) survived the delete's wipe",
+            Databases.txnDao(context).byId(saved),
+        )
+        theGateWasNotOutlasted(race)
+    }
+
+    @Test fun aSaveAskedForAfterTheGateIsUpIsRefusedAndNotQueued() = runBlocking {
+        val race = race(Start.AT_THE_GUARD, untilGated = true)
 
         assertNull("A save that met the gate reported a row", race.saved)
         theGateWasNotOutlasted(race)
@@ -65,16 +83,16 @@ class EntryGateRaceTest {
 
     /**
      * The delete claimed as Save holds its lease, left to raise its gate when
-     * it will: Save gets its write in first or meets the gate, and either way
-     * the gate is not outlasted. Repeated, so both ends of the race are met;
-     * the counts are logged.
+     * it will: Save's write is in before the wipe, and the gate is not
+     * outlasted. Repeated, so the delete meets Save at several points of its
+     * statements; the counts are logged.
      */
-    @Test fun aSaveRacingTheGateFinishesBeforeItOrIsRefused() = runBlocking {
+    @Test fun aSaveRacingTheGateFinishesBeforeItAndIsWipedWithTheRest() = runBlocking {
         var written = 0
         var refused = 0
         var longestDelete = 0L
         repeat(ROUNDS) { round ->
-            val race = race(untilGated = false, pauseMillis = round % 4L)
+            val race = race(Start.IN_THE_LEASE, untilGated = false, pauseMillis = round % 4L)
             if (race.saved != null) written++ else refused++
             longestDelete = maxOf(longestDelete, race.deleteMillis)
             theGateWasNotOutlasted(race)
@@ -83,49 +101,54 @@ class EntryGateRaceTest {
         Unit
     }
 
+    /** Where the delete is started: with the save's lease held, or as it enters its guard, before the lease. */
+    private enum class Start { IN_THE_LEASE, AT_THE_GUARD }
+
     private class Race(val saved: Long?, val saveMillis: Long, val deleteMillis: Long)
 
     /**
-     * One Save on a fresh ledger with a delete-everything started from
-     * inside its lease; [untilGated] holds the save there until the gate is
-     * up, else [pauseMillis] before letting it go on.
+     * One Save on a fresh ledger with a delete-everything started at [start];
+     * [untilGated] holds the save there until the gate is up, else
+     * [pauseMillis] before letting it go on.
      */
-    private suspend fun race(untilGated: Boolean, pauseMillis: Long = 0L): Race {
+    private suspend fun race(start: Start, untilGated: Boolean, pauseMillis: Long = 0L): Race {
         context.freshLedger()
         val delete = AtomicReference<Deferred<Transfers.Answer>?>(null)
         val deleteStarted = AtomicLong(0L)
-        val provider = object : () -> Context {
-            @Volatile var armed = false
-
-            override fun invoke(): Context {
-                if (armed && Looper.myLooper() != Looper.getMainLooper()) {
-                    armed = false
-                    deleteStarted.set(SystemClock.elapsedRealtime())
-                    delete.set(Transfers.deleteEverything(context, requester = Job()))
-                    check(Transfers.state.value.replacingLedger == Operation.DELETE) { "The delete did not claim its turn" }
-                    if (untilGated) {
-                        val deadline = SystemClock.elapsedRealtime() + TIMEOUT
-                        while (!Databases.gated && SystemClock.elapsedRealtime() < deadline) Thread.sleep(1)
-                        check(Databases.gated) { "The delete never raised its gate" }
-                    } else if (pauseMillis > 0) {
-                        Thread.sleep(pauseMillis)
-                    }
+        val armed = AtomicBoolean(false)
+        val startTheDelete = {
+            if (armed.compareAndSet(true, false)) {
+                deleteStarted.set(SystemClock.elapsedRealtime())
+                delete.set(Transfers.deleteEverything(context, requester = Job()))
+                check(Transfers.state.value.replacingLedger == Operation.DELETE) { "The delete did not claim its turn" }
+                if (untilGated) {
+                    val deadline = SystemClock.elapsedRealtime() + TIMEOUT
+                    while (!Databases.gated && SystemClock.elapsedRealtime() < deadline) Thread.sleep(1)
+                    check(Databases.gated) { "The delete never raised its gate" }
+                } else if (pauseMillis > 0) {
+                    Thread.sleep(pauseMillis)
                 }
+            }
+        }
+        val provider = object : () -> Context {
+            override fun invoke(): Context {
+                if (start == Start.AT_THE_GUARD) startTheDelete()
                 return context
             }
         }
         val entries = ManualEntries(context = provider, scope = scope)
-        // Armed once the chips' first read is done: it opens the ledger off
-        // the main thread too, and Save's lease is the one wanted.
+        if (start == Start.IN_THE_LEASE) entries.midSave = startTheDelete
+        // Armed once the chips' first read is done: it asks for the ledger
+        // through the same provider, and Save's guard is the call wanted.
         withTimeout(TIMEOUT) { entries.categories.first { it.isNotEmpty() } }
-        provider.armed = true
+        armed.set(true)
 
         val saveStarted = SystemClock.elapsedRealtime()
         val saved = withTimeoutOrNull(SAVE_BUDGET) { entries.save(ManualDraft(amountSen = 1_250L)).await() }
         val saveMillis = SystemClock.elapsedRealtime() - saveStarted
         assertTrue("Save did not answer within ${SAVE_BUDGET}ms: it waited on the gate", saveMillis < SAVE_BUDGET)
 
-        val answer = withTimeout(TIMEOUT) { checkNotNull(delete.get()) { "Save never opened the ledger" }.await() }
+        val answer = withTimeout(TIMEOUT) { checkNotNull(delete.get()) { "Save never reached the delete's start" }.await() }
         val deleteMillis = SystemClock.elapsedRealtime() - deleteStarted.get()
         assertTrue("The delete did not settle: $answer", answer is Transfers.Answer.Settled)
         withTimeout(TIMEOUT) { Transfers.state.first { it.running == null } }

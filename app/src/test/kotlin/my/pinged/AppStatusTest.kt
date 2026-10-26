@@ -451,8 +451,8 @@ class AppStatusTest {
             return outcome
         }
 
-        override suspend fun <T> write(what: String, body: suspend (PingedDatabase) -> T): Outcome<T> =
-            scripted.write(what, body)
+        override suspend fun <T> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> T): Outcome<T> =
+            scripted.write(what, oneTransaction, body)
     }
 
     /** Every store [AppStatus] reads, answering at once, with a clock the test moves. */

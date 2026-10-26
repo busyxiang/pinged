@@ -60,8 +60,8 @@ class ReadHoldTest {
                 }
             }
 
-        override suspend fun <T> write(what: String, body: suspend (PingedDatabase) -> T): Outcome<T> =
-            inner.write(what, body)
+        override suspend fun <T> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> T): Outcome<T> =
+            inner.write(what, oneTransaction, body)
     }
 
     private val db get() = Databases.shared(app).openHelper.writableDatabase

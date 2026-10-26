@@ -41,7 +41,7 @@ object Wipe {
     }
 
     /**
-     * Behind [Databases.whileDeleting], because the listener shares this
+     * Behind [WholeFile.replaceAll], because the listener shares this
      * process and would otherwise rebuild the database between the file being
      * removed and the key being destroyed.
      *
@@ -109,7 +109,7 @@ object Wipe {
     @CheckResult
     suspend fun everything(context: Context): Leftover {
         try {
-            Databases.whileDeleting { DatabaseKey.destroy(context) }
+            WholeFile.replaceAll { DatabaseKey.destroy(context) }
         } catch (destroyFailed: Exception) {
             try {
                 forgetVerdict(context)

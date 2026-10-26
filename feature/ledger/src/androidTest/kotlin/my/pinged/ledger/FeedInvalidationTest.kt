@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import my.pinged.data.DatabaseAccess
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.PingedDatabase
 import my.pinged.ledger.home.LeasedFeed
@@ -38,6 +39,9 @@ import kotlin.coroutines.CoroutineContext
 class FeedInvalidationTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val dispatcher = HoldingDispatcher()
+
+    /** The feed leases the shared instance, not [db], which is this test's own. */
+    private val access = DatabaseAccess.production(context)
     private lateinit var db: PingedDatabase
 
     @Before fun open() {
@@ -53,6 +57,7 @@ class FeedInvalidationTest {
         dispatcher.release()
         db.close()
         context.deleteDatabase(NAME)
+        context.discardTheDatabase()
     }
 
     @Test(timeout = 60_000)
@@ -61,7 +66,7 @@ class FeedInvalidationTest {
         dispatcher.holding = true
         val room = db.txnDao().feed(TxnDao.EVERY_LATER_DAY)
         dispatcher.holding = false
-        val feed = LeasedFeed(room, db.invalidationTracker)
+        val feed = LeasedFeed(room, db.invalidationTracker, access)
 
         val first = withContext(Dispatchers.IO) { feed.load(PagingSource.LoadParams.Refresh(null, 10, false)) }
         assertTrue("the first page was not read: $first", first is PagingSource.LoadResult.Page)
@@ -92,7 +97,7 @@ class FeedInvalidationTest {
         dispatcher.holding = true
         val room = db.txnDao().feed(TxnDao.EVERY_LATER_DAY)
         dispatcher.holding = false
-        val feed = LeasedFeed(room, db.invalidationTracker)
+        val feed = LeasedFeed(room, db.invalidationTracker, access)
 
         val first = withContext(Dispatchers.IO) { feed.load(PagingSource.LoadParams.Refresh(null, 10, false)) }
         assertTrue("the first page was not read: $first", first is PagingSource.LoadResult.Page)
@@ -121,7 +126,7 @@ class FeedInvalidationTest {
     @Test fun aWriteRoomsOwnSourceHearsFirstIsStillReportedAsAWrite() {
         var writes = 0
         val room = db.txnDao().feed(TxnDao.EVERY_LATER_DAY)
-        val feed = LeasedFeed(room, db.invalidationTracker, onWrite = { writes++ })
+        val feed = LeasedFeed(room, db.invalidationTracker, access, onWrite = { writes++ })
 
         room.invalidate()
 
@@ -142,7 +147,7 @@ class FeedInvalidationTest {
     @Test fun anInvalidationTheFeedStartsIsNotAWrite() {
         var writes = 0
         val room = db.txnDao().feed(TxnDao.EVERY_LATER_DAY)
-        val feed = LeasedFeed(room, db.invalidationTracker, onWrite = { writes++ })
+        val feed = LeasedFeed(room, db.invalidationTracker, access, onWrite = { writes++ })
 
         feed.invalidate()
 

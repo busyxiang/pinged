@@ -44,7 +44,7 @@ class RowActionsReplacingTest {
     private val screen: ScreenRead<Unit, Long?> =
         ScreenRead.fixed(scope, runner, "The test cannot be read") { db -> db.txnDao().byId(ROW)?.categoryId }
 
-    private val rows = RowActions({ ApplicationProvider.getApplicationContext() }, scope, runner, screen.rowScreen(), transfers)
+    private val rows = RowActions(scope, runner, screen.rowScreen(), transfers)
 
     @After fun end() {
         scope.cancel()

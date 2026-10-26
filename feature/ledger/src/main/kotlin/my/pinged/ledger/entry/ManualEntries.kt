@@ -1,6 +1,7 @@
 package my.pinged.ledger.entry
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -20,9 +21,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import my.pinged.capture.Graph
 import my.pinged.capture.MerchantColumns
-import my.pinged.data.Databases
 import my.pinged.data.LiveLearnedRules
 import my.pinged.data.LocalDates
+import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.ManualEdit
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
@@ -74,6 +75,14 @@ class ManualEntries(
     private val normalization: () -> MerchantNormalization = { Graph.ruleMatcher().merchantNormalization },
 ) {
     private val writes = LedgerWrites(context, scope, transfers)
+
+    /**
+     * Tests only: runs inside [save]'s guard, once it holds its lease and
+     * before it writes -- the moment a delete's gate meets a save that has
+     * already begun (`EntryGateRaceTest`).
+     */
+    @VisibleForTesting
+    internal var midSave: () -> Unit = {}
 
     /** The database would not open on the last write. */
     val storageUnavailable: StateFlow<Boolean> = writes.storageUnavailable
@@ -127,9 +136,9 @@ class ManualEntries(
      */
     fun rank(): Job = scope.launch {
         if (writes.replacing) return@launch
-        writes.guarded("The categories cannot be read", unavailable = Unit) {
+        writes.guarded("The categories cannot be read", unavailable = Unit) { db ->
             val today = LocalDates.calendarDay(LocalDates.of(clock()))
-            _categories.value = Databases.categoryDao(context()).rankedByUse(
+            _categories.value = db.categoryDao().rankedByUse(
                 from = LocalDates.of(today.minusDays(RANKING_DAYS - 1L)),
                 to = LocalDates.of(today),
             )
@@ -149,8 +158,8 @@ class ManualEntries(
         val key = withContext(Dispatchers.IO) { MerchantColumns.of(merchant, normalization()).key }
             ?: return@async null
         if (writes.replacing) return@async null
-        writes.guarded("The merchant's category cannot be read", unavailable = null) {
-            ruleFiling(key).also { writes.opened() }
+        writes.guarded("The merchant's category cannot be read", unavailable = null) { db ->
+            ruleFiling(db, key).also { writes.opened() }
         }
     }
 
@@ -162,9 +171,9 @@ class ManualEntries(
      * re-filing (#105) make.
      *
      * Blocking, so only inside a `LedgerWrites.guarded` block, which leases
-     * the instance.
+     * the instance and hands it over as [db].
      */
-    internal fun ruleFiling(key: String): Long? = filer().file(key).categoryId
+    internal fun ruleFiling(db: PingedDatabase, key: String): Long? = filer(db).file(key).categoryId
 
     /**
      * Built on every lookup, over the live rule port: Settings renames and
@@ -173,10 +182,10 @@ class ManualEntries(
      * refuses without a word. Seeded ids go through `seed_name`, so a renamed
      * seeded category keeps its merchants, as stage two files them.
      */
-    private fun filer() = Filer(
+    private fun filer(db: PingedDatabase) = Filer(
         Graph.parsePack().dictionary,
-        Databases.categoryDao(context()).seededIds(),
-        LiveLearnedRules(Databases.merchantIdentityDao(context())),
+        db.categoryDao().seededIds(),
+        LiveLearnedRules(db.merchantIdentityDao()),
     )
 
     /**
@@ -212,11 +221,12 @@ class ManualEntries(
         val merchant = withContext(Dispatchers.IO) { MerchantColumns.of(draft.merchant, normalization()) }
         val now = admitted(draft) ?: return@async null
         val zone = ZoneId.systemDefault()
-        writes.guarded("The payment could not be saved", unavailable = null) {
+        writes.guarded("The payment could not be saved", unavailable = null) { db ->
+            midSave()
             val chosen = draft.category
-            val categories = Databases.categoryDao(context())
+            val categories = db.categoryDao()
             if (chosen != null && !categories.exists(chosen.categoryId)) return@guarded null
-            Databases.txnDao(context()).insert(
+            db.txnDao().insert(
                 Txn(
                     rawCaptureId = null,
                     amountSen = draft.amountSen,
@@ -255,8 +265,8 @@ class ManualEntries(
     fun load(id: Long, createdAt: Long? = null): Deferred<Loaded?> = scope.async {
         if (writes.replacing) return@async null
         val today = today()
-        writes.guarded("The payment could not be read", unavailable = null) {
-            val stored = Databases.txnDao(context()).byId(id)
+        writes.guarded("The payment could not be read", unavailable = null) { db ->
+            val stored = db.txnDao().byId(id)
                 ?.takeIf { it.rawCaptureId == null && (createdAt == null || it.createdAt == createdAt) }
             val loaded = stored?.let {
                 Loaded.Entry(
@@ -266,7 +276,7 @@ class ManualEntries(
                         day = LocalDates.calendarDay(it.localDate).takeUnless { day -> day == today },
                         merchant = it.merchantRaw.orEmpty(),
                         note = it.note.orEmpty(),
-                        category = shownChoice(it, Databases.categoryDao(context()).requireUncategorizedId()),
+                        category = shownChoice(it, db.categoryDao().requireUncategorizedId()),
                     ),
                 )
             } ?: Loaded.Gone
@@ -301,10 +311,10 @@ class ManualEntries(
         val merchant = withContext(Dispatchers.IO) { MerchantColumns.of(draft.merchant, normalization()) }
         val now = admitted(draft) ?: return@async false
         val zone = ZoneId.systemDefault()
-        writes.guarded("The payment could not be corrected", unavailable = false) {
-            val dao = Databases.txnDao(context())
+        writes.guarded("The payment could not be corrected", unavailable = false) { db ->
+            val dao = db.txnDao()
             val stored = dao.byId(target.id)?.takeIf { it.createdAt == target.createdAt } ?: return@guarded false
-            val uncategorized = Databases.categoryDao(context()).requireUncategorizedId()
+            val uncategorized = db.categoryDao().requireUncategorizedId()
             val note = draft.note.trim().ifEmpty { null }
             val columns = ManualEdit.Merchant(merchant.raw, merchant.display, merchant.key)
             val edit = ManualEdit(
@@ -313,10 +323,10 @@ class ManualEntries(
                 merchant = columns.takeIf { it != ManualEdit.Merchant(stored.merchantRaw, stored.merchantDisplay, stored.merchantKey) },
                 note = ManualEdit.Note(note).takeIf { note != stored.note },
                 filing = refiled(stored, draft.category, merchant.key != stored.merchantKey, uncategorized) {
-                    merchant.key?.let(::ruleFiling) ?: uncategorized
+                    merchant.key?.let { ruleFiling(db, it) } ?: uncategorized
                 }?.takeIf { it != ManualEdit.Filing(stored.categoryId, stored.userEdited) },
             )
-            if (edit.filing?.let { Databases.categoryDao(context()).exists(it.categoryId) } == false) return@guarded false
+            if (edit.filing?.let { db.categoryDao().exists(it.categoryId) } == false) return@guarded false
             val written = if (edit == ManualEdit()) stored.rawCaptureId == null else dao.editManualEntry(target.id, target.createdAt, edit, now)
             written.also { writes.opened() }
         }
@@ -335,8 +345,8 @@ class ManualEntries(
      */
     fun delete(target: EditTarget): Deferred<Boolean> = scope.async {
         if (writes.replacing) return@async false
-        writes.guarded("The payment could not be deleted", unavailable = false) {
-            val dao = Databases.txnDao(context())
+        writes.guarded("The payment could not be deleted", unavailable = false) { db ->
+            val dao = db.txnDao()
             val gone = dao.deleteManualEntry(target.id, target.createdAt) == 1 ||
                 dao.byId(target.id)?.createdAt != target.createdAt
             gone.also { writes.opened() }
@@ -371,8 +381,8 @@ class ManualEntries(
     fun nearbyCapture(draft: ManualDraft, editing: Long?): Deferred<NearbyCapture?> = scope.async {
         val now = admitted(draft) ?: return@async null
         val zone = ZoneId.systemDefault()
-        writes.guarded("Pinged could not look for the same payment", unavailable = null) {
-            val dao = Databases.txnDao(context())
+        writes.guarded("Pinged could not look for the same payment", unavailable = null) { db ->
+            val dao = db.txnDao()
             // An edit is dated as [update] would date it: on its unchanged
             // day, that is when it was paid, not now.
             val edited = editing?.let(dao::byId)

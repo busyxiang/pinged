@@ -32,6 +32,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import my.pinged.capture.Corrections
 import my.pinged.capture.Graph
+import my.pinged.data.DatabaseAccess
 import my.pinged.data.DatabaseKeyUnavailableException
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
@@ -130,6 +131,10 @@ class DocumentSink(
  * for -- see [Transfers]' KDoc for the two races that closes.
  */
 class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
+
+    /** What the counts lease the instance through, and replace a poisoned one by. */
+    private val access = DatabaseAccess.production(app)
+
     private val _state = MutableStateFlow(SettingsState().mirroring(Transfers.state.value))
     val state: StateFlow<SettingsState> = _state.asStateFlow()
 
@@ -236,25 +241,39 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
      * finds out.
      */
     private suspend fun read() = withContext(Dispatchers.IO) {
+        // On the turn, so no restore or delete can land between this and the
+        // file the lease below reaches: both publish before they let go of it.
+        val asOf = Transfers.state.value.lastWipe?.serial ?: 0L
         // Leased, as every statement on the shared instance is, so an instance
-        // retired for damage while these counts run is not closed under them.
-        Databases.leasing { readLeased() }
+        // retired for damage while these counts run is not closed under them;
+        // and in a scope, which records that damage and announces it once the
+        // lease has ended.
+        access.damageScope {
+            var entered = false
+            try {
+                access.leased { db ->
+                    entered = true
+                    readLeased(asOf, Opened.Database(db), this@damageScope)
+                }
+            } catch (thrown: DatabaseUnavailableException) {
+                // Only the open: one from the counts is theirs to answer for.
+                if (entered) throw thrown
+                readLeased(asOf, refusal(thrown), this@damageScope)
+            }
+        }
     }
 
     /**
-     * [read]'s body.
+     * [read]'s body, over [opened]: the instance it leased, or why it could not.
      *
      * **A count that meets damage is damage**, and goes where every other
-     * reader's does: the instance it poisoned is replaced and the damage
-     * recorded, and the screen says DAMAGED. Swallowed, the counts would
-     * draw HEALTHY with nothing beside it and leave the shared instance
-     * answering code 26, for the next export to fail on as corruption.
+     * reader's does: the instance it poisoned is replaced through [damage]
+     * and the damage recorded, and the screen says DAMAGED. Swallowed, the
+     * counts would draw HEALTHY with nothing beside it and leave the shared
+     * instance answering code 26, for the next export to fail on as
+     * corruption.
      */
-    private suspend fun readLeased() {
-        // On the turn, so no restore or delete can land between this and the
-        // file [opened] reaches: both publish before they let go of it.
-        val asOf = Transfers.state.value.lastWipe?.serial ?: 0L
-        val opened = opened()
+    private suspend fun readLeased(asOf: Long, opened: Opened, damage: DatabaseAccess.DamageScope) {
         val db = (opened as? Opened.Database)?.db
         val damaged = if (db == null) null else storedOrNull("the integrity verdict") { stored.damaged(app) }
         val recorded = when {
@@ -271,10 +290,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         val correctionsPending = if (recorded == Storage.HEALTHY) db?.let { countCorrections(it, met) } else null
         val counts = if (damaged == null) null else db?.let { wipeCounts(recorded, it, met) }
         val exportRows = if (damaged == null) null else db?.let { exportRows(recorded, it, met) }
-        if (met.damage && db != null) {
-            Databases.replacePoisoned(db)
-            IntegrityStore.recordDamage(app)
-        }
+        if (met.damage && db != null) damage.replace(db)
         val storage = if (met.damage) Storage.DAMAGED else recorded
         val lastExportAt = storedOrNull("the last export") { stored.lastExportAt(app) }
         val lastCheckAt = storedOrNull("the last check") { stored.lastCheckAt(app) }
@@ -315,13 +331,13 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
      * **[storage] is a parameter rather than a read of `_state.value`.** The
      * field still holds whatever the last read left there when this runs, so
      * the case that matters is the *first* read of a device whose damage is
-     * already on record: [opened] succeeds, `IntegrityStore.damaged` answers
+     * already on record: the open succeeds, `IntegrityStore.damaged` answers
      * true, [read] resolves [Storage.DAMAGED] -- and the field is still
      * [SettingsState]'s `HEALTHY` default. A version reading the field would
      * run all four counts against a database already known to be damaged and
      * publish exactly the confident lie [WipeCounts] exists to refuse.
      *
-     * **[db] is the instance [opened] returned, not a second
+     * **[db] is the instance [read]'s lease handed over, not a second
      * `Databases.shared`.** A second call could meet a gate that rose between
      * the two and throw `DatabaseBeingDeletedException`, which the catch
      * below does not see. [Transfers.reading] already keeps every gate down
@@ -453,23 +469,18 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * The database, or the reason it would not open filed as [Storage]: the
-     * two states that differ only by which exception came out.
+     * The reason the database would not open filed as [Storage]: the two
+     * states that differ only by which exception came out.
      *
      * **`DatabaseBeingDeletedException` cannot arrive here.** Restore and
-     * delete are the only holders of `Databases.whileDeleting`, both run on
+     * delete are the only holders of `WholeFile.replaceAll`, both run on
      * [Transfers]' turn, and every caller of this holds it -- so a screen
      * opened over another screen's restore waits for the turn rather than
      * meeting the gate. Were one to arrive it would file as
      * [Storage.UNREADABLE], whose "Nothing has been deleted" would be false.
      */
-    private fun opened(): Opened = try {
-        Opened.Database(Databases.shared(app))
-    } catch (thrown: DatabaseKeyUnavailableException) {
-        Opened.Refused(Storage.KEY_GONE)
-    } catch (thrown: DatabaseUnavailableException) {
-        Opened.Refused(Storage.UNREADABLE)
-    }
+    private fun refusal(thrown: DatabaseUnavailableException): Opened.Refused =
+        Opened.Refused(if (thrown is DatabaseKeyUnavailableException) Storage.KEY_GONE else Storage.UNREADABLE)
 
     /** See [Transfers.check]. */
     fun check(): Job = request { requester -> Transfers.check(app, requester, beforeEachOperation) }

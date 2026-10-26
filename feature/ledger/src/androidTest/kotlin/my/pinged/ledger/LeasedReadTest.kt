@@ -10,10 +10,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import my.pinged.capture.CaptureStorage
+import my.pinged.data.DatabaseAccess
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
 import my.pinged.data.dao.FeedRow
+import my.pinged.data.retireAndAnnounce
 import my.pinged.ledger.home.LeasedFeed
 import my.pinged.ledger.settings.SettingsViewModel
 import my.pinged.ledger.settings.StoredSettings
@@ -74,7 +76,7 @@ class LeasedReadTest {
         }
 
         val loaded = runCatching {
-            withContext(Dispatchers.IO) { LeasedFeed(room, Databases.shared(context).invalidationTracker).load(PagingSource.LoadParams.Refresh(null, 40, false)) }
+            withContext(Dispatchers.IO) { LeasedFeed(room, Databases.shared(context).invalidationTracker, DatabaseAccess.production(context)).load(PagingSource.LoadParams.Refresh(null, 40, false)) }
         }
 
         assertWritable()
@@ -110,7 +112,7 @@ class LeasedReadTest {
     /** Another caller meets code 26 on the shared instance, replaces it, and is done. */
     private suspend fun Context.replaceFromAnotherCaller() {
         CaptureStorage.guarded(this, "another read", { Unit }, damageStopsCapture = false) {
-            Databases.replacePoisoned(Databases.shared(this))
+            retireAndAnnounce(Databases.shared(this))
         }
     }
 

@@ -1,6 +1,5 @@
 package my.pinged.ledger.home
 
-import android.content.Context
 import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -11,7 +10,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import my.pinged.capture.Graph
 import my.pinged.data.DatabaseUnavailableException
-import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
 import my.pinged.data.readLearnedRules
@@ -61,10 +59,6 @@ import java.time.YearMonth
  * not left to the foreign key: [assignCategory] asks in the transaction that
  * writes.
  *
- * [context] is a function so the holder can keep reading its `Application`
- * through a getter: a `Context` field is what lint's `StaticFieldLeak` fails
- * the build on (see `SourcesViewModel`).
- *
  * A view model hands it to its screen whole, and the screen hands each
  * `*ScreenContent` only the halves that screen offers: [CategoryActions] and
  * [MerchantActions] (#307).
@@ -79,7 +73,6 @@ import java.time.YearMonth
  * parameter for the reason `ReviewInbox` gives.
  */
 class RowActions(
-    private val context: () -> Context,
     private val scope: CoroutineScope,
     private val runner: ReadRunner,
     private val screen: RowScreen,
@@ -123,19 +116,19 @@ class RowActions(
     }
 
     /**
-     * Everything the chooser needs beside the row it opens on.
+     * Everything the chooser needs beside the row it opens on, through [db].
      *
      * Blocking, so it may only be called from inside a read's body, which is
-     * where the holder's own read calls it, beside the rows the chooser marks.
-     * Of one snapshot with them, because every screen's read is one
-     * transaction (`ReadRunner.read`).
+     * where the holder's own read calls it, beside the rows the chooser marks,
+     * with the instance that read was handed. Of one snapshot with them,
+     * because every screen's read is one transaction (`ReadRunner.read`).
      */
-    fun readChooser(): ChooserRead {
+    fun readChooser(db: PingedDatabase): ChooserRead {
         // Read on every refresh: Settings edits the table (#155), and a rename
         // has to reach the rows and the chooser on the next one. Three small
         // statements on a table of sixteen-odd rows, beside the ledger's
         // aggregate reads.
-        val categories = Databases.categoryDao(context())
+        val categories = db.categoryDao()
         val all = categories.all()
         return ChooserRead(
             categories = all,
@@ -147,7 +140,7 @@ class RowActions(
             filer = Filer(
                 Graph.parsePack().dictionary,
                 categories.seededIds(),
-                readLearnedRules(Databases.merchantIdentityDao(context())),
+                readLearnedRules(db.merchantIdentityDao()),
             ),
         )
     }
@@ -170,29 +163,22 @@ class RowActions(
      * the user can no longer see.
      */
     override fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job = gate.unlessReplacing {
-        screen.write("The category could not be assigned") { db ->
+        // The check and the write in one transaction, so a delete from
+        // Settings cannot land between them: deleted since the chooser
+        // drew it, there is nothing to file under, and the re-read
+        // draws the chooser's new list.
+        screen.write("The category could not be assigned", oneTransaction = true) { db ->
             val at = System.currentTimeMillis()
-            // The check and the write in one transaction, so a delete from
-            // Settings cannot land between them: deleted since the chooser
-            // drew it, there is nothing to file under, and the re-read
-            // draws the chooser's new list. Inside `whileLive`, as every other
-            // transaction opened outside `Databases` is: on an instance `reset`
-            // has closed, `runInTransaction` would reopen the file outside the
-            // gate (ruling R42).
-            Databases.whileLive(db) {
-                db.runInTransaction(Runnable {
-                    if (!db.categoryDao().exists(categoryId)) return@Runnable
-                    // A teaching save writes the merchant's learned rule and
-                    // leaves the row filed by it. It answers false for a row
-                    // with no merchant key, which is then saved as the one-off
-                    // the sheet said it would be.
-                    //
-                    // `teachAndFix` also moves the merchant's past payments
-                    // (#49), in this same transaction.
-                    val taught = teach && db.merchantIdentityDao().teachAndFix(txnId, categoryId, at).taught
-                    if (!taught) db.txnDao().setCategory(txnId, categoryId, at)
-                })
-            }
+            if (!db.categoryDao().exists(categoryId)) return@write
+            // A teaching save writes the merchant's learned rule and
+            // leaves the row filed by it. It answers false for a row
+            // with no merchant key, which is then saved as the one-off
+            // the sheet said it would be.
+            //
+            // `teachAndFix` also moves the merchant's past payments
+            // (#49), in this same transaction.
+            val taught = teach && db.merchantIdentityDao().teachAndFix(txnId, categoryId, at).taught
+            if (!taught) db.txnDao().setCategory(txnId, categoryId, at)
         }
     }
 
@@ -330,7 +316,7 @@ interface RowScreen {
      * Run [body] as a guarded write and read the screen again in the same
      * turn; completes after that re-read. See `ScreenRead.write`.
      */
-    fun <R> write(what: String, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>>
+    fun <R> write(what: String, oneTransaction: Boolean = false, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>>
 
     /** A read [RowActions] made was refused: the screen reads again, so it can say so itself. */
     fun refused()
@@ -338,7 +324,8 @@ interface RowScreen {
 
 /** [this] as what [RowActions] writes through: its writes read it back, and a refusal makes it read again. */
 fun ScreenRead<*, *>.rowScreen(): RowScreen = object : RowScreen {
-    override fun <R> write(what: String, body: suspend (PingedDatabase) -> R) = this@rowScreen.write(what, body)
+    override fun <R> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> R) =
+        this@rowScreen.write(what, oneTransaction, body)
 
     override fun refused() {
         refresh()

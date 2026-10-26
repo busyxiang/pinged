@@ -203,9 +203,9 @@ internal class ParsePass(
      * over and stays behind it until the next run.
      *
      * **A delete or a restore stops the run** before its next capture, as
-     * [isStopped] does: the run holds a `Databases.leasing` lease throughout,
-     * and `Databases.reset` waits for every lease before it closes the
-     * instance under it.
+     * [isStopped] does: `ParseWorker` runs it inside a `DatabaseAccess.leased`
+     * lease, and a reset (`WholeFile.replaceAll`) waits for every lease before
+     * it closes the instance under it.
      */
     fun run(): Summary {
         fun stopped() = isStopped() || Databases.gated || progress.processed >= maxRows

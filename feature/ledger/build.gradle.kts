@@ -40,6 +40,8 @@ android {
             kotlin.directories.add("src/sharedTest/kotlin")
             // `boundedWaitUntil`, which every androidTest `waitUntil` goes through.
             kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path)
+            // `retireAndAnnounce`, which the tests that replace an instance as another caller go through.
+            kotlin.directories.add(rootProject.file("core/data/src/sharedAndroidTest/kotlin").path)
         }
     }
 

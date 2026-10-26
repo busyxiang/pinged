@@ -132,7 +132,8 @@ internal class SpendingRead(
  * over 20,000 constructed rows across two years, 2.0ms median and 3.8ms at the
  * longest of 40 (the chooser's three statements included) before the capture
  * record, which adds 1.1 to 1.3ms for the month (`CaptureRecord.read`), under stage two's
- * longest single capture (66ms, `Databases.reset`).
+ * longest single capture (66ms over 6,000 parsed, measured for
+ * `Databases.reset`'s lease wait).
  *
  * The month-trust rule is the one Charts and `Months` grey on too (#81), so the
  * three cannot disagree. It never counts today: the first foreground of a day

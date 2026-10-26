@@ -11,7 +11,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import my.pinged.data.CaptureDays
-import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 
 /**
@@ -192,7 +191,7 @@ object ListenerStatus {
                     context,
                     what = "Cannot record that the listener is bound today",
                     unavailable = {},
-                ) { CaptureDays.markListenerBound(today) { Databases.captureDayDao(context) } }
+                ) { db -> CaptureDays.markListenerBound(today) { db.captureDayDao() } }
             }
         }
     }

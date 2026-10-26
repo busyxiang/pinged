@@ -41,7 +41,7 @@ class RowActionsReadTest {
     private val screen: ScreenRead<Unit, Long?> =
         ScreenRead.fixed(scope, runner, "The test cannot be read") { db -> db.txnDao().byId(ROW)?.categoryId }
 
-    private val rows = RowActions({ ApplicationProvider.getApplicationContext() }, scope, runner, screen.rowScreen())
+    private val rows = RowActions(scope, runner, screen.rowScreen())
 
     /** Seeds the ledger through the runner, which answers at once while it is not holding. */
     private fun seed(): Int {
@@ -85,6 +85,20 @@ class RowActionsReadTest {
 
         runner.calls[base + 2].release()
         assertEquals("The resume read, queued behind the write, published something older", GROCERIES, screen.state.value.answer)
+    }
+
+    @Test fun aCategoryAssignedIsAskedForAsOneTransactionBecauseItChecksTheCategoryAndThenWrites() {
+        val seeded = seed()
+        runner.holding = true
+
+        rows.assignCategory(ROW, GROCERIES, teach = false)
+
+        assertTrue("The assignment was not a write", runner.calls[seeded].write)
+        assertTrue(
+            "The assignment was not asked for in one transaction, so a delete from Settings can land " +
+                "between its check that the category exists and its write",
+            runner.calls[seeded].oneTransaction,
+        )
     }
 
     @Test fun aSheetClosedWhileItsReadRunsStaysClosed() {

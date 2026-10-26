@@ -1,7 +1,7 @@
 package my.pinged.capture
 
 import my.pinged.data.CaptureDays
-import my.pinged.data.Databases
+import my.pinged.data.PingedDatabase
 import android.app.Notification
 import android.content.Context
 import android.service.notification.StatusBarNotification
@@ -91,13 +91,13 @@ internal object CaptureIngest {
             context,
             what = "Capture cannot reach the database",
             unavailable = { false },
-        ) {
+        ) { db ->
             // No explicit `Databases.shared(context)` here: the probe belongs to
             // `CaptureStorage.guarded`, which opens the database before running this block.
             // It lived here because `CaptureDays.markNotificationSeen` skips the database
             // once the day is marked, so a guarded block round it probed nothing and
             // reported storage healthy -- which was true of every other guarded block too.
-            CaptureDays.markNotificationSeen(LocalDates.of(now)) { Databases.captureDayDao(context) }
+            CaptureDays.markNotificationSeen(LocalDates.of(now)) { db.captureDayDao() }
             true
         }
         // Nothing below can run, and there is nowhere to put the capture. The
@@ -128,7 +128,7 @@ internal object CaptureIngest {
             context,
             what = "Capture cannot store a notification",
             unavailable = { Stored.Unavailable },
-        ) { storeIfEnabled(context, sbn, arrival, now) }
+        ) { db -> storeIfEnabled(db, sbn, arrival, now) }
 
         // Spec 9.6's just-in-time prompt, after the guard rather than inside it so
         // no database lease is held across a DataStore write and a binder call.
@@ -163,8 +163,8 @@ internal object CaptureIngest {
      * connection: a lookup, an update of [SourceLiveness]'s timestamp to the
      * same value, and an insert that did not commit.
      */
-    private fun storeIfEnabled(context: Context, sbn: StatusBarNotification, arrival: Arrival, now: Long): Stored {
-        val sources = Databases.captureSourceDao(context)
+    private fun storeIfEnabled(db: PingedDatabase, sbn: StatusBarNotification, arrival: Arrival, now: Long): Stored {
+        val sources = db.captureSourceDao()
         val source = sources.byPackage(sbn.packageName)
         if (source?.enabled != true) {
             // Default-deny, and the whole basis of the privacy posture:
@@ -189,7 +189,7 @@ internal object CaptureIngest {
         // The durable boundary. One insert, and then stage one is done: a row
         // still at `parse_status = NEW` is unfinished work, so process death
         // here loses nothing (spec 3).
-        val id = Databases.rawCaptureDao(context).insert(
+        val id = db.rawCaptureDao().insert(
             RawCapture(
                 sourcePackage = fields.sourcePackage,
                 postedAt = fields.postedAt,

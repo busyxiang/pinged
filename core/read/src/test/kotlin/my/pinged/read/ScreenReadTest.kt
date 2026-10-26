@@ -240,6 +240,25 @@ class ScreenReadTest {
         assertEquals("The read asked after the write began before the write's read-back landed", 4, runner.calls.size)
     }
 
+    @Test fun aWriteAsksTheRunnerForOneTransactionOnlyWhenItIsToldTo() {
+        runner.holding = true
+        read.refresh()
+        runner.calls[0].release()
+
+        read.write("A plain write") { }
+        runner.calls[1].release()
+        runner.calls[2].release()
+        read.write("A write that checks and then writes", oneTransaction = true) { }
+        runner.calls[3].release()
+
+        assertEquals(
+            "The write was not asked for in one transaction exactly when it said so: " +
+                "the first read, a plain write and its read-back, then the write that asked and its read-back",
+            listOf(false, false, false, true, false),
+            runner.calls.map { it.oneTransaction },
+        )
+    }
+
     @Test fun aRefusedWriteRaisesUnavailableAndIsStillReadBack() {
         runner.holding = true
         read.refresh()

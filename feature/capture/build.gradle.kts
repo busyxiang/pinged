@@ -28,6 +28,8 @@ android {
         // runs. One file, so the two engines cannot be tested against tables
         // that have drifted apart.
         getByName("androidTest") {
+            // `retireAndAnnounce`, which the tests that replace an instance as another caller go through.
+            kotlin.directories.add(rootProject.file("core/data/src/sharedAndroidTest/kotlin").path)
             resources.directories.add("$rootDir/core/parse/src/sharedTest/resources")
         }
     }

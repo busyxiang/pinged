@@ -16,6 +16,7 @@ import my.pinged.data.IntegrityStore
 import my.pinged.data.PingedDatabase
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.RawCapture
+import my.pinged.data.retireAndAnnounce
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -87,7 +88,7 @@ class SharedInstanceUnderUseTest {
         // The read that met code 26, replacing the instance and finishing
         // while the capture is still inside its transaction.
         CaptureStorage.guarded(context, "the read beside it", { Unit }, damageStopsCapture = false) {
-            Databases.replacePoisoned(shared)
+            retireAndAnnounce(shared)
         }
         replaced.countDown()
         val outcome = capture.await()
@@ -134,7 +135,7 @@ class SharedInstanceUnderUseTest {
             }
         }
         assertTrue("the capture never began its transaction", inTransaction.await(10, TimeUnit.SECONDS))
-        Databases.leasing { Databases.replacePoisoned(shared) }
+        Databases.leasing { retireAndAnnounce(shared) }
         replaced.countDown()
         val outcome = capture.await()
 
@@ -167,7 +168,7 @@ class SharedInstanceUnderUseTest {
                 // Another caller meets code 26, replaces the instance and is
                 // done with it, while this one still holds its DAO.
                 CaptureStorage.guarded(context, "another read", { Unit }, damageStopsCapture = false) {
-                    Databases.replacePoisoned(Databases.shared(context))
+                    retireAndAnnounce(Databases.shared(context))
                 }
                 dao.all()
                 "read"
@@ -319,7 +320,7 @@ class SharedInstanceUnderUseTest {
             CaptureStorage.guarded(context, "a read of a damaged month", { Unit }, damageStopsCapture = false) {
                 val db = Databases.shared(context)
                 retired += db
-                Databases.replacePoisoned(db)
+                retireAndAnnounce(db)
                 db.captureSourceDao().all()
                 Unit
             }

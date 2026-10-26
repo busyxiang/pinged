@@ -80,7 +80,7 @@ sealed interface TransferJob {
 
     /**
      * Not the state that moves the screen to [Storage.DAMAGED]: damage an
-     * operation meets is recorded through `IntegrityStore.recordDamage`, and
+     * operation meets is recorded through `DatabaseAccess.damageScope`, and
      * the screen's next read says DAMAGED off that record.
      *
      * [ledgerLost] is a narrower claim than a failure, and both its writers make

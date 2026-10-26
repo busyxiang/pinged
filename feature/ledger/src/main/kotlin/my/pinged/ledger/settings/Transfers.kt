@@ -1,7 +1,6 @@
 package my.pinged.ledger.settings
 
 import android.content.Context
-import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.database.sqlite.SQLiteException
 import android.util.Log
 import androidx.annotation.VisibleForTesting
@@ -33,13 +32,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import my.pinged.capture.CaptureCaches
-import my.pinged.data.DatabaseReplacedException
+import my.pinged.data.DatabaseAccess
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 import my.pinged.data.Integrity
 import my.pinged.data.IntegrityStore
 import my.pinged.data.PingedDatabase
 import my.pinged.data.SearchFilter
+import my.pinged.data.WholeFile
 import my.pinged.data.Wipe
 import my.pinged.ledger.transfer.ExportCsv
 import my.pinged.ledger.transfer.ExportJson
@@ -117,7 +117,7 @@ data class TransferState(
  * it -- HEALTHY moments after a check found damage, or pre-wipe counts on the
  * screen a delete has just emptied. It is also what makes
  * `DatabaseBeingDeletedException` unreachable from a read: restore and delete
- * are the only callers of `Databases.whileDeleting`, and both hold [turn].
+ * are the only callers of `WholeFile.replaceAll`, and both hold [turn].
  *
  * ## Whoever asked can go away
  *
@@ -236,11 +236,12 @@ object Transfers {
         perform(Operation.CHECK, requester, beforeStart) {
             // The shared instance opened first, as the screen's own read
             // opens it, so that a first check on a new install has a file to
-            // check. The check itself runs on an instance of its own: the
-            // pragma leaves the connection it walks answering code 26 once it
-            // has met damage, and on this one capture would have gone with it.
+            // check; the instance itself is not used. The check itself runs
+            // on an instance of its own: the pragma leaves the connection it
+            // walks answering code 26 once it has met damage, and on this one
+            // capture would have gone with it.
             val ok = try {
-                Databases.shared(context)
+                DatabaseAccess.production(context).leased { }
                 Integrity.check(context) is Integrity.Result.Ok
             } catch (unavailable: DatabaseUnavailableException) {
                 return@perform TransferJob.Idle
@@ -381,9 +382,17 @@ object Transfers {
             //
             // Recorded as damage met, not as a check: nothing checked the
             // file, and a check recorded here would put the weekly one off.
-            opened?.let(Databases::replacePoisoned)
-            val removed = sink.delete()
-            IntegrityStore.recordDamage(context)
+            // Nothing to retry, so the scope retires, records and announces
+            // back to back (#302, decision 3), with the document removed
+            // between the retirement and the record. [readable] throws code
+            // 11 without retiring ([opened] is null then), and that is
+            // damage too, so the scope is told.
+            var removed = false
+            DatabaseAccess.production(context).damageScope {
+                opened?.let { replace(it) }
+                removed = sink.delete()
+                noteDamage()
+            }
             TransferJob.Failed(
                 "Pinged could not read all of your data, so this file was not " +
                     "finished" + if (removed) {
@@ -414,27 +423,14 @@ object Transfers {
      * probe's own read meeting damage, on the export's path too, and
      * [export] reports it.
      *
-     * Under [Databases.whileLive], as the export is: no replacement can
+     * Under [WholeFile.probe], as the export is under [WholeFile.export]: no replacement can
      * close the instance under the transaction, and one already replaced is
-     * refused and the next taken.
+     * refused and the next taken. The loop is [WholeFile.readable]'s.
      */
-    private suspend fun readable(context: Context): PingedDatabase {
-        var db = Databases.shared(context)
-        repeat(PROBES) {
-            try {
-                Databases.whileLive(db) { db.runInTransaction<Int> { db.categoryDao().countAll() } }
-                return db
-            } catch (replaced: DatabaseReplacedException) {
-                db = Databases.shared(context)
-            } catch (thrown: SQLiteException) {
-                if (!Databases.poisons(thrown) || thrown is SQLiteDatabaseCorruptException) throw thrown
-                Databases.replacePoisoned(db)
-                IntegrityStore.recordDamage(context)
-                db = Databases.shared(context)
-            }
-        }
-        return db
-    }
+    private suspend fun readable(context: Context): PingedDatabase =
+        // One scope for every probe, so a replacement is announced after the
+        // probe that retries on the new instance (#302, decision 3).
+        DatabaseAccess.production(context).damageScope { WholeFile.readable(context, this, PROBES) }
 
     /**
      * Stops the export running, a backup or a spreadsheet, whichever screen

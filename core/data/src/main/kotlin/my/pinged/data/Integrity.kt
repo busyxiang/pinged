@@ -39,7 +39,7 @@ object Integrity {
 
     /**
      * The pragma over `pinged.db`, on an instance of its own
-     * ([Databases.aside]), never the one [Databases.shared] serves.
+     * ([WholeFile.check]), never the one [Databases.shared] serves.
      *
      * **Why not the shared one.** Measured on emulator-5554, SQLCipher
      * 4.18.0: on a file with one damaged `raw_capture` leaf the pragma
@@ -59,7 +59,7 @@ object Integrity {
      * salvage offer from exactly the ledger that still has rows to give back.
      *
      * **A file that does not open is not a verdict** and throws what
-     * [Databases.aside] throws: no file to check, a gate up, a key gone, or a
+     * [WholeFile.check] throws: no file to check, a gate up, a key gone, or a
      * file that will not open through its key -- code 26 from a fresh
      * connection, which is the unreadable state, not damage found in an open
      * one.
@@ -67,7 +67,7 @@ object Integrity {
      * @throws DatabaseReplacedException if a delete or restore has removed the file.
      * @throws DatabaseUnavailableException if the file cannot be opened at all.
      */
-    fun check(context: Context): Result = Databases.aside(context, Databases.Holder.IntegrityCheck) { db ->
+    fun check(context: Context): Result = WholeFile.check(context) { db ->
         try {
             db.openHelper.writableDatabase.query("PRAGMA integrity_check").use { cursor ->
                 val lines = buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }

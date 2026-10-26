@@ -17,8 +17,17 @@ import org.junit.Test
  * after a delete's destroy, and the next `Databases.shared` threw
  * `DatabaseKeyUnavailableException` -- a key missing beside a database
  * present, which is spec 11.1's unrecoverable state manufactured by the app
- * itself. `Databases.whileLive` and `requireLive` refuse a closed instance
- * before either runs, and nothing makes a new caller use them.
+ * itself. `WholeFile.export` and `probe` (`Databases.whileLive`) and
+ * `Databases.requireLive` refuse a closed instance before either runs, and
+ * nothing makes a new caller use them.
+ *
+ * **It does not keep production off `Databases.shared`, `leasing`, `retire`
+ * and `reset`**: they carry `@RawDatabaseAccess`, which Gradle opts only test
+ * compilations into (#302, decision 11), and
+ * [noProductionSourceOutsideCoreDataNamesTheOptIn] refuses the `@OptIn` that
+ * would let a `main` source around it. `PingedDatabase` carries no marker, so
+ * a block that is handed an instance can still reach these two names, which
+ * is what this reads for (decision 12).
  *
  * So every production source set in every module is read, and each use of
  * either name must be one of [ALLOWED], which says why that one is safe.
@@ -66,11 +75,33 @@ class RawDatabaseAccessTest {
             "A production source reaches the database file around Room's connection " +
                 "manager. On an instance Databases.reset has closed, runInTransaction " +
                 "and openHelper reopen the file outside Databases' gate (ruling R42) -- " +
-                "wrap the call in Databases.whileLive, or requireLive on an instance " +
+                "wrap the call in WholeFile.export or probe, or Databases.requireLive on an instance " +
                 "Databases never serves, and add it to ALLOWED with the reason it is safe. " +
                 "Allowed now:\n" + ALLOWED.entries.joinToString("\n") { (path, site) -> "  $path: ${site.reason}" },
             allowed,
             found,
+        )
+    }
+
+    /**
+     * **`@OptIn(RawDatabaseAccess::class)` is how a production source gets
+     * around the marker**, whatever Gradle opts in, so the name is refused
+     * everywhere in production but `:core:data`, which opts in at each use.
+     * Counted as an identifier after [kotlinCode], so the KDocs that explain
+     * the marker are not.
+     */
+    @Test fun noProductionSourceOutsideCoreDataNamesTheOptIn() {
+        val named = productionSources()
+            .filterNot { relative(it).startsWith("core/data/src/main/") }
+            .associate { file -> relative(file) to uses(file, setOf(OPT_IN_MARKER)) }
+            .filterValues { it.isNotEmpty() }
+        assertEquals(
+            "A production source outside :core:data names $OPT_IN_MARKER, which opts it " +
+                "into raw access to Databases.shared, leasing, retire or reset. Only tests " +
+                "do (Gradle opts them in); production goes through DatabaseAccess or " +
+                "WholeFile -- add an entry there instead",
+            emptyMap<String, Map<String, Int>>(),
+            named,
         )
     }
 
@@ -186,13 +217,13 @@ class RawDatabaseAccessTest {
         return if (src >= 0 && src + 1 < parts.size) parts[src + 1] else null
     }
 
-    private fun uses(file: File): Map<String, Int> {
+    private fun uses(file: File, watched: Set<String> = WATCHED): Map<String, Int> {
         val code = try {
             kotlinCode(file.readText())
         } catch (thrown: IllegalArgumentException) {
             throw AssertionError("${relative(file)} could not be lexed, so its calls cannot be counted: ${thrown.message}")
         }
-        return identifiers(code).filter { it in WATCHED }.groupingBy { it }.eachCount()
+        return identifiers(code).filter { it in watched }.groupingBy { it }.eachCount()
     }
 
     private fun relative(file: File) = file.relativeTo(root).invariantSeparatorsPath
@@ -210,6 +241,9 @@ class RawDatabaseAccessTest {
 
     private companion object {
         val WATCHED = setOf("runInTransaction", "openHelper")
+
+        /** `my.pinged.data.RawDatabaseAccess`, which `:core:data` declares. */
+        const val OPT_IN_MARKER = "RawDatabaseAccess"
 
         /** Set by `app/build.gradle.kts`: see [theSourcesReadHereAreTheOnesGradleWatches]. */
         const val DIGEST_PROPERTY = "pinged.productionSources"
@@ -230,21 +264,16 @@ class RawDatabaseAccessTest {
             "feature/ledger/src/main/kotlin/my/pinged/ledger/transfer/ExportJson.kt" to Site(
                 mapOf("runInTransaction" to 1, "openHelper" to 1),
                 "ExportJson.write wraps the transaction, and the schema-version read " +
-                    "inside it, in Databases.whileLive.",
+                    "inside it, in WholeFile.export (Databases.whileLive).",
             ),
             "feature/ledger/src/main/kotlin/my/pinged/ledger/transfer/ExportCsv.kt" to Site(
                 mapOf("runInTransaction" to 1),
-                "ExportCsv.write wraps its transaction in Databases.whileLive, as ExportJson.write does.",
+                "ExportCsv.write wraps its transaction in WholeFile.export, as ExportJson.write does.",
             ),
-            "feature/ledger/src/main/kotlin/my/pinged/ledger/settings/Transfers.kt" to Site(
+            "core/data/src/main/kotlin/my/pinged/data/WholeFile.kt" to Site(
                 mapOf("runInTransaction" to 1),
-                "Transfers.readable probes the export's instance with a transaction inside " +
-                    "Databases.whileLive, which refuses a closed or retired instance.",
-            ),
-            "feature/ledger/src/main/kotlin/my/pinged/ledger/home/RowActions.kt" to Site(
-                mapOf("runInTransaction" to 1),
-                "RowActions.assignCategory wraps its transaction in Databases.whileLive, " +
-                    "on the instance the write's lease was handed.",
+                "WholeFile.readable probes the export's instance with a transaction inside " +
+                    "WholeFile.probe (Databases.whileLive), which refuses a closed or retired instance.",
             ),
             "feature/ledger/src/main/kotlin/my/pinged/ledger/transfer/ImportJson.kt" to Site(
                 mapOf("runInTransaction" to 1),

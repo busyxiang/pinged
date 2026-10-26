@@ -59,7 +59,6 @@ class DayViewModel(
 
     /** The row's category and merchant actions, shared with the Ledger; the day is read again after each write. */
     val rows = RowActions(
-        context = { context },
         scope = viewModelScope,
         runner = runner,
         screen = read.rowScreen(),
@@ -87,9 +86,8 @@ class DayViewModel(
         val counted = txns.dayTotals(day, day).map { CurrencyTotal(it.currency, it.netSen) }
         val keptOut = txns.notInTotal(day, day)
         val status = CaptureRecord.read(db, today, date..date).day(date)
-        // Through `Databases`' DAOs, which inside the transaction's
-        // monitor are [db]'s: the same instance and the same snapshot.
-        val chooser = rows.readChooser()
+        // Through [db]: the same instance and the same snapshot.
+        val chooser = rows.readChooser(db)
         return DayRead(
             rows = dayRows,
             heading = dayHeading(

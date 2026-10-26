@@ -39,8 +39,8 @@ internal class ScriptedRunner(context: Context) : ReadRunner {
     /** New calls that are not held are refused as a ledger replacement's gate refuses them. Wins over [refusing]. */
     var replacing = false
 
-    /** One read or write [ScriptedRunner] has been asked for. */
-    inner class Call(val what: String, val write: Boolean) {
+    /** One read or write [ScriptedRunner] has been asked for; [oneTransaction] is what a write asked for. */
+    inner class Call(val what: String, val write: Boolean, val oneTransaction: Boolean = false) {
         private val verdict = CompletableDeferred<Outcome<Unit>>()
 
         /** The body ran, and the caller was handed its answer. */
@@ -76,11 +76,11 @@ internal class ScriptedRunner(context: Context) : ReadRunner {
     override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> =
         enter(what, write = false) { body(database) }
 
-    override suspend fun <T> write(what: String, body: suspend (PingedDatabase) -> T): Outcome<T> =
-        enter(what, write = true) { body(database) }
+    override suspend fun <T> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> T): Outcome<T> =
+        enter(what, write = true, oneTransaction) { body(database) }
 
-    private suspend fun <T> enter(what: String, write: Boolean, run: suspend () -> T): Outcome<T> {
-        val call = Call(what, write)
+    private suspend fun <T> enter(what: String, write: Boolean, oneTransaction: Boolean = false, run: suspend () -> T): Outcome<T> {
+        val call = Call(what, write, oneTransaction)
         calls += call
         if (!holding) {
             call.decided(

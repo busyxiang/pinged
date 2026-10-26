@@ -17,7 +17,7 @@ import my.pinged.data.IntegrityStore
  * because the pragma leaves the connection it walks answering code 26 to
  * everything once it has met damage -- measured, and on the shared instance
  * that would be every capture after the week's check lost. Beside it, stage one's
- * insert does not wait for the check: `Databases.aside` has the numbers.
+ * insert does not wait for the check: `WholeFile.check` has the numbers.
  */
 internal object PeriodicIntegrity {
     /** A week. Corruption keeps no schedule; this bounds the cost of looking. */
@@ -60,9 +60,9 @@ internal object PeriodicIntegrity {
             Log.e(TAG, "integrity_check reported: ${result.firstProblem}")
         }
         // **A delete that starts while the pragma runs can leave this record
-        // behind.** The check runs inside `Databases.aside`, which holds the
+        // behind.** The check runs inside `WholeFile.check`, which holds the
         // delete's reset, and so its unlink, off until the pragma returns, so
-        // the verdict is at least about the file as it was. But `Databases.whileDeleting` gates the
+        // the verdict is at least about the file as it was. But `WholeFile.replaceAll` gates the
         // database, not this store: the delete's `IntegrityStore.forget` can
         // still run before the write below lands, and the user then sees a
         // wiped phone whose settings screen says it was checked moments ago.

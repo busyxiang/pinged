@@ -9,7 +9,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import my.pinged.data.DatabaseFactory
-import my.pinged.data.Databases
+import my.pinged.data.WholeFile
 import my.pinged.data.Wipe
 
 /**
@@ -43,7 +43,7 @@ import my.pinged.data.Wipe
  * A throw after it means it is not, and the message has to say so.
  *
  * **Nobody else is let into that window.** It runs inside
- * `Databases.whileDeleting`, so every other caller of `Databases.shared` --
+ * `WholeFile.replaceAll`, so every other caller of `Databases.shared` --
  * the listener on any app's notification, `ParseWorker`, `MainActivity`'s
  * resume probe -- is refused for its whole length, and records that it was.
  * Let in, the first of them would call `DatabaseKey.rawKeyPassphrase` beside
@@ -56,7 +56,7 @@ import my.pinged.data.Wipe
  * it is recorded, and the storage banner says so until the next open.
  *
  * A caller that resolved the database before the gate rose holds an instance
- * the gate's own reset has closed, and `Databases.whileLive` refuses the
+ * the gate's own reset has closed, and `WholeFile.export` refuses the
  * paths that would reopen the file through it (ruling R42).
  *
  * **Nor is the window left half way.** The cancellation check is the last
@@ -96,7 +96,7 @@ object Restore {
             currentCoroutineContext().ensureActive()
 
             return withContext(NonCancellable) {
-                Databases.whileDeleting {
+                WholeFile.replaceAll {
                     wipe(context)
                     clearCaches(context)
                     rebuildAndImport(context, staged, onProgress, isCancelled)
@@ -232,7 +232,7 @@ object Restore {
             // The process keeps its own handle; drop this one so
             // `Databases` rebuilds against the file the import just wrote.
             db.close()
-            Databases.reset()
+            WholeFile.dropInstance()
         }
     } catch (e: Exception) {
         throw RestoreLedgerLostException(e)

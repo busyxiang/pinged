@@ -1,6 +1,7 @@
 package my.pinged.capture
 
 import my.pinged.data.Databases
+import my.pinged.data.WholeFile
 import my.pinged.parse.ExclusionReason
 import my.pinged.parse.PackLoader
 import my.pinged.parse.ParsePack
@@ -105,13 +106,13 @@ object Graph {
      * Tests only: drops everything memoized here and in [Databases].
      *
      * Both halves, from one call, because they used to be one object and
-     * every caller wants both. [Databases.reset] closes the handle rather
+     * every caller wants both. [WholeFile.dropInstance] closes the handle rather
      * than dropping it: leaving SQLCipher's pool open on a file the caller is
      * about to delete is what `FreshInstallTest` documents the consequence
      * of.
      */
     fun reset() = synchronized(this) {
-        Databases.reset()
+        WholeFile.dropInstance()
         matcher = null
         pack = null
     }

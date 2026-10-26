@@ -4,10 +4,10 @@ import java.io.BufferedWriter
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.util.concurrent.Callable
-import my.pinged.data.Databases
 import my.pinged.data.PingedDatabase
 import my.pinged.data.SearchCursor
 import my.pinged.data.SearchFilter
+import my.pinged.data.WholeFile
 import my.pinged.data.dao.FeedRow
 
 /**
@@ -53,7 +53,7 @@ object ExportCsv {
         filter: SearchFilter,
         onProgress: (Int) -> Unit = {},
         isCancelled: () -> Boolean = { false },
-    ): Int = Databases.whileLive(db, Databases.Holder.Export) {
+    ): Int = WholeFile.export(db) {
         db.runInTransaction(
             Callable {
                 val categories = db.categoryDao().all().associate { it.id to it.name }
