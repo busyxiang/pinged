@@ -41,6 +41,10 @@ _Avoid_: bundled rules, shipped rules, seeded rules
 The category the user taught for a merchant identity, by saving the category chooser with "Always call this" on. It files every later payment of that merchant, whichever of its keys the payment arrives under, and outranks the dictionary. A merge or a pack change carries it with the merchant. The UI calls it a "learned merchant", and settings lists them under "Learned merchants" (read and delete only). Deleting one forgets the teaching for the whole identity, dormant source rules included, and re-files nothing.
 _Avoid_: merchant rule, auto-category
 
+**Filing**:
+Where a payment from a merchant goes, and what put it there: the learned rule for its identity, else the dictionary's entry for the key it arrived under, else nothing, which leaves it Uncategorized. A row's category may differ from its merchant's filing today: a one-off, or a rule or pack that has since changed.
+_Avoid_: categorisation, resolution, classification
+
 **One-off**:
 A category the user set on a single transaction without teaching a rule. It is history the user has confirmed, so no rule ever re-files it. An Uncategorized transaction is never confirmed.
 _Avoid_: hand-set, manual category, user-edited
