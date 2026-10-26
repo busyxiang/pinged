@@ -21,6 +21,8 @@ data class CategoriesState(
     val items: List<CategoryUse> = emptyList(),
     /** Spec 11.1: the database could not be opened, which is not "no categories". */
     val storageUnavailable: Boolean = false,
+    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
+    val replacing: Boolean = false,
 )
 
 /**
@@ -28,6 +30,7 @@ data class CategoriesState(
  * categories, whatever the last read held, so a sheet open over one closes.
  */
 internal fun ReadState<Unit, List<CategoryUse>>.toState(): CategoriesState {
+    if (replacing) return CategoriesState(loaded = true, replacing = true)
     if (unavailable) return CategoriesState(loaded = true, storageUnavailable = true)
     val items = answer ?: return CategoriesState()
     return CategoriesState(loaded = true, items = items)

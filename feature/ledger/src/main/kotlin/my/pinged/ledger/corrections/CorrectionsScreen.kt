@@ -35,6 +35,7 @@ import my.pinged.ui.money
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
@@ -80,6 +81,7 @@ internal fun CorrectionsContent(
         item { Header(onBack) }
         item {
             val notice = when {
+                state.replacing -> REPLACING_YOUR_DATA
                 state.storageUnavailable -> CANNOT_READ_YOUR_DATA
                 state.checking -> "STILL CHECKING YOUR HISTORY AGAINST PACK ${state.packVersion}"
                 state.items.isEmpty() -> NOTHING_TO_REVIEW

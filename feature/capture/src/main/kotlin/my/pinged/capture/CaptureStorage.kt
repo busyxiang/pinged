@@ -113,6 +113,11 @@ object CaptureStorage {
      * by it. Every other [DatabaseUnavailableException] raises it for every
      * caller, since none of them clears on its own. `GateRefusalTest`.
      *
+     * **[replacing]** is what a gate's refusal answers, in place of
+     * [unavailable]: a screen says a ledger replacement is running rather
+     * than that the ledger cannot be read (#328). It defaults to
+     * [unavailable], which capture and `LedgerWrites` keep.
+     *
      * Memoized by [Databases], so after the first call this is a volatile read.
      */
     suspend fun <T> guarded(
@@ -120,8 +125,9 @@ object CaptureStorage {
         what: String,
         unavailable: () -> T,
         damageStopsCapture: Boolean = true,
+        replacing: () -> T = unavailable,
         block: suspend () -> T,
-    ): T = withContext(Dispatchers.IO) { attempt(context, what, unavailable, damageStopsCapture, block) }
+    ): T = withContext(Dispatchers.IO) { attempt(context, what, unavailable, replacing, damageStopsCapture, block) }
 
     /**
      * [guarded] without its hop to [Dispatchers.IO], for stage one's insert
@@ -134,12 +140,13 @@ object CaptureStorage {
         what: String,
         unavailable: () -> T,
         block: suspend () -> T,
-    ): T = attempt(context, what, unavailable, damageStopsCapture = true, block)
+    ): T = attempt(context, what, unavailable, replacing = unavailable, damageStopsCapture = true, block)
 
     private suspend fun <T> attempt(
         context: Context,
         what: String,
         unavailable: () -> T,
+        replacing: () -> T,
         damageStopsCapture: Boolean,
         block: suspend () -> T,
     ): T = Databases.leasing {
@@ -199,7 +206,7 @@ object CaptureStorage {
             if (damageStopsCapture || thrown !is DatabaseBeingDeletedException) {
                 CaptureHealth.recordStorageUnavailable(context)
             }
-            unavailable()
+            if (thrown is DatabaseBeingDeletedException) replacing() else unavailable()
         } finally {
             // After the retry, so it runs on the new instance before the
             // feed, which rebinds on this, can reach it: a feed whose next

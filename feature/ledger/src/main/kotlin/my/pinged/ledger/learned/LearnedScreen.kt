@@ -51,6 +51,7 @@ import my.pinged.ledger.settings.grouped
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Separator
@@ -123,12 +124,13 @@ internal fun LearnedContent(
         item {
             Tabs(
                 selected = tab,
-                count = { if (state.storageUnavailable) null else grouped(it.countIn(state)) },
+                count = { if (state.storageUnavailable || state.replacing) null else grouped(it.countIn(state)) },
                 onSelect = { tab = it },
             )
         }
         item {
             val notice = when {
+                state.replacing -> REPLACING_YOUR_DATA
                 state.storageUnavailable -> CANNOT_READ_YOUR_DATA
                 tab.countIn(state) == 0 -> tab.nothing
                 else -> null

@@ -47,7 +47,7 @@ import java.time.YearMonth
  * from the *open* in §11.1's state, [scope] is a `viewModelScope` nothing in
  * which catches, and an unguarded write would be a process kill on a tap.
  * `MainThreadRefreshTest` records the mechanism. A refusal raises the screen's
- * own `unavailable`, through [screen].
+ * own `unavailable`, or `replacing` under a ledger replacement, through [screen].
  *
  * **The guard covers the open, not the statement.** A statement that fails
  * afterwards -- `SQLiteFullException` on a full disk -- is outside
@@ -210,8 +210,9 @@ class RowActions(
      * and the read follows. One read of everything the sheet shows, published
      * whole, so a sheet never draws a name from one read beside a list from
      * another. A key that no longer resolves to any transaction, or a ledger
-     * that cannot be opened, closes the sheet as soon as the read says so; a
-     * refusal also has the screen read again, so it says why.
+     * that cannot be opened or is being replaced (#328), closes the sheet as
+     * soon as the read says so; a refusal also has the screen read again, so
+     * it says why.
      *
      * A read lands only on the opening it was made for: a sheet closed, or
      * opened from another row, while it ran stays as the user left it. That is
@@ -226,9 +227,10 @@ class RowActions(
             // Only an answer to the opening still asked for says it is gone: a
             // read dropped for another question left its refusal or answer behind.
             if (merchant.question.value == opening) {
-                val gone = state.unavailable || state.answered?.let { it.question == opening && it.answer == null } == true
+                val refused = state.unavailable || state.replacing
+                val gone = refused || state.answered?.let { it.question == opening && it.answer == null } == true
                 if (gone) merchant.setQuestion(null)
-                if (state.unavailable) screen.refused()
+                if (refused) screen.refused()
             }
             publish()
         }

@@ -38,6 +38,7 @@ import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
@@ -105,7 +106,7 @@ fun SourcesScreenContent(
     val loaded = state.loaded
     // The lists are empty before the first read and on a ledger that would
     // not open, and neither is "0 ENABLED" (#237).
-    val enabledCount = if (loaded && !state.storageUnavailable) {
+    val enabledCount = if (loaded && !state.storageUnavailable && !state.replacing) {
         (suggested.count { it.enabled } + seenNotCaptured.count { it.enabled }).toString()
     } else {
         NOT_READ_YET
@@ -142,7 +143,9 @@ fun SourcesScreenContent(
                         // answer, and this is the state where nothing could be
                         // read at all. It is drawn as an [Alert] for the same
                         // reason -- see there.
-                        if (state.storageUnavailable) {
+                        if (state.replacing) {
+                            Alert(REPLACING_YOUR_DATA)
+                        } else if (state.storageUnavailable) {
                             Alert(CANNOT_READ_YOUR_DATA)
                         } else {
                             Note("NO KNOWN SOURCE IS INSTALLED ON THIS DEVICE")
@@ -179,7 +182,9 @@ fun SourcesScreenContent(
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
                     SectionLabel("SEEN RECENTLY, NOT CAPTURED")
                     if (seenNotCaptured.isEmpty()) {
-                        if (state.storageUnavailable) {
+                        if (state.replacing) {
+                            Alert(REPLACING_YOUR_DATA)
+                        } else if (state.storageUnavailable) {
                             Alert(CANNOT_READ_YOUR_DATA)
                         } else {
                             Note("NOTHING ELSE HAS POSTED YET")

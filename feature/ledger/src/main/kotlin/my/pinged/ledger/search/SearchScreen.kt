@@ -90,6 +90,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.DashLeader
@@ -160,6 +161,7 @@ fun SearchScreen(
         // are still inside the debounce and have not been asked yet.
         rereading = read.rereading || query != asked.text,
         storageUnavailable = read.unavailable,
+        replacing = read.replacing,
         onBack = onBack,
         onOpenSheet = { sheet = it },
         onOpenEntry = onOpenEntry,
@@ -219,6 +221,7 @@ fun SearchScreen(
                 any = ANY_APP,
                 options = apps.answer?.map { it to appName(it) },
                 unavailable = apps.unavailable,
+                replacing = apps.replacing,
                 selected = choice.app,
                 onPick = { close(); viewModel.setApp(it) },
                 onDismiss = close,
@@ -254,6 +257,8 @@ internal fun SearchScreenContent(
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onExport: (() -> Unit)? = null,
+    /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
+    replacing: Boolean = false,
 ) {
     // Hoisted out of the list for the reason `LedgerScreenContent` gives.
     var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -262,7 +267,7 @@ internal fun SearchScreenContent(
     val categoriesById = remember(read?.categories) { read?.categories.orEmpty().associateBy { it.id } }
     val categoryName = choice.categoryId?.let { categoriesById[it]?.name }
     // The rows the totals count, not the ones drawn: the export has no limit.
-    val found = read?.takeUnless { storageUnavailable }?.totals?.sumOf { it.rowCount } ?: 0
+    val found = read?.takeUnless { storageUnavailable || replacing }?.totals?.sumOf { it.rowCount } ?: 0
     // The last answer stays while [rereading], dimmed under `UPDATING` once
     // 200ms have passed.
     val updating = rememberUpdating(read != null && rereading)
@@ -273,6 +278,7 @@ internal fun SearchScreenContent(
             when {
                 // First, for the reason Day's is: rows under a ledger that cannot
                 // be read would be a claim about money no read supports.
+                replacing -> item { Notice(REPLACING_YOUR_DATA, Stamp) }
                 storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
                 read == null -> item { NotReadYet(choice.month) }
                 read.rows.isEmpty() -> {
@@ -651,7 +657,8 @@ private fun Updating(query: String) {
  * once, and under it `ReadingLayout`'s status line and [PICK_PLACES] dotted
  * places, `design/LoadingList.dc.html`'s rows, rather than no options. An
  * empty list is the read's answer and draws at once. [unavailable] is a read
- * refused: it says so in place of the options.
+ * refused: it says so in place of the options, as [replacing] does for a read
+ * a ledger replacement refused (#328).
  */
 @Composable
 internal fun <T> PickSheet(
@@ -662,13 +669,14 @@ internal fun <T> PickSheet(
     onPick: (T?) -> Unit,
     onDismiss: () -> Unit,
     unavailable: Boolean = false,
+    replacing: Boolean = false,
 ) {
     ReceiptSheet(onDismissRequest = onDismiss, title = title) {
         PickRow(any, selected == null) { onPick(null) }
-        if (unavailable) {
+        if (unavailable || replacing) {
             // In place of any options held: the last opening's are not this one's.
             Text(
-                CANNOT_READ_YOUR_DATA,
+                if (replacing) REPLACING_YOUR_DATA else CANNOT_READ_YOUR_DATA,
                 style = MonoLabel,
                 color = Stamp,
                 modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),

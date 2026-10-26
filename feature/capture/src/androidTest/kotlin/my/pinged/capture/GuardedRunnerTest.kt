@@ -85,15 +85,17 @@ class GuardedRunnerTest {
     /**
      * A delete's or a restore's gate refuses a screen's call. It is not damage and
      * loses nothing, so it raises no storage banner: `damageStopsCapture` is false.
+     * And it is a ledger replacement, not an unreadable ledger, so it answers
+     * [Outcome.Replacing] for the screen to say so (#328).
      */
     @Test(timeout = 60_000)
-    fun aReadAndAWriteRefusedByTheGateAreRefusedAndRaiseNoBanner() {
+    fun aReadAndAWriteRefusedByTheGateAnswerReplacingAndRaiseNoBanner() {
         val (read, write) = underTheGate {
             runner.read("a read, for the test") { 1 } to runner.write("a write, for the test") { 2 }
         }
 
-        assertEquals(Outcome.Refused, read)
-        assertEquals(Outcome.Refused, write)
+        assertEquals("A read refused by the gate was not answered as a replacement", Outcome.Replacing, read)
+        assertEquals("A write refused by the gate was not answered as a replacement", Outcome.Replacing, write)
         assertEquals(
             "A screen's call refused by a delete's gate raised the storage-unavailable banner",
             false,

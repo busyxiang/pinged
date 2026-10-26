@@ -149,6 +149,64 @@ class ScreenReadTest {
         assertEquals("q1#2", state.answer)
     }
 
+    /** A ledger replacement's refusal is its own result: never [ReadState.unavailable], and never both. */
+    @Test fun aReadRefusedByAReplacementIsReplacingNotUnavailableAndTheNextOutcomeDecidesBetweenThem() {
+        read.refresh()
+
+        runner.replacing = true
+        read.refresh()
+        assertTrue("A read refused by a replacement did not raise replacing", state.replacing)
+        assertFalse("A read refused by a replacement was called unavailable", state.unavailable)
+        assertEquals("A read refused by a replacement dropped the last answer", "q1#1", state.answer)
+
+        runner.replacing = false
+        runner.refusing = true
+        read.refresh()
+        assertTrue("A refusal after a replacement did not raise unavailable", state.unavailable)
+        assertFalse("A refusal after a replacement left replacing up", state.replacing)
+
+        runner.refusing = false
+        runner.replacing = true
+        read.refresh()
+        assertTrue("A replacement after a refusal did not raise replacing", state.replacing)
+        assertFalse("A replacement after a refusal left unavailable up", state.unavailable)
+
+        runner.replacing = false
+        read.refresh()
+        assertFalse("A successful read did not clear replacing", state.replacing)
+        assertFalse(state.unavailable)
+        assertEquals("The successful read's answer is not the one held", "q1#2", state.answer)
+    }
+
+    @Test fun aWriteRefusedByAReplacementIsReplacingAndItsReadBackDecidesWhatStays() {
+        runner.holding = true
+        read.refresh()
+        runner.calls[0].release()
+
+        val written = read.write("The test cannot be written") { }
+        runner.calls[1].replace()
+        assertTrue("A write refused by a replacement did not raise replacing", state.replacing)
+        assertFalse("A write refused by a replacement was called unavailable", state.unavailable)
+
+        runner.calls[2].replace()
+        assertEquals(Outcome.Replacing, runBlocking { written.await() })
+        assertTrue(state.replacing)
+        assertFalse(state.unavailable)
+    }
+
+    @Test fun aStepRefusedByAReplacementEndsAStagedReadAsReplacing() {
+        val staged = ScreenRead.fixedStaged(scope, runner, "The test cannot be read", Dispatchers.Unconfined) {
+            transaction { }
+            "never"
+        }
+        runner.replacing = true
+
+        staged.refresh()
+
+        assertTrue("A step refused by a replacement did not raise replacing", staged.state.value.replacing)
+        assertFalse("A step refused by a replacement was called unavailable", staged.state.value.unavailable)
+    }
+
     @Test fun aRefusedReadOfANewQuestionIsNotRereadingAndKeepsTheOldQuestionsAnswer() {
         read.refresh()
 
