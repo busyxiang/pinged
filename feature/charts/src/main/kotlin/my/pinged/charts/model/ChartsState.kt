@@ -1,6 +1,7 @@
 package my.pinged.charts.model
 
 import my.pinged.charts.ChartsRead
+import my.pinged.data.Collecting
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.monthName
 import java.time.YearMonth
@@ -53,13 +54,13 @@ data class MonthView(
 /** [read] as the screen draws it; null is a read not yet landed. */
 fun chartsState(read: ChartsRead?): ChartsState = when {
     read == null -> ChartsState.Reading
-    read.historyStart == null -> ChartsState.Empty(monthName(read.month))
+    read.record.historyStart == null -> ChartsState.Empty(monthName(read.month))
     else -> ChartsState.Month(monthView(read))
 }
 
 /** The sections of a month that has a history start. */
 fun monthView(read: ChartsRead): MonthView {
-    val trust = monthTrust(read.month, read.historyStart, read.today, read.captured)
+    val trust = read.record.month(read.month).trust()
     val split = read.monthSplit.firstOrNull { it.currency == RINGGIT }
     return MonthView(
         trust = trust,
@@ -73,16 +74,14 @@ fun monthView(read: ChartsRead): MonthView {
         ),
         comparison = comparison(
             read.month,
-            read.today,
-            read.historyStart,
-            read.captured,
+            read.record,
             read.monthTotals.firstOrNull { it.currency == RINGGIT }?.netSen ?: 0L,
             read.previousMonthTotals.firstOrNull { it.currency == RINGGIT }?.netSen ?: 0L,
         ),
-        grid = rhythmGrid(read.month, read.today, read.historyStart, read.captured, read.dayTotals),
+        grid = rhythmGrid(read.month, read.record, read.dayTotals),
         bars = bars(read.byCategory, read.categoryNames, read.uncategorizedId, trust),
         merchants = merchants(read.merchantTotals, trust),
-        collecting = collecting(read.historyStart, read.today, read.capturedSinceStart),
+        collecting = read.record.collecting,
         notInTotal = notInTotal(read.notInTotal),
     )
 }

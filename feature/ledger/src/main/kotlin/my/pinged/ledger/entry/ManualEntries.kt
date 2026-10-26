@@ -44,8 +44,8 @@ import my.pinged.parse.MerchantNormalization
  * **A manual entry is a `txn` row with `raw_capture_id IS NULL`** (spec 4),
  * and `source_package` and `source_label` null with it. It needs no schema of
  * its own, and what already reads such a row reads it rightly: it is never
- * evidence of a captured day (`CaptureDayDao.capturedDates`) and never moves
- * the history start (`CaptureEvidence.historyStart`), so typing in cash cannot
+ * evidence of a captured day (`CaptureRecord`) and never moves
+ * the history start (`CaptureRecord.historyStart`), so typing in cash cannot
  * hide a day Pinged was not watching.
  *
  * Owned by a view model, which hands over its [scope]; every database touch

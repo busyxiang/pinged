@@ -61,13 +61,26 @@ interface RawCaptureDao : MerchantDecisions {
 
     /**
      * The earliest `posted_at` of any capture, or null when there is none: the
-     * other half of the history start (`CaptureEvidence.historyStart`).
+     * other half of the history start (`CaptureRecord.read`).
      *
      * Every status counts, `REJECTED` and `UNMATCHED` included: any capture
      * proves the listener was bound when it arrived.
      */
     @Query(EARLIEST_POSTED_SQL)
     fun earliestPostedAt(): Long?
+
+    /**
+     * The `posted_at` of every capture in `[fromMs, toMs)` whose [statuses]
+     * leave no `txn` of their own: the notifications `CaptureRecord` counts as
+     * evidence on a day with no transaction (spec 4; CONTEXT.md, Capture
+     * evidence). A `MATCHED` capture is left out because its transaction
+     * carries the day, fixed at parse.
+     *
+     * Served from `(parse_status, posted_at)` as a covering index, one seek
+     * per status in the list, so no row's text is read. Unordered.
+     */
+    @Query(POSTED_WITHOUT_TXN_SQL)
+    fun postedAtWithoutTxn(statuses: List<ParseStatus>, fromMs: Long, toMs: Long): List<Long>
 
     /**
      * Stage two's work queue. Served by `raw_capture(parse_status, posted_at)`
@@ -672,6 +685,11 @@ interface RawCaptureDao : MerchantDecisions {
          * `posted_at` index (a schema change) is not worth it.
          */
         const val EARLIEST_POSTED_SQL = "SELECT MIN(posted_at) FROM raw_capture"
+
+        /** [postedAtWithoutTxn]'s query, hoisted for `QueryPlanTest`. */
+        const val POSTED_WITHOUT_TXN_SQL =
+            "SELECT posted_at FROM raw_capture " +
+                "WHERE parse_status IN (:statuses) AND posted_at >= :fromMs AND posted_at < :toMs"
 
         /** [matchedStaleAfter]'s query, hoisted for `QueryPlanTest`. */
         const val MATCHED_STALE_SQL =

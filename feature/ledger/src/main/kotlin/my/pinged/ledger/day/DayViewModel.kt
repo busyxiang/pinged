@@ -8,14 +8,13 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import my.pinged.capture.GuardedRunner
-import my.pinged.data.CaptureEvidence
+import my.pinged.data.CaptureRecord
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.TxnState
-import my.pinged.data.notCaptured
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.MerchantOpening
 import my.pinged.ledger.home.OpenMerchantSheet
@@ -84,7 +83,8 @@ class DayViewModel(
      * transaction holds Room's one connection, so a capture waits for it.
      * Measured on emulator-5554 over 20,000 constructed rows across two years,
      * about 27 on the day: 1.6ms median and 2.3ms at the longest of 40, after
-     * a first read of 27ms.
+     * a first read of 27ms, before the capture record, which adds 1.0 to 1.2ms
+     * (`CaptureRecord.read`).
      */
     private fun readDay(db: PingedDatabase, today: LocalDate): DayRead {
         val txns = db.txnDao()
@@ -93,8 +93,7 @@ class DayViewModel(
         midRead()
         val counted = txns.dayTotals(day, day).map { CurrencyTotal(it.currency, it.netSen) }
         val keptOut = txns.notInTotal(day, day)
-        val historyStart = CaptureEvidence.historyStart(db.captureDayDao(), db.rawCaptureDao())
-        val captured = CaptureEvidence.capturedDates(db.captureDayDao(), date, date)
+        val status = CaptureRecord.read(db, today, date..date).day(date)
         // Through `Databases`' DAOs, which inside the transaction's
         // monitor are [db]'s: the same instance and the same snapshot.
         val chooser = rows.readChooser()
@@ -104,12 +103,11 @@ class DayViewModel(
                 rowCount = dayRows.size,
                 counted = counted,
                 notInTotal = keptOut,
-                notWatching = notCaptured(date, historyStart, today, captured),
+                status = status,
                 // [dayTotals]' COUNTED, over the rows already read.
                 payments = dayRows.count {
                     it.txn.state == TxnState.COMMITTED && !it.txn.isExcluded && it.txn.currency == RINGGIT
                 },
-                watched = date in captured,
             ),
             chooser = chooser,
         )

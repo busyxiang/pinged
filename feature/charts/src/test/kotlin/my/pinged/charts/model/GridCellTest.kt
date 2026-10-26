@@ -1,5 +1,6 @@
 package my.pinged.charts.model
 
+import my.pinged.charts.recordFor
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.DayTotal
 import my.pinged.ui.RINGGIT
@@ -31,7 +32,7 @@ class GridCellTest {
     ): GridDay {
         val dayTotals = totals.map { (d, sen) -> DayTotal(LocalDates.of(d), RINGGIT, sen) } +
             otherCurrency.map { (d, sen) -> DayTotal(LocalDates.of(d), "SGD", sen) }
-        val grid = rhythmGrid(september, today, historyStart, captured, dayTotals)
+        val grid = rhythmGrid(september, recordFor(september, today, historyStart, captured), dayTotals)
         return grid.days.single { it.date == day }
     }
 
@@ -96,7 +97,7 @@ class GridCellTest {
 
     /**
      * A hand-entered total before the history start still draws (#65). It is
-     * never counted as captured or not; that is `notCapturedDays`', which
+     * never counted as captured or not; that is `CaptureRecord`'s, which
      * starts at the history start.
      */
     @Test fun aHandEnteredTotalBeforeTheHistoryStartStillDraws() {
@@ -119,9 +120,9 @@ class GridCellTest {
 
     @Test fun theFirstSitsUnderItsWeekdayMondayFirst() {
         // 1 September 2026 is a Tuesday; 1 June 2026 a Monday.
-        assertEquals(1, rhythmGrid(september, sep(30), sep(1), emptySet(), emptyList()).leadingBlanks)
+        assertEquals(1, rhythmGrid(september, recordFor(september, sep(30), sep(1)), emptyList()).leadingBlanks)
         val june = YearMonth.of(2026, 6)
-        assertEquals(0, rhythmGrid(june, june.atDay(30), june.atDay(1), emptySet(), emptyList()).leadingBlanks)
-        assertEquals(30, rhythmGrid(june, june.atDay(30), june.atDay(1), emptySet(), emptyList()).days.size)
+        assertEquals(0, rhythmGrid(june, recordFor(june, june.atDay(30), june.atDay(1)), emptyList()).leadingBlanks)
+        assertEquals(30, rhythmGrid(june, recordFor(june, june.atDay(30), june.atDay(1)), emptyList()).days.size)
     }
 }

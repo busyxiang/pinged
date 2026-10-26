@@ -10,11 +10,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import my.pinged.charts.MonthsRead
 import my.pinged.charts.monthsRead
-import my.pinged.data.CaptureEvidence
+import my.pinged.data.CaptureRecord
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.NotInTotalLine
-import my.pinged.data.notCapturedDays
 import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
 import java.time.LocalDate
@@ -131,7 +130,8 @@ internal class SpendingRead(
  * figures and the chooser's categories are one snapshot. The transaction holds
  * Room's one connection, so a capture waits for it: measured on emulator-5554
  * over 20,000 constructed rows across two years, 2.0ms median and 3.8ms at the
- * longest of 40 (the chooser's three statements included), under stage two's
+ * longest of 40 (the chooser's three statements included) before the capture
+ * record, which adds 1.1 to 1.3ms for the month (`CaptureRecord.read`), under stage two's
  * longest single capture (66ms, `Databases.reset`).
  *
  * The month-trust rule is the one Charts and `Months` grey on too (#81), so the
@@ -143,17 +143,14 @@ internal class SpendingRead(
 internal fun readLedger(db: PingedDatabase, month: YearMonth, chooser: ChooserRead, today: LocalDate): LedgerRead {
     val range = LocalDates.monthRange(month)
     val txns = db.txnDao()
-    val captureDays = db.captureDayDao()
-    val historyStart = CaptureEvidence.historyStart(captureDays, db.rawCaptureDao())
-    val captured = CaptureEvidence.capturedDates(captureDays, month.atDay(1), month.atEndOfMonth())
-    val notCaptured = notCapturedDays(month, historyStart, today, captured)
+    val record = CaptureRecord.read(db, today, month.atDay(1)..month.atEndOfMonth())
 
     return LedgerRead(
         summary = MonthSummary(
             month = month,
             totals = txns.monthTotals(range.start, range.endInclusive),
             top = txns.monthTopNamed(range.start, range.endInclusive, limit = LedgerViewModel.TOP_CATEGORIES),
-            trustworthy = notCaptured == 0,
+            trustworthy = !record.month(month).untrusted,
             toSort = txns.toSortCount(range.start, range.endInclusive),
         ),
         categories = chooser.categories,

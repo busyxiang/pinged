@@ -53,7 +53,7 @@ interface CaptureDayDao {
      * is bound -- and both pass `true`; no heartbeat writes this table (#63,
      * spec 4). The table has no part-day state, so a `false` written mid-day
      * would hatch a day that was partly watched. `listener_bound = 0` reaches
-     * a device only through an import, and [capturedDates] treats such a row
+     * a device only through an import, and [evidenceDates] treats such a row
      * as no evidence.
      */
     @Query("UPDATE capture_day SET listener_bound = :bound WHERE local_date = :localDate")
@@ -168,9 +168,10 @@ interface CaptureDayDao {
     fun deleteAll(): Int
 
     /**
-     * The **captured days** in `[from, to]` (#81, Capture evidence; #64,
-     * #75): every date with a row saying the listener was bound, and every
-     * date holding a transaction captured from a notification.
+     * The dates in `[from, to]` with capture evidence from these two tables
+     * (#81, Capture evidence; #64, #75): every date with a row saying the
+     * listener was bound, and every date holding a transaction captured from a
+     * notification.
      *
      * - **A capture-backed `txn` counts whatever its state**, pending,
      *   excluded or refunded: each proves the listener was watching that day,
@@ -179,8 +180,10 @@ interface CaptureDayDao {
      * - **`saw_any_notification` plays no part.** A quiet phone posts nothing
      *   on a day it is still watching.
      *
-     * Unordered, deduplicated by the `UNION`. `CaptureEvidence.capturedDates`
-     * is the calendar-day form `notCapturedDays` takes.
+     * Unordered, deduplicated by the `UNION`. **Not the whole of capture
+     * evidence**: a kept notification that left no transaction is read from
+     * `RawCaptureDao.postedAtWithoutTxn`, and `CaptureRecord.read` joins the
+     * two.
      *
      * **An inverted range answers empty**, the same answer as a range with no
      * evidence: `BETWEEN` matches nothing when `from > to`.
@@ -190,15 +193,15 @@ interface CaptureDayDao {
      * yesterday gets its row from the first notification or the first
      * foreground, whichever is sooner. The foreground's write is launched, not
      * awaited, and `LedgerViewModel.read` reads on resume, so the first
-     * read of a day can run before it lands; `notCapturedDays` never counts
+     * read of a day can run before it lands; `CaptureRecord` never counts
      * today, so that race cannot grey a month.
      */
-    @Query(CAPTURED_DATES_SQL)
-    fun capturedDates(from: LocalDate, to: LocalDate): List<LocalDate>
+    @Query(EVIDENCE_DATES_SQL)
+    fun evidenceDates(from: LocalDate, to: LocalDate): List<LocalDate>
 
     /**
      * The first day this table records, or null when it is empty: one half of
-     * the history start (`CaptureEvidence.historyStart`). `MIN` of the primary
+     * the history start (`CaptureRecord.read`). `MIN` of the primary
      * key, so one step down its B-tree.
      */
     @Query(EARLIEST_DATE_SQL)
@@ -206,7 +209,7 @@ interface CaptureDayDao {
 
     companion object {
         /**
-         * [capturedDates]'s query, hoisted so `QueryPlanTest` pins the plan of
+         * [evidenceDates]'s query, hoisted so `QueryPlanTest` pins the plan of
          * this string and not a copy.
          *
          * Measured on emulator-5554: a primary-key range on `capture_day`, and
@@ -217,7 +220,7 @@ interface CaptureDayDao {
          * there over 5,000 captured transactions and 740 rows: 0.30ms for a
          * month, 1.9ms for two years.
          */
-        const val CAPTURED_DATES_SQL =
+        const val EVIDENCE_DATES_SQL =
             """
             SELECT local_date FROM capture_day
             WHERE local_date BETWEEN :from AND :to AND listener_bound = 1

@@ -41,7 +41,7 @@ sealed interface MonthsItem {
  * - **The divider** sits under the history start's month. Below it are only
  *   months that hold money from before the record began (hand-entered, §9.4);
  *   they list where they have totals, with no gap-filling, and never carry a
- *   count, since `notCapturedDays` counts nothing before the history start.
+ *   count, since `CaptureRecord.month` counts nothing before the history start.
  * - **No history start**: now, and any month with money, with no divider.
  *   Nothing carries a count.
  * - **Never a month after now**, whatever a hand-entered date says.
@@ -54,9 +54,9 @@ fun monthsSheet(read: MonthsRead): List<MonthsItem> {
     val nets = read.totals
         .filter { it.currency == RINGGIT }
         .associate { YearMonth.of(it.month / 100, it.month % 100) to it.netSen }
-    fun row(month: YearMonth) = row(month, nets[month] ?: 0L, now, monthTrust(month, read.historyStart, read.today, read.captured))
+    fun row(month: YearMonth) = row(month, nets[month] ?: 0L, now, read.record.month(month).trust())
 
-    val historyStart = read.historyStart
+    val historyStart = read.record.historyStart
     val firstRecorded = historyStart?.let(YearMonth::from) ?: now
     val recorded = generateSequence(now) { it.minusMonths(1) }.takeWhile { it >= firstRecorded }.map(::row)
     val before = nets.keys.filter { it < firstRecorded }.sortedDescending().map(::row)

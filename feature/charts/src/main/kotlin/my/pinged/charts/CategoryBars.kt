@@ -25,7 +25,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.charts.model.Bar
 import my.pinged.charts.model.Bars
-import my.pinged.charts.model.Collecting
+import my.pinged.charts.model.label
+import my.pinged.charts.model.line
+import my.pinged.data.Collecting
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ChartRamp

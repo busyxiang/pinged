@@ -12,6 +12,8 @@ import my.pinged.capture.CaptureStorage
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
+import my.pinged.data.CaptureRecord
+import my.pinged.data.DayStatus
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.MonthSplit
@@ -109,8 +111,8 @@ class ChartsReadTest {
             listOf(NotInTotal(NotInTotalLine.PENDING, "MYR", 1, 900L)),
             read.notInTotal,
         )
-        assertEquals(september.atDay(1), read.historyStart)
-        assertEquals(setOf(september.atDay(1), september.atDay(2)), read.captured)
+        assertEquals(september.atDay(1), read.record.historyStart)
+        assertEquals(setOf(september.atDay(1), september.atDay(2)), capturedDays(read.record))
         assertEquals(today, read.today)
         assertWritable()
     }
@@ -183,8 +185,8 @@ class ChartsReadTest {
         val septemberNet = read!!.totals.single { it.month == 202609 && it.currency == "MYR" }.netSen
         assertEquals(
             "3 September's capture and its money are from different moments: " +
-                "captured=${september3 in read.captured}, net=$septemberNet",
-            september3 in read.captured,
+                "captured=${read.record.day(september3)}, net=$septemberNet",
+            read.record.day(september3) == DayStatus.CAPTURED,
             septemberNet == -10_000L,
         )
     }
@@ -195,6 +197,13 @@ class ChartsReadTest {
      * one lets it commit inside the grace.
      */
     private fun alongside(block: () -> Unit): Thread = thread { block() }.also { it.join(GRACE_MS) }
+
+    /** The captured days of [record], from its history start to the day before today. */
+    private fun capturedDays(record: CaptureRecord): Set<LocalDate> =
+        generateSequence(record.historyStart) { it.plusDays(1) }
+            .takeWhile { it < record.today }
+            .filter { record.day(it) == DayStatus.CAPTURED }
+            .toSet()
 
     private val september2 get() = LocalDates.of(september.atDay(2))
 
