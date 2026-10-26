@@ -342,6 +342,38 @@ class AppStatusTest {
         assertNull("The reminder answered \"overdue\" over a ledger it could not count", status.current.backupReminder)
     }
 
+    /**
+     * **A ledger being replaced silences the reminder** (#328): its count is of
+     * the ledger going away, and the replacement is itself a restore or a
+     * delete the user started.
+     */
+    @Test fun aLedgerBeingReplacedSilencesTheReminder() {
+        val status = aReminderOnScreen()
+        scripted.replacing = true
+
+        status.resumed()
+
+        assertNull("The reminder answered \"overdue\" over a ledger being replaced", status.current.backupReminder)
+    }
+
+    // -- The tab bar's count --------------------------------------------------
+
+    /**
+     * **A count read from the ledger being replaced is not drawn** (#328): a
+     * refused read keeps its last answer, which is the ledger going away, so
+     * the bar draws the dash, as it does for a ledger that cannot be read.
+     */
+    @Test fun theTabBarsCountIsADashWhileTheLedgerIsBeingReplaced() {
+        val status = shown()
+        status.barMayShow()
+        assertEquals("precondition: the count was not read", 0, status.current.awaitingReviewCount)
+
+        scripted.replacing = true
+        status.barMayShow()
+
+        assertNull("The tab bar drew the count of the ledger being replaced", status.current.awaitingReviewCount)
+    }
+
     // -- The heard line ------------------------------------------------------
 
     /** A ledger left open keeps counting: the line is measured again each minute. */

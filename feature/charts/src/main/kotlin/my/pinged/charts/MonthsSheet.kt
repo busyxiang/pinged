@@ -26,6 +26,7 @@ import my.pinged.charts.model.monthsSheet
 import my.pinged.read.ReadState
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
@@ -55,12 +56,14 @@ internal fun MonthsSheetHost(viewModel: ChartsViewModel, onPick: (YearMonth) -> 
 
 /**
  * Where an opening's read stands, as [MonthsSheet] draws it: refused is
- * [MonthsReading.Unreadable], another opening's months held while this one is
+ * [MonthsReading.Unreadable], or [MonthsReading.Replacing] when a ledger
+ * replacement refused it, another opening's months held while this one is
  * read is [MonthsReading.InFlight], and the rest is [MonthsReading.Landed],
  * which is also what a first opening is before its read lands, when there
  * are no months to draw and the sheet says so itself.
  */
 fun monthsReading(state: ReadState<*, *>): MonthsReading = when {
+    state.replacing -> MonthsReading.Replacing
     state.unavailable -> MonthsReading.Unreadable
     state.rereading -> MonthsReading.InFlight
     else -> MonthsReading.Landed
@@ -110,12 +113,12 @@ fun MonthsSheet(
                         .padding(vertical = 12.dp),
                 )
             }
-            if (reading == MonthsReading.Unreadable) {
+            if (reading == MonthsReading.Unreadable || reading == MonthsReading.Replacing) {
                 // At once, and in place of any months held: the last
                 // opening's are not this one's, and drawn undimmed they would
                 // read as current.
                 Text(
-                    CANNOT_READ_YOUR_DATA,
+                    if (reading == MonthsReading.Replacing) REPLACING_YOUR_DATA else CANNOT_READ_YOUR_DATA,
                     style = MonoLabel,
                     color = Stamp,
                     modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
@@ -235,4 +238,7 @@ enum class MonthsReading {
 
     /** This opening's read could not be made: no months drawn are current. */
     Unreadable,
+
+    /** A ledger replacement turned this opening's read away (#328): the months held are the ledger going away. */
+    Replacing,
 }

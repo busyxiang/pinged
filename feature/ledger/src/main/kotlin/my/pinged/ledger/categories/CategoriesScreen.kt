@@ -45,6 +45,7 @@ import my.pinged.ledger.settings.grouped
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
@@ -143,7 +144,7 @@ internal fun CategoriesContent(
     var editing by rememberSaveable { mutableStateOf<Long?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
     var unfolded by rememberSaveable { mutableStateOf(false) }
-    val usable = state.loaded && !state.storageUnavailable
+    val usable = state.loaded && !state.storageUnavailable && !state.replacing
     val arranged = Arranged(state.items)
 
     Column(modifier.fillMaxSize().background(Paper)) {
@@ -155,7 +156,11 @@ internal fun CategoriesContent(
         LazyColumn(Modifier.weight(1f).padding(top = 14.dp)) {
             if (usable && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
             item {
-                val notice = if (state.storageUnavailable) CANNOT_READ_YOUR_DATA else null
+                val notice = when {
+                    state.replacing -> REPLACING_YOUR_DATA
+                    state.storageUnavailable -> CANNOT_READ_YOUR_DATA
+                    else -> null
+                }
                 if (notice != null) {
                     Text(notice, fontFamily = Body, fontSize = 14.sp, color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
                 }

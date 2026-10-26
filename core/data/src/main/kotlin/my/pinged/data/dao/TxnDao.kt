@@ -375,7 +375,7 @@ interface TxnDao {
     /**
      * Assign a category as a one-off (§9.1's chooser with "Always call this"
      * off): this payment only, and no rule. A teaching save is
-     * `MerchantRuleDao.teach`, which leaves `user_edited` at 0.
+     * `MerchantIdentityDao.teach`, which leaves `user_edited` at 0.
      *
      * A targeted `UPDATE` naming its own columns, for the reason
      * [CaptureSourceDao] has no whole-row upsert: SQLite's `REPLACE` deletes

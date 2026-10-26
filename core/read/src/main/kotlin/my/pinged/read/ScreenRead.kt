@@ -57,7 +57,8 @@ import my.pinged.data.PingedDatabase
  *
  * **What is not caught.** Only [my.pinged.data.DatabaseUnavailableException]
  * is, by the production runner as `CaptureStorage.guarded` does, and it
- * surfaces as [ReadState.unavailable]. Any other failure escapes into
+ * surfaces as [ReadState.unavailable], or as [ReadState.replacing] when it is
+ * a ledger replacement's gate. Any other failure escapes into
  * [scope], for the reason `RowActions`' KDoc gives: `SQLiteFullException` is
  * not a database that cannot be opened.
  *
@@ -165,11 +166,13 @@ class ScreenRead<Q, A> private constructor(
      * it and no other read of the screen lands between them.
      *
      * The returned `Deferred` completes after that re-read, with what the
-     * write did: [Outcome.Done] with [body]'s value, or [Outcome.Refused]
+     * write did: [Outcome.Done] with [body]'s value, [Outcome.Refused]
      * when the database could not be opened, which also raises
-     * [ReadState.unavailable]. The re-read follows a refusal too: it is what
-     * says whether the database is still unreadable. A failure other than
-     * that refusal completes it exceptionally and escapes into [scope].
+     * [ReadState.unavailable], or [Outcome.Replacing] when a ledger
+     * replacement turned it away, which raises [ReadState.replacing]. The
+     * re-read follows a refusal too: it is what says whether the database is
+     * still unreadable. A failure other than those two refusals completes it
+     * exceptionally and escapes into [scope].
      *
      * [body] stays the caller's own: its statements, its transactions, and
      * whether it is safe to run twice, which the guard may do on a new
@@ -184,7 +187,7 @@ class ScreenRead<Q, A> private constructor(
         turn {
             try {
                 val written = runner.write(what, body)
-                if (written is Outcome.Refused) emit { it.copy(unavailable = true) }
+                if (written !is Outcome.Done) emit { it.refusedBy(written) }
                 readInTurn(asked, own)
                 result.complete(written)
             } catch (thrown: Throwable) {
@@ -218,11 +221,11 @@ class ScreenRead<Q, A> private constructor(
                 when (landed) {
                     is Outcome.Done ->
                         if (_question.value == asked) {
-                            held.copy(answered = Answered(asked, landed.value), unavailable = false)
+                            held.copy(answered = Answered(asked, landed.value), unavailable = false, replacing = false)
                         } else {
                             held
                         }
-                    Outcome.Refused -> held.copy(unavailable = true)
+                    Outcome.Refused, Outcome.Replacing -> held.refusedBy(landed)
                     null -> held
                 }
             }
@@ -237,6 +240,10 @@ class ScreenRead<Q, A> private constructor(
     private fun close(own: Pending) {
         if (pending.remove(own)) emit { held -> held }
     }
+
+    /** The state after a refusal: [Outcome.Replacing] raises [ReadState.replacing], [Outcome.Refused] [ReadState.unavailable], and each clears the other. */
+    private fun ReadState<Q, A>.refusedBy(refusal: Outcome<*>): ReadState<Q, A> =
+        copy(unavailable = refusal == Outcome.Refused, replacing = refusal == Outcome.Replacing)
 
     /** [transform] on the state, with [ReadState.rereading] worked out from what is asked and pending. */
     private fun emit(transform: (ReadState<Q, A>) -> ReadState<Q, A>) {
@@ -281,7 +288,8 @@ class ScreenRead<Q, A> private constructor(
          * [ReadSteps] for each in turn, and does whatever else it must between
          * them -- another store's read, work on what the last step returned --
          * with nothing of the ledger held. Still one turn, one answer, and a
-         * refusal at any step is [ReadState.unavailable] with the rest skipped.
+         * refusal at any step is [ReadState.unavailable] (or [ReadState.replacing])
+         * with the rest skipped.
          *
          * For what one transaction cannot hold: a body that waits on another
          * store (`DataStore` has no blocking read that is safe inside a
@@ -303,8 +311,8 @@ class ScreenRead<Q, A> private constructor(
         ): ScreenRead<Q, A> = ScreenRead(scope, runner, initial) { question ->
             try {
                 Outcome.Done(withContext(dispatcher) { RunnerSteps(runner, what).read(question) })
-            } catch (_: StepRefused) {
-                Outcome.Refused
+            } catch (refused: StepRefused) {
+                refused.outcome
             }
         }
 
@@ -322,7 +330,8 @@ class ScreenRead<Q, A> private constructor(
 /**
  * What a [ScreenRead.staged] read may ask of the ledger, one step at a time.
  * Each is guarded and leased by the runner; a database that cannot be opened
- * ends the read as [ReadState.unavailable] and no later step runs.
+ * ends the read as [ReadState.unavailable], one a ledger replacement holds as
+ * [ReadState.replacing], and no later step runs.
  */
 interface ReadSteps {
     /**
@@ -352,9 +361,13 @@ private class RunnerSteps(private val runner: ReadRunner, private val what: Stri
 
     private fun <T> Outcome<T>.orRefuse(): T = when (this) {
         is Outcome.Done -> value
-        Outcome.Refused -> throw StepRefused()
+        Outcome.Refused -> throw StepRefused(Outcome.Refused)
+        Outcome.Replacing -> throw StepRefused(Outcome.Replacing)
     }
 }
 
-/** A step was refused. Not a failure: it is [ScreenRead.staged]'s way to stop at the first one. */
-private class StepRefused : RuntimeException(null, null, false, false)
+/**
+ * A step was refused, with the refusal it met, which the read ends with. Not
+ * a failure: it is [ScreenRead.staged]'s way to stop at the first one.
+ */
+private class StepRefused(val outcome: Outcome<Nothing>) : RuntimeException(null, null, false, false)

@@ -25,6 +25,8 @@ data class UnreadState(
     val more: Boolean = false,
     /** Spec 11.1: the database could not be opened, which is not "nothing unread". */
     val storageUnavailable: Boolean = false,
+    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
+    val replacing: Boolean = false,
 )
 
 /** What one read of [UnreadViewModel.read] found: the cards, and whether a page past them may hold more. */
@@ -35,6 +37,7 @@ internal data class UnreadPage(val items: List<UnreadCapture>, val more: Boolean
  * whatever the last read held, as `LearnedViewModel`'s does.
  */
 internal fun ReadState<Int, UnreadPage>.toState(): UnreadState {
+    if (replacing) return UnreadState(loaded = true, replacing = true)
     if (unavailable) return UnreadState(loaded = true, storageUnavailable = true)
     val page = answer ?: return UnreadState()
     return UnreadState(loaded = true, items = page.items, more = page.more)

@@ -29,6 +29,8 @@ data class LearnedState(
     val ignored: List<RejectRuleRow> = emptyList(),
     /** Spec 11.1: the database could not be opened, which is not "nothing taught". */
     val storageUnavailable: Boolean = false,
+    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
+    val replacing: Boolean = false,
 )
 
 /** What one read of [LearnedViewModel.read] found, in one transaction. */
@@ -44,6 +46,7 @@ internal data class Taught(
  * supports.
  */
 internal fun ReadState<Unit, Taught>.toState(): LearnedState {
+    if (replacing) return LearnedState(loaded = true, replacing = true)
     if (unavailable) return LearnedState(loaded = true, storageUnavailable = true)
     val taught = answer ?: return LearnedState()
     return LearnedState(loaded = true, items = taught.items, messages = taught.messages, ignored = taught.ignored)
@@ -55,7 +58,7 @@ internal fun ReadState<Unit, Taught>.toState(): LearnedState {
  *
  * The read is `:core:read`'s [ScreenRead] (#296), and each delete is its
  * `write`, so the list never draws a state older than a delete that landed.
- * Delete is `MerchantRuleDao.deleteLearnedOfIdentity` and nothing else: it
+ * Delete is `MerchantIdentityDao.deleteLearnedOfIdentity` and nothing else: it
  * touches no `txn` row and re-files nothing. No delete is made while the
  * ledger is being replaced ([busy], #331).
  */
@@ -78,7 +81,7 @@ class LearnedViewModel internal constructor(
     internal val read: ScreenRead<Unit, Taught> =
         ScreenRead.fixed(viewModelScope, runner, "Learned merchants cannot be read") { db ->
             Taught(
-                items = db.merchantRuleDao().learnedMerchants(),
+                items = db.merchantIdentityDao().learnedMerchants(),
                 messages = db.userTemplateRuleDao().rows(),
                 ignored = db.userRejectRuleDao().rules(),
             )
@@ -91,7 +94,7 @@ class LearnedViewModel internal constructor(
     fun delete(merchant: LearnedMerchant): Job = gate.unlessReplacing {
         viewModelScope.launch {
             read.write("The learned merchant could not be deleted") { db ->
-                db.merchantRuleDao().deleteLearnedOfIdentity(merchant.identity)
+                db.merchantIdentityDao().deleteLearnedOfIdentity(merchant.identity)
             }.await()
         }
     }

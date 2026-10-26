@@ -51,7 +51,7 @@ import java.time.YearMonth
  * from the *open* in §11.1's state, [scope] is a `viewModelScope` nothing in
  * which catches, and an unguarded write would be a process kill on a tap.
  * `MainThreadRefreshTest` records the mechanism. A refusal raises the screen's
- * own `unavailable`, through [screen].
+ * own `unavailable`, or `replacing` under a ledger replacement, through [screen].
  *
  * **The guard covers the open, not the statement.** A statement that fails
  * afterwards -- `SQLiteFullException` on a full disk -- is outside
@@ -147,7 +147,7 @@ class RowActions(
             filer = Filer(
                 Graph.parsePack().dictionary,
                 categories.seededIds(),
-                readLearnedRules(Databases.merchantRuleDao(context()), Databases.merchantIdentityDao(context())),
+                readLearnedRules(Databases.merchantIdentityDao(context())),
             ),
         )
     }
@@ -158,7 +158,7 @@ class RowActions(
      *
      * [teach] is the chooser's "Always call this" switch: on writes the
      * merchant's learned rule and leaves the row `user_edited = 0`
-     * (`MerchantRuleDao.teach`); off, or a row with no merchant key, is a
+     * (`MerchantIdentityDao.teach`); off, or a row with no merchant key, is a
      * one-off (`TxnDao.setCategory`, `user_edited = 1`).
      *
      * The re-read follows a refusal too: it is what says whether the database
@@ -189,7 +189,7 @@ class RowActions(
                     //
                     // `teachAndFix` also moves the merchant's past payments
                     // (#49), in this same transaction.
-                    val taught = teach && db.merchantRuleDao().teachAndFix(txnId, categoryId, at).taught
+                    val taught = teach && db.merchantIdentityDao().teachAndFix(txnId, categoryId, at).taught
                     if (!taught) db.txnDao().setCategory(txnId, categoryId, at)
                 })
             }
@@ -223,7 +223,7 @@ class RowActions(
      * re-checks inside its own transaction either way.
      */
     override suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? =
-        (runner.read("The past payments could not be counted") { db -> db.merchantRuleDao().retroPreview(txnId, categoryId) } as? Outcome.Done)
+        (runner.read("The past payments could not be counted") { db -> db.merchantIdentityDao().retroPreview(txnId, categoryId) } as? Outcome.Done)
             ?.value
 
     /**
@@ -233,8 +233,9 @@ class RowActions(
      * and the read follows. One read of everything the sheet shows, published
      * whole, so a sheet never draws a name from one read beside a list from
      * another. A key that no longer resolves to any transaction, or a ledger
-     * that cannot be opened, closes the sheet as soon as the read says so; a
-     * refusal also has the screen read again, so it says why.
+     * that cannot be opened or is being replaced (#328), closes the sheet as
+     * soon as the read says so; a refusal also has the screen read again, so
+     * it says why.
      *
      * A read lands only on the opening it was made for: a sheet closed, or
      * opened from another row, while it ran stays as the user left it. That is
@@ -249,9 +250,10 @@ class RowActions(
             // Only an answer to the opening still asked for says it is gone: a
             // read dropped for another question left its refusal or answer behind.
             if (merchant.question.value == opening) {
-                val gone = state.unavailable || state.answered?.let { it.question == opening && it.answer == null } == true
+                val refused = state.unavailable || state.replacing
+                val gone = refused || state.answered?.let { it.question == opening && it.answer == null } == true
                 if (gone) merchant.setQuestion(null)
-                if (state.unavailable) screen.refused()
+                if (refused) screen.refused()
             }
             publish()
         }
@@ -364,12 +366,12 @@ data class ChooserRead(
  */
 @VisibleForTesting
 internal fun readMerchantSheet(dao: MerchantIdentityDao, txns: TxnDao, ownKey: String, on: LocalDate): MerchantSheetState? {
-    val identity = dao.canonicalOf(ownKey) ?: ownKey
+    val read = dao.sheetOf(ownKey) ?: return null
+    val identity = read.identityKey
+    val self = read.self
     val month = YearMonth.from(LocalDates.calendarDay(on))
     val range = LocalDates.monthRange(month)
-    val choices = dao.choices()
-    val self = choices.firstOrNull { it.identityKey == identity } ?: return null
-    val others = SameShop.suggestionsFirst(ownKey, choices.filter { it.identityKey != identity }) { it.identityKey }
+    val others = SameShop.suggestionsFirst(ownKey, read.others) { it.identityKey }
     return MerchantSheetState(
         ownKey = ownKey,
         identityKey = identity,
@@ -377,11 +379,11 @@ internal fun readMerchantSheet(dao: MerchantIdentityDao, txns: TxnDao, ownKey: S
         derivedName = self.derivedName,
         txnCount = self.txnCount,
         mergedInto = if (identity != ownKey) self.displayName ?: identity else null,
-        members = if (identity == ownKey) dao.membersOf(identity) else emptyList(),
+        members = read.members,
         others = others,
         suggested = others.filter { SameShop.likely(ownKey, it.identityKey) }.mapTo(HashSet()) { it.identityKey },
         ruleCategory = self.ruleCategory,
-        noOwnRule = dao.ownRuleCategory(ownKey) == null,
+        noOwnRule = read.noOwnRule,
         month = month,
         // Charts' own read, so the header and that month's WHO GOT IT row
         // cannot disagree about this merchant.

@@ -129,7 +129,7 @@ class MerchantPreselectionTest {
             ledgerTxn(amountSen = 900L, occurredAt = NOON - 3_600_000L, categoryId = categoryId("Groceries"))
                 .copy(merchantRaw = key, merchantDisplay = key, merchantKey = key),
         )
-        Databases.merchantRuleDao(context).teachAndFix(captured, to, NOON)
+        Databases.merchantIdentityDao(context).teachAndFix(captured, to, NOON)
     }
 
     private fun categoryId(name: String): Long = Databases.categoryDao(context).all().first { it.name == name }.id

@@ -107,6 +107,11 @@ class FilerTest {
         )
     }
 
+    @Test fun `a key is merged when it is aliased away or others are aliased to it`() {
+        val snapshot = Snapshot(aliases = mapOf("B" to "A", "D" to "C"))
+        assertEquals(listOf(true, true, true, true, false), listOf("A", "B", "C", "D", "E").map(snapshot::isMerged))
+    }
+
     @Test fun `a snapshot's merged identities come from its aliases`() {
         assertEquals(setOf("A", "C"), Snapshot(aliases = mapOf("B" to "A", "D" to "C", "E" to "A")).mergedIdentities)
     }

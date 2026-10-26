@@ -33,8 +33,9 @@ internal class LedgerBusy(scope: CoroutineScope, private val transfers: StateFlo
      * asks before its guard. Read off [transfers], not [busy], which is a
      * collector's copy and can lag the operation's claim by a dispatch; and
      * asked before the guard, not left to the gate, because a gated write
-     * through `CaptureStorage.guarded` reads as storage unavailable, which
-     * raises the capture-stopped banner over an operation the user started.
+     * through `CaptureStorage.guarded` is refused, which draws the screen's
+     * own notice over an operation the user started. Not the capture banner:
+     * a screen's call passes `damageStopsCapture = false` (`GateRefusalTest`).
      */
     val replacing: Boolean get() = transfers.value.replacingLedger != null
 

@@ -160,7 +160,7 @@ internal fun RowCategoryChooser(
     // Merged: this key is aliased away, or other keys are aliased to it.
     // Either way the one rule on the identity files them all.
     val mergedRuleCategory = filing.learned
-        ?.takeIf { row.identityKey != row.txn.merchantKey || row.identityKey in chooser.filer.learned.mergedIdentities }
+        ?.takeIf { row.txn.merchantKey?.let(chooser.filer.learned::isMerged) == true }
         ?.let { ruleId -> categoriesById[ruleId]?.name }
     CategoryPicker(
         categories = choices,

@@ -102,6 +102,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.MONTH_CHEVRON_SIZE
@@ -213,6 +214,7 @@ fun LedgerScreen(
         items = items,
         read = state.answer ?: LedgerRead(),
         storageUnavailable = state.unavailable,
+        replacing = state.replacing,
         categories = viewModel.rows,
         merchants = viewModel.rows,
         onOpenSettings = onOpenSettings,
@@ -285,6 +287,8 @@ internal fun LedgerScreenContent(
     picks: Int = 0,
     /** [read]'s summary is a month other than [picked]'s, whose read is in flight (#285). */
     rereading: Boolean = false,
+    /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
+    replacing: Boolean = false,
 ) {
     // Saveable, and above the branch below, so the position outlives both a
     // tab switch (`NavDisplay`'s saveable-state decorator) and a first read
@@ -340,7 +344,9 @@ internal fun LedgerScreenContent(
     }
     val scope = rememberCoroutineScope()
 
-    val unreadable = storageUnavailable || items.loadState.refresh is LoadState.Error
+    // A replacement is unreadable too, and says so in its own words: the
+    // feed's page may meet the same gate as an error.
+    val unreadable = replacing || storageUnavailable || items.loadState.refresh is LoadState.Error
     val reading = !unreadable && items.loadState.refresh is LoadState.Loading && items.itemCount == 0
     // A picked month with nothing on or before it is the feed, not day one:
     // the sheet listed it, so there is a history, only none of it that old.
@@ -384,7 +390,7 @@ internal fun LedgerScreenContent(
                 // refresh error (see `ReopeningFeed`). Any refresh error, not only
                 // §11.1's: a page that would not load is a list that could not be
                 // read either way.
-                unreadable -> Unreadable(Modifier.weight(1f))
+                unreadable -> Unreadable(replacing, Modifier.weight(1f))
 
                 // Not empty until the first load has actually returned. `loadState`
                 // distinguishes them; a bare `itemCount == 0` does not.
@@ -827,28 +833,35 @@ private fun HeardChip(heard: String, modifier: Modifier = Modifier) {
  * user is likeliest to be reading this. Settings is the one screen that knows
  * whether that happened, so this points there, and not at the banner, which
  * defers to settings itself and may not be drawn at all.
+ *
+ * [replacing]: a restore or a delete-everything turned the read away (#328).
+ * That is no failure, so the line says the ledger is being replaced and the
+ * paragraph about a failure is not drawn.
  */
 @Composable
-private fun Unreadable(modifier: Modifier = Modifier) {
+private fun Unreadable(replacing: Boolean, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
         Text(
-            CANNOT_READ_YOUR_DATA,
+            if (replacing) REPLACING_YOUR_DATA else CANNOT_READ_YOUR_DATA,
             style = MonoLabel,
             color = Stamp,
             modifier = Modifier
                 .border(1.dp, Stamp, RoundedCornerShape(2.dp))
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         )
-        Text(
-            "Pinged could not read your transactions, so an empty list here " +
-                "is not a sign that there are none. Settings says more when " +
-                "Pinged knows more.",
-            fontFamily = Body,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            color = Ink,
-            modifier = Modifier.padding(top = 14.dp),
-        )
+        // Not under a replacement, which is no failure to read.
+        if (!replacing) {
+            Text(
+                "Pinged could not read your transactions, so an empty list here " +
+                    "is not a sign that there are none. Settings says more when " +
+                    "Pinged knows more.",
+                fontFamily = Body,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = Ink,
+                modifier = Modifier.padding(top = 14.dp),
+            )
+        }
     }
 }
 

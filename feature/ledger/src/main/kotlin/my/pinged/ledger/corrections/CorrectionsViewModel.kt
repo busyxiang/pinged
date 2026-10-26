@@ -34,6 +34,8 @@ data class CorrectionsState(
     val packVersion: Int = 0,
     /** Spec 11.1: the database could not be opened, which is not "nothing to review". */
     val storageUnavailable: Boolean = false,
+    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
+    val replacing: Boolean = false,
 )
 
 /** What one read of [CorrectionsViewModel.read] found: [Corrections.pending]'s list, null while [checking]. */
@@ -44,6 +46,7 @@ internal data class Pending(val found: List<Corrections.Correction>?, val packVe
  * whatever the last read held, as `LearnedViewModel`'s does.
  */
 internal fun ReadState<Unit, Pending>.toState(): CorrectionsState {
+    if (replacing) return CorrectionsState(loaded = true, replacing = true)
     if (unavailable) return CorrectionsState(loaded = true, storageUnavailable = true)
     val pending = answer ?: return CorrectionsState()
     return CorrectionsState(

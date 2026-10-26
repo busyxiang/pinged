@@ -1,5 +1,8 @@
 package my.pinged.ledger
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -8,6 +11,8 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -39,6 +44,7 @@ import my.pinged.ledger.sources.SourcesState
 import my.pinged.ledger.unread.NEVER_A_TRANSACTION
 import my.pinged.ledger.unread.UnreadContent
 import my.pinged.ledger.unread.UnreadState
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -160,6 +166,25 @@ class ReplacingSettingsScreensTest {
         line()
         compose.onNode(hasText(NEVER_A_TRANSACTION) and hasClickAction()).performScrollTo().assertIsNotEnabled().performClick()
         nothingTapped()
+    }
+
+    /** A read the gate turned away says REPLACING YOUR DATA in place of the list (#328), and nothing beside it. */
+    @Test fun aScreenWhoseReadWasReplacedDrawsOneLine() {
+        var screen by mutableStateOf(0)
+        compose.setContent {
+            when (screen) {
+                0 -> CategoriesContent(CategoriesState(loaded = true, replacing = true), {}, { _, _ -> }, { _, _, _ -> }, {}, busy = Operation.RESTORE)
+                1 -> LearnedContent(LearnedState(loaded = true, replacing = true), {}, {}, busy = Operation.RESTORE)
+                2 -> SourcesScreenContent(SourcesState(loaded = true, replacing = true), { _, _ -> }, {}, busy = Operation.RESTORE)
+                3 -> CorrectionsContent(CorrectionsState(loaded = true, replacing = true), {}, {}, {}, busy = Operation.RESTORE)
+                else -> UnreadContent(UnreadState(loaded = true, replacing = true), {}, {}, {}, {}, busy = Operation.RESTORE)
+            }
+        }
+        for (each in 0..4) {
+            screen = each
+            compose.onAllNodesWithText(REPLACING_YOUR_DATA).onFirst().assertIsDisplayed()
+            compose.onNodeWithText(RESTORE_LINE).assertDoesNotExist()
+        }
     }
 
     private fun line() {

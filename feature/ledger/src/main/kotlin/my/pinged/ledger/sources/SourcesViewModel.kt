@@ -80,6 +80,8 @@ data class SourcesState(
      * confident answer this state cannot support.
      */
     val storageUnavailable: Boolean = false,
+    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
+    val replacing: Boolean = false,
 )
 
 /**
@@ -88,6 +90,7 @@ data class SourcesState(
  * list, which an empty allow-list would contradict (spec 11.1).
  */
 fun ReadState<Unit, SourcesState>.toState(): SourcesState {
+    if (replacing) return SourcesState(loaded = true, replacing = true)
     if (unavailable) return SourcesState(loaded = true, storageUnavailable = true)
     return answer ?: SourcesState()
 }

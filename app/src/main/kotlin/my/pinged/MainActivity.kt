@@ -1,16 +1,10 @@
 package my.pinged
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -50,9 +44,8 @@ import my.pinged.ledger.day.DayScreen
 import my.pinged.ledger.day.DayViewModel
 import my.pinged.ledger.detail.DetailScreen
 import my.pinged.ledger.detail.DetailViewModel
-import my.pinged.ledger.search.SearchScreen
+import my.pinged.ledger.search.SearchRoute
 import my.pinged.ledger.search.SearchStart
-import my.pinged.ledger.search.SearchViewModel
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.entry.ManualEntryScreen
 import my.pinged.ledger.entry.ManualEntryViewModel
@@ -65,12 +58,6 @@ import my.pinged.ledger.home.BackupReminder
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
 import my.pinged.ledger.onboarding.OnboardingScreen
-import my.pinged.ledger.settings.DocumentSink
-import my.pinged.ledger.settings.ExportReceiptSheet
-import my.pinged.ledger.settings.ExportSheet
-import my.pinged.ledger.settings.SpreadsheetChoice
-import my.pinged.ledger.settings.SpreadsheetPanel
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
 import my.pinged.ledger.categories.CategoriesScreen
@@ -84,12 +71,9 @@ import my.pinged.ledger.unread.UnreadViewModel
 import my.pinged.ledger.licences.LicencesScreen
 import my.pinged.ledger.review.ReviewScreen
 import my.pinged.ledger.review.ReviewViewModel
-import my.pinged.ledger.settings.SettingsScreen
-import my.pinged.ledger.settings.SettingsState
-import my.pinged.ledger.settings.SettingsViewModel
+import my.pinged.ledger.settings.SettingsRoute
 import my.pinged.ledger.sources.CaptureBanner
-import my.pinged.ledger.sources.SourcesScreen
-import my.pinged.ledger.sources.SourcesViewModel
+import my.pinged.ledger.sources.SourcesRoute
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.HeldBy
@@ -125,9 +109,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Built once, here, rather than per entry: the factory holds the
-        // `Application` itself. See `AppViewModelFactory`.
-        val sourcesFactory = AppViewModelFactory(application, ::SourcesViewModel)
-        val settingsFactory = AppViewModelFactory(application, ::SettingsViewModel)
+        // `Application` itself. See `AppViewModelFactory`. Settings' and
+        // Sources' are their routes' own.
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
         val unreadFactory = AppViewModelFactory(application, ::UnreadViewModel)
@@ -299,29 +282,16 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 entry<Search> { key ->
-                                    // The entry's own `createSavedStateHandle`:
-                                    // the words and filters survive a process
-                                    // death there.
-                                    val start = key.month?.let { m ->
-                                        key.categoryId?.let { SearchStart(YearMonth.parse(m), it) }
-                                    }
-                                    val search: SearchViewModel = viewModel {
-                                        SearchViewModel(application, createSavedStateHandle(), start)
-                                    }
-                                    // "Export these N rows" (#201): the CSV goes
-                                    // where the user creates it, as a backup does.
-                                    val exportLauncher = rememberLauncherForActivityResult(
-                                        ActivityResultContracts.CreateDocument(CSV_TYPE),
-                                    ) { uri -> if (uri != null) search.exportTo(DocumentSink(contentResolver, uri)) }
-                                    SearchScreen(
-                                        viewModel = search,
+                                    SearchRoute(
+                                        start = key.month?.let { m ->
+                                            key.categoryId?.let { SearchStart(YearMonth.parse(m), it) }
+                                        },
                                         // The same expression NavDisplay's onBack
                                         // is given; see `pop`.
                                         onBack = tabs::pop,
-                                        modifier = Modifier.fillMaxSize(),
                                         onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
-                                        onPickExport = { exportLauncher.launch(SEARCH_CSV_FILE_NAME) },
+                                        modifier = Modifier.fillMaxSize(),
                                     )
                                 }
                                 entry<ManualEntry> { key ->
@@ -409,118 +379,22 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 entry<Settings> {
-                                    val settings: SettingsViewModel =
-                                        viewModel(factory = settingsFactory)
-                                    var exportOpen by remember { mutableStateOf(false) }
-                                    LaunchedEffect(exportAsked) {
-                                        if (exportAsked) {
-                                            exportAsked = false
-                                            exportOpen = true
-                                        }
-                                    }
-                                    // The banner above says "Settings says more";
-                                    // each time settings reads storage, the banner
-                                    // reads it again, so the two cannot disagree
-                                    // for the rest of the visit -- a full disk that
-                                    // has cleared, say, with nothing resuming.
-                                    // **Keyed on the read, not on what it found**:
-                                    // see `AppStatus`.
-                                    val read by settings.state.collectAsState()
-                                    LaunchedEffect(read.reads) {
-                                        if (read.reads > 0) status.settingsRead()
-                                    }
-                                    // `OpenDocument`, not `GetContent`: `GetContent`
-                                    // hands back a transient URI a provider may
-                                    // revoke the moment this callback returns, and
-                                    // `Restore.replaceEverything` needs the stream
-                                    // to survive being copied to a cache file first.
-                                    //
-                                    // `arrayOf("*/*")`, not `"application/json"` --
-                                    // spec 12: MIME filtering is unreliable across
-                                    // document providers, so the picker accepts
-                                    // anything and `Restore` validates what comes
-                                    // back before it destroys anything (Task 6).
-                                    //
-                                    // A null `Uri` -- the user backed out of the
-                                    // picker -- starts nothing. One the provider
-                                    // will not open is opened by the restore, off
-                                    // this thread, and reported as its refusal:
-                                    // `openInputStream` throws for it, and here,
-                                    // on the main thread, that would kill the app.
-                                    val restoreLauncher = rememberLauncherForActivityResult(
-                                        ActivityResultContracts.OpenDocument(),
-                                    ) { uri ->
-                                        if (uri != null) settings.restoreFrom { contentResolver.openInputStream(uri) }
-                                    }
-                                    // The damaged state's rescue, into a document
-                                    // the user creates as export's is: no sheet of
-                                    // its own, since the recovery notice has
-                                    // already said what it is for.
-                                    val rescueLauncher = rememberLauncherForActivityResult(
-                                        ActivityResultContracts.CreateDocument("application/json"),
-                                    ) { uri -> if (uri != null) settings.salvageTo(DocumentSink(contentResolver, uri)) }
-                                    // Spec 10.2's permission, asked only from its
-                                    // own row. Refused with no rationale left to
-                                    // show is a denial the system will not ask
-                                    // about again, so the app's own notification
-                                    // settings are the only way left.
-                                    val askToPost = rememberLauncherForActivityResult(
-                                        ActivityResultContracts.RequestPermission(),
-                                    ) { granted ->
-                                        alertsAllowed.value = CaptureAlerts.canPost(applicationContext)
-                                        if (!granted && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
-                                            openAlertSettings()
-                                        }
-                                    }
-                                    SettingsScreen(
-                                        viewModel = settings,
+                                    SettingsRoute(
                                         alertsOn = alertsAllowed.collectAsState().value,
-                                        onAlerts = {
-                                            if (Build.VERSION.SDK_INT >= 33 &&
-                                                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                                            ) {
-                                                askToPost.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                            } else {
-                                                openAlertSettings()
-                                            }
-                                        },
+                                        onAlertsChanged = { alertsAllowed.value = CaptureAlerts.canPost(applicationContext) },
+                                        onStorageRead = status::settingsRead,
+                                        exportAsked = exportAsked,
+                                        onExportTaken = { exportAsked = false },
                                         onOpenSources = { tabs.push(Sources) },
                                         onOpenCorrections = { tabs.push(Corrections) },
                                         onOpenLearned = { tabs.push(Learned) },
                                         onOpenUnread = { tabs.push(Unread) },
                                         onOpenCategories = { tabs.push(Categories) },
                                         onOpenLicences = { tabs.push(Licences) },
-                                        onExport = { exportOpen = true },
-                                        // Reached only after `SettingsScreen`'s own
-                                        // confirmation -- see `RestoreConfirmSheet`
-                                        // -- so the picker never opens ahead of the
-                                        // user knowing what a restore costs.
-                                        onRestore = { restoreLauncher.launch(arrayOf("*/*")) },
-                                        onRescue = { rescueLauncher.launch(RESCUE_FILE_NAME) },
                                         buildVersion = BuildConfig.VERSION_NAME,
                                         packVersion = remember { Graph.parsePack().packVersion },
                                         modifier = Modifier.fillMaxSize(),
                                     )
-                                    if (exportOpen) {
-                                        val state = read
-                                        ExportSheetHost(
-                                            state = state,
-                                            onExport = { uri -> settings.exportTo(DocumentSink(contentResolver, uri)) },
-                                            onSpreadsheet = { uri -> settings.spreadsheetTo(DocumentSink(contentResolver, uri)) },
-                                            onChooseSpreadsheet = { settings.chooseSpreadsheet(it) },
-                                            onCountSpreadsheet = { settings.readSpreadsheet() },
-                                            onCancel = settings::cancelExport,
-                                            // Dismissing the sheet is having seen
-                                            // what it said about the last export,
-                                            // so the next one opens on its button.
-                                            onDismiss = {
-                                                exportOpen = false
-                                                state.outcome
-                                                    ?.takeIf { it.operation.isExport }
-                                                    ?.let(settings::acknowledge)
-                                            },
-                                        )
-                                    }
                                 }
                                 entry<Corrections> {
                                     val corrections: CorrectionsViewModel =
@@ -570,16 +444,9 @@ class MainActivity : ComponentActivity() {
                                     LicencesScreen(onBack = tabs::pop, modifier = Modifier.fillMaxSize())
                                 }
                                 entry<Sources> {
-                                    val sources: SourcesViewModel =
-                                        viewModel(factory = sourcesFactory)
-                                    AskForNotifications()
-                                    SourcesScreen(
-                                        viewModel = sources,
-                                        // The same expression NavDisplay's onBack
-                                        // is given; see `pop`.
-                                        onBack = tabs::pop,
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
+                                    // The same expression NavDisplay's onBack is
+                                    // given; see `pop`.
+                                    SourcesRoute(onBack = tabs::pop, modifier = Modifier.fillMaxSize())
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -588,10 +455,7 @@ class MainActivity : ComponentActivity() {
                         // see `AppStatus.barMayShow`.
                         LaunchedEffect(tabs.selected, tabs.showsBar) { status.barMayShow() }
                         if (tabs.showsBar) {
-                            // Null, the dash, while it is not read yet or
-                            // unreadable: 0 would say nothing awaits review (#237).
-                            val awaitingReview = current.awaitingReview.takeUnless { it.unavailable }?.answer
-                            TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = awaitingReview)
+                            TabBar(selected = tabs.selected, onSelect = tabs::select, awaitingReview = current.awaitingReviewCount)
                         }
                     }
                 }
@@ -685,17 +549,6 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * This app's notification settings, where alerts are turned off again, or
-     * on once the permission prompt will no longer be shown.
-     */
-    private fun openAlertSettings() {
-        CaptureAlerts.ensureChannel(applicationContext)
-        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
-        if (!start(intent)) Log.w(TAG, "This app's notification settings would not open")
-    }
-
-    /**
      * Spec 10.4: prefer the API 30 screen that opens this app's own toggle, fall
      * back to the list.
      *
@@ -718,28 +571,6 @@ class MainActivity : ComponentActivity() {
         // Both refused. The banner stays up, and the log names the reason
         // rather than leaving a button that silently does nothing.
         Log.w(TAG, "Neither notification-access screen would open on this device")
-    }
-
-    /**
-     * Spec 9.6's just-in-time prompt is a notification, so from API 33 it needs
-     * `POST_NOTIFICATIONS`. Asked here, on the list of sources, where what it is
-     * for is on screen, and once per visit: saved, so a rotation does not ask
-     * again. After two refusals the system answers for the user without a
-     * dialog, which is the only limit on asking -- and what keeps this from
-     * nagging.
-     */
-    @Composable
-    private fun AskForNotifications() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-        var asked by rememberSaveable { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            if (asked) return@LaunchedEffect
-            asked = true
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ask.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
     }
 
     private fun start(intent: Intent): Boolean =
@@ -786,61 +617,3 @@ internal fun heldBy(holder: Databases.Holder?): HeldBy? = when (holder) {
     Databases.Holder.IntegrityCheck -> HeldBy.IntegrityCheck
 }
 
-/**
- * [ExportReceiptSheet], plus the one thing it does not do for itself: hand
- * off to the system's save-file picker, one per format.
- *
- * **No auto-fire.** The picker does not launch as this host enters
- * composition: backing out of it would leave the sheet with nothing to tap.
- * [ExportSheet]'s idle "Export" is the tap target, so opening this sheet is
- * something the user did, and reaching the system dialog is a second,
- * separate something they did.
- *
- * The spreadsheet card is counted once as the sheet opens, and again by
- * each choice ([onChooseSpreadsheet]).
- */
-@Composable
-private fun ExportSheetHost(
-    state: SettingsState,
-    onExport: (android.net.Uri) -> Unit,
-    onSpreadsheet: (android.net.Uri) -> Unit,
-    onChooseSpreadsheet: (SpreadsheetChoice) -> Unit,
-    onCountSpreadsheet: () -> Unit,
-    onCancel: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json"),
-    ) { uri -> if (uri != null) onExport(uri) }
-    val csvLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(CSV_TYPE),
-    ) { uri -> if (uri != null) onSpreadsheet(uri) }
-    LaunchedEffect(Unit) { onCountSpreadsheet() }
-    ExportReceiptSheet(
-        state = state,
-        onPick = { launcher.launch(EXPORT_FILE_NAME) },
-        onCancel = onCancel,
-        onDismiss = onDismiss,
-        spreadsheet = SpreadsheetPanel(
-            choice = state.spreadsheet,
-            counts = state.spreadsheetCounts,
-            onChoose = onChooseSpreadsheet,
-            onPick = { csvLauncher.launch(SPREADSHEET_FILE_NAME) },
-        ),
-    )
-}
-
-/** `CreateDocument`'s initial suggestion; the system picker lets the user rename it. */
-private const val EXPORT_FILE_NAME = "pinged-backup.json"
-
-/** [EXPORT_FILE_NAME]'s counterpart for the export sheet's spreadsheet. */
-private const val SPREADSHEET_FILE_NAME = "pinged-transactions.csv"
-
-/** [EXPORT_FILE_NAME]'s counterpart for search's export. */
-private const val SEARCH_CSV_FILE_NAME = "pinged-search.csv"
-
-/** RFC 4180's media type, which `CreateDocument` gives the provider. */
-private const val CSV_TYPE = "text/csv"
-
-/** [EXPORT_FILE_NAME]'s counterpart for a salvage, so the two files are not mistaken for each other. */
-@VisibleForTesting internal const val RESCUE_FILE_NAME = "pinged-rescued.json"

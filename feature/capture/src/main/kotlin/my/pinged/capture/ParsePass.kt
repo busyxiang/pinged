@@ -6,7 +6,7 @@ import java.util.concurrent.CancellationException
 import my.pinged.data.Databases
 import my.pinged.data.LiveLearnedRules
 import my.pinged.data.LocalDates
-import my.pinged.data.dao.MerchantRuleDao
+import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.StaleCaptureException
 import my.pinged.data.dao.TxnDao
@@ -66,7 +66,7 @@ internal class ParsePass(
     private val captures: RawCaptureDao,
     private val txns: TxnDao,
     /** Where a learned rule is looked up, by the capture's merchant identity. */
-    private val rules: MerchantRuleDao,
+    private val merchants: MerchantIdentityDao,
     private val matcher: RuleMatcher,
     /**
      * Spec 5.8's taught rules ([TaughtTemplate.matcher]), asked only once
@@ -120,7 +120,7 @@ internal class ParsePass(
      * rule or the fix would miss it. The window is one capture, as
      * `learnedCategoryFor` runs just outside `commitCapture`'s transaction.
      */
-    private val filer = Filer(dictionary, categoryIds, LiveLearnedRules(rules))
+    private val filer = Filer(dictionary, categoryIds, LiveLearnedRules(merchants))
 
     /**
      * What one run did. [remaining] is true when this run knowingly left work

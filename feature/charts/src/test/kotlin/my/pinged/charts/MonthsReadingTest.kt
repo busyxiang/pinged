@@ -26,4 +26,10 @@ class MonthsReadingTest {
         assertEquals(MonthsReading.Unreadable, monthsReading(ReadState(held, rereading = true, unavailable = true)))
         assertEquals(MonthsReading.Unreadable, monthsReading(ReadState<Int, String>(null, rereading = false, unavailable = true)))
     }
+
+    /** As a refusal, in place of the months held, but saying a replacement turned it away (#328). */
+    @Test fun anOpeningRefusedByAReplacementIsReplacingWhateverIsHeld() {
+        assertEquals(MonthsReading.Replacing, monthsReading(ReadState(held, rereading = true, unavailable = false, replacing = true)))
+        assertEquals(MonthsReading.Replacing, monthsReading(ReadState<Int, String>(null, rereading = false, unavailable = false, replacing = true)))
+    }
 }

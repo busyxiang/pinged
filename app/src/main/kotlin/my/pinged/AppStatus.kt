@@ -202,7 +202,7 @@ internal class AppStatus(
      */
     private suspend fun exportOverdue(): Boolean = try {
         when (val txns = runner.read(COUNTING) { db -> db.txnDao().countAll() }) {
-            Outcome.Refused -> false
+            Outcome.Refused, Outcome.Replacing -> false
             is Outcome.Done -> exportIsOverdue(
                 txns = txns.value,
                 lastExportAt = sources.lastExportAt(),
@@ -309,7 +309,7 @@ internal class AppStatus(
  * @property heard the ledger's heard line, or none. See [heardLine].
  * @property backupReminder Spending's backup reminder and where its action
  *   leads, or none. See [backupReminderShows].
- * @property awaitingReview the tab bar's count of what awaits review.
+ * @property awaitingReview the tab bar's count of what awaits review. See [awaitingReviewCount].
  */
 internal data class AppStatusState(
     val onboarding: Boolean?,
@@ -317,7 +317,15 @@ internal data class AppStatusState(
     val heard: String?,
     val backupReminder: BackupReminderAction?,
     val awaitingReview: ReadState<Unit, Int>,
-)
+) {
+    /**
+     * The count the tab bar draws: null, the dash, while it is not read yet,
+     * unreadable or being replaced (#328), since a refused read keeps the
+     * last answer and 0 would say nothing awaits review (#237).
+     */
+    val awaitingReviewCount: Int?
+        get() = awaitingReview.takeUnless { it.unavailable || it.replacing }?.answer
+}
 
 /**
  * Where the backup reminder's action leads. On a damaged ledger it is the

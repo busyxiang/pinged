@@ -40,6 +40,7 @@ import my.pinged.ui.money
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
@@ -90,9 +91,10 @@ internal fun CorrectionsContent(
     }
     LazyColumn(modifier.fillMaxSize().background(Paper)) {
         item { Header(onBack) }
-        if (!state.storageUnavailable && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
+        if (!state.storageUnavailable && !state.replacing && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
         item {
             val notice = when {
+                state.replacing -> REPLACING_YOUR_DATA
                 state.storageUnavailable -> CANNOT_READ_YOUR_DATA
                 state.checking -> "STILL CHECKING YOUR HISTORY AGAINST PACK ${state.packVersion}"
                 state.items.isEmpty() -> NOTHING_TO_REVIEW

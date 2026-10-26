@@ -176,7 +176,7 @@ class ManualEntries(
     private fun filer() = Filer(
         Graph.parsePack().dictionary,
         Databases.categoryDao(context()).seededIds(),
-        LiveLearnedRules(Databases.merchantRuleDao(context())),
+        LiveLearnedRules(Databases.merchantIdentityDao(context())),
     )
 
     /**

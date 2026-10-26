@@ -61,6 +61,7 @@ import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
@@ -145,8 +146,9 @@ internal fun UnreadContent(
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         item { Header(onBack) }
-        if (!state.storageUnavailable && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp)) }
+        if (!state.storageUnavailable && !state.replacing && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp)) }
         val notice = when {
+            state.replacing -> REPLACING_YOUR_DATA
             state.storageUnavailable -> CANNOT_READ_YOUR_DATA
             state.items.isEmpty() -> NOTHING_UNREAD
             else -> null

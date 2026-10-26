@@ -32,6 +32,7 @@ import my.pinged.ui.monthName
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
+import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
@@ -83,6 +84,7 @@ fun ChartsScreen(
         month = month,
         state = chartsState(read.answer),
         unavailable = read.unavailable,
+        replacing = read.replacing,
         // A month picked whose read has not landed.
         rereading = read.rereading,
         modifier = modifier,
@@ -128,15 +130,17 @@ internal fun ChartsScreenContent(
     onOpenUncategorized: (() -> Unit)? = null,
     /** [state] is a month other than [month], whose read is in flight (#285). */
     rereading: Boolean = false,
+    /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
+    replacing: Boolean = false,
 ) {
     val monthName = monthName(month)
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         when {
             // Before the state, which may still hold an older read: a screen
             // that cannot read says so rather than drawing stale figures.
-            unavailable -> {
+            unavailable || replacing -> {
                 HeaderSection(monthName, chip = null, onOpenMonths)
-                Unreadable()
+                Unreadable(replacing)
             }
 
             // The month name is the selection, not a read, and opens
@@ -302,26 +306,31 @@ private fun EmptySection(empty: ChartsState.Empty) {
  * The read failed. Drawn in the accent, as the Ledger draws it, and never as
  * the empty state: a reader of "nothing captured" here would conclude there is
  * nothing, when what happened is that nothing could be read.
+ *
+ * [replacing]: a restore or a delete-everything turned the read away (#328),
+ * which is no failure, so the line says so and nothing explains a failure.
  */
 @Composable
-private fun Unreadable() {
+private fun Unreadable(replacing: Boolean) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
         MonoLine(
-            CANNOT_READ_YOUR_DATA,
+            if (replacing) REPLACING_YOUR_DATA else CANNOT_READ_YOUR_DATA,
             Stamp,
             Modifier
                 .border(1.dp, Stamp, RoundedCornerShape(2.dp))
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         )
-        Text(
-            "Pinged could not read your transactions, so these charts cannot be " +
-                "drawn. Settings says more when Pinged knows more.",
-            fontFamily = Body,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            color = Ink,
-            modifier = Modifier.padding(top = 14.dp),
-        )
+        if (!replacing) {
+            Text(
+                "Pinged could not read your transactions, so these charts cannot be " +
+                    "drawn. Settings says more when Pinged knows more.",
+                fontFamily = Body,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = Ink,
+                modifier = Modifier.padding(top = 14.dp),
+            )
+        }
     }
 }
 

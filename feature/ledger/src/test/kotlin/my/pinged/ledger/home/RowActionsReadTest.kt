@@ -157,6 +157,19 @@ class RowActionsReadTest {
         assertTrue("The screen did not learn the ledger cannot be read", screen.state.value.unavailable)
     }
 
+    /** #328, decision 4: as a refusal does, and the screen then says a replacement, not CANNOT READ YOUR DATA. */
+    @Test fun aReadRefusedByAReplacementClosesTheSheetAndTheScreenSaysItIsBeingReplaced() {
+        val seeded = seed()
+        runner.replacing = true
+
+        rows.openMerchant(opening(ALI))
+
+        assertNull("A sheet whose read a replacement refused stayed open", rows.merchantSheet.value)
+        assertTrue("The screen's own read was not asked to look again", runner.calls.drop(seeded).any { it.what == "The test cannot be read" })
+        assertTrue("The screen did not learn the ledger is being replaced", screen.state.value.replacing)
+        assertFalse("The screen was told the ledger cannot be read", screen.state.value.unavailable)
+    }
+
     @Test fun aReadSheetIsDrawnWithItsRead() {
         seed()
 
