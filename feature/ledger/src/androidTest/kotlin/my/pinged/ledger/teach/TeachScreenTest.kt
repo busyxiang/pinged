@@ -93,7 +93,7 @@ class TeachScreenTest {
         compose.onNodeWithText(stepLabel(TeachSelection.Step.AMOUNT)).performScrollTo()
     }
 
-    /** The artboard, tap for tap: the amount, then no merchant, then a refund. */
+    /** The artboard, tap for tap: the amount, then no merchant, then money back. */
     @Test fun twoTapsGiveTheArtboardsPreviewAndSaveWhatWasChosen() {
         val saved = mutableListOf<Direction>()
         draw(saved)
@@ -107,7 +107,7 @@ class TeachScreenTest {
         compose.onNodeWithText(SAVE).assertIsNotEnabled()
 
         compose.onNodeWithText(NO_MERCHANT).performScrollTo().performClick()
-        compose.onNodeWithText(A_REFUND).performScrollTo().performClick()
+        compose.onNodeWithText(MONEY_BACK).performScrollTo().performClick()
         compose.onNodeWithText(SAVE).assertIsEnabled().performClick()
 
         assertEquals(listOf(Direction.REFUND), saved)

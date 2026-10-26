@@ -71,7 +71,7 @@ import my.pinged.ui.theme.dottedRule
 /**
  * Spec 5.8's Teach screen, drawn from `design/Teach.dc.html`: the message as
  * Pinged saw it, tapped word by word for its amount and its merchant; what the
- * rule will look for; money out or a refund; and "Save this rule".
+ * rule will look for; money out or money back; and "Save this rule".
  *
  * **No pattern is ever shown or typed.** The preview names the parts the user
  * chose and says every other word must match exactly, which is the whole of
@@ -170,7 +170,7 @@ internal fun TeachContent(
                 Text(MONEY_OUT_OR_IN, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 22.dp))
                 Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Choice(MONEY_OUT, state.direction == Direction.EXPENSE, { onDirection(Direction.EXPENSE) }, Modifier.weight(1f))
-                    Choice(A_REFUND, state.direction == Direction.REFUND, { onDirection(Direction.REFUND) }, Modifier.weight(1f))
+                    Choice(MONEY_BACK, state.direction == Direction.REFUND, { onDirection(Direction.REFUND) }, Modifier.weight(1f))
                 }
             }
         }
@@ -339,7 +339,7 @@ internal const val EXACTLY = "Every other word has to match exactly, so this rul
 internal const val TAP_FIRST = "Tap the amount in the message above."
 internal const val MONEY_OUT_OR_IN = "IS THIS MONEY OUT, OR IN?"
 internal const val MONEY_OUT = "Money out"
-internal const val A_REFUND = "A refund"
+internal const val MONEY_BACK = "Money back"
 internal const val FIRST_THREE = "THE FIRST THREE MATCHES WILL ASK YOU TO CHECK THE AMOUNT"
 internal const val SAVE = "Save this rule"
 internal const val GONE = "Pinged has read this notification since, or you said it is never a transaction. There is nothing to teach."
