@@ -311,7 +311,7 @@ interface TxnDao {
     /**
      * [monthTotals] for every month in `[from, to]` in one statement, for the
      * `Months` sheet (#75): one row per month and currency, so the sheet is
-     * this and one `capturedDates` whatever the history's length. A month
+     * this and one `CaptureRecord.read` whatever the history's length. A month
      * with nothing counted has no row; the sheet draws it at zero. Measured
      * on emulator-5554 over 5,000 rows across 24 months, the whole span:
      * 2.1ms median of 21.

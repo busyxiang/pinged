@@ -11,6 +11,8 @@ import kotlinx.coroutines.withContext
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
+import my.pinged.data.CaptureRecord
+import my.pinged.data.DayStatus
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.MonthlyTotal
 import my.pinged.data.entity.Txn
@@ -83,6 +85,13 @@ class MonthSelectionTest {
         )
     }
 
+    /** The captured days of [record], from its history start to the day before today. */
+    private fun capturedDays(record: CaptureRecord): Set<LocalDate> =
+        generateSequence(record.historyStart) { it.plusDays(1) }
+            .takeWhile { it < record.today }
+            .filter { record.day(it) == DayStatus.CAPTURED }
+            .toSet()
+
     /** The sheet's read: the history start, every month's totals, and the captured days. */
     @Test(timeout = 60_000)
     fun theMonthsReadCarriesEveryMonthAndTheCapturedDays() = runBlocking<Unit> {
@@ -95,7 +104,7 @@ class MonthSelectionTest {
 
         val read = charts.months.state.value.answer
         assertNotNull("The sheet's read published nothing", read)
-        assertEquals(august.atDay(30), read!!.historyStart)
+        assertEquals(august.atDay(30), read!!.record.historyStart)
         assertEquals(
             "A month of money before the history start, or after it, is missing",
             listOf(
@@ -105,7 +114,7 @@ class MonthSelectionTest {
             ),
             read.totals.sortedBy { it.month },
         )
-        assertEquals(setOf(august.atDay(30), september.atDay(2)), read.captured)
+        assertEquals(setOf(august.atDay(30), september.atDay(2)), capturedDays(read.record))
         assertEquals(today, read.today)
     }
 

@@ -2,6 +2,7 @@ package my.pinged.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.entity.CaptureDay
+import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Direction
 import org.junit.After
@@ -14,23 +15,31 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 
 /**
- * The two reads behind `notCapturedDays`, against the real encrypted
- * database: which days are **captured**, and where the **history start** is
- * (#81, Capture evidence; #64, #65, #75).
+ * `CaptureRecord.read` against the real encrypted database: which days are
+ * **captured**, and where the **history start** is (#81, Capture evidence;
+ * #64, #65, #75, #305). The rules over that evidence are `CaptureRecordTest`'s.
  *
- * Fixtures are September 2026 throughout. Each date a test expects is written
- * as a literal `yyyymmdd`, so a wrong packing cannot cancel against itself.
+ * Fixtures are September 2026 throughout, read as of 10 October. Each date a
+ * test expects is written as a literal `yyyymmdd`, so a wrong packing cannot
+ * cancel against itself.
  */
 @RunWith(AndroidJUnit4::class)
-class CaptureEvidenceTest {
+class CaptureRecordReadTest {
     private lateinit var db: PingedDatabase
 
     @Before fun setUp() { db = freshDatabase() }
     @After fun tearDown() { db.close() }
 
-    private fun capturedInSeptember(): Set<Int> =
-        db.captureDayDao().capturedDates(LocalDate(20260901), LocalDate(20260930))
-            .map { it.yyyymmdd }.toSet()
+    private fun record(zone: ZoneId = KL) = CaptureRecord.read(db, OCT_10, CaptureRecord.EVERY_DAY, collecting = true, zone = zone)
+
+    /** The days of September that are captured, as `yyyymmdd`. */
+    private fun capturedInSeptember(): Set<Int> {
+        val record = record()
+        return (1..30).map { java.time.LocalDate.of(2026, 9, it) }
+            .filter { record.day(it) == DayStatus.CAPTURED }
+            .map { it.year * 10_000 + it.monthValue * 100 + it.dayOfMonth }
+            .toSet()
+    }
 
     private fun bind(yyyymmdd: Int, bound: Boolean = true) =
         db.captureDayDao().recordListenerBound(LocalDate(yyyymmdd), bound)
@@ -57,16 +66,23 @@ class CaptureEvidenceTest {
         )
     }
 
-    // ---- capturedDates ---------------------------------------------------
+    private fun kl(day: Int, hour: Int = 12) =
+        ZonedDateTime.of(2026, 9, day, hour, 0, 0, 0, KL).toInstant().toEpochMilli()
+
+    private fun captureAt(postedAt: Long, status: ParseStatus = ParseStatus.NEW): Long =
+        db.rawCaptureDao().insert(
+            sampleCapture(hash = "h$postedAt$status", sbnKey = "k$postedAt$status", postedAt = postedAt, status = status),
+        )
+
+    // ---- captured days ---------------------------------------------------
 
     @Test fun aBoundDayIsCaptured() {
         bind(20260903)
         bind(20260831)
-        bind(20261001)
 
         assertEquals(
-            "A day the listener was bound on is not captured, or a day outside " +
-                "the range was let in, so a month borrows its neighbours' coverage",
+            "A day the listener was bound on is not captured, or a day with no " +
+                "evidence was let in, so a month borrows its neighbours' coverage",
             setOf(20260903),
             capturedInSeptember(),
         )
@@ -104,55 +120,146 @@ class CaptureEvidenceTest {
     }
 
     @Test fun aCapturedTransactionWithNoRowIsCapturedWhateverItsState() {
+        // A capture's transaction has its capture beside it, so a history start;
+        // the fixture's transactions point at captures that were never written.
+        bind(20260901)
         txnOn(20260910)
         txnOn(20260911, state = TxnState.PENDING)
         txnOn(20260912, isExcluded = true)
         txnOn(20260913, direction = Direction.REFUND)
-        txnOn(20260913)
+        txnOn(20260914)
 
         assertEquals(
             "A day holding a transaction captured from a notification is not " +
                 "captured. The money is real and the grid draws it, so the " +
                 "header would count a not-captured day the grid does not show",
-            setOf(20260910, 20260911, 20260912, 20260913),
+            setOf(20260901, 20260910, 20260911, 20260912, 20260913, 20260914),
             capturedInSeptember(),
         )
     }
 
     @Test fun aHandEnteredTransactionIsNotEvidence() {
+        bind(20260901)
         txnOn(20260914, handEntered = true)
 
         assertEquals(
             "A hand-entered transaction made its day captured. Nothing about it " +
                 "says Pinged was watching",
-            emptySet<Int>(),
+            DayStatus.NOT_CAPTURED,
+            record().day(java.time.LocalDate.of(2026, 9, 14)),
+        )
+    }
+
+    /**
+     * The salvage case (#305): a restore that could not read `capture_day`,
+     * leaving one capture no rule matched on the day the history starts. That
+     * day is the history start, so it must not also be a not-captured day.
+     */
+    @Test fun anUnmatchedCaptureAloneMakesItsDayCapturedAndNotMissing() {
+        captureAt(kl(day = 8), ParseStatus.UNMATCHED)
+
+        assertEquals(
+            "The history-start day, whose only evidence is an unmatched capture, " +
+                "was not captured: the record treated the notification that " +
+                "starts it as no evidence of the day",
+            setOf(20260908),
+            capturedInSeptember(),
+        )
+        assertEquals(java.time.LocalDate.of(2026, 9, 8), record().historyStart)
+    }
+
+    @Test fun everyKeptNotificationWithNoTransactionIsEvidenceWhateverBecameOfIt() {
+        val statuses = CaptureRecord.WITHOUT_TXN
+        statuses.forEachIndexed { i, status -> captureAt(kl(day = 10 + i), status) }
+
+        assertEquals(
+            "A status that leaves no transaction (${statuses.joinToString()}) " +
+                "did not vouch for its day, or a day was read with the wrong status",
+            statuses.indices.map { 20260910 + it }.toSet(),
             capturedInSeptember(),
         )
     }
 
-    @Test fun aDayWithBothKindsOfEvidenceIsReturnedOnce() {
-        bind(20260915)
-        txnOn(20260915)
-        txnOn(20260915)
+    @Test fun aMatchedCapturesDayIsItsTransactionsNotItsPostedAt() {
+        // Posted late on the 11th in Kuala Lumpur, parsed into the 10th's ledger.
+        bind(20260901)
+        val id = captureAt(kl(day = 11, hour = 23), ParseStatus.MATCHED)
+        db.txnDao().insert(
+            sampleTxn(
+                rawCaptureId = id,
+                localDate = LocalDate(20260910),
+                categoryId = db.categoryDao().requireUncategorizedId(),
+            ),
+        )
 
         assertEquals(
-            "A day came back more than once",
-            listOf(20260915),
-            db.captureDayDao().capturedDates(LocalDate(20260901), LocalDate(20260930))
-                .map { it.yyyymmdd },
+            "A matched capture vouched for its posted day as well as its " +
+                "transaction's. Its transaction already carries the day",
+            setOf(20260901, 20260910),
+            capturedInSeptember(),
         )
+    }
+
+    @Test fun aKeptNotificationsDayIsLocalNotUtc() {
+        // 23:30 UTC on the 12th is the 13th in Kuala Lumpur.
+        captureAt(ZonedDateTime.of(2026, 9, 12, 23, 30, 0, 0, ZoneId.of("UTC")).toInstant().toEpochMilli(), ParseStatus.REJECTED)
+
+        assertEquals("The capture was dated in UTC", setOf(20260913), capturedInSeptember())
+    }
+
+    @Test fun aNotificationOnTodayIsNotACapturedDay() {
+        bind(20260901)
+        captureAt(ZonedDateTime.of(2026, 10, 10, 9, 0, 0, 0, KL).toInstant().toEpochMilli(), ParseStatus.UNMATCHED)
+
+        val record = record()
+        assertEquals(DayStatus.NOT_ENDED, record.day(OCT_10))
+        assertEquals("Today counted toward collecting; only the 1st is a captured day", 1, record.collecting.days)
+    }
+
+    @Test fun aRecordReadOverASpanAnswersAsTheWholeHistoryDoes() {
+        bind(20260901)
+        bind(20260903)
+        captureAt(kl(day = 4), ParseStatus.UNMATCHED)
+        txnOn(20260905)
+        val span = java.time.LocalDate.of(2026, 9, 3)..java.time.LocalDate.of(2026, 9, 6)
+
+        val narrow = CaptureRecord.read(db, OCT_10, span, zone = KL)
+        val whole = record()
+
+        assertEquals(
+            "A record read over days 3 to 6 answered differently from the whole history",
+            span.start.datesUntil(span.endInclusive.plusDays(1)).toList().map(whole::day),
+            span.start.datesUntil(span.endInclusive.plusDays(1)).toList().map(narrow::day),
+        )
+        assertEquals(
+            listOf(DayStatus.CAPTURED, DayStatus.CAPTURED, DayStatus.CAPTURED, DayStatus.NOT_CAPTURED),
+            span.start.datesUntil(span.endInclusive.plusDays(1)).toList().map(narrow::day),
+        )
+    }
+
+    @Test fun aRecordReadWithoutCollectingRefusesTheCount() {
+        bind(20260901)
+
+        val refusal = runCatching { CaptureRecord.read(db, OCT_10, CaptureRecord.EVERY_DAY, zone = KL).collecting }
+        assertEquals(
+            "A record that fetched only its span answered a count it did not read",
+            IllegalStateException::class,
+            refusal.exceptionOrNull()?.let { it::class },
+        )
+    }
+
+    @Test fun theCollectingCountTakesInNotificationsToo() {
+        captureAt(kl(day = 1), ParseStatus.UNMATCHED)
+        captureAt(kl(day = 2), ParseStatus.NO_EXTRAS)
+        bind(20260903)
+        txnOn(20260904)
+
+        assertEquals(4, record().collecting.days)
     }
 
     // ---- historyStart ----------------------------------------------------
 
-    private fun historyStart(zone: ZoneId = KL) =
-        CaptureEvidence.historyStart(db.captureDayDao(), db.rawCaptureDao(), zone)
-
-    private fun captureAt(postedAt: Long) {
-        db.rawCaptureDao().insert(
-            sampleCapture(hash = "h$postedAt", sbnKey = "k$postedAt", postedAt = postedAt),
-        )
-    }
+    private fun historyStart(zone: ZoneId = KL) = record(zone).historyStart
 
     @Test fun theHistoryStartIsTheFirstCaptureDayWhenThatIsAllThereIs() {
         bind(20260909)
@@ -240,5 +347,6 @@ class CaptureEvidenceTest {
 
     private companion object {
         val KL: ZoneId = ZoneId.of("Asia/Kuala_Lumpur")
+        val OCT_10: java.time.LocalDate = java.time.LocalDate.of(2026, 10, 10)
     }
 }

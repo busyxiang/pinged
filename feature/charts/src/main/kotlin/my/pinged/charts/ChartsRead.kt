@@ -1,5 +1,6 @@
 package my.pinged.charts
 
+import my.pinged.data.CaptureRecord
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.DayTotal
@@ -19,18 +20,16 @@ import java.time.YearMonth
  * Each section that needs a new query adds a field here and a line to the read.
  *
  * @property month the selected month, which every figure here covers.
- * @property today the day the read was taken, so a chip and a not-captured
- *   count cannot straddle midnight.
- * @property historyStart null when nothing has ever been captured (#65).
- * @property captured the captured days from the earlier of [historyStart] and
- *   the month's first day, to its last.
+ * @property record the capture record, read for the month before [month]
+ *   through its end: the month's trust, the comparison's two months, the
+ *   grid's days, the history start and the collecting gate (#305). Its `today`
+ *   is the day the read was taken, so a chip and a not-captured count cannot
+ *   straddle midnight.
  * @property monthTotals the month's net per currency, the Ledger's figure.
  * @property monthSplit the month's gross out and gross back per currency.
  * @property previousMonthTotals the net per currency of the calendar month
- *   before [month], for the comparison line (#67). Its trust needs no read of
- *   its own: [captured] starts at the history start whenever that is earlier
- *   than [month], so it covers the month before whenever that month could be
- *   comparable at all.
+ *   before [month], for the comparison line (#67). Its trust is [record]'s
+ *   answer for that month.
  * @property notInTotal the month's money kept out of [monthTotals], per line
  *   and currency, for the "not in the total" block (#89).
  * @property byCategory the month's net per category and currency, every
@@ -40,9 +39,6 @@ import java.time.YearMonth
  *   null if the row is missing, and then nothing is set apart.
  * @property merchantTotals the month's net and count per merchant identity
  *   and currency, every merchant: the ranking sums the rest itself (#92).
- * @property capturedSinceStart the captured days from [historyStart] to the
- *   day before [today], whatever month is selected: the collecting count
- *   (#66). [captured] does not serve, as it ends at the selected month's end.
  * @property dayTotals the month's `TxnDao.dayTotals`, every currency, for the
  *   daily rhythm grid.
  *
@@ -52,9 +48,7 @@ import java.time.YearMonth
  */
 data class ChartsRead(
     val month: YearMonth,
-    val today: LocalDate,
-    val historyStart: LocalDate?,
-    val captured: Set<LocalDate>,
+    val record: CaptureRecord,
     val monthTotals: List<CurrencyTotal>,
     val monthSplit: List<MonthSplit>,
     val previousMonthTotals: List<CurrencyTotal>,
@@ -62,7 +56,9 @@ data class ChartsRead(
     val byCategory: List<CategoryTotal>,
     val categoryNames: Map<Long, String>,
     val uncategorizedId: Long?,
-    val capturedSinceStart: Set<LocalDate>,
     val merchantTotals: List<MerchantTotal>,
     val dayTotals: List<DayTotal>,
-)
+) {
+    /** The day the read was taken: [record]'s. */
+    val today: LocalDate get() = record.today
+}

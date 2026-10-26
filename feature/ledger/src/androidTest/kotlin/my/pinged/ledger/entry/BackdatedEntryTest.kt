@@ -16,7 +16,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import my.pinged.data.CaptureEvidence
+import my.pinged.data.CaptureRecord
+import my.pinged.data.DayStatus
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.TxnDao
@@ -81,16 +82,16 @@ class BackdatedEntryTest {
         assertEquals("The entry is not filed under 1 July", LocalDates.of(before), dao.byId(id!!)!!.localDate)
         assertEquals("1 July's subtotal does not count it", 800L, dayTotal(dao, before))
         assertEquals("July's total does not count it", 800L, monthTotal(dao, YearMonth.of(2026, 7)))
-        assertEquals(
-            "An entry before the history start moved it",
-            historyStart,
-            CaptureEvidence.historyStart(captureDays, Databases.rawCaptureDao(context)),
-        )
+        val record = Databases.inOneTransaction(context) {
+            CaptureRecord.read(it, historyStart.plusDays(1), CaptureRecord.EVERY_DAY)
+        }
+        assertEquals("An entry before the history start moved it", historyStart, record.historyStart)
         assertEquals(
             "An entry before the history start made its day captured",
-            setOf(historyStart),
-            CaptureEvidence.capturedDates(captureDays, before, historyStart),
+            DayStatus.OUTSIDE_RECORD,
+            record.day(before),
         )
+        assertEquals("The history start's own day is not captured", DayStatus.CAPTURED, record.day(historyStart))
     }
 
     @Test fun aFutureDayIsNeverSaved() = runBlocking {

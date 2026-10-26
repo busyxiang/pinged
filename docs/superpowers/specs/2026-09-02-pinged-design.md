@@ -1517,7 +1517,7 @@ squares are also the cheapest visualization in the app: a `Row` of `Box`es
 per week, reading the `local_date` aggregate that section 9.1 already
 computes for the day subtotals. That aggregate alone cannot tell a quiet day
 from an unwatched one, so the grid also reads the capture evidence below:
-`capturedDates` over the month and the history start's read (#81).
+the capture record (#81, #305).
 
 **A cell has four states, and conflating any two of them is a lie.**
 
@@ -1554,14 +1554,15 @@ does not have the invalidation problem that put the heartbeat in
 `DataStore`.
 
 **A past day on or after the history start is a captured day** when it has
-a `capture_day` row with `listener_bound = 1`, or any `txn` captured from a
-notification (non-null `raw_capture_id`), whatever its state. A
-hand-entered transaction is not evidence, and `saw_any_notification` plays
-no part. Every other such day is **not captured**. Today is neither: its
+a `capture_day` row with `listener_bound = 1`, any `txn` captured from a
+notification (non-null `raw_capture_id`), whatever its state, or any kept
+`raw_capture` that left no `txn`, by its `posted_at` in the current zone
+(#305). A hand-entered transaction is not evidence, and
+`saw_any_notification` plays no part. Every other such day is **not captured**. Today is neither: its
 row may not have landed yet (section 4, today's row can land late), so it
 is never counted. A month is **untrusted** when it holds one not-captured day.
-Charts, `Months` and the Ledger all decide this with one function,
-`notCapturedDays` in `:core:data`, so they cannot disagree.
+Charts, `Months`, the Ledger and the Day header all ask one module,
+`CaptureRecord` in `:core:data`, so they cannot disagree.
 
 **The mid-day-death limit.** A captured day says nothing about the whole
 day. There is no part-day state: a listener that dies at noon, after one

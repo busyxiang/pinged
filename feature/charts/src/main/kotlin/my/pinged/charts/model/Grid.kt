@@ -1,5 +1,7 @@
 package my.pinged.charts.model
 
+import my.pinged.data.CaptureRecord
+import my.pinged.data.DayStatus
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.DayTotal
 import my.pinged.ui.RINGGIT
@@ -80,21 +82,22 @@ data class GridLegend(
  * The grid for [month] seen on [today].
  *
  * [dayTotals] are `TxnDao.dayTotals` over the month, every currency; only
- * MYR's are drawn (#81, Out of scope). [captured] is the read's captured set,
- * which already counts a day with a capture-backed transaction (#64).
+ * MYR's are drawn (#81, Out of scope). [record] says which days are captured,
+ * and so counts a day with a capture-backed transaction (#64); it must have
+ * been read for [month].
  */
 fun rhythmGrid(
     month: YearMonth,
-    today: LocalDate,
-    historyStart: LocalDate?,
-    captured: Set<LocalDate>,
+    record: CaptureRecord,
     dayTotals: List<DayTotal>,
 ): RhythmGrid {
+    val today = record.today
+    val historyStart = record.historyStart
     val nets = dayTotals.filter { it.currency == RINGGIT }
         .associate { LocalDates.calendarDay(it.localDate) to it.netSen }
     val states = (1..month.lengthOfMonth()).map { n ->
         val date = month.atDay(n)
-        date to classify(date, nets[date], captured, historyStart, today)
+        date to classify(date, nets[date], record.day(date), today)
     }
     val ramp = Ramp(states.mapNotNull { (_, s) -> (s as? CellState.Spent)?.netSen })
     val days = states.map { (date, state) ->
@@ -183,14 +186,13 @@ internal const val GRID_STEPS = 4
 private fun classify(
     date: LocalDate,
     netSen: Long?,
-    captured: Set<LocalDate>,
-    historyStart: LocalDate?,
+    status: DayStatus,
     today: LocalDate,
 ): CellState = when {
     date > today -> CellState.Blank
     netSen != null && netSen > 0 -> CellState.Spent(netSen, step = 0)
     netSen != null && netSen < 0 -> CellState.NetNegative(netSen)
-    date == today || date in captured -> CellState.NothingSpent
-    historyStart != null && date >= historyStart -> CellState.NotCaptured
+    status == DayStatus.CAPTURED || status == DayStatus.NOT_ENDED -> CellState.NothingSpent
+    status == DayStatus.NOT_CAPTURED -> CellState.NotCaptured
     else -> CellState.Blank
 }

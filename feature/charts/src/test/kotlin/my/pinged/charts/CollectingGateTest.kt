@@ -33,7 +33,7 @@ class CollectingGateTest {
             month = september,
             today = today,
             historyStart = september.atDay(1),
-            captured = (1..19).map { september.atDay(it) }.toSet(),
+            captured = (1..capturedDays).map { september.atDay(it) }.toSet(),
             monthTotals = listOf(CurrencyTotal("MYR", 84_250L)),
             monthSplit = emptyList(),
             previousMonthTotals = emptyList(),
@@ -41,7 +41,6 @@ class CollectingGateTest {
             byCategory = listOf(CategoryTotal(1L, "MYR", 84_250L)),
             categoryNames = mapOf(1L to "Food & Drinks"),
             merchantTotals = listOf(MerchantTotal("GRAB", "Grab", "MYR", 31_240L, 18)),
-            capturedSinceStart = (1L..capturedDays).map { today.minusDays(it) }.toSet(),
         )
         compose.setContent {
             PingedTheme { ChartsScreenContent(YearMonth.of(2026, 9), ChartsState.Month(monthView(read)), unavailable = false) }

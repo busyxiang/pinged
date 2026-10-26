@@ -95,7 +95,7 @@ internal fun dayHeaderBetween(before: LedgerItem?, after: LedgerItem?): LedgerIt
 /**
  * The pinned month summary (§9.1).
  *
- * [trustworthy] is false when the month is **untrusted**: `notCapturedDays`
+ * [trustworthy] is false when the month is **untrusted**: `CaptureRecord.month`
  * finds a past day on or after the history start with no capture evidence
  * (§8, #81). The total is then greyed and labelled rather than hidden: hiding it
  * loses information, and showing it plainly asserts a number the app cannot

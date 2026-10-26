@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import my.pinged.data.Collecting
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.IntegrityStore
@@ -76,8 +77,8 @@ class BarsReadTest {
         assertEquals(db.categoryDao().requireUncategorizedId(), read.uncategorizedId)
         assertEquals(
             "The collecting count's days are not the history start to yesterday",
-            history.filter { it < today }.toSet(),
-            read.capturedSinceStart,
+            Collecting(history.count { it < today }),
+            read.record.collecting,
         )
     }
 

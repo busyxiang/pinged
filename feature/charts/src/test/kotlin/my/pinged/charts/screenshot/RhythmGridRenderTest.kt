@@ -11,6 +11,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import my.pinged.charts.RhythmGridSection
 import my.pinged.charts.model.RhythmGrid
 import my.pinged.charts.model.rhythmGrid
+import my.pinged.charts.recordFor
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.DayTotal
 import my.pinged.ui.RINGGIT
@@ -49,9 +50,12 @@ class RhythmGridRenderTest {
         notCaptured: Set<Int> = emptySet(),
     ): RhythmGrid = rhythmGrid(
         september,
-        today,
-        historyStart,
-        captured = (1..30).filter { it !in notCaptured && sep(it) >= historyStart }.map(::sep).toSet(),
+        recordFor(
+            september,
+            today,
+            historyStart,
+            captured = (1..30).filter { it !in notCaptured && sep(it) >= historyStart }.map(::sep).toSet(),
+        ),
         dayTotals = sen.map { (d, s) -> DayTotal(LocalDates.of(sep(d)), RINGGIT, s) },
     )
 

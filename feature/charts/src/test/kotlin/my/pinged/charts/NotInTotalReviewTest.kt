@@ -48,7 +48,6 @@ class NotInTotalReviewTest {
             byCategory = emptyList(),
             categoryNames = emptyMap(),
             merchantTotals = emptyList(),
-            capturedSinceStart = emptySet(),
         )
         compose.setContent {
             PingedTheme {

@@ -1,5 +1,6 @@
 package my.pinged.charts.model
 
+import my.pinged.charts.recordFor
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,7 +16,7 @@ class GridLegendTest {
     private val everyDay = (1..30).map(september::atDay).toSet()
 
     private fun legend(today: LocalDate, captured: Set<LocalDate> = everyDay) =
-        rhythmGrid(september, today, september.atDay(1), captured, emptyList()).legend
+        rhythmGrid(september, recordFor(september, today, september.atDay(1), captured), emptyList()).legend
 
     @Test fun aRunningMonthSaysItsDaysToComeAreBlankAndDropsTheHatchsKey() {
         val legend = legend(today = september.atDay(14))

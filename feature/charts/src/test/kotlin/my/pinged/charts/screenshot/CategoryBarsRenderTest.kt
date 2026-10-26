@@ -16,7 +16,7 @@ import my.pinged.charts.CollectingBlock
 import my.pinged.charts.model.Bars
 import my.pinged.charts.model.MonthTrust
 import my.pinged.charts.model.bars
-import my.pinged.charts.model.collecting
+import my.pinged.data.Collecting
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.PingedTheme
@@ -76,7 +76,7 @@ class CategoryBarsRenderTest {
 
     @Test fun theCollectingBlock() = capture("collecting") {
         val today = LocalDate.of(2026, 9, 10)
-        CollectingBlock(collecting(today.minusDays(9), today, (1L..9L).map { today.minusDays(it) }.toSet()))
+        CollectingBlock(Collecting(9))
     }
 
     private fun capture(name: String, content: @Composable () -> Unit) {

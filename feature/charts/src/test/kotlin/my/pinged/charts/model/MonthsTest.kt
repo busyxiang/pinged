@@ -1,6 +1,7 @@
 package my.pinged.charts.model
 
 import my.pinged.charts.MonthsRead
+import my.pinged.data.CaptureRecord
 import my.pinged.data.dao.MonthlyTotal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,7 +23,7 @@ class MonthsTest {
         historyStart: LocalDate? = LocalDate.of(2026, 4, 4),
         totals: List<MonthlyTotal> = emptyList(),
         captured: Set<LocalDate> = historyStart?.let { days(it, today.minusDays(1)) } ?: emptySet(),
-    ) = MonthsRead(today, historyStart, totals, captured)
+    ) = MonthsRead(CaptureRecord.of(historyStart, today, CaptureRecord.EVERY_DAY, captured), totals)
 
     private fun rows(items: List<MonthsItem>) = items.filterIsInstance<MonthsItem.Row>()
 

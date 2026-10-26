@@ -452,7 +452,7 @@ class QueryPlanTest {
     // ---- capture evidence, #81 ------------------------------------------
 
     /**
-     * `capturedDates` runs once per month a screen draws, and its `txn` half
+     * `CaptureRecord.read` runs once per read of a screen, and its `txn` half
      * must range over the month rather than over every captured transaction.
      * `capture_day`'s `local_date` is an `INTEGER PRIMARY KEY`, so its half is
      * a rowid range.
@@ -461,21 +461,41 @@ class QueryPlanTest {
      * merge still walks `index_txn_local_date_occurred_at` for its order, as a
      * `SCAN` of the whole index.
      */
-    @Test fun capturedDatesTakesTheDayRangeOnBothTables() {
-        val p = plan(bindable(CaptureDayDao.CAPTURED_DATES_SQL), *MONTH, *MONTH)
+    @Test fun evidenceDatesTakesTheDayRangeOnBothTables() {
+        val p = plan(bindable(CaptureDayDao.EVIDENCE_DATES_SQL), *MONTH, *MONTH)
         assertUsesIndex("index_txn_local_date_occurred_at", p)
         assertTrue(
             "txn is not read by a local_date range:\n$p",
             p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
         )
         assertTrue(
-            "capturedDates walks index_txn_raw_capture_id, which is every " +
+            "evidenceDates walks index_txn_raw_capture_id, which is every " +
                 "captured transaction ever made:\n$p",
             !p.contains("index_txn_raw_capture_id"),
         )
         assertTrue(
             "capture_day is not read by a primary-key range:\n$p",
             p.contains("SEARCH capture_day USING INTEGER PRIMARY KEY"),
+        )
+    }
+
+    /**
+     * The third source of capture evidence: a kept notification with no
+     * transaction, by `posted_at` in a range (#305). No index leads with
+     * `posted_at`, so the range must ride `(parse_status, posted_at)`: one
+     * seek per status in the `IN` list, covering, so no row's text is read
+     * and `MATCHED`'s rows, the majority, are never visited. A bare `SCAN`
+     * would read every capture the app ever kept on every screen.
+     */
+    @Test fun keptNotificationsWithoutATransactionTakeTheStatusAndPostedAtRange() {
+        // Room expands the list to one placeholder per status: seven in production.
+        val statuses = CaptureRecord.WITHOUT_TXN
+        val sql = bindable(RawCaptureDao.POSTED_WITHOUT_TXN_SQL).replace("IN (?)", "IN (${statuses.joinToString { "?" }})")
+        val p = plan(sql, *statuses.map { it.name }.toTypedArray(), 0L, Long.MAX_VALUE)
+        assertUsesIndex("index_raw_capture_parse_status_posted_at", p, table = "raw_capture")
+        assertTrue(
+            "raw_capture is not read by a (parse_status, posted_at) range:\n$p",
+            p.contains("SEARCH raw_capture USING COVERING INDEX index_raw_capture_parse_status_posted_at (parse_status=? AND posted_at>? AND posted_at<?)"),
         )
     }
 

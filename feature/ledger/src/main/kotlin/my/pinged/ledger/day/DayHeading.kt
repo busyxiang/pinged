@@ -1,5 +1,6 @@
 package my.pinged.ledger.day
 
+import my.pinged.data.DayStatus
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.NotInTotal
 import my.pinged.data.dao.NotInTotalLine
@@ -29,8 +30,8 @@ internal data class DayHeading(
 
 /**
  * [DayHeading] from the day's reads: [counted] is `dayTotals` over the day,
- * [notInTotal] is #89's aggregate over the day, and [notWatching] is
- * `notCaptured` for it.
+ * [notInTotal] is #89's aggregate over the day, and [status] is
+ * `CaptureRecord.day` for it.
  *
  * Ringgit only, as the grid cell the day was opened from is (#81). The total is
  * signed, so a refund-only day reads below zero as its cell does.
@@ -46,9 +47,10 @@ internal data class DayHeading(
  * refund net to zero, and would hide each other.
  *
  * The capture line counts [payments], the ringgit rows in the total, and says
- * Pinged was watching only when [watched], the day is in `capturedDates`. A
- * day neither watched nor [notWatching] -- before the history starts, or
- * today before a bind -- gets the count alone, a claim about neither. The
+ * Pinged was watching only on a [DayStatus.CAPTURED] day. A day that is
+ * neither captured nor not captured -- before the history starts, or today,
+ * which is not captured until it ends (CONTEXT.md, Captured day) -- gets the
+ * count alone, a claim about neither. The
  * board's "WATCHED ALL DAY" is not drawn: `capture_day` records that the
  * listener was bound at some point in the day, not for all of it.
  */
@@ -56,10 +58,11 @@ internal fun dayHeading(
     rowCount: Int,
     counted: List<CurrencyTotal>,
     notInTotal: List<NotInTotal>,
-    notWatching: Boolean,
+    status: DayStatus,
     payments: Int = 0,
-    watched: Boolean = false,
 ): DayHeading {
+    val notWatching = status == DayStatus.NOT_CAPTURED
+    val capturedDay = status == DayStatus.CAPTURED
     val total = if (notWatching && rowCount == 0) {
         null
     } else {
@@ -78,7 +81,7 @@ internal fun dayHeading(
     val captureLine = if (notWatching) {
         null
     } else {
-        (if (payments == 1) "1 PAYMENT" else "$payments PAYMENTS") + (if (watched) Separator + WATCHED else "")
+        (if (payments == 1) "1 PAYMENT" else "$payments PAYMENTS") + (if (capturedDay) Separator + WATCHED else "")
     }
     return DayHeading(total, keptOut, notWatching, awaitingReview.takeIf { pending > 0 }, captureLine)
 }

@@ -1,5 +1,6 @@
 package my.pinged.charts.model
 
+import my.pinged.charts.recordFor
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.DayTotal
 import my.pinged.ui.RINGGIT
@@ -29,9 +30,7 @@ class GridRampTest {
         val totals = sen.mapIndexed { i, s -> DayTotal(LocalDates.of(september.atDay(i + 1)), RINGGIT, s) }
         return rhythmGrid(
             september,
-            today = LocalDate.of(2026, 10, 5),
-            historyStart = LocalDate.of(2026, 8, 1),
-            captured = (1..30).map(september::atDay).toSet(),
+            recordFor(september, today = LocalDate.of(2026, 10, 5), historyStart = LocalDate.of(2026, 8, 1), captured = (1..30).map(september::atDay).toSet()),
             dayTotals = totals,
         )
     }
@@ -150,9 +149,7 @@ class GridRampTest {
     @Test fun theHistoryStartsMonthSaysNothingBefore() {
         val g = rhythmGrid(
             september,
-            today = LocalDate.of(2026, 10, 5),
-            historyStart = september.atDay(7),
-            captured = (7..30).map(september::atDay).toSet(),
+            recordFor(september, today = LocalDate.of(2026, 10, 5), historyStart = september.atDay(7), captured = (7..30).map(september::atDay).toSet()),
             dayTotals = emptyList(),
         )
         assertEquals("Nothing before 7 September 2026", g.footer)
@@ -162,9 +159,7 @@ class GridRampTest {
         assertNull(grid(500).footer)
         val october = rhythmGrid(
             YearMonth.of(2026, 10),
-            today = LocalDate.of(2026, 10, 5),
-            historyStart = september.atDay(7),
-            captured = emptySet(),
+            recordFor(YearMonth.of(2026, 10), today = LocalDate.of(2026, 10, 5), historyStart = september.atDay(7), captured = emptySet()),
             dayTotals = emptyList(),
         )
         assertNull(october.footer)

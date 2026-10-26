@@ -7,7 +7,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import my.pinged.capture.GuardedRunner
-import my.pinged.data.CaptureEvidence
+import my.pinged.data.CaptureRecord
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.read.ScreenRead
@@ -91,14 +91,9 @@ class ChartsViewModel(
         val notInTotal = txns.notInTotal(range.start, range.endInclusive)
         val dayTotals = txns.dayTotals(range.start, range.endInclusive)
 
-        val captureDays = db.captureDayDao()
-        val historyStart = CaptureEvidence.historyStart(captureDays, db.rawCaptureDao())
-        val first = month.atDay(1)
-        val captured = CaptureEvidence.capturedDates(
-            captureDays,
-            if (historyStart != null && historyStart < first) historyStart else first,
-            month.atEndOfMonth(),
-        )
+        // The comparison asks about the month before too, and the collecting
+        // gate (#66) counts across all history whatever month is selected.
+        val record = CaptureRecord.read(db, today, month.minusMonths(1).atDay(1)..month.atEndOfMonth(), collecting = true)
 
         // The bars (#91): every category, since there are at most sixteen
         // seeded ones and the mapping layer folds the remainder itself.
@@ -110,26 +105,16 @@ class ChartsViewModel(
         // and its rest summed in the mapping layer. Measured beside
         // `TxnDao.merchantTotals`: 1.74ms for a month of 333 merchants.
         val merchantTotals = txns.merchantTotals(range.start, range.endInclusive, limit = EVERY_MERCHANT)
-        // The collecting gate (#66) counts across all history to
-        // yesterday, whatever month is selected.
-        val capturedSinceStart = if (historyStart != null && historyStart < today) {
-            CaptureEvidence.capturedDates(captureDays, historyStart, today.minusDays(1))
-        } else {
-            emptySet()
-        }
 
         return ChartsRead(
             month = month,
-            today = today,
-            historyStart = historyStart,
-            captured = captured,
+            record = record,
             monthTotals = monthTotals,
             monthSplit = monthSplit,
             previousMonthTotals = previousMonthTotals,
             byCategory = byCategory,
             categoryNames = categoryNames,
             uncategorizedId = uncategorizedId,
-            capturedSinceStart = capturedSinceStart,
             merchantTotals = merchantTotals,
             notInTotal = notInTotal,
             dayTotals = dayTotals,

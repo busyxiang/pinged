@@ -44,7 +44,6 @@ class UncategorizedBarTest {
             byCategory = listOf(CategoryTotal(1L, "MYR", 58_049L), CategoryTotal(16L, "MYR", 61_224L)),
             categoryNames = mapOf(1L to "Food & Drinks", 16L to "Uncategorized"),
             uncategorizedId = 16L,
-            capturedSinceStart = (1L..14L).map { today.minusDays(it) }.toSet(),
         )
         compose.setContent {
             PingedTheme {

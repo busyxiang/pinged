@@ -15,6 +15,7 @@ import my.pinged.charts.model.CellState
 import my.pinged.charts.model.ChartsState
 import my.pinged.charts.model.monthView
 import my.pinged.charts.model.rhythmGrid
+import my.pinged.data.CaptureRecord
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.DayTotal
@@ -53,9 +54,12 @@ class GridDayClickTest {
         val view = monthView(
             ChartsRead(
                 month = september,
-                today = sep(15),
-                historyStart = sep(4),
-                captured = (4..14).filter { it != 12 && it != 13 }.map(::sep).toSet(),
+                record = CaptureRecord.of(
+                    historyStart = sep(4),
+                    today = sep(15),
+                    span = sep(1).minusMonths(1)..sep(30),
+                    captured = (4..14).filter { it != 12 && it != 13 }.map(::sep).toSet(),
+                ),
                 monthTotals = listOf(CurrencyTotal(RINGGIT, totals.values.sum())),
                 monthSplit = emptyList(),
                 previousMonthTotals = emptyList(),
@@ -63,7 +67,6 @@ class GridDayClickTest {
                 byCategory = emptyList(),
                 categoryNames = emptyMap(),
                 uncategorizedId = null,
-                capturedSinceStart = emptySet(),
                 merchantTotals = emptyList(),
                 dayTotals = totals.map { (d, s) -> DayTotal(LocalDates.of(sep(d)), RINGGIT, s) },
             ),
@@ -112,9 +115,7 @@ class GridDayClickTest {
         val days = (1..19).map(october::atDay)
         val grid = rhythmGrid(
             october,
-            today = october.atDay(19),
-            historyStart = october.atDay(1),
-            captured = days.toSet(),
+            CaptureRecord.of(october.atDay(1), october.atDay(19), october.atDay(1)..october.atEndOfMonth(), days.toSet()),
             dayTotals = days.map { DayTotal(LocalDates.of(it), RINGGIT, 1_000L + it.dayOfMonth * 100L) },
         )
         val clicked = mutableListOf<LocalDate>()

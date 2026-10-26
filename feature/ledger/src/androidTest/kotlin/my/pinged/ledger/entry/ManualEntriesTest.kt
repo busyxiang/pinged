@@ -13,7 +13,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import my.pinged.data.CaptureEvidence
+import my.pinged.data.CaptureRecord
+import my.pinged.data.DayStatus
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
 import my.pinged.data.entity.Txn
@@ -122,15 +123,16 @@ class ManualEntriesTest {
 
         entries(clock = { NOON }).save(ManualDraft(amountSen = 1_250L)).await()
 
-        assertEquals(
-            "A day holding only a manual entry counts as captured",
-            setOf(firstBound),
-            CaptureEvidence.capturedDates(captureDays, LocalDates.calendarDay(DAY), firstBound),
-        )
+        val record = Databases.inOneTransaction(context) { CaptureRecord.read(it, firstBound.plusDays(2), CaptureRecord.EVERY_DAY) }
         assertEquals(
             "A manual entry moved the history start",
             firstBound,
-            CaptureEvidence.historyStart(captureDays, Databases.rawCaptureDao(context)),
+            record.historyStart,
+        )
+        assertEquals(
+            "A day holding only a manual entry, before the history start, is in the record",
+            DayStatus.OUTSIDE_RECORD,
+            record.day(LocalDates.calendarDay(DAY)),
         )
     }
 
