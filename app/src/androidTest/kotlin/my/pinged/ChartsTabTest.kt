@@ -38,6 +38,7 @@ class ChartsTabTest {
 
     @Test fun theChartsTabSitsBetweenTheOthersAndOpensOnTheCurrentMonth() {
         Databases.reset()
+        compose.awaitTheTabBar()
 
         val left = { label: String -> compose.onNodeWithText(label).fetchSemanticsNode().boundsInRoot.left }
         assertTrue(
@@ -56,6 +57,7 @@ class ChartsTabTest {
 
     @Test fun chartsIsStillShowingAfterTheActivityIsRebuilt() {
         Databases.reset()
+        compose.awaitTheTabBar()
         compose.onNodeWithText("CHARTS").performClick()
         compose.boundedWaitUntil(TIMEOUT) { compose.showsCharts(thisMonth) }
 

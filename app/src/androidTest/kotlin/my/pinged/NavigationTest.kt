@@ -44,6 +44,7 @@ class NavigationTest {
         // run first.
         Databases.reset()
 
+        compose.awaitTheTabBar()
         compose.onNodeWithText("SETTINGS").performClick()
         val reachedSettings = runCatching {
             compose.boundedWaitUntil(TIMEOUT) { compose.countOf("Delete everything") == 1 }

@@ -107,6 +107,7 @@ class ReviewWaysInTest {
         insert(held(65_000L, System.currentTimeMillis(), PendingReason.OVER_THRESHOLD))
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            compose.awaitTheTabBar()
             compose.onNodeWithText("CHARTS").performClick()
             assertTrue("Charts never drew its awaiting-review line", compose.waitFor { compose.countOf(CHARTS_LINE) == 1 })
             compose.onNodeWithText(CHARTS_LINE).performScrollTo().performClick()
@@ -129,6 +130,7 @@ class ReviewWaysInTest {
         insert(held(65_000L, System.currentTimeMillis(), PendingReason.OVER_THRESHOLD))
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            compose.awaitTheTabBar()
             compose.onNodeWithText("CHARTS").performClick()
             assertTrue("Charts never drew", compose.waitFor { compose.countOf(CHARTS_LINE) == 1 })
             compose.onNodeWithTag("grid-day-$today").performScrollTo().performClick()
@@ -177,6 +179,7 @@ class ReviewWaysInTest {
         insert(held(65_000L, System.currentTimeMillis(), PendingReason.OVER_THRESHOLD).copy(state = TxnState.COMMITTED, pendingReason = null))
 
         ActivityScenario.launch(MainActivity::class.java).use {
+            compose.awaitTheTabBar()
             compose.onNodeWithText("CHARTS").performClick()
             assertTrue("Charts never drew", compose.waitFor { compose.countOf("RM650.00") > 0 })
             // Past the read Charts waited on, and the tab's own is no slower.
