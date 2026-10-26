@@ -55,6 +55,10 @@ class PackBehaviourTest {
         "Travel Pass: You have paid RM12.50 for your My50 Pass. View your updated pass details now.",
         // TnG's Alipay+ wording, "at" where DuitNow says "to"; the field is the bound.
         "You have paid RM12.50 at STARBUCKS KLCC",
+        // MAE's incoming money, bounded by the stop and the reference after the sender.
+        "You've received RM12.50 from STARBUCKS KLCC. REF: 000000000Q.",
+        // TnG's incoming money, bounded by " for " and the recipient's name after it.
+        "RM12.50 received from STARBUCKS KLCC for SAMPLE ACCOUNT HOLDER.",
         // MAE's card bill, the QR shape with a card for a payee.
         "Successful payment of RM12.50 to Maybank Master Card. REF:000000000M",
         // MAE's FPX wording, bounded by the date after the payee.

@@ -1,0 +1,23 @@
+package: my.com.tngdigital.ewallet
+title: Ka-ching! Incoming Money.
+expect: matched
+rule: tng-received-v1
+amount_sen: 2930
+merchant: SAMPLE PAYER NAME
+merchant_display: Sample Payer Name
+direction: REFUND
+confidence: REVIEW
+# A real TnG eWallet notification, from a phone screenshot, of money received
+# from someone else. Two names are in it and both are replaced with made-up
+# ones of the same shape (all capitals): the sender, who may be a private
+# person, and the text after "for", which is the user's own name -- CONTRIBUTING.md's
+# masks cover digits and references only, and neither name is ours to publish.
+# The screenshot wrapped the sender over two lines; the bank sent one.
+# The merchant is what stands between "from" and " for ". A sender whose own
+# name contains " for " would be cut short there; none has been seen.
+# REFUND at REVIEW on purpose: incoming money is also a salary, a return of
+# the user's own money and a top-up, none of which lowers what was spent. The
+# card asks, and an accepted one subtracts from its day like any refund.
+# The title is recorded because it is evidence; no rule reads it.
+
+RM 29.30 received from SAMPLE PAYER NAME for SAMPLE ACCOUNT HOLDER.

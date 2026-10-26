@@ -1,0 +1,25 @@
+package: com.maybank2u.life
+title: Maybank2u: Scan & Pay
+expect: matched
+rule: mae-received-v1
+amount_sen: 2795
+merchant: SAMPLE PAYER NAME
+merchant_display: Sample Payer Name
+direction: REFUND
+confidence: REVIEW
+# A real MAE notification, from a phone screenshot, of money a person sent
+# back for a bill the user had paid. It is the one shape here where the
+# "merchant" is a private person, so the name is replaced with a made-up one
+# of the same shape (all capitals, three words) -- CONTRIBUTING.md's masks
+# cover digits and references only, and a friend's name in a public
+# repository is theirs to give. The screenshot wrapped the name over two
+# lines; the bank sent it on one.
+# It is a REFUND with REVIEW confidence on purpose: incoming money also
+# arrives as a salary, a DuitNow return of the user's own money and a top-up,
+# and none of those lowers what was spent. The card asks (Accept, Not a
+# payment) and an accepted one subtracts from its day like any refund.
+# The title is recorded because it is evidence; no rule reads it.
+# The transaction reference is masked to zeros of the same shape (CLAUDE.md,
+# fixtures). No rule reads it.
+
+You've received RM 27.95 from SAMPLE PAYER NAME. REF: 000000000Q.
