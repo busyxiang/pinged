@@ -156,7 +156,7 @@ fun ExportReceiptSheet(
  * provider does, which is the name the user typed.
  *
  * **Assumes it is already inside a vertical container with its own
- * padding** -- `MainActivity`'s `ExportSheetHost` supplies that by calling
+ * padding** -- `SettingsRoute`'s `ExportSheetHost` supplies that by calling
  * this from inside `ReceiptSheet` (the app's one sheet chrome; see that
  * KDoc), the same way `SettingsScreen`'s `RestoreConfirmSheet` and
  * `OutcomeSheet` do. A `Column` with padding of its own here would double

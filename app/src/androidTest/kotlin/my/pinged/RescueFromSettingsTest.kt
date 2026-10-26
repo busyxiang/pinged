@@ -28,6 +28,7 @@ import my.pinged.data.IntegrityStore
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.RawCapture
+import my.pinged.ledger.settings.RESCUE_FILE_NAME
 import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
