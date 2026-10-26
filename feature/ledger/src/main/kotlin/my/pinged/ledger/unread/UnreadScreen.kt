@@ -118,8 +118,10 @@ fun UnreadScreen(
 
 /**
  * [UnreadScreen] without its holder, so a test can draw any state. While
- * [busy] runs a ledger replacement the list says so under its header and
- * Never a transaction is off (#331).
+ * [busy] runs a ledger replacement the list says so under its header, and
+ * Never a transaction and Teach Pinged this are off (#331): Teach is a
+ * screen whose one end is a write the replacement refuses, about a capture
+ * the replacement may take away.
  */
 @Composable
 internal fun UnreadContent(
@@ -252,7 +254,7 @@ private fun UnreadCard(
             capture.body?.let { Text(it, style = Quoted, color = Muted) }
         }
         Row(Modifier.padding(top = 11.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CardAction(TEACH_PINGED_THIS, filled = true, onTeach, Modifier.weight(1f))
+            CardAction(TEACH_PINGED_THIS, filled = true, onTeach, Modifier.weight(1f), enabled = writable)
             CardAction(NEVER_A_TRANSACTION, filled = false, onNeverATransaction, Modifier.weight(1f), enabled = writable)
         }
     }
@@ -260,7 +262,8 @@ private fun UnreadCard(
 
 /**
  * One of the card's two actions, the board's 44dp pair: [filled] in [Stamp],
- * else outlined. Off, its label in [Faint].
+ * else outlined. Off, filled is [Border] under a [Muted] label, as Teach's
+ * Save not yet offered is, and outlined is its label in [Faint].
  */
 @Composable
 private fun CardAction(label: String, filled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
@@ -268,12 +271,12 @@ private fun CardAction(label: String, filled: Boolean, onClick: () -> Unit, modi
     Box(
         modifier
             .clip(shape)
-            .then(if (filled) Modifier.background(Stamp, shape) else Modifier.border(1.dp, Border, shape))
+            .then(if (filled) Modifier.background(if (enabled) Stamp else Border, shape) else Modifier.border(1.dp, Border, shape))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 44.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = ButtonLabel.copy(fontSize = 13.sp), color = if (!enabled) Faint else if (filled) Paper else Muted)
+        Text(label, style = ButtonLabel.copy(fontSize = 13.sp), color = if (filled) (if (enabled) Paper else Muted) else if (enabled) Muted else Faint)
     }
 }
 

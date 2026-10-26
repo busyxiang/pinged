@@ -41,9 +41,15 @@ import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.sources.SourceRow
 import my.pinged.ledger.sources.SourcesScreenContent
 import my.pinged.ledger.sources.SourcesState
+import my.pinged.ledger.teach.SAVE
+import my.pinged.ledger.teach.TeachContent
+import my.pinged.ledger.teach.TeachSelection
+import my.pinged.ledger.teach.TeachState
 import my.pinged.ledger.unread.NEVER_A_TRANSACTION
+import my.pinged.ledger.unread.TEACH_PINGED_THIS
 import my.pinged.ledger.unread.UnreadContent
 import my.pinged.ledger.unread.UnreadState
+import my.pinged.parse.TaughtTemplate
 import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -51,9 +57,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The Settings sub-screens during a ledger replacement (#331): each says so at
- * its top and its writes are off. What the holders refuse beneath them is
- * `ReplacingRefusesWritesTest`'s.
+ * The Settings sub-screens and Teach during a ledger replacement (#331): each
+ * says so at its top and its writes are off. What the holders refuse beneath
+ * them is `ReplacingRefusesWritesTest`'s.
  */
 @RunWith(AndroidJUnit4::class)
 class ReplacingSettingsScreensTest {
@@ -151,7 +157,7 @@ class ReplacingSettingsScreensTest {
         nothingTapped()
     }
 
-    @Test fun unreadMarksNothingNeverATransaction() {
+    @Test fun unreadMarksNothingNeverATransactionAndOpensNoTeach() {
         compose.setContent {
             UnreadContent(
                 UnreadState(loaded = true, items = listOf(UnreadCapture(1L, "p", 0L, "t", "x", null, null))),
@@ -159,13 +165,39 @@ class ReplacingSettingsScreensTest {
                 onNeverATransaction = { tapped += "never" },
                 onCopy = {},
                 onEnd = {},
+                onTeach = { tapped += "teach" },
                 busy = Operation.RESTORE,
             )
         }
 
         line()
         compose.onNode(hasText(NEVER_A_TRANSACTION) and hasClickAction()).performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNode(hasText(TEACH_PINGED_THIS) and hasClickAction()).performScrollTo().assertIsNotEnabled().performClick()
         nothingTapped()
+    }
+
+    @Test fun teachSavesNothingButStillTakesItsTaps() {
+        val capture = UnreadCapture(1L, "p", 0L, "Touch 'n Go eWallet", "Payment of RM1.00 to merchant number 1 successful", null, null)
+        val words = TaughtTemplate.words(capture.title, capture.text, capture.bigText)
+        val ready = TeachSelection(words).tap(words.words.indexOf("RM1.00")).noMerchant()
+        check(ready.step == TeachSelection.Step.READY) { "The selection is not ready to save: $ready" }
+        compose.setContent {
+            TeachContent(
+                TeachState(loaded = true, capture = capture, selection = ready),
+                onBack = {},
+                onTap = { tapped += "tap" },
+                onNoMerchant = {},
+                onDirection = {},
+                onSave = { tapped += "save" },
+                busy = Operation.RESTORE,
+            )
+        }
+
+        line()
+        compose.onNode(hasText(SAVE) and hasClickAction()).assertIsNotEnabled().performClick()
+        assertEquals("Save was asked for during a restore", emptyList<String>(), tapped)
+        compose.onNodeWithText("merchant").performClick()
+        assertEquals("A tap on the message, which writes nothing, was refused", listOf("tap"), tapped)
     }
 
     /** A read the gate turned away says REPLACING YOUR DATA in place of the list (#328), and nothing beside it. */
@@ -177,10 +209,11 @@ class ReplacingSettingsScreensTest {
                 1 -> LearnedContent(LearnedState(loaded = true, replacing = true), {}, {}, busy = Operation.RESTORE)
                 2 -> SourcesScreenContent(SourcesState(loaded = true, replacing = true), { _, _ -> }, {}, busy = Operation.RESTORE)
                 3 -> CorrectionsContent(CorrectionsState(loaded = true, replacing = true), {}, {}, {}, busy = Operation.RESTORE)
-                else -> UnreadContent(UnreadState(loaded = true, replacing = true), {}, {}, {}, {}, busy = Operation.RESTORE)
+                4 -> UnreadContent(UnreadState(loaded = true, replacing = true), {}, {}, {}, {}, busy = Operation.RESTORE)
+                else -> TeachContent(TeachState(loaded = true, replacing = true), {}, {}, {}, {}, {}, busy = Operation.RESTORE)
             }
         }
-        for (each in 0..4) {
+        for (each in 0..5) {
             screen = each
             compose.onAllNodesWithText(REPLACING_YOUR_DATA).onFirst().assertIsDisplayed()
             compose.onNodeWithText(RESTORE_LINE).assertDoesNotExist()

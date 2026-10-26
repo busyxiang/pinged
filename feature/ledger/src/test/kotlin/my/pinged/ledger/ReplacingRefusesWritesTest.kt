@@ -4,11 +4,15 @@ import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import my.pinged.capture.Corrections
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
 import my.pinged.data.dao.TaughtRuleRow
 import my.pinged.data.dao.UnreadCapture
+import my.pinged.data.entity.Arrival
+import my.pinged.data.entity.ParseStatus
+import my.pinged.data.entity.RawCapture
 import my.pinged.ledger.categories.CategoriesViewModel
 import my.pinged.ledger.corrections.CorrectionsViewModel
 import my.pinged.ledger.detail.DetailViewModel
@@ -17,8 +21,11 @@ import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferJob
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.sources.SourcesViewModel
+import my.pinged.ledger.teach.TeachState
+import my.pinged.ledger.teach.TeachViewModel
 import my.pinged.ledger.unread.UnreadViewModel
 import my.pinged.parse.Direction
+import my.pinged.read.Outcome
 import my.pinged.read.ScreenRead
 import my.pinged.read.test.ScriptedRunner
 import org.junit.Assert.assertEquals
@@ -29,7 +36,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Detail's own writes and the Settings sub-screens' during a ledger
+ * Detail's own writes, the Settings sub-screens' and Teach's during a ledger
  * replacement (#331): from the claim, each asks the runner for nothing,
  * raises no `unavailable`, and writes again once the replacement clears.
  * `RowActionsReplacingTest` holds the rows' half.
@@ -89,6 +96,52 @@ class ReplacingRefusesWritesTest {
         }
     }
 
+    /**
+     * Teach reads no `ScreenRead`, so not through [refuses]: its capture is
+     * seeded in the runner's ledger for the save to have something to write,
+     * and the write once the replacement clears is let run.
+     */
+    @Test fun teachsSaveIsRefusedDuringARestore() {
+        val captureId = runBlocking {
+            runner.read("The test cannot be seeded") { db -> db.rawCaptureDao().insert(unmatched()) }
+        }.let { (it as Outcome.Done).value }
+        val model = TeachViewModel(app, captureId, runStageTwo = {}, runner, transfers)
+        val words = requireNotNull(model.state.value.selection) { "The capture was not read: ${model.state.value}" }.words.words
+        model.tap(words.indexOf("RM1.00"))
+        model.noMerchant()
+        transfers.value = TransferState(running = TransferJob.Running(Operation.RESTORE, 0))
+        val before = runner.calls.size
+
+        model.save()
+
+        assertEquals(
+            "Teach's save during a ledger replacement asked the runner for something",
+            emptyList<String>(),
+            runner.calls.drop(before).map { it.what },
+        )
+        assertFalse("Teach's save refused for a replacement raised unavailable", model.state.value.storageUnavailable)
+        assertFalse("Teach's save refused for a replacement left the screen", model.state.value.saved)
+
+        transfers.value = TransferState()
+        val after = runner.calls.size
+        model.save()
+
+        assertTrue(
+            "Teach's save was not asked for once the replacement cleared",
+            runner.calls.drop(after).any { it.write && it.what == "The taught message could not be saved" },
+        )
+        assertTrue("Teach's save once the replacement cleared did not land", model.state.value.saved)
+    }
+
+    /** Teach's read turned away by the gate says so, and not that the ledger is unreadable (#328). */
+    @Test fun teachsReadTurnedAwayByAReplacementIsReplacing() {
+        runner.replacing = true
+
+        val state = TeachViewModel(app, captureId = 1L, runStageTwo = {}, runner, transfers).state.value
+
+        assertEquals(TeachState(loaded = true, replacing = true), state)
+    }
+
     private fun detail() = DetailViewModel(app, txnId = 1L, createdAt = 0L, runner, transfers)
 
     private fun categories() = CategoriesViewModel(app, runner, transfers)
@@ -136,4 +189,25 @@ class ReplacingRefusesWritesTest {
             runner.calls.drop(after).any { it.write && it.what == what },
         )
     }
+
+    private fun unmatched() = RawCapture(
+        sourcePackage = "my.com.tngdigital.ewallet",
+        postedAt = 1_600_000_000_000L,
+        whenMillis = null,
+        capturedAt = 1_600_000_000_000L,
+        sbnKey = "0|my.com.tngdigital.ewallet|1|null|0",
+        notifId = 1,
+        notifTag = null,
+        userHandle = 0,
+        channelId = "txn",
+        flags = 0,
+        arrival = Arrival.POSTED,
+        title = "Touch 'n Go eWallet",
+        text = "Payment of RM1.00 to merchant number 1 successful",
+        bigText = null,
+        subText = null,
+        extrasJson = null,
+        contentHash = "unread-1",
+        parseStatus = ParseStatus.UNMATCHED,
+    )
 }
