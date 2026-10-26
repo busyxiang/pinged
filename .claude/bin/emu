@@ -7,7 +7,7 @@
 # are global to the device. docs/agents/device-tests.md says when to use it, and
 # .claude/hooks/emu_guard.py refuses device commands that do not.
 #
-#   emu [--ci-size] [--wait SECONDS] [--max-hold SECONDS] [--] COMMAND...
+#   emu [--ci-size] [--wait SECONDS] [--max-hold SECONDS] [--priority high|low] [--] COMMAND...
 #   emu --status | --stop
 #
 # The lock is flock(2) on a file under ~/.cache, outside every worktree, so a
@@ -59,9 +59,22 @@ emulator=${EMU_EMULATOR:-${ANDROID_HOME:-$HOME/Android/Sdk}/emulator/emulator}
 # 2s; a quickboot took 3s but its save made the stop 11s and kept ~4G on disk.
 flags=${EMU_FLAGS:--no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none -no-snapshot}
 ci_size=0
+priority=normal
 
 usage() {
     sed -n '10,11p' "$0" | sed 's/^# *//'
+}
+
+# A ticket's queue class, from the order its name starts with. A class is a
+# leading digit on the 19-digit order: 0 sorts before every ordinary ticket and
+# 9 after, so an older copy of this script, sorting by name, queues them in
+# the same order without reading them. Within a class the clock still decides.
+class_of() {
+    case ${#1}:$1 in
+        20:0*) echo high ;;
+        20:9*) echo low ;;
+        *) echo normal ;;
+    esac
 }
 
 # Prints each serial's holder, or that it is free. The holder file is only a
@@ -87,7 +100,10 @@ describe() {
     for t in $(ls "$queue" 2>/dev/null | sort); do
         n=$((n + 1))
         IFS=$'\t' read -r since where cmd <"$queue/$t" || continue
-        printf '  queued %s: %s for %ss: %s\n' "$n" "$where" "$(($(date +%s) - since))" "$cmd"
+        local class
+        class=$(class_of "${t%%-*}")
+        printf '  queued %s: %s for %ss%s: %s\n' "$n" "$where" "$(($(date +%s) - since))" \
+            "$([ "$class" = normal ] || echo ", $class priority")" "$cmd"
     done
 }
 
@@ -106,6 +122,9 @@ started() {
 #
 # A waiter named in .front ("pid start", the pane's Run now) goes before
 # every ticket, its own included; a .front whose process is gone is removed.
+#
+# A waiter finds its own ticket by its pid and start time, not by the name it
+# filed it under: the pane changes a waiter's priority by renaming its ticket.
 # 2>/dev/null goes before the <: redirections apply left to right, so after
 # it the open's own error, when there is no .front, is printed every poll.
 ahead() {
@@ -123,7 +142,7 @@ ahead() {
         fi
     fi
     for t in $(ls "$queue" | sort); do
-        [ "$queue/$t" = "$ticket" ] && break
+        [ "${t#*-}" = "$me" ] && break
         pid=${t#*-}; start=${pid#*-}; pid=${pid%-*}
         [ "$pid" = "$front_pid" ] && continue
         if [ "$(started "$pid")" = "$start" ]; then
@@ -204,6 +223,11 @@ while [ $# -gt 0 ]; do
         --ci-size) ci_size=1; shift ;;
         --wait) wait_s=$2; shift 2 ;;
         --max-hold) max_hold_s=$2; shift 2 ;;
+        --priority)
+            case $2 in
+                high | normal | low) priority=$2; shift 2 ;;
+                *) printf 'emu: --priority is high, normal or low, not %s\n' "$2" >&2; exit 64 ;;
+            esac ;;
         --status) describe; exit 0 ;;
         --stop) stop_now=1; shift ;;
         --reap) reap "$2"; exit 0 ;;
@@ -221,11 +245,19 @@ where=${where##*/}
 # A lease put back by Run now (see requeue) sorts before every ordinary
 # ticket, so it runs next after the waiter that went first.
 order=$(date +%s%N)
+case $priority in
+    high) order=0$order ;;
+    low) order=9$order ;;
+esac
 if [ -n "${EMU_REQUEUED:-}" ]; then order=0000000000000000001; fi
 unset EMU_REQUEUED
-ticket=$queue/$order-$$-$(started $$)
-printf '%s\t%s\t%s\n' "$(date +%s)" "$where" "${*:-stop}" >"$ticket"
-trap 'rm -f "$ticket"' EXIT
+me=$$-$(started $$)
+printf '%s\t%s\t%s\n' "$(date +%s)" "$where" "${*:-stop}" >"$queue/$order-$me"
+# By pid and start time, whatever the ticket has been renamed to since.
+leave_queue() {
+    rm -f "$queue"/*-"$me"
+}
+trap leave_queue EXIT
 
 serial=
 deadline=$((SECONDS + wait_s))
@@ -237,7 +269,7 @@ while :; do
             exec 9>>"$lock_dir/$s.lock"
             if flock -n 9; then
                 serial=$s
-                rm -f "$ticket"
+                leave_queue
                 if read -r front_pid _ 2>/dev/null <"$queue/.front" && [ "$front_pid" = "$$" ]; then
                     rm -f "$queue/.front"
                 fi

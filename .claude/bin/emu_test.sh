@@ -577,6 +577,81 @@ else
     pass "mutation no-priority: the holder goes to the back"
 fi
 
+# Priority: A holds; B, D (low), C (high) and E queue in that order. A high
+# lease goes before every ordinary one and a low one after, and each class
+# keeps its own first come, first served.
+priority_order() {
+    local emu=$1
+    "$emu" -- sh -c "echo A-start >>$log; sleep 2; echo A-end >>$log" 2>/dev/null &
+    until_in "$log" A-start
+    "$emu" -- sh -c "echo B >>$log" 2>/dev/null &
+    sleep 0.3
+    "$emu" --priority low -- sh -c "echo D >>$log" 2>/dev/null &
+    sleep 0.3
+    "$emu" --priority high -- sh -c "echo C >>$log" 2>/dev/null &
+    sleep 0.3
+    "$emu" -- sh -c "echo E >>$log" 2>/dev/null &
+    wait
+    [ "$(tr '\n' ' ' <"$log")" = "A-start A-end C B E D " ]
+}
+fresh
+if priority_order "$script"; then pass "a high lease goes first and a low one last"; else fail "a high lease goes first and a low one last: $(tr '\n' ' ' <"$log")"; fi
+fresh
+if priority_order "$(mutant no-high '/^    high) order=0\$order ;;$/d')"; then
+    fail "mutation no-high: the high lease still went first"
+else
+    pass "mutation no-high: the high lease waits its turn"
+fi
+fresh
+if priority_order "$(mutant no-low '/^    low) order=9\$order ;;$/d')"; then
+    fail "mutation no-low: the low lease still went last"
+else
+    pass "mutation no-low: the low lease goes in its turn"
+fi
+
+fresh
+"$script" -- sh -c "echo A-start >>$log; sleep 2" 2>/dev/null &
+until_in "$log" A-start
+"$script" --priority low -- true 2>/dev/null &
+sleep 0.3
+out=$("$script" --status)
+wait
+if grep -q 'queued 1: .*, low priority: true' <<<"$out"; then pass "--status names a low lease's priority"; else fail "--status names a low lease's priority: <$out>"; fi
+if "$script" --priority urgent -- true 2>/dev/null; then status=0; else status=$?; fi
+if [ "$status" = 64 ]; then pass "an unknown priority is refused"; else fail "an unknown priority is refused: exit $status"; fi
+
+# The pane raises C, queued after B, by renaming its ticket: C must find it
+# under the new name, go first, and take it out of the queue as it starts. A
+# ticket left there counts as a waiter ahead of every other until C exits,
+# which would hold up a lease on a second emulator.
+raised_by_rename() {
+    local emu=$1 q=$EMU_LOCK_DIR/queue/emulator-5554 c t
+    "$emu" -- sh -c "echo A-start >>$log; sleep 2; echo A-end >>$log" 2>/dev/null &
+    until_in "$log" A-start
+    "$emu" -- sh -c "echo B >>$log" 2>/dev/null &
+    sleep 0.3
+    "$emu" --wait 5 -- sh -c "echo C \$(ls $q | wc -l) >>$log" 2>/dev/null & c=$!
+    sleep 0.3
+    t=$(cd "$q" && ls | grep -- "-$c-")
+    mv "$q/$t" "$q/0$t"
+    wait
+    [ "$(tr '\n' ' ' <"$log")" = "A-start A-end C 1 B " ] && [ -z "$(ls "$q")" ]
+}
+fresh
+if raised_by_rename "$script"; then pass "a waiter raised by renaming its ticket goes first and leaves the queue as it starts"; else fail "a waiter raised by renaming its ticket goes first and leaves the queue: $(tr '\n' ' ' <"$log") / $(ls "$EMU_LOCK_DIR/queue/emulator-5554")"; fi
+fresh
+if raised_by_rename "$(mutant own-name 's/^        \[ "\${t#\*-}" = "\$me" \] && break$/        [ "$t" = "$order-$me" ] \&\& break/')"; then
+    fail "mutation own-name: the renamed waiter still found its place"
+else
+    pass "mutation own-name: the renamed waiter waits behind itself"
+fi
+fresh
+if raised_by_rename "$(mutant leave-by-name 's/^    rm -f "\$queue"\/\*-"\$me"$/    rm -f "$queue\/$order-$me"/')"; then
+    fail "mutation leave-by-name: the renamed ticket still left as C started"
+else
+    pass "mutation leave-by-name: C's renamed ticket stays queued while it holds"
+fi
+
 fresh
 export EMU_POOL="emulator-5554 emulator-5556"
 "$script" -- sh -c "echo \"A-start \$ANDROID_SERIAL\" >>$log; sleep 2; echo A-end >>$log" &

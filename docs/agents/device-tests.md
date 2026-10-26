@@ -25,6 +25,13 @@ user can put a waiter first, and the holder then makes way and reruns after
 it, as the same process. So a lease's command must be safe to run twice; one
 that is not leaves its own state behind it, not only the device's.
 
+Leases queue first come, first served, within a priority. Pass `--priority
+low` for a run nobody is waiting on: a repro or flake loop, a falsification
+script, anything you would otherwise leave running while you work on
+something else. Every ordinary lease then goes ahead of it. `--priority high`
+is the user's to give, not a session's to take; the user can also raise or
+lower a waiting lease from the emu-queue pane.
+
 ## Running the least
 
 Every minute a session holds the emulator, the others wait, so run the least
