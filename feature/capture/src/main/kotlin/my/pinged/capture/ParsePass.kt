@@ -4,6 +4,7 @@ import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.util.Log
 import java.util.concurrent.CancellationException
 import my.pinged.data.Databases
+import my.pinged.data.LiveLearnedRules
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
@@ -12,8 +13,8 @@ import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
-import my.pinged.parse.Categorizer
 import my.pinged.parse.DictionaryEntry
+import my.pinged.parse.Filer
 import my.pinged.parse.MatchOutcome
 import my.pinged.parse.Merchant
 import my.pinged.parse.RuleMatcher
@@ -38,9 +39,9 @@ import my.pinged.parse.TaughtTemplate
  *
  * A capture is filed by the learned rule for its merchant identity, else by the
  * pack's dictionary, else under `Uncategorized` (spec 7.1's non-blocking chip).
- * There is no `:core:categorize` module (spec #45): [Categorizer] lives in
- * `:core:parse` and [commit] does the lookup of the rule, so it runs in stage
- * two from the durable `raw_capture` table and never in the listener.
+ * There is no `:core:categorize` module (spec #45): [Filer] lives in
+ * `:core:parse` and [commit] asks it, so the filing runs in stage two from the
+ * durable `raw_capture` table and never in the listener.
  *
  * ## What is not here
  *
@@ -78,7 +79,7 @@ internal class ParsePass(
     private val sourceLabel: (String) -> String?,
     /**
      * The pack's dictionary. An entry whose category is absent from
-     * [categoryIds] is dropped before the [Categorizer] is built, so its
+     * [categoryIds] is dropped before the [Filer] matches, so its
      * merchants fall through to a shorter entry or to Uncategorized rather than
      * to a category that is gone. Empty files every capture under Uncategorized
      * unless a learned rule applies.
@@ -112,7 +113,14 @@ internal class ParsePass(
      */
     private val progress: Progress = Progress(),
 ) {
-    private val categorizer = Categorizer(dictionary.filter { it.category in categoryIds })
+    /**
+     * Built per pass over the live rule port, never a per-pass table of rules:
+     * a rule the user teaches part-way through a pass runs its retroactive fix
+     * at once, and every later capture of the pass has to be filed by the new
+     * rule or the fix would miss it. The window is one capture, as
+     * `learnedCategoryFor` runs just outside `commitCapture`'s transaction.
+     */
+    private val filer = Filer(dictionary, categoryIds, LiveLearnedRules(rules))
 
     /**
      * What one run did. [remaining] is true when this run knowingly left work
@@ -430,19 +438,14 @@ internal class ParsePass(
             duplicateSuspect = slotSuspectOf != null || layerTwoSuspect != null || unpaired,
         )
 
-        // Learned, then dictionary, then Uncategorized. The learned rule is read
-        // by the capture's merchant *identity* (an alias resolved to its
-        // canonical key, inside the one statement) and answers by `category.id`,
-        // so it wins whether or not [categoryIds], a snapshot taken when the
-        // pass was built, still names that category: the foreign key's RESTRICT
-        // means the id exists. The dictionary is matched against the capture's
-        // own key, since it is about how a merchant arrives. A lookup that meets
-        // a damaged page throws out of here as the commit's own write would, and
-        // [decide] leaves the capture at `NEW` rather than file it under
-        // Uncategorized on a question that could not be answered.
-        val categoryId = merchant.key?.let(rules::learnedCategoryFor)
-            ?: categorizer.file(merchant.key, learned = null).categoryName?.let(categoryIds::get)
-            ?: uncategorizedId
+        // Learned, then dictionary, then Uncategorized: [Filer]'s order. The
+        // learned rule answers by `category.id`, so it wins whether or not
+        // [categoryIds], a snapshot taken when the pass was built, still names
+        // that category: the foreign key's RESTRICT means the id exists. A lookup
+        // that meets a damaged page throws out of here as the commit's own write
+        // would, and [decide] leaves the capture at `NEW` rather than file it
+        // under Uncategorized on a question that could not be answered.
+        val categoryId = filer.file(merchant.key).categoryId ?: uncategorizedId
 
         val at = System.currentTimeMillis()
         val txn = Txn(

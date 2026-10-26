@@ -1,8 +1,6 @@
 package my.pinged.ledger.home
 
-import my.pinged.parse.Categorizer
-import my.pinged.parse.DictionaryEntry
-import my.pinged.parse.FilingSource
+import my.pinged.parse.Filing
 
 /**
  * Where "Always call this" starts when the chooser opens (#45, #48), derived
@@ -21,37 +19,21 @@ import my.pinged.parse.FilingSource
  * The order is the rule. A one-off is tested before the dictionary, so a row
  * the user set by hand to what the dictionary also says is still theirs; the
  * learned rule is tested before the dictionary, as it outranks it in filing.
+ * Both halves of [filing] are asked, not its winner: a row the dictionary filed
+ * as Transport before the user taught Food starts off, and the winner alone
+ * would turn it on.
  */
 internal fun teachSwitchDefault(
     hasKey: Boolean,
     categoryId: Long,
     userEdited: Boolean,
     uncategorizedId: Long?,
-    learnedCategoryId: Long?,
-    dictionaryCategoryId: Long?,
+    filing: Filing,
 ): Boolean? = when {
     !hasKey -> null
     categoryId == uncategorizedId -> true
     userEdited -> true
-    learnedCategoryId != null && categoryId == learnedCategoryId -> true
-    dictionaryCategoryId != null && categoryId == dictionaryCategoryId -> false
+    filing.learned != null && categoryId == filing.learned -> true
+    filing.dictionary != null && categoryId == filing.dictionary -> false
     else -> true
-}
-
-/**
- * The `category.id` the dictionary files [key] under, or null where it files
- * nothing: the chooser's read-time "filed by a shipped rule" marking, through
- * the same [Categorizer.file] stage two calls (`source == DICTIONARY`). An
- * entry whose category is not in [categoryIds] is dropped first, as stage two
- * drops it, so the marking cannot claim a filing stage two would not make.
- */
-internal fun dictionaryCategoryIds(
-    dictionary: List<DictionaryEntry>,
-    categoryIds: Map<String, Long>,
-): (String?) -> Long? {
-    val categorizer = Categorizer(dictionary.filter { it.category in categoryIds })
-    return { key ->
-        val filing = categorizer.file(key, learned = null)
-        if (filing.source == FilingSource.DICTIONARY) filing.categoryName?.let(categoryIds::get) else null
-    }
 }

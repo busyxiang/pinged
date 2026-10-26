@@ -14,12 +14,15 @@ import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
+import my.pinged.data.readLearnedRules
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CategoryNameTakenException
 import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
+import my.pinged.parse.Filer
+import my.pinged.parse.LearnedRules.Snapshot
 import my.pinged.parse.SameShop
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
@@ -111,19 +114,18 @@ class RowActions(
         // aggregate reads.
         val categories = Databases.categoryDao(context())
         val all = categories.all()
-        // A teaching save changes it, and the next chooser has to start from
-        // the rule just written.
-        val learned = Databases.merchantRuleDao(context()).learnedRules()
-            .associate { it.pattern to it.categoryId }
-        val merged = Databases.merchantIdentityDao(context()).mergedIdentities().toSet()
         return ChooserRead(
             categories = all,
             uncategorizedId = categories.uncategorizedIdOrNull(),
-            learnedRules = learned,
-            mergedIdentities = merged,
             // The pack is the shipped one and the seeded ids are read now, so
-            // the marking is the filing stage two makes.
-            dictionaryFiling = dictionaryCategoryIds(Graph.parsePack().dictionary, categories.seededIds()),
+            // the marking is the filing stage two makes. The rules are read on
+            // every refresh as well: a teaching save changes them, and the next
+            // chooser has to start from the rule just written.
+            filer = Filer(
+                Graph.parsePack().dictionary,
+                categories.seededIds(),
+                readLearnedRules(Databases.merchantRuleDao(context()), Databases.merchantIdentityDao(context())),
+            ),
         )
     }
 
@@ -303,9 +305,7 @@ fun ScreenRead<*, *>.rowScreen(): RowScreen = object : RowScreen {
 data class ChooserRead(
     val categories: List<Category> = emptyList(),
     val uncategorizedId: Long? = null,
-    val learnedRules: Map<String, Long> = emptyMap(),
-    val mergedIdentities: Set<String> = emptySet(),
-    val dictionaryFiling: (String?) -> Long? = LedgerRead.NO_DICTIONARY,
+    val filer: Filer<Snapshot> = Filer.EMPTY,
 )
 
 /**

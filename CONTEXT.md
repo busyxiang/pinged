@@ -41,6 +41,10 @@ _Avoid_: bundled rules, shipped rules, seeded rules
 The category the user taught for a merchant identity, by saving the category chooser with "Always call this" on. It files every later payment of that merchant, whichever of its keys the payment arrives under, and outranks the dictionary. A merge or a pack change carries it with the merchant. The UI calls it a "learned merchant", and settings lists them under "Learned merchants" (read and delete only). Deleting one forgets the teaching for the whole identity, dormant source rules included, and re-files nothing.
 _Avoid_: merchant rule, auto-category
 
+**Filing**:
+Where a payment from a merchant goes, and what put it there: the learned rule for its identity, else the dictionary's entry for the key it arrived under, else nothing, which leaves it Uncategorized. A row's category may differ from its merchant's filing today: a one-off, or a rule or pack that has since changed.
+_Avoid_: categorisation, resolution, classification
+
 **One-off**:
 A category the user set on a single transaction without teaching a rule. It is history the user has confirmed, so no rule ever re-files it. An Uncategorized transaction is never confirmed.
 _Avoid_: hand-set, manual category, user-edited
@@ -65,23 +69,46 @@ A counted transaction still filed under Uncategorized, waiting for the user to g
 _Avoid_: unsorted, uncategorised, needs a category
 
 
+### Backup
+
+**Backup reminder**:
+Spending's one-line notice that the ledger holds transactions and none has been exported in thirty days. It never shows beside a capture banner: a missed export can be taken later, and missed spending cannot. Dismissing it silences it for a week.
+_Avoid_: nudge, export nudge, staleness nudge
+
+
 ### Capture
 
+**Capture evidence**:
+Proof that Pinged was watching at some moment: the listener was recorded bound, or Pinged kept a notification, whatever became of it -- a transaction, an unread capture, or one the user said is never a transaction. A manual entry is never capture evidence, since Pinged did not see it.
+_Avoid_: proof of capture
+
 **Captured day**:
-A past day on which Pinged has evidence it was watching: the listener was recorded bound at some moment that day, or the day has a transaction captured from a notification, whatever its status. A manual entry is not evidence. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
+A past day that holds capture evidence. It says nothing about the whole day, so a listener that died at noon still leaves a captured day. Today is never a captured or a not-captured day until it ends.
 _Avoid_: watched day, covered day, live day
 
 **History start**:
 The first day Pinged has any capture evidence for, whether gathered on this device or on one whose backup was restored onto it. Days before it are outside the record, not missing from it. A restore carries it over, deleting everything resets it, and a manual entry never moves it.
 _Avoid_: install date, first install
 
+**Capture record**:
+Every day from the history start to yesterday, each one either captured or not captured. Days before the history start are outside the record, and today joins it when it ends. With no history start there is no record, and no day is captured or not captured.
+_Avoid_: coverage, capture history, watch log
+
 **Not captured**:
-A past day, on or after the history start, with no evidence Pinged was watching. Nothing is known about its spending, which is different from nothing spent.
+A past day, on or after the history start, with no capture evidence. Nothing is known about its spending, which is different from nothing spent.
 _Avoid_: missed day, gap, unbound day
 
 **Not read yet**:
 A figure a screen has not finished reading from the ledger. It says nothing about the money: it is neither zero nor not captured, and it is shown as a dash until the read lands.
 _Avoid_: loading, pending, skeleton, unread (that is an unread capture)
+
+**Heard**:
+When Pinged last saw a notification from any app. It is not a capture: almost no notification heard is one, so a recent "heard" says the listener is alive and nothing about whether a payment was recorded.
+_Avoid_: captured (for this), listening, live
+
+**Capture banner**:
+The strip above every screen saying capture is not known to be working: the data will not open, there is no notification access, the record of what was heard will not read, nothing has been heard yet, or nothing has been heard in a day. One shows at a time, and the order is a claim about what is certain: a fresh install is never told its listener died.
+_Avoid_: status banner, warning, alert (that is spec 10.2's daily notification)
 
 **Untrusted month**:
 A month that contains at least one not-captured day. Every figure drawn from it may be incomplete, in either direction, since a missed refund lowers a total as surely as a missed payment raises it. A month still running is not untrusted merely because it has not ended.

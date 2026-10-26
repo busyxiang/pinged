@@ -590,6 +590,29 @@ interface TxnDao {
         return settleRow(id, reason, to, updatedAt)
     }
 
+    /**
+     * File a card's payment under [categoryId] while it still awaits review
+     * (§9.2): a one-off, as [setCategory] writes it, **only if it still is the
+     * row the card showed** -- `PENDING`, for [reason], as [settle] guards --
+     * and only if the category still exists. Returns the rows written; 0 means
+     * the row moved or the category was deleted since the sheet drew it, and
+     * the card reads again.
+     *
+     * Not an answer: `state` and `pending_reason` are left as they are, so the
+     * card stays and nothing is offered for Undo. The category stays on the row
+     * through an Undo of the answer that follows, and through a Not a payment,
+     * where nothing counts it. `user_edited = 1` as [setCategory] writes it:
+     * a person chose this one, so no rule re-files it.
+     */
+    @Query(
+        """
+        UPDATE txn SET category_id = :categoryId, user_edited = 1, updated_at = :updatedAt
+        WHERE id = :id AND state = 'PENDING' AND pending_reason IS :reason
+          AND EXISTS (SELECT 1 FROM category WHERE category.id = :categoryId)
+        """,
+    )
+    fun fileAwaiting(id: Long, reason: PendingReason?, categoryId: Long, updatedAt: Long): Int
+
     /** [settle]'s statement, unchecked. */
     @Query(
         """

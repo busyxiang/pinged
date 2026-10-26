@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,9 +52,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import my.pinged.data.LocalDates
+import my.pinged.data.Seed
+import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
+import my.pinged.ledger.home.CategoryPicker
+import my.pinged.ledger.home.ChooserSubject
 import my.pinged.ledger.settings.Operation
 import my.pinged.parse.Direction
 import my.pinged.read.rememberReadState
@@ -115,6 +120,8 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
         modifier = modifier,
         focus = focus,
         onAcceptAll = { viewModel.inbox.acceptAll() },
+        choices = viewModel.inbox::choices,
+        onFile = { card, categoryId -> viewModel.inbox.file(card, categoryId) },
     )
 }
 
@@ -139,6 +146,11 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
  * [onAcceptAll] is the Accept all button, drawn at the header's right while any is
  * batchable ([AcceptAll.of]); a swipe on a plain card ([isSwipeable]) reports [ReviewAnswer.ACCEPT]
  * through [onAnswer], as its button does.
+ *
+ * A money-back card ([ReviewCard.asksCategory]) draws a line naming the category
+ * it counts against, and a tap on it opens the category sheet over the inbox.
+ * [choices] reads the sheet's categories when it opens, null when they cannot
+ * be read, which closes it; [onFile] reports the pick, which is not an answer.
  */
 @Composable
 fun ReviewInboxScreenContent(
@@ -152,8 +164,24 @@ fun ReviewInboxScreenContent(
     onUndo: () -> Unit = {},
     focus: Long? = null,
     onAcceptAll: () -> Unit = {},
+    choices: suspend () -> List<Category>? = { null },
+    onFile: (ReviewCard, Long) -> Unit = { _, _ -> },
 ) {
     val acceptAll = cards?.let(AcceptAll::of)
+    // The card whose sheet is open, by its row's id, and what the sheet offers
+    // once read. The id survives a rotation; the categories are read again.
+    var filing by rememberSaveable { mutableStateOf<Long?>(null) }
+    var offered by remember { mutableStateOf<List<Category>?>(null) }
+    LaunchedEffect(cards, filing) {
+        if (filing != null && cards != null && cards.none { it.txn.id == filing }) filing = null
+    }
+    LaunchedEffect(filing) {
+        offered = null
+        if (filing != null) {
+            val read = choices()
+            if (read.isNullOrEmpty()) filing = null else offered = read
+        }
+    }
     val list = rememberLazyListState()
     var focused by rememberSaveable(focus) { mutableStateOf(focus == null) }
     LaunchedEffect(focus, cards, storageUnavailable) {
@@ -170,7 +198,30 @@ fun ReviewInboxScreenContent(
             bottom = if (undoable != null) UNDO_BAR_ROOM else 0.dp,
             acceptAll = acceptAll,
             onAcceptAll = onAcceptAll,
+            onChooseCategory = { filing = it.txn.id },
         )
+        // A card that left the inbox while its sheet was open takes the sheet
+        // with it: the pick would be an answer to nothing.
+        val card = cards?.firstOrNull { it.txn.id == filing }
+        val categories = offered
+        if (card != null && categories != null) {
+            CategoryPicker(
+                categories = categories,
+                subject = ChooserSubject(
+                    bill = card.txn.merchantRaw ?: card.merchant ?: NO_MERCHANT,
+                    amount = money(card.txn.amountSen, card.txn.currency, symbol = false),
+                ),
+                teach = null,
+                initial = categories.firstOrNull { it.name == card.category }?.id,
+                preview = { null },
+                onSave = { categoryId, _ ->
+                    filing = null
+                    onFile(card, categoryId)
+                },
+                onDismiss = { filing = null },
+                noSwitchNote = FILES_ONLY_THIS,
+            )
+        }
         if (undoable != null) {
             UndoBar(undoable, enabled = busy == null, onUndo, Modifier.align(Alignment.BottomCenter))
         }
@@ -188,6 +239,7 @@ private fun Cards(
     bottom: Dp,
     acceptAll: AcceptAll?,
     onAcceptAll: () -> Unit,
+    onChooseCategory: (ReviewCard) -> Unit,
 ) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = bottom + CARD_GAP)) {
         item {
@@ -206,7 +258,11 @@ private fun Cards(
                     // The board's list: 14 above the first card, 12 between, 16 at the sides.
                     val margin = PaddingValues(start = 16.dp, end = 16.dp, top = if (index == 0) 14.dp else CARD_GAP)
                     SwipeToAccept(card, margin, enabled = busy == null, onAccept = { onAnswer(card, ReviewAnswer.ACCEPT) }) {
-                        ReviewCardView(card, margin, enabled = busy == null, onAnswer = { onAnswer(card, it) })
+                        ReviewCardView(
+                            card, margin, enabled = busy == null,
+                            onAnswer = { onAnswer(card, it) },
+                            onChooseCategory = { onChooseCategory(card) },
+                        )
                     }
                 }
             }
@@ -319,7 +375,13 @@ private fun Header(count: Int?, onBack: () -> Unit, acceptAll: AcceptAll?, enabl
  * amount, so it draws no second line of them.
  */
 @Composable
-private fun ReviewCardView(card: ReviewCard, margin: PaddingValues, enabled: Boolean, onAnswer: (ReviewAnswer) -> Unit) {
+private fun ReviewCardView(
+    card: ReviewCard,
+    margin: PaddingValues,
+    enabled: Boolean,
+    onAnswer: (ReviewAnswer) -> Unit,
+    onChooseCategory: () -> Unit,
+) {
     val txn = card.txn
     Column(
         Modifier
@@ -365,6 +427,8 @@ private fun ReviewCardView(card: ReviewCard, margin: PaddingValues, enabled: Boo
         }
 
         if (card.kind != CardKind.TRANSFER) MerchantAndAmount(card)
+
+        if (card.asksCategory) CategoryLine(card, enabled, onChooseCategory)
 
         if (card.kind == CardKind.DUPLICATE) card.pair?.let { SideBySide(txn, it) }
 
@@ -436,6 +500,42 @@ private fun MerchantAndAmount(card: ReviewCard) {
             modifier = Modifier.weight(1f),
         )
         Text(amountOf(card, symbol = false), style = MonoNumerals.copy(fontSize = 15.sp, lineHeight = 20.sp), color = Ink)
+    }
+}
+
+/**
+ * A money-back card's one extra line: what the money counts against, and the
+ * category it is filed under now, which is `Uncategorized` for a friend's name
+ * until the user says otherwise. A tap opens the category sheet.
+ *
+ * The category is the one an Accept counts it under, so it reads as the
+ * answer's own consequence rather than as a field to fill: `Uncategorized`
+ * is drawn in [Stamp] as "Choose a category", the way the card's other open
+ * question is. 44dp tall, the least a target takes; the card grows by that
+ * much and no more, and only when it is a money-back card.
+ */
+@Composable
+private fun CategoryLine(card: ReviewCard, enabled: Boolean, onClick: () -> Unit) {
+    val filed = card.category?.takeIf { it != Seed.UNCATEGORIZED }
+    Row(
+        Modifier
+            .padding(top = 2.dp)
+            .fillMaxWidth()
+            .testTag(CATEGORY_LINE)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = 44.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(COUNTS_AGAINST, style = MonoLabel, color = Muted, modifier = Modifier.weight(1f))
+        Text(
+            filed ?: CHOOSE_A_CATEGORY,
+            fontFamily = Body,
+            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+            color = if (filed != null) Ink else Stamp,
+        )
+        Chevron(pointsRight = true, size = 17.dp, strokeWidth = 1.7.dp, tint = if (filed != null) Muted else Stamp)
     }
 }
 
@@ -555,6 +655,15 @@ internal fun transferQuestion(card: ReviewCard): String {
 
 /** A card's merchant and amount line. */
 const val CARD_READING = "reviewCardReading"
+
+/** A money-back card's category line, as a test finds it. */
+const val CATEGORY_LINE = "reviewCardCategory"
+
+internal const val COUNTS_AGAINST = "COUNTS AGAINST"
+internal const val CHOOSE_A_CATEGORY = "Choose a category"
+
+/** Said in the sheet in place of the switch: what a pick here does and does not do. */
+internal const val FILES_ONLY_THIS = "This files only this payment. Nothing is learned from it."
 
 /** The merchant line of a card Pinged read no merchant from. */
 const val NO_MERCHANT = "No merchant"

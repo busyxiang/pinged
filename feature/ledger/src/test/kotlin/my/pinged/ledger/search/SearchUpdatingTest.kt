@@ -48,7 +48,7 @@ class SearchUpdatingTest {
         choice = SearchChoice(month = month),
         rows = listOf(ledgerTxn(1_840L, id = 1L), ledgerTxn(2_210L, id = 2L)).map { FeedRow(it, it.merchantKey, "Grab ${it.id}") },
         totals = listOf(SearchTotal("MYR", rowCount = 18, countedCount = 18, paymentCount = 18, netSen = 31_240L)),
-        chooser = ChooserRead(listOf(groceries), null, emptyMap(), emptySet()) { null },
+        chooser = ChooserRead(listOf(groceries), null),
     )
 
     private val query = MutableStateFlow("grab")

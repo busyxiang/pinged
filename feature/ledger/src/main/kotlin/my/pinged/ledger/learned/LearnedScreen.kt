@@ -337,7 +337,7 @@ const val TAUGHT = "Things you taught Pinged"
 /** A MESSAGES row's second line: `MAYBANK MAE · MONEY OUT · NO MERCHANT · READ 2`. */
 internal fun messageLabel(rule: TaughtRuleRow): String = listOfNotNull(
     (rule.label ?: rule.sourcePackage).uppercase(CALENDAR),
-    if (rule.direction == Direction.REFUND) "REFUND" else "MONEY OUT",
+    if (rule.direction == Direction.REFUND) "MONEY BACK" else "MONEY OUT",
     "NO MERCHANT".takeIf { !rule.hasMerchantGroup },
     "READ ${grouped(rule.matchCount)}",
 ).joinToString(Separator)

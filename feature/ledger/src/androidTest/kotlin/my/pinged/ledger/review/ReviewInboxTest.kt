@@ -28,6 +28,7 @@ import my.pinged.ledger.transfer.ImportJson
 import my.pinged.ledger.transfer.exportBytes
 import my.pinged.ledger.transfer.freshDatabase
 import my.pinged.parse.Confidence
+import my.pinged.parse.Direction
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -438,6 +439,58 @@ class ReviewInboxTest {
         requester: Job = Job(),
         start: (Job, suspend () -> Unit) -> Unit,
     ): AutoCloseable = holdWhile(operation, inbox.busy, releases, requester, start)
+
+    @Test fun filingAMoneyBackCardWritesOnlyItsCategoryAsAOneOffAndTheCardStaysUntilAnswered() = runBlocking {
+        val dao = context.freshLedger()
+        val food = categoryId("Food & Drinks")
+        val held = dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON, amountSen = 2_795L).copy(direction = Direction.REFUND))
+        val before = dao.byId(held)!!
+        val inbox = inbox()
+
+        inbox.file(card(inbox, held), food).join()
+
+        val filed = dao.byId(held)!!
+        assertEquals(
+            "Filing wrote more than the category, user_edited and updated_at",
+            before.copy(categoryId = food, userEdited = true, updatedAt = filed.updatedAt),
+            filed,
+        )
+        assertEquals("The card did not show its new category", "Food & Drinks", card(inbox, held).category)
+        assertNull("Filing is not an answer, so nothing is on offer for Undo", inbox.undoable.value)
+
+        inbox.accept(card(inbox, held)).join()
+        assertEquals("Accept lost the category the card was filed under", food, dao.byId(held)!!.categoryId)
+        inbox.undo().join()
+        assertEquals(
+            "Undo of the answer put the row back under another category",
+            listOf(TxnState.PENDING, food),
+            dao.byId(held)!!.let { listOf(it.state, it.categoryId) },
+        )
+    }
+
+    @Test fun filingACardThatMovedUnderneathWritesNothing() = runBlocking {
+        val dao = context.freshLedger()
+        val food = categoryId("Food & Drinks")
+        val held = dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON).copy(direction = Direction.REFUND))
+        val inbox = inbox()
+        val drawn = card(inbox, held)
+        sql("UPDATE txn SET pending_reason = 'OVER_THRESHOLD' WHERE id = $held")
+        val before = dao.byId(held)!!
+
+        inbox.file(drawn, food).join()
+
+        assertEquals("Filing wrote to a row a re-read had moved to another reason", before, dao.byId(held)!!)
+    }
+
+    @Test fun theSheetOffersEveryCategoryButUncategorized() = runBlocking {
+        context.freshLedger()
+        val inbox = inbox()
+
+        val offered = inbox.choices()!!.map { it.name }
+
+        assertTrue("Food & Drinks was not offered: $offered", "Food & Drinks" in offered)
+        assertTrue("Uncategorized was offered, so one tap would opt the row out of every re-read: $offered", "Uncategorized" !in offered)
+    }
 
     private fun categoryId(name: String): Long = Databases.categoryDao(context).all().single { it.name == name }.id
 

@@ -84,7 +84,7 @@ class SearchNotReadYetTest {
             choice = SearchChoice(month = month),
             rows = emptyList(),
             totals = emptyList(),
-            chooser = ChooserRead(emptyList(), null, emptyMap(), emptySet()) { null },
+            chooser = ChooserRead(emptyList(), null),
         )
         clock.at(READING_DELAY_MILLIS - 40)
 
@@ -100,7 +100,7 @@ class SearchNotReadYetTest {
             choice = SearchChoice(month = month),
             rows = listOf(ledgerTxn(1_840L, id = 1L)).map { FeedRow(it, it.merchantKey, "Grab") },
             totals = listOf(SearchTotal("MYR", rowCount = 1, countedCount = 1, paymentCount = 1, netSen = 1_840L)),
-            chooser = ChooserRead(emptyList(), null, emptyMap(), emptySet()) { null },
+            chooser = ChooserRead(emptyList(), null),
         )
         clock.at(READING_DELAY_MILLIS + 80)
 
