@@ -5,6 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
+import my.pinged.ledger.LedgerBusy
+import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.settings.TransferState
+import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
@@ -51,10 +56,20 @@ internal fun ReadState<Unit, Taught>.toState(): LearnedState {
  * The read is `:core:read`'s [ScreenRead] (#296), and each delete is its
  * `write`, so the list never draws a state older than a delete that landed.
  * Delete is `MerchantRuleDao.deleteLearnedOfIdentity` and nothing else: it
- * touches no `txn` row and re-files nothing.
+ * touches no `txn` row and re-files nothing. No delete is made while the
+ * ledger is being replaced ([busy], #331).
  */
-class LearnedViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+class LearnedViewModel internal constructor(
+    app: Application,
+    runner: ReadRunner,
+    transfers: StateFlow<TransferState> = Transfers.state,
+) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
+
+    private val gate = LedgerBusy(viewModelScope, transfers)
+
+    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
+    val busy: StateFlow<Operation?> = gate.busy
 
     /**
      * The three lists, in one transaction. `LearnedScreen` reads it on resume
@@ -73,25 +88,31 @@ class LearnedViewModel internal constructor(app: Application, runner: ReadRunner
      * A refused delete leaves the rule, and the read after it draws that. A
      * delete is its read's `write`: guarded, `viewModelScope` having no handler.
      */
-    fun delete(merchant: LearnedMerchant): Job = viewModelScope.launch {
-        read.write("The learned merchant could not be deleted") { db ->
-            db.merchantRuleDao().deleteLearnedOfIdentity(merchant.identity)
-        }.await()
+    fun delete(merchant: LearnedMerchant): Job = gate.unlessReplacing {
+        viewModelScope.launch {
+            read.write("The learned merchant could not be deleted") { db ->
+                db.merchantRuleDao().deleteLearnedOfIdentity(merchant.identity)
+            }.await()
+        }
     }
 
     /**
      * Forget [rule]: `UserRejectRuleDao.delete`, which returns its captures to
      * the unread list (spec 5.7) and touches nothing else.
      */
-    fun deleteIgnored(rule: RejectRuleRow): Job = viewModelScope.launch {
-        read.write("The ignored message could not be deleted") { db -> db.userRejectRuleDao().delete(rule.id) }.await()
+    fun deleteIgnored(rule: RejectRuleRow): Job = gate.unlessReplacing {
+        viewModelScope.launch {
+            read.write("The ignored message could not be deleted") { db -> db.userRejectRuleDao().delete(rule.id) }.await()
+        }
     }
 
     /**
      * Forget [rule]: `UserTemplateRuleDao.delete`, which leaves every
      * transaction it wrote as it is (spec 5.8).
      */
-    fun deleteMessage(rule: TaughtRuleRow): Job = viewModelScope.launch {
-        read.write("The taught message could not be deleted") { db -> db.userTemplateRuleDao().delete(rule.id) }.await()
+    fun deleteMessage(rule: TaughtRuleRow): Job = gate.unlessReplacing {
+        viewModelScope.launch {
+            read.write("The taught message could not be deleted") { db -> db.userTemplateRuleDao().delete(rule.id) }.await()
+        }
     }
 }

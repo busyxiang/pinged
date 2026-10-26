@@ -21,6 +21,10 @@ import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
+import my.pinged.ledger.LedgerBusy
+import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.settings.TransferState
+import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.Filer
 import my.pinged.parse.LearnedRules.Snapshot
 import my.pinged.parse.SameShop
@@ -64,13 +68,28 @@ import java.time.YearMonth
  * A view model hands it to its screen whole, and the screen hands each
  * `*ScreenContent` only the halves that screen offers: [CategoryActions] and
  * [MerchantActions] (#307).
+ *
+ * **During a ledger replacement nothing is written** ([busy], #331), from the
+ * claim, as the review inbox refuses an answer: a restore checks its file
+ * before it raises the gate, and a category saved in that window would be
+ * wiped after the user saw it saved. A write asked for then is dropped
+ * without touching [runner], so the screen is not raised `unavailable`.
+ * The chooser and the sheet disable their writes on the same flow, so a
+ * drop is only reachable by a tap racing the claim. [transfers] is a
+ * parameter for the reason `ReviewInbox` gives.
  */
 class RowActions(
     private val context: () -> Context,
     private val scope: CoroutineScope,
     private val runner: ReadRunner,
     private val screen: RowScreen,
+    transfers: StateFlow<TransferState> = Transfers.state,
 ) : CategoryActions, MerchantActions {
+    private val gate = LedgerBusy(scope, transfers)
+
+    /** The ledger replacement running, while one is; see the class KDoc. */
+    override val busy: StateFlow<Operation?> = gate.busy
+
     /**
      * Spec 6.4's merchant sheet's read: its question is the opening, or null
      * while no sheet is open. A tap on another row, or a close, changes the
@@ -150,7 +169,7 @@ class RowActions(
      * actually in the database rather than reporting a failure about a row
      * the user can no longer see.
      */
-    override fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
+    override fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job = gate.unlessReplacing {
         screen.write("The category could not be assigned") { db ->
             val at = System.currentTimeMillis()
             // The check and the write in one transaction, so a delete from
@@ -175,14 +194,18 @@ class RowActions(
                 })
             }
         }
+    }
 
     /**
      * Spec 4's "add", from the chooser's New category tile (#155): the new
      * row's id, or null where it was not written -- the database could not be
-     * opened, or the name was taken since the sheet checked it. The screen is
-     * read again before this returns, which is how the new tile appears.
+     * opened, the name was taken since the sheet checked it, or the ledger is
+     * being replaced (see the class KDoc). The screen is read again before
+     * this returns, which is how the new tile appears; not after a refusal
+     * for a replacement, which asks nothing of the ledger.
      */
     override suspend fun addCategory(name: String, iconKey: String): Long? {
+        if (gate.replacing) return null
         val written = screen.write("The category could not be added") { db ->
             try {
                 db.categoryDao().add(name, iconKey)
@@ -268,10 +291,12 @@ class RowActions(
         write: (MerchantIdentityDao, MerchantSheetState) -> Unit,
     ): Job {
         // Nothing to write against before the read: the sheet offers no write
-        // until then.
+        // until then. A replacement leaves the sheet open, its writes disabled.
         val sheet = _merchantSheet.value?.read ?: return Job().apply { complete() }
-        closeMerchant()
-        return screen.write(what) { db -> write(db.merchantIdentityDao(), sheet) }
+        return gate.unlessReplacing {
+            closeMerchant()
+            screen.write(what) { db -> write(db.merchantIdentityDao(), sheet) }
+        }
     }
 }
 
@@ -280,6 +305,9 @@ class RowActions(
  * calls. Search is handed only this: its rows open no merchant sheet.
  */
 interface CategoryActions {
+    /** The ledger replacement running, while one is: the chooser disables its Save and says so. */
+    val busy: StateFlow<Operation?>
+
     /** File one transaction under [categoryId], teaching its merchant when [teach]; see [RowActions.assignCategory]. */
     fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job
 

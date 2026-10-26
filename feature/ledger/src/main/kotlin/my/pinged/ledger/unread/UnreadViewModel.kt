@@ -5,6 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
+import my.pinged.ledger.LedgerBusy
+import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.settings.TransferState
+import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.read.ReadRunner
@@ -47,8 +52,17 @@ internal fun ReadState<Int, UnreadPage>.toState(): UnreadState {
  * can neither repeat nor be skipped at the seam between two pages. The cost is
  * that a page more reads every card already shown again, as a resume does.
  */
-class UnreadViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+class UnreadViewModel internal constructor(
+    app: Application,
+    runner: ReadRunner,
+    transfers: StateFlow<TransferState> = Transfers.state,
+) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
+
+    private val gate = LedgerBusy(viewModelScope, transfers)
+
+    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
+    val busy: StateFlow<Operation?> = gate.busy
 
     /**
      * The list from its top, as long as the question says, newest first.
@@ -77,12 +91,14 @@ class UnreadViewModel internal constructor(app: Application, runner: ReadRunner)
     /**
      * Spec 5.7: hides [capture] and every unread capture of its shape from its
      * app. A refused write leaves the list as it was, and the read after it
-     * draws that.
+     * draws that. Nothing is written while the ledger is being replaced ([busy]).
      */
-    fun neverATransaction(capture: UnreadCapture): Job = viewModelScope.launch {
-        read.write("The notification could not be marked as never a transaction") { db ->
-            db.userRejectRuleDao().neverATransaction(capture.id, now = System.currentTimeMillis())
-        }.await()
+    fun neverATransaction(capture: UnreadCapture): Job = gate.unlessReplacing {
+        viewModelScope.launch {
+            read.write("The notification could not be marked as never a transaction") { db ->
+                db.userRejectRuleDao().neverATransaction(capture.id, now = System.currentTimeMillis())
+            }.await()
+        }
     }
 
     private companion object {

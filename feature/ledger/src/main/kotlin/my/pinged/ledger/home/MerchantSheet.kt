@@ -65,6 +65,8 @@ import my.pinged.data.LocalDates
 import my.pinged.data.dao.MerchantChoice
 import my.pinged.data.dao.MerchantMember
 import my.pinged.data.dao.MerchantTotal
+import my.pinged.ledger.ChangedLine
+import my.pinged.ledger.settings.Operation
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
 import my.pinged.ui.theme.Body
@@ -200,6 +202,9 @@ interface MerchantActions {
     /** The sheet while one is open, else null. */
     val merchantSheet: StateFlow<OpenMerchantSheet?>
 
+    /** The ledger replacement running, while one is: the sheet disables its writes and says so. */
+    val busy: StateFlow<Operation?>
+
     /** Open the sheet on the tap; see [RowActions.openMerchant]. */
     fun openMerchant(opening: MerchantOpening): Job
 
@@ -216,11 +221,15 @@ interface MerchantActions {
     fun separateMerchant(key: String): Job
 }
 
-/** The sheet [actions] holds open, if one is: what a screen draws over its rows. */
+/**
+ * The sheet [actions] holds open, if one is: what a screen draws over its rows,
+ * its writes off while [MerchantActions.busy] runs a ledger replacement.
+ */
 @Composable
 internal fun MerchantSheet(actions: MerchantActions) {
     val sheet by actions.merchantSheet.collectAsState()
-    sheet?.let { MerchantSheet(it, actions) }
+    val busy by actions.busy.collectAsState()
+    sheet?.let { MerchantSheet(it, actions, busy = busy) }
 }
 
 /**
@@ -240,6 +249,11 @@ internal fun MerchantSheet(actions: MerchantActions) {
  * `MerchantIdentityDao.merge` define it: the band and the button name the
  * chosen merchant as the one that survives, with its name and its rule.
  *
+ * **While [busy] runs a ledger replacement nothing is changed** (#331): the
+ * sheet stays open and says so under its header, and Save name, the merge
+ * and Separate are off. A sheet already open when it starts turns them off
+ * in place, keeping a name typed or a merchant chosen for when it ends.
+ *
  * In [ReceiptSheetFrame] over a `LazyColumn` rather than in a `ReceiptSheet`,
  * for the reason `CategoryPicker`'s grid is lazy: a search reaches every
  * merchant in the ledger, and a scrolling `Column` would compose every one.
@@ -249,8 +263,9 @@ internal fun MerchantSheet(
     sheet: MerchantSheetState,
     actions: MerchantActions,
     modifier: Modifier = Modifier,
+    busy: Operation? = null,
 ) {
-    ReceiptSheetFrame(onDismissRequest = actions::closeMerchant, modifier = modifier) { MerchantSheetRead(sheet, actions) }
+    ReceiptSheetFrame(onDismissRequest = actions::closeMerchant, modifier = modifier) { MerchantSheetRead(sheet, actions, busy) }
 }
 
 /**
@@ -266,16 +281,18 @@ internal fun MerchantSheet(
     sheet: OpenMerchantSheet,
     actions: MerchantActions,
     modifier: Modifier = Modifier,
+    busy: Operation? = null,
 ) {
     ReceiptSheetFrame(onDismissRequest = actions::closeMerchant, modifier = modifier) {
         val read = sheet.read
-        if (read != null) MerchantSheetRead(read, actions) else MerchantSheetNotReadYet(sheet.opening, actions::closeMerchant)
+        if (read != null) MerchantSheetRead(read, actions, busy) else MerchantSheetNotReadYet(sheet.opening, actions::closeMerchant)
     }
 }
 
-/** [MerchantSheet]'s body once its read has landed. */
+/** [MerchantSheet]'s body once its read has landed; nothing in it writes while [busy] runs. */
 @Composable
-private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: MerchantActions) {
+private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: MerchantActions, busy: Operation?) {
+    val writable = busy == null
     var name by rememberSaveable(sheet.identityKey) { mutableStateOf(sheet.name) }
     var filter by rememberSaveable(sheet.identityKey) { mutableStateOf("") }
     var chosenKey by rememberSaveable(sheet.identityKey) { mutableStateOf<String?>(null) }
@@ -288,6 +305,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
         Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
         subtitle = sheet.month?.let { monthLine(it, sheet.monthTotals) },
     )
+    busy?.let { ChangedLine(it, SHEET_LINE) }
     val list = rememberLazyListState()
     // Typing puts the search field at the top of the list, so what it
     // finds is in view beneath it. At CI's 320x640 with the keyboard up the
@@ -331,7 +349,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(reach(sheet.txnCount), style = MonoLabel, color = Faint, modifier = Modifier.weight(1f))
-                    SaveNameButton(enabled = name.trim() != sheet.name, onClick = { actions.renameMerchant(name) })
+                    SaveNameButton(enabled = writable && name.trim() != sheet.name, onClick = { actions.renameMerchant(name) })
                 }
             }
         }
@@ -342,6 +360,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
                     Text("Counted as $canonical.", fontFamily = Body, fontSize = 15.sp, color = Ink)
                     OutlineButton(
                         "$SEPARATE from $canonical",
+                        enabled = writable,
                         onClick = { actions.separateMerchant(sheet.ownKey) },
                         modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
                     )
@@ -402,6 +421,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
                     }
                     FilledButton(
                         countItAs(chosen),
+                        enabled = writable,
                         onClick = { actions.mergeMerchant(chosen.identityKey) },
                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp).fillMaxWidth(),
                     )
@@ -423,7 +443,7 @@ private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: Me
             }
             items(sheet.members, key = { "member-" + it.merchantKey }) { member ->
                 KeyRow(member.merchantKey, member.txnCount) {
-                    OutlineButton(SEPARATE, onClick = { actions.separateMerchant(member.merchantKey) })
+                    OutlineButton(SEPARATE, enabled = writable, onClick = { actions.separateMerchant(member.merchantKey) })
                 }
                 if (member.noOwnRule && sheet.ruleCategory != null) {
                     Box(Modifier.padding(horizontal = 20.dp)) { RuleNote(SEPARATE_NO_RULE) }
@@ -691,35 +711,49 @@ private fun SaveNameButton(enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** The board's one filled [Stamp] button, 52dp, which commits the merge. */
+/**
+ * The board's one filled [Stamp] button, 52dp, which commits the merge; off,
+ * outlined in [Border] with its label in [Faint], as [SaveNameButton] is.
+ */
 @Composable
-private fun FilledButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun FilledButton(label: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(2.dp)
     Box(
         modifier
-            .clip(RoundedCornerShape(2.dp))
-            .background(Stamp)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clip(shape)
+            .then(if (enabled) Modifier.background(Stamp) else Modifier.border(1.dp, Border, shape))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 52.dp)
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = ButtonLabel.copy(fontSize = 15.sp), color = Paper, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            label,
+            style = ButtonLabel.copy(fontSize = 15.sp),
+            color = if (enabled) Paper else Faint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
-/** A bordered [Ink] button, `WipeSheet`'s `Choice` at the sheet's own size: Separate. */
+/**
+ * A bordered [Ink] button, `WipeSheet`'s `Choice` at the sheet's own size:
+ * Separate. Off, border and label in [Faint].
+ */
 @Composable
-private fun OutlineButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun OutlineButton(label: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val color = if (enabled) Ink else Faint
     Box(
         modifier
             .clip(RoundedCornerShape(2.dp))
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 44.dp)
-            .border(1.dp, Ink, RoundedCornerShape(2.dp))
+            .border(1.dp, color, RoundedCornerShape(2.dp))
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, fontFamily = Body, fontSize = 15.sp, color = Ink)
+        Text(label, fontFamily = Body, fontSize = 15.sp, color = color)
     }
 }
 

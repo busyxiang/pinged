@@ -7,6 +7,11 @@ import android.content.pm.PackageManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.StateFlow
+import my.pinged.ledger.LedgerBusy
+import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.settings.TransferState
+import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
 import my.pinged.capture.Graph
 import my.pinged.capture.SourceCounters
@@ -101,8 +106,17 @@ fun ReadState<Unit, SourcesState>.toState(): SourcesState {
  * `lifecycleScope` cannot. The context it reads is the `Application`, so
  * surviving a configuration change leaks nothing.
  */
-class SourcesViewModel internal constructor(app: Application, runner: ReadRunner) : AndroidViewModel(app) {
+class SourcesViewModel internal constructor(
+    app: Application,
+    runner: ReadRunner,
+    transfers: StateFlow<TransferState> = Transfers.state,
+) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
+
+    private val gate = LedgerBusy(viewModelScope, transfers)
+
+    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
+    val busy: StateFlow<Operation?> = gate.busy
 
     /**
      * A getter, not a field: `private val context: Context = app` is what lint's
@@ -157,8 +171,12 @@ class SourcesViewModel internal constructor(app: Application, runner: ReadRunner
      *
      * The returned `Job` completes after that read, so a caller sequencing work
      * after the toggle sees the state it produced.
+     *
+     * Not asked for at all while the ledger is being replaced ([busy], #331):
+     * a source switched on then would be switched off again by the restore
+     * after the user saw it on.
      */
-    fun setEnabled(pkg: String, on: Boolean): Job =
+    fun setEnabled(pkg: String, on: Boolean): Job = gate.unlessReplacing {
         read.write("The allow-list cannot be changed") { db ->
             val dao = db.captureSourceDao()
             val label = label(InstalledApps(context.packageManager), pkg, known = null, usePackLabel = true)
@@ -173,6 +191,7 @@ class SourcesViewModel internal constructor(app: Application, runner: ReadRunner
             dao.setLabel(pkg, label)
             dao.setEnabled(pkg, on)
         }
+    }
 
     /**
      * One read of the allow-list, as [read]'s staged body: the database in one

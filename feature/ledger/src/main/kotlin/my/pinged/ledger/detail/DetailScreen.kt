@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,7 +57,9 @@ import my.pinged.data.LocalDates
 import my.pinged.data.dao.DetailRow
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.home.CategoryActions
+import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.HeroSerif
 import my.pinged.ledger.home.MerchantActions
@@ -126,9 +129,11 @@ fun DetailScreen(
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
+    val busy by viewModel.busy.collectAsState()
     DetailScreenContent(
         read = read.answer,
         storageUnavailable = read.unavailable,
+        busy = busy,
         onBack = onBack,
         categories = viewModel.rows,
         merchants = viewModel.rows,
@@ -159,7 +164,15 @@ internal class DetailActions(
     }
 }
 
-/** [DetailScreen] without its holder, so a test can draw any state. */
+/**
+ * [DetailScreen] without its holder, so a test can draw any state.
+ *
+ * While [busy] runs a ledger replacement the row says so at its top, and its
+ * own writes are off (#331): Save note, Not spending, Count as spending and
+ * Delete, and the confirm of a Not a payment sheet already open. Change
+ * category and the pencil still open their sheets, which say so and turn
+ * their own writes off.
+ */
 @Composable
 internal fun DetailScreenContent(
     read: DetailRead?,
@@ -170,6 +183,7 @@ internal fun DetailScreenContent(
     modifier: Modifier = Modifier,
     actions: DetailActions = DetailActions.None,
     zone: ZoneId = ZoneId.systemDefault(),
+    busy: Operation? = null,
 ) {
     var categorizing by rememberSaveable { mutableStateOf(false) }
     var removing by rememberSaveable { mutableStateOf(false) }
@@ -185,15 +199,19 @@ internal fun DetailScreenContent(
             storageUnavailable -> Notice(CANNOT_READ_YOUR_DATA, Stamp)
             read == null -> NotReadYet()
             row == null -> Notice(GONE, Muted)
-            else -> DetailBody(
-                row = row,
-                zone = zone,
-                canCategorize = choices.isNotEmpty() && !row.row.txn.isExcluded,
-                onCategorize = { categorizing = true },
-                onRemove = { removing = true },
-                actions = actions,
-                merchants = merchants,
-            )
+            else -> {
+                busy?.let { ChangedLine(it) }
+                DetailBody(
+                    row = row,
+                    zone = zone,
+                    canCategorize = choices.isNotEmpty() && !row.row.txn.isExcluded,
+                    onCategorize = { categorizing = true },
+                    onRemove = { removing = true },
+                    actions = actions,
+                    merchants = merchants,
+                    writable = busy == null,
+                )
+            }
         }
     }
 
@@ -215,6 +233,7 @@ internal fun DetailScreenContent(
                 actions.remove()
             },
             onDismiss = { removing = false },
+            enabled = busy == null,
         )
     }
     MerchantSheet(merchants)
@@ -286,6 +305,7 @@ private fun DetailBody(
     onRemove: () -> Unit,
     actions: DetailActions,
     merchants: MerchantActions,
+    writable: Boolean,
 ) {
     val txn = row.row.txn
     val name = row.row.displayName
@@ -378,7 +398,7 @@ private fun DetailBody(
         }
         Text(provenance(row), style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 8.dp))
 
-        NoteField(txn, actions.saveNote)
+        NoteField(txn, actions.saveNote, writable)
         if (excluded) {
             Text(
                 LEFT_OUT_SMALL_PRINT,
@@ -389,23 +409,24 @@ private fun DetailBody(
         }
     }
 
-    Actions(txn, canCategorize, onCategorize, onRemove, actions)
+    Actions(txn, canCategorize, onCategorize, onRemove, actions, writable)
 }
 
 /**
  * The note: one line, saved by the keyboard's Done or by Save note, which is
  * drawn only while the line differs from what is stored. Seeded from the row
- * and re-seeded when a re-read brings a different note.
+ * and re-seeded when a re-read brings a different note. Neither saves unless
+ * [writable]; what was typed is kept.
  */
 @Composable
-private fun NoteField(txn: Txn, save: (String) -> Unit) {
+private fun NoteField(txn: Txn, save: (String) -> Unit, writable: Boolean) {
     val stored = txn.note.orEmpty()
     var typed by rememberSaveable(txn.id, stored) { mutableStateOf(stored) }
     val focus = LocalFocusManager.current
     val dirty = typed.trim() != stored
     val commit = {
         focus.clearFocus()
-        if (dirty) save(typed)
+        if (dirty && writable) save(typed)
     }
     Column(Modifier.padding(top = 12.dp)) {
         UnderlinedField(
@@ -419,7 +440,7 @@ private fun NoteField(txn: Txn, save: (String) -> Unit) {
             placeholderColour = Muted,
         )
         if (dirty) {
-            OutlinedAction(SAVE_NOTE, Ink, Border, Modifier.padding(top = 10.dp).fillMaxWidth(), onClick = commit)
+            OutlinedAction(SAVE_NOTE, Ink, Border, Modifier.padding(top = 10.dp).fillMaxWidth(), enabled = writable, onClick = commit)
         }
     }
 }
@@ -434,7 +455,7 @@ private fun NoteField(txn: Txn, save: (String) -> Unit) {
  * Not spending and Delete only on a committed row, since a held one is the
  * inbox's to answer; and Count as spending only on what the user excluded,
  * since a transfer's exclusion is the pack's and the inbox's Keep as expense
- * takes it back.
+ * takes it back. All but Change category are off unless [writable].
  */
 @Composable
 private fun Actions(
@@ -443,12 +464,13 @@ private fun Actions(
     onCategorize: () -> Unit,
     onRemove: () -> Unit,
     actions: DetailActions,
+    writable: Boolean,
 ) {
     val committed = txn.state == TxnState.COMMITTED
     val countBack = committed && txn.exclusionReason == ExclusionReason.USER
     val pair = buildList {
-        if (canCategorize) add(CHANGE_CATEGORY to onCategorize)
-        if (committed && !txn.isExcluded) add(NOT_SPENDING to actions.notSpending)
+        if (canCategorize) add(Triple(CHANGE_CATEGORY, true, onCategorize))
+        if (committed && !txn.isExcluded) add(Triple(NOT_SPENDING, writable, actions.notSpending))
     }
     if (pair.isEmpty() && !committed) return
     Column(
@@ -458,53 +480,56 @@ private fun Actions(
             .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        if (countBack) FilledAction(COUNT_AS_SPENDING, Modifier.fillMaxWidth(), actions.countAsSpending)
+        if (countBack) FilledAction(COUNT_AS_SPENDING, Modifier.fillMaxWidth(), writable, actions.countAsSpending)
         if (pair.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                pair.forEach { (label, onClick) ->
-                    OutlinedAction(label, Ink, Border, Modifier.weight(1f).fillMaxHeight(), onClick = onClick)
+                pair.forEach { (label, enabled, onClick) ->
+                    OutlinedAction(label, Ink, Border, Modifier.weight(1f).fillMaxHeight(), enabled, onClick)
                 }
             }
         }
-        if (committed) OutlinedAction(DELETE, Stamp, Stamp, Modifier.fillMaxWidth(), onClick = onRemove)
+        if (committed) OutlinedAction(DELETE, Stamp, Stamp, Modifier.fillMaxWidth(), writable, onRemove)
     }
 }
 
-/** The board's primary action: filled [Stamp], its label in [Paper]. */
+/**
+ * The board's primary action: filled [Stamp], its label in [Paper]; off,
+ * outlined in [Muted], label too, as the chooser's Save is.
+ */
 @Composable
-private fun FilledAction(label: String, modifier: Modifier, onClick: () -> Unit) {
+private fun FilledAction(label: String, modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(2.dp)
     Box(
         modifier
             .clip(shape)
-            .background(Stamp, shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .then(if (enabled) Modifier.background(Stamp, shape) else Modifier.border(1.dp, Muted, shape))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 44.dp)
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = ButtonLabel.copy(fontSize = 14.sp, textAlign = TextAlign.Center), color = Paper)
+        Text(label, style = ButtonLabel.copy(fontSize = 14.sp, textAlign = TextAlign.Center), color = if (enabled) Paper else Muted)
     }
 }
 
 /**
  * An outlined button of the band, its edge solid: Delete's too, in the
  * accent, as `design/Detail.dc.html` draws it, since `Perforation.kt` keeps
- * dashes for offers and a delete is not one.
+ * dashes for offers and a delete is not one. Off, edge and label in [Muted].
  */
 @Composable
-private fun OutlinedAction(label: String, ink: Color, edge: Color, modifier: Modifier, onClick: () -> Unit) {
+private fun OutlinedAction(label: String, ink: Color, edge: Color, modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(2.dp)
     Box(
         modifier
             .clip(shape)
-            .border(1.dp, edge, shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .border(1.dp, if (enabled) edge else Muted, shape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 44.dp)
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = ButtonLabel.copy(fontSize = 14.sp, textAlign = TextAlign.Center), color = ink)
+        Text(label, style = ButtonLabel.copy(fontSize = 14.sp, textAlign = TextAlign.Center), color = if (enabled) ink else Muted)
     }
 }
 

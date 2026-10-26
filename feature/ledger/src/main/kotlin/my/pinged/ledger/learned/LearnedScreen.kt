@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,7 +44,9 @@ import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
 import my.pinged.data.dao.TaughtRuleRow
 import my.pinged.ledger.BackChevron
+import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
+import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.parse.Direction
 import my.pinged.read.rememberReadState
@@ -78,6 +82,7 @@ import my.pinged.ui.theme.dottedRule
 fun LearnedScreen(viewModel: LearnedViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
+    val busy by viewModel.busy.collectAsState()
     LearnedContent(
         read.toState(),
         onBack,
@@ -85,6 +90,7 @@ fun LearnedScreen(viewModel: LearnedViewModel, onBack: () -> Unit, modifier: Mod
         modifier,
         onDeleteIgnored = viewModel::deleteIgnored,
         onDeleteMessage = viewModel::deleteMessage,
+        busy = busy,
     )
 }
 
@@ -98,7 +104,11 @@ internal enum class TaughtTab(val label: String, val nothing: String, val countI
     IGNORED("IGNORED", NOTHING_IGNORED, { it.ignored.size }, hidesLabel(NOT_READ_YET)),
 }
 
-/** [LearnedScreen] without its holder, so a test can draw any state. */
+/**
+ * [LearnedScreen] without its holder, so a test can draw any state. While
+ * [busy] runs a ledger replacement the list says so at its top and every
+ * delete is off (#331).
+ */
 @Composable
 internal fun LearnedContent(
     state: LearnedState,
@@ -108,8 +118,10 @@ internal fun LearnedContent(
     onDeleteIgnored: (RejectRuleRow) -> Unit = {},
     initialTab: TaughtTab = TaughtTab.MERCHANTS,
     onDeleteMessage: (TaughtRuleRow) -> Unit = {},
+    busy: Operation? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
+    val writable = busy == null
     if (!state.loaded) {
         Column(modifier.fillMaxSize().background(Paper)) {
             Header(onBack)
@@ -127,6 +139,7 @@ internal fun LearnedContent(
                 onSelect = { tab = it },
             )
         }
+        if (!state.storageUnavailable && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
         item {
             val notice = when {
                 state.storageUnavailable -> CANNOT_READ_YOUR_DATA
@@ -139,13 +152,13 @@ internal fun LearnedContent(
         }
         when (tab) {
             TaughtTab.MERCHANTS -> items(state.items, key = { it.identity }) { merchant ->
-                LearnedRow(merchant, onDelete = { onDelete(merchant) })
+                LearnedRow(merchant, writable, onDelete = { onDelete(merchant) })
             }
             TaughtTab.MESSAGES -> items(state.messages, key = { it.id }) { rule ->
-                MessageRow(rule, onDelete = { onDeleteMessage(rule) })
+                MessageRow(rule, writable, onDelete = { onDeleteMessage(rule) })
             }
             TaughtTab.IGNORED -> items(state.ignored, key = { it.id }) { rule ->
-                IgnoredRow(rule, onDelete = { onDeleteIgnored(rule) })
+                IgnoredRow(rule, writable, onDelete = { onDeleteIgnored(rule) })
             }
         }
     }
@@ -189,7 +202,7 @@ private fun Tabs(selected: TaughtTab, count: (TaughtTab) -> String?, onSelect: (
  * for word, then its app and how many captures it hides now (spec 5.7).
  */
 @Composable
-private fun IgnoredRow(rule: RejectRuleRow, onDelete: () -> Unit) {
+private fun IgnoredRow(rule: RejectRuleRow, writable: Boolean, onDelete: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -206,7 +219,7 @@ private fun IgnoredRow(rule: RejectRuleRow, onDelete: () -> Unit) {
                 color = Faint,
             )
         }
-        DeleteButton(onDelete)
+        DeleteButton(writable, onDelete)
     }
 }
 
@@ -216,7 +229,7 @@ private fun IgnoredRow(rule: RejectRuleRow, onDelete: () -> Unit) {
  * Deleting it leaves those transactions as they are.
  */
 @Composable
-private fun MessageRow(rule: TaughtRuleRow, onDelete: () -> Unit) {
+private fun MessageRow(rule: TaughtRuleRow, writable: Boolean, onDelete: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -229,12 +242,12 @@ private fun MessageRow(rule: TaughtRuleRow, onDelete: () -> Unit) {
             Text(rule.sampleText, style = MonoLabel.copy(letterSpacing = 0.sp, lineHeight = 18.sp), color = Muted)
             Text(messageLabel(rule), style = MonoLabel, color = Faint)
         }
-        DeleteButton(onDelete)
+        DeleteButton(writable, onDelete)
     }
 }
 
 @Composable
-private fun LearnedRow(merchant: LearnedMerchant, onDelete: () -> Unit) {
+private fun LearnedRow(merchant: LearnedMerchant, writable: Boolean, onDelete: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -258,7 +271,7 @@ private fun LearnedRow(merchant: LearnedMerchant, onDelete: () -> Unit) {
             }
             Text(paymentsLabel(merchant.payments), style = MonoLabel, color = Muted)
         }
-        DeleteButton(onDelete)
+        DeleteButton(writable, onDelete)
     }
 }
 
@@ -282,15 +295,16 @@ private fun CategoryChip(name: String) {
 /**
  * The board's trash can, 17dp in [Stamp] at its 1.6 stroke in a 24 box, in a
  * 44dp target. Offset 13.5dp, half the target's slack, so the glyph's own edge
- * sits on the 20dp margin, as `SheetHeader`'s X does.
+ * sits on the 20dp margin, as `SheetHeader`'s X does. Off, in [Muted].
  */
 @Composable
-private fun DeleteButton(onDelete: () -> Unit) {
+private fun DeleteButton(enabled: Boolean, onDelete: () -> Unit) {
+    val ink = if (enabled) Stamp else Muted
     Box(
         Modifier
             .offset(x = 13.5.dp)
             .size(44.dp)
-            .clickable(role = Role.Button, onClick = onDelete)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onDelete)
             .semantics { contentDescription = DELETE },
         contentAlignment = Alignment.Center,
     ) {
@@ -298,15 +312,15 @@ private fun DeleteButton(onDelete: () -> Unit) {
             // The board's `M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13`.
             val u = size.width / 24f
             val stroke = Stroke(width = 1.6f * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
-            drawLine(Stamp, Offset(5 * u, 7 * u), Offset(19 * u, 7 * u), stroke.width, StrokeCap.Round)
+            drawLine(ink, Offset(5 * u, 7 * u), Offset(19 * u, 7 * u), stroke.width, StrokeCap.Round)
             val lid = Path().apply {
                 moveTo(9 * u, 7 * u); lineTo(9 * u, 5 * u); lineTo(15 * u, 5 * u); lineTo(15 * u, 7 * u)
             }
             val can = Path().apply {
                 moveTo(7 * u, 7 * u); lineTo(8 * u, 20 * u); lineTo(16 * u, 20 * u); lineTo(17 * u, 7 * u)
             }
-            drawPath(lid, Stamp, style = stroke)
-            drawPath(can, Stamp, style = stroke)
+            drawPath(lid, ink, style = stroke)
+            drawPath(can, ink, style = stroke)
         }
     }
 }
