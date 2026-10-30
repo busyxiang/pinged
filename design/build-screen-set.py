@@ -43,6 +43,10 @@ groups = [
    "What the Charts tab shows on most days. Two weeks after the scenario date, on 14 October: the chip counts the day instead of saying the month is complete, today is outlined and still going, the days to come stay blank rather than empty, and the comparison with September waits for October to end. The footer line became a block, because three different kinds of money are kept out of the total and each should be checkable."),
   ("Friday 25 September", "Day.dc.html", "New, behind a grid cell",
    "One square of the grid, opened. The day's total and its four payments, which add up to the RM210.00 the cell shades. It says whether Pinged watched all day, because a quiet day and a day it missed look the same otherwise. The two steppers fix the cost of a mis-tap on a 20dp cell: one tap to the next day, not back to the grid."),
+  ("Food &amp; Drinks", "Breakdown.dc.html", "New, behind a category bar",
+   "One bar on Charts, opened by merchant. Each line is a merchant&rsquo;s net and how many of its payments count, largest first, then the one that netted negative, signed. Payments with no merchant are one more line, ranked by their net like the rest, so the lines add up to the bar&rsquo;s RM842.50 to the sen and the 56 in the header is their counts&rsquo; sum. What the category kept out is one line under the total, and its awaiting review opens the inbox, as on Day. A line opens in place into the ledger&rsquo;s own rows, category chip and all. A long name ends in an ellipsis at 220dp, so the count and the amount keep their places at 320dp."),
+  ("Food &amp; Drinks, untrusted", "BreakdownUntrusted.dc.html", "New, the same month with a day missed",
+   "The same screen in a month with one day not captured. Every total and count greys, the names stay in ink, and one line under the total says why, in Charts&rsquo; words: MAY BE INCOMPLETE. Not &ldquo;at least&rdquo;, since a missed refund would make the real figure lower. The kept-out line was grey already, and its awaiting review stays a link. Nothing else changes but the board&rsquo;s note."),
   ("Search", "Search.dc.html", "Search and filter",
    "Any query becomes its own total. Searching &ldquo;grab&rdquo; answers the question a category total buries: eighteen rides, RM312.40, RM17.36 each &mdash; more than a month of petrol."),
  ]),
@@ -75,6 +79,8 @@ groups = [
    "Today the merchant sheet ignores the long press until its read lands. It opens straight away with the name the row already knows, the counts as dashes, and the suggestions as outlines. Save stays an outline until there is something to save."),
   ("grab f", "LoadingSearch.dc.html", "A reload in place",
    "The one place a skeleton would be wrong. While a new query waits for its 300ms pause and its read (3 to 37ms), the old total and rows stay at 45% under UPDATING, and the export count goes to a dash. Charts and Spending after a month pick, and Jump to on reopen, do the same."),
+  ("Food &amp; Drinks", "LoadingBreakdown.dc.html", "A category from its bar",
+   "The name, icon and month come from the bar tapped, so they are drawn at once. The total waits as a dash, and the merchants as four nameless leaders, since which merchants lead is the read. No count and no kept-out line until they are known."),
  ]),
  ("Sheets, pickers and lists", "The layer behind the twelve. I called these derivative before drawing them; three turned out to carry real decisions.", [
   ("What was this?", "Chooser.dc.html", "Assigning a category",
@@ -89,6 +95,8 @@ groups = [
    "One shop, two jobs. The name at the top renames it everywhere, and says how many transactions will change before you save. Same shop as&hellip; handles a shop that pays under two identities: pick the one it really is, read what moves and whose rule wins, then commit. Opened from the pencil on Detail, as well as by a long press on the row."),
   ("Jump to", "Months.dc.html", "Month picker",
    "Every month with its total, and May flagged &ldquo;3 days not captured&rdquo; so a low month is never mistaken for a frugal one. The footer names your install date, because that is where history genuinely stops."),
+  ("Everything else", "EverythingElse.dc.html", "New, behind the folded bar",
+   "Above six categories Charts draws the top five and folds the rest into one bar. Tapping it lists what it holds, largest first, each with its amount and no bar: the bar it came from already gives the scale. Pinned to August, since September&rsquo;s six categories are all drawn."),
   ("Export", "Export.dc.html", "Two real decisions",
    "Whether transfers and pending items are included was an assumption until this screen forced it into the open. Both default to out, since neither counts toward a total."),
   ("Delete everything", "Wipe.dc.html", "The destructive one",
@@ -290,7 +298,7 @@ page = f'''<title>Pinged Screen Set</title>
 <style>{css}</style>
 <div class="wrap">
   <p class="eyebrow">Pinged &middot; Receipt direction</p>
-  <h1>Forty-two screens, one paper trail</h1>
+  <h1>Forty-six screens, one paper trail</h1>
   <p class="stand">The whole v1 surface &mdash; every screen, sheet and list &mdash; grouped the way a person meets it. The populated scenario is pinned to <strong>Wednesday 30 September 2026</strong>, month end, so every figure reconciles: RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded, four items awaiting review.</p>
   <p class="stand">The system below is the handoff &mdash; those hex values and type roles become the Compose theme directly.</p>
 

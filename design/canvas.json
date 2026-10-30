@@ -147,6 +147,22 @@
       "page": "page-1"
     },
     {
+      "file": "Breakdown.dc.html",
+      "x": 1960,
+      "y": 2000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "BreakdownUntrusted.dc.html",
+      "x": 2450,
+      "y": 2000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
       "file": "Stopped.dc.html",
       "x": 0,
       "y": 3000,
@@ -267,6 +283,14 @@
       "page": "page-1"
     },
     {
+      "file": "EverythingElse.dc.html",
+      "x": 980,
+      "y": 6000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
       "file": "Quiet.dc.html",
       "x": 0,
       "y": 0,
@@ -365,6 +389,14 @@
     {
       "file": "LoadingSearch.dc.html",
       "x": 1960,
+      "y": 8000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "LoadingBreakdown.dc.html",
+      "x": 2450,
       "y": 8000,
       "w": 390,
       "h": 844,
