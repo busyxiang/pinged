@@ -73,9 +73,9 @@ internal fun CategoryBars(
             ) {
                 bars.bars.forEach { bar ->
                     val action = when (val target = bar.opens) {
-                        BarOpens.Uncategorized -> onOpenUncategorized?.let { BarAction(SORT_UNCATEGORIZED, it) }
-                        is BarOpens.Breakdown -> onOpenBreakdown?.let { open -> BarAction(breakdownLabel(bar.name)) { open(target.categoryId) } }
-                        is BarOpens.Folded -> onOpenFolded?.let { BarAction(foldedLabel(target.categories.size), it) }
+                        BarOpens.Uncategorized -> onOpenUncategorized?.let { TapAction(SORT_UNCATEGORIZED, it) }
+                        is BarOpens.Breakdown -> onOpenBreakdown?.let { open -> TapAction(breakdownLabel(bar.name)) { open(target.categoryId) } }
+                        is BarOpens.Folded -> onOpenFolded?.let { TapAction(foldedLabel(target.categories.size), it) }
                         null -> null
                     }
                     BarRow(bar, bars.greyed, action)
@@ -113,7 +113,7 @@ internal fun CategoryBars(
  * (the column's 9dp between them kept inside).
  */
 @Composable
-private fun BarRow(bar: Bar, greyed: Boolean, action: BarAction? = null) {
+private fun BarRow(bar: Bar, greyed: Boolean, action: TapAction? = null) {
     val click = if (action == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = action.label, onClick = action.onClick)
     if (bar.ruleBefore) {
         Column(click, verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -125,8 +125,8 @@ private fun BarRow(bar: Bar, greyed: Boolean, action: BarAction? = null) {
     BarLine(bar, greyed, click)
 }
 
-/** What a tap on a bar does, and its name to TalkBack. */
-private class BarAction(val label: String, val onClick: () -> Unit)
+/** What a tap on a bar or a `WHO GOT IT` row does, and its name to TalkBack. */
+internal class TapAction(val label: String, val onClick: () -> Unit)
 
 /** [BarRow]'s name, track and amount. */
 @Composable

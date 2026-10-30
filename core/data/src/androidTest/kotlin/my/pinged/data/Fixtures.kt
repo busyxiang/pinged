@@ -9,6 +9,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import java.io.File
 import java.io.FileInputStream
+import java.time.YearMonth
 import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.MatchType
@@ -288,4 +289,37 @@ fun damageMidFile(file: File) {
         raf.seek(at)
         raf.writeByte(original.toInt() xor 0xFF)
     }
+}
+
+/**
+ * 20,000 rows, about 830 a month from October 2024 to September 2026,
+ * across 500 merchants and the sixteen seeded categories, so Food &
+ * Drinks holds about 52 a month; one row in fifty awaits review and one
+ * in twenty is excluded. Merchants 0 to 99 are merged into 100 to 199.
+ * `merchantTotals`' constructed ledger, which Breakdown's and Merchant
+ * month's timings measure beside it.
+ */
+fun PingedDatabase.seedTheRankingsLedger() {
+    val categories = categoryDao().all().map { it.id }
+    val start = YearMonth.of(2024, 10).atDay(1)
+    runInTransaction {
+        (0 until 20_000).chunked(500).forEach { chunk ->
+            txnDao().insertAll(
+                chunk.map { i ->
+                    val day = start.plusDays((i * 731L) / 20_000)
+                    val merchant = "SHOP ${i % 500}"
+                    val pending = i % 50 == 0
+                    sampleTxn(
+                        amountSen = 100L + i % 9_000,
+                        occurredAt = 1_000L + i,
+                        localDate = LocalDates.of(day),
+                        categoryId = categories[i % categories.size],
+                        state = if (pending) TxnState.PENDING else TxnState.COMMITTED,
+                        isExcluded = !pending && i % 20 == 1,
+                    ).copy(merchantDisplay = merchant.lowercase(), merchantRaw = merchant, merchantKey = merchant)
+                },
+            )
+        }
+    }
+    (0 until 100).forEach { merchantIdentityDao().merge(source = "SHOP $it", target = "SHOP ${it + 100}", targetName = "Shop ${it + 100}") }
 }

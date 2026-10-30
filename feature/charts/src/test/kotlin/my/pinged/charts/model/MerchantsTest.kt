@@ -36,7 +36,8 @@ class MerchantsTest {
 
         assertEquals(listOf("Grab", "99 Speedmart", "Shell", "foodpanda", "Lotus's"), merchants.rows.map { it.name })
         // 64.20 + 33.80 + 12.50
-        assertEquals(MerchantRest("3 more merchants", "110.50"), merchants.rest)
+        assertEquals("3 more merchants", merchants.rest?.label)
+        assertEquals("110.50", merchants.rest?.amount)
     }
 
     @Test fun aNetNegativeMerchantSortsLastAndKeepsItsSign() {
@@ -46,7 +47,7 @@ class MerchantsTest {
         )
 
         assertEquals(listOf("Grab", "Watsons", "Shell"), merchants.rows.map { it.name })
-        assertEquals(listOf(MerchantRow("Shopee", "2×", "−45.00")), merchants.negatives)
+        assertEquals(listOf(MerchantRow("SHOPEE", "Shopee", "2×", "−45.00")), merchants.negatives)
     }
 
     @Test fun aNetNegativeMerchantPastTheTopFiveKeepsItsOwnRowAfterTheRest() {
@@ -54,8 +55,9 @@ class MerchantsTest {
 
         val merchants = merchants(of(*six.toTypedArray()), whole)
 
-        assertEquals("The refund was folded into the rest", MerchantRest("1 more merchant", "10.00"), merchants.rest)
-        assertEquals(listOf(MerchantRow("Shopee", "2×", "−45.00")), merchants.negatives)
+        assertEquals("The refund was folded into the rest", listOf("SHOP 6"), merchants.rest?.merchants?.map { it.identityKey })
+        assertEquals("10.00", merchants.rest?.amount)
+        assertEquals(listOf(MerchantRow("SHOPEE", "Shopee", "2×", "−45.00")), merchants.negatives)
     }
 
     @Test fun onlyRinggitIsRanked() {
@@ -84,6 +86,38 @@ class MerchantsTest {
     @Test fun oneLeftOverIsOneMoreMerchant() {
         val six = (1..6).map { Triple("Shop $it", 1_000L * (7 - it), 1) }.toTypedArray()
 
-        assertEquals(MerchantRest("1 more merchant", "10.00"), merchants(of(*six), whole).rest)
+        assertEquals(
+            MerchantRest("1 more merchant", "10.00", listOf(MerchantRow("SHOP 6", "Shop 6", "1×", "10.00"))),
+            merchants(of(*six), whole).rest,
+        )
+    }
+
+    /**
+     * Each row carries the identity it opens (#344), and the rest the merchants
+     * it folds, in the ranking's order and with the figures of a row, so the
+     * sheet they open on is the rest's own read and sums to it.
+     */
+    @Test fun theRestHoldsExactlyWhatItFoldsInTheRankingsOrder() {
+        val merchants = merchants(
+            of(
+                Triple("Grab", 31_240L, 18), Triple("99 Speedmart", 26_815L, 11), Triple("Shell", 21_000L, 4),
+                Triple("foodpanda", 18_690L, 9), Triple("Lotus's", 17_430L, 3), Triple("Tealive", 1_250L, 1),
+                Triple("Watsons", 6_420L, 2), Triple("Shopee", -4_500L, 2), Triple("Mr DIY", 1_250L, 5),
+            ),
+            whole,
+        )
+
+        assertEquals(listOf("GRAB", "99 SPEEDMART", "SHELL", "FOODPANDA", "LOTUS'S"), merchants.rows.map { it.identityKey })
+        assertEquals(
+            listOf(
+                MerchantRow("WATSONS", "Watsons", "2×", "64.20"),
+                // A tie, by identity.
+                MerchantRow("MR DIY", "Mr DIY", "5×", "12.50"),
+                MerchantRow("TEALIVE", "Tealive", "1×", "12.50"),
+            ),
+            merchants.rest?.merchants,
+        )
+        assertEquals("89.20", merchants.rest?.amount)
+        assertEquals(listOf("SHOPEE"), merchants.negatives.map { it.identityKey })
     }
 }

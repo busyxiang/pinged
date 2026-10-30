@@ -82,8 +82,8 @@ class BreakdownViewModelTest {
         withContext(Dispatchers.Main) { breakdown.rows.assignCategory(moved, groceries, teach = false) }.join()
 
         val after = breakdown(breakdown.read.state.value.answer!!)!!
-        assertEquals("RM34.40", after.figure)
-        assertEquals("1 TRANSACTION", after.count)
+        assertEquals("RM34.40", after.figures.figure)
+        assertEquals("1 TRANSACTION", after.figures.count)
         assertEquals(listOf("34.40" to "1×"), after.lines.map { it.amount to it.count })
         assertEquals(listOf(3_440L), breakdown.read.state.value.answer!!.rows.getValue(warung).map { it.txn.amountSen })
     }
@@ -120,8 +120,8 @@ class BreakdownViewModelTest {
         val read = breakdown.landed()
 
         val view = breakdown(read)!!
-        assertEquals("RM37.00", view.figure)
-        assertEquals("1 TRANSACTION", view.count)
+        assertEquals("RM37.00", view.figures.figure)
+        assertEquals("1 TRANSACTION", view.figures.count)
         assertEquals(listOf("37.00"), view.lines.map { it.amount })
         assertEquals(listOf(3_700L), read.rows.getValue(warung).map { it.txn.amountSen })
     }
@@ -144,7 +144,7 @@ class BreakdownViewModelTest {
         pay(3_700L, day = 16)
 
         assertEquals(1, holder().landed().notCaptured)
-        assertTrue(breakdown(holder().landed())!!.greyed)
+        assertTrue(breakdown(holder().landed())!!.figures.greyed)
     }
 
     private companion object {

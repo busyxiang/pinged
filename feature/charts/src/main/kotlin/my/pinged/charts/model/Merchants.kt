@@ -24,13 +24,21 @@ data class Merchants(
 /**
  * One ranked merchant under its identity's name (spec 6.4).
  *
+ * @property identityKey the identity, which a tap opens the month of (#344;
+ *   CONTEXT.md, Merchant month).
  * @property count its transactions, `18×`.
  * @property amount its signed net without the symbol, `312.40` or `−45.00`.
  */
-data class MerchantRow(val name: String, val count: String, val amount: String)
+data class MerchantRow(val identityKey: String, val name: String, val count: String, val amount: String)
 
-/** `N more merchants` and their summed net, signed, without the symbol. */
-data class MerchantRest(val label: String, val amount: String)
+/**
+ * `N more merchants` and their summed net, signed, without the symbol.
+ *
+ * @property merchants the merchants it folds, in the ranking's order, each
+ *   as a row draws it: the `N more merchants` sheet's lines (#344), from this
+ *   same read, so the sheet sums to [amount].
+ */
+data class MerchantRest(val label: String, val amount: String, val merchants: List<MerchantRow>)
 
 /**
  * The ranking from the month's `TxnDao.merchantTotals`, read with no
@@ -53,7 +61,7 @@ fun merchants(totals: List<MerchantTotal>, trust: MonthTrust): Merchants {
     return Merchants(
         rows = ranked.take(TOP_MERCHANTS).map(::row),
         rest = rest.takeIf { it.isNotEmpty() }?.let {
-            MerchantRest(moreMerchants(it.size), ringgitDigits(it.sumOf { m -> m.netSen }))
+            MerchantRest(moreMerchants(it.size), ringgitDigits(it.sumOf { m -> m.netSen }), it.map(::row))
         },
         negatives = ordered.filter { it.netSen < 0L }.map(::row),
         greyed = trust.untrusted,
@@ -62,7 +70,7 @@ fun merchants(totals: List<MerchantTotal>, trust: MonthTrust): Merchants {
 
 /** A merchant under its identity's name, which a row with no name falls back to. */
 private fun row(total: MerchantTotal): MerchantRow =
-    MerchantRow(total.displayName ?: total.identityKey, "${total.txnCount}×", ringgitDigits(total.netSen))
+    MerchantRow(total.identityKey, total.displayName ?: total.identityKey, "${total.txnCount}×", ringgitDigits(total.netSen))
 
 /** How many merchants the ranking draws by name. */
 const val TOP_MERCHANTS = 5

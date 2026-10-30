@@ -828,6 +828,13 @@ object MerchantSql {
     const val KEYS_OF_IDENTITY = "(SELECT :identity UNION " + ALIASED_TO + ":identity)"
 
     /**
+     * [KEYS_OF_IDENTITY] for the identity the key bound as `:key` resolves to
+     * now ([IDENTITY_OF_KEY]): a row belongs to that merchant exactly when its
+     * `merchant_key` is in it, by the one-level rule `merge` keeps.
+     */
+    const val KEYS_OF_KEY = "(SELECT " + IDENTITY_OF_KEY + " UNION " + ALIASED_TO + IDENTITY_OF_KEY + ")"
+
+    /**
      * The rows a retroactive fix may count or move (#49): the merchant
      * identity `:identity`, committed and not excluded. Spelled as
      * [KEYS_OF_IDENTITY] rather than as [IDENTITY] over a join, so the

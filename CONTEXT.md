@@ -148,3 +148,7 @@ _Avoid_: user template, custom rule, user regex
 **Breakdown**:
 One category's month, by merchant identity: each merchant's net and how many of its transactions are counted, a line for the transactions with no merchant, and what was kept out. Its lines add up to the category's bar to the sen.
 _Avoid_: category detail, drill-down, category merchants
+
+**Merchant month**:
+One merchant identity's month, in every category: every counted ringgit payment to it, their net and how many there are, and what was kept out. Its net and count are the merchant's `WHO GOT IT` row to the sen. It follows the merchant: merged into another, it is that one's month.
+_Avoid_: merchant detail, merchant breakdown, merchant history

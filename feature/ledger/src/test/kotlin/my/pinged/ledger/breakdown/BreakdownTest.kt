@@ -69,9 +69,9 @@ class BreakdownTest {
         val view = breakdown(read())!!
 
         // 186.90 + 152.00 + 96.00 + 92.40 + 92.40 - 24.90
-        assertEquals("RM594.80", view.figure)
-        assertEquals("44 TRANSACTIONS", view.count)
-        assertEquals("SPENT IN SEPTEMBER 2026", view.label)
+        assertEquals("RM594.80", view.figures.figure)
+        assertEquals("44 TRANSACTIONS", view.figures.count)
+        assertEquals("SPENT IN SEPTEMBER 2026", view.figures.label)
         assertEquals("Food & Drinks", view.name)
         assertEquals("utensils", view.iconKey)
     }
@@ -79,29 +79,29 @@ class BreakdownTest {
     @Test fun anotherCurrencyIsNowhere() {
         val view = breakdown(read(lines = board + line("FOODPANDA", "foodpanda", 50_000L, 3, currency = "SGD")))!!
 
-        assertEquals("RM594.80", view.figure)
-        assertEquals("44 TRANSACTIONS", view.count)
+        assertEquals("RM594.80", view.figures.figure)
+        assertEquals("44 TRANSACTIONS", view.figures.count)
         assertEquals(1, view.lines.count { it.name == "foodpanda" })
         assertEquals("186.90", view.lines.single { it.name == "foodpanda" }.amount)
     }
 
     @Test fun theMonthStillRunningIsSoFarAndANetBelowZeroIsNet() {
-        assertEquals("SPENT SO FAR IN SEPTEMBER 2026", breakdown(read(today = LocalDate.of(2026, 9, 14)))!!.label)
+        assertEquals("SPENT SO FAR IN SEPTEMBER 2026", breakdown(read(today = LocalDate.of(2026, 9, 14)))!!.figures.label)
         val refunded = breakdown(read(lines = listOf(line("DOMINOS", "Domino's", -2_490L, 2))))!!
-        assertEquals("NET SPENT IN SEPTEMBER 2026", refunded.label)
-        assertEquals("−RM24.90", refunded.figure)
-        assertEquals("2 TRANSACTIONS", refunded.count)
-        assertEquals("1 TRANSACTION", breakdown(read(lines = listOf(line("ZUS", "ZUS", 100L, 1))))!!.count)
+        assertEquals("NET SPENT IN SEPTEMBER 2026", refunded.figures.label)
+        assertEquals("−RM24.90", refunded.figures.figure)
+        assertEquals("2 TRANSACTIONS", refunded.figures.count)
+        assertEquals("1 TRANSACTION", breakdown(read(lines = listOf(line("ZUS", "ZUS", 100L, 1))))!!.figures.count)
     }
 
     @Test fun anUntrustedMonthGreysAndSaysWhy() {
         val view = breakdown(read(notCaptured = 1))!!
 
-        assertTrue(view.greyed)
-        assertEquals("MAY BE INCOMPLETE · 1 DAY NOT CAPTURED", view.incomplete)
+        assertTrue(view.figures.greyed)
+        assertEquals("MAY BE INCOMPLETE · 1 DAY NOT CAPTURED", view.figures.incomplete)
         val trusted = breakdown(read())!!
-        assertFalse(trusted.greyed)
-        assertNull(trusted.incomplete)
+        assertFalse(trusted.figures.greyed)
+        assertNull(trusted.figures.incomplete)
     }
 
     @Test fun theKeptOutLineCountsItsRowsWhateverTheyNetTo() {
@@ -115,12 +115,12 @@ class BreakdownTest {
             ),
         )!!
 
-        assertEquals("RM0.00 kept out: 1 excluded, 1 awaiting review", view.keptOut)
-        assertEquals("1 awaiting review", view.awaitingReview)
-        assertNull(breakdown(read())!!.keptOut)
+        assertEquals("RM0.00 kept out: 1 excluded, 1 awaiting review", view.figures.keptOut)
+        assertEquals("1 awaiting review", view.figures.awaitingReview)
+        assertNull(breakdown(read())!!.figures.keptOut)
         val excludedOnly = breakdown(read(keptOut = listOf(NotInTotal(NotInTotalLine.TRANSFERS, "MYR", 2, 1_000L))))!!
-        assertEquals("RM10.00 kept out: 2 excluded, 0 awaiting review", excludedOnly.keptOut)
-        assertNull("Nothing held, nothing to open", excludedOnly.awaitingReview)
+        assertEquals("RM10.00 kept out: 2 excluded, 0 awaiting review", excludedOnly.figures.keptOut)
+        assertNull("Nothing held, nothing to open", excludedOnly.figures.awaitingReview)
     }
 
     @Test fun aCategoryThatIsGoneHasNoBreakdown() {

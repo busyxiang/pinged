@@ -256,6 +256,44 @@ class QueryPlanTest {
     }
 
     /**
+     * Merchant month's four reads (#344) seek the month in the range index, as
+     * the `WHO GOT IT` row they open from does, and never walk
+     * `index_txn_merchant_key`, which holds the merchant's every row ever. The
+     * rows' joins look up by key and come in the feed's order with no sort.
+     * The keys merged into the identity are a scan of `merchant_alias`, one
+     * row per merge the user made, run once and not per row, as
+     * [MerchantSql.KEYS_OF_IDENTITY]'s is. Its name, which no month bounds, is
+     * the one read that seeks the keys instead, and scans no `txn`.
+     */
+    @Test fun merchantMonthsReadsSeekTheMonthAndNotTheMerchant() {
+        // `:key` four times in [MerchantSql.KEYS_OF_KEY], once more in the
+        // aggregate's select list, and twice in the name's stored-name lookup.
+        val key = arrayOf<Any>("A", "A", "A", "A")
+        val month = plan(bindable(TxnDao.MERCHANT_MONTH_SQL), "A", "A", *MONTH, *key)
+        val rows = plan(bindable(TxnDao.MERCHANT_MONTH_ROWS_SQL), *MONTH, "MYR", *key)
+        val keptOut = plan(bindable(TxnDao.MERCHANT_MONTH_KEPT_OUT_SQL), *MONTH, *key)
+        val firstHeld = plan(bindable(TxnDao.MERCHANT_MONTH_FIRST_HELD_SQL), *MONTH, "MYR", *key)
+        for (p in listOf(month, rows, keptOut, firstHeld)) {
+            assertTrue(
+                "Does not read txn by a local_date range:\n$p",
+                p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at (local_date>? AND local_date<?)"),
+            )
+            assertTrue("Walks the merchant's index:\n$p", !p.contains("index_txn_merchant_key"))
+            assertTrue("Scans txn:\n$p", !p.contains("SCAN txn"))
+        }
+        assertLooksUpByKey(month, tables = listOf("merchant_name"))
+        listOf("merchant_alias", "merchant_name").forEach {
+            assertTrue("$it is not joined by its key:\n$rows", rows.contains("SEARCH $it USING INDEX sqlite_autoindex_${it}_1"))
+        }
+        // Not [assertNoSort]: the keys' `UNION` is a temp b-tree of its own.
+        assertTrue("The rows are sorted:\n$rows", !rows.contains("TEMP B-TREE FOR ORDER BY"))
+
+        val name = plan(bindable(TxnDao.MERCHANT_NAME_SQL), "A", "A", *key)
+        assertTrue("Does not seek the keys:\n$name", name.contains("SEARCH txn USING INDEX index_txn_merchant_key (merchant_key=?)"))
+        assertTrue("Scans txn:\n$name", !name.contains("SCAN txn"))
+    }
+
+    /**
      * The retroactive fix's row filter ([MerchantSql.ELIGIBLE]), as the count
      * and the move both use it: `merchant_key IN (...)` is a seek on
      * `index_txn_merchant_key` and not a scan of every payment. The bare

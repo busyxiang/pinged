@@ -948,6 +948,58 @@ interface TxnDao {
     fun breakdownFirstHeld(categoryId: Long, from: LocalDate, to: LocalDate, currency: String): Long?
 
     /**
+     * One merchant's `[from, to]` (CONTEXT.md, Merchant month), per currency:
+     * [merchantTotals]' line for the identity [key] resolves to now, to the
+     * sen, its name included, with no `LIMIT` to fall under. Empty when none
+     * of its rows is counted. Reading the key's identity afresh is what makes
+     * a merge or a separation re-read as the merchant the key is part of now.
+     *
+     * `+merchant_key`, so the period's rows are walked through
+     * `index_txn_local_date_occurred_at` and not the merchant's every row ever
+     * through `index_txn_merchant_key`; the same on all four of Merchant
+     * month's reads, which `QueryPlanTest` pins.
+     *
+     * Measured on emulator-5554 by `MerchantMonthTimingTest` over
+     * [merchantTotals]' constructed ledger -- 20,000 rows across 24 months,
+     * 500 merchants, 100 merged -- for a merged merchant's September, 2 of
+     * the month's 764 counted rows: median of 50 after 10 warm-up reads, this
+     * 0.40ms, [merchantMonthRows] 0.55ms, [merchantMonthKeptOut] 0.34ms,
+     * [merchantMonthFirstHeld] 0.28ms and [merchantName] 0.20ms, against
+     * [merchantTotals]' 1.58ms for the whole month in the same ledger. The
+     * month's walk is the cost, not the merchant's rows.
+     */
+    @Query(MERCHANT_MONTH_SQL)
+    fun merchantMonth(key: String, from: LocalDate, to: LocalDate): List<MerchantTotal>
+
+    /**
+     * The rows behind [merchantMonth]'s figure in [currency], across every
+     * category, drawn as the feed draws them, with its names and in its order
+     * (spec 9.3, Merchant month).
+     */
+    @Query(MERCHANT_MONTH_ROWS_SQL)
+    fun merchantMonthRows(key: String, from: LocalDate, to: LocalDate, currency: String): List<FeedRow>
+
+    /** [notInTotal] cut to the merchant [key] resolves to: Merchant month's kept-out line. */
+    @Query(MERCHANT_MONTH_KEPT_OUT_SQL)
+    fun merchantMonthKeptOut(key: String, from: LocalDate, to: LocalDate): List<NotInTotal>
+
+    /**
+     * The first of the merchant's rows in `[from, to]` awaiting review, in
+     * [currency], in the review inbox's own order, as [breakdownFirstHeld]
+     * picks a category's. Null when none is.
+     */
+    @Query(MERCHANT_MONTH_FIRST_HELD_SQL)
+    fun merchantMonthFirstHeld(key: String, from: LocalDate, to: LocalDate, currency: String): Long?
+
+    /**
+     * The name the merchant [key] resolves to goes by when [merchantMonth]
+     * has no line to name it: the user's, or else its latest row's own, of
+     * any month and any state but rejected. Null when no row carries it.
+     */
+    @Query(MERCHANT_NAME_SQL)
+    fun merchantName(key: String): String?
+
+    /**
      * Spec 15.2's search: the rows the feed would draw that match [text] and
      * [filter], in the feed's order and with its names, at most [limit] of
      * them. A list, as [dayRows] is: its reader re-reads on every change of
@@ -1257,6 +1309,13 @@ interface TxnDao {
          */
         const val NOT_IN_TOTAL_SQL = NOT_IN_TOTAL_ROWS + NOT_IN_TOTAL_GROUPS
 
+        /**
+         * A group's signed net: payments in, refunds out (spec 15.3), the one
+         * expression [MERCHANT_TOTALS_SQL], [BREAKDOWN_LINES_SQL] and
+         * [MERCHANT_MONTH_SQL] sum by, so a row and the screen it opens agree.
+         */
+        const val NET_SEN = "SUM(CASE WHEN txn.direction = 'EXPENSE' THEN txn.amount_sen ELSE -txn.amount_sen END)"
+
         const val MERCHANT_TOTALS_SQL =
             """
             SELECT g.identity_key AS identityKey,
@@ -1264,8 +1323,7 @@ interface TxnDao {
                    g.currency AS currency, g.net_sen AS netSen, g.txn_count AS txnCount
             FROM (
                 SELECT """ + MerchantSql.IDENTITY + """ AS identity_key, txn.currency AS currency,
-                       SUM(CASE WHEN txn.direction = 'EXPENSE' THEN txn.amount_sen
-                                ELSE -txn.amount_sen END) AS net_sen,
+                       """ + NET_SEN + """ AS net_sen,
                        COUNT(*) AS txn_count,
                        MAX(txn.occurred_at) AS last_at,
                        COALESCE(txn.merchant_display, txn.merchant_raw) AS derived
@@ -1292,8 +1350,7 @@ interface TxnDao {
                    g.currency AS currency, g.net_sen AS netSen, g.txn_count AS txnCount
             FROM (
                 SELECT """ + MerchantSql.IDENTITY + """ AS identity_key, txn.currency AS currency,
-                       SUM(CASE WHEN txn.direction = 'EXPENSE' THEN txn.amount_sen
-                                ELSE -txn.amount_sen END) AS net_sen,
+                       """ + NET_SEN + """ AS net_sen,
                        COUNT(*) AS txn_count,
                        MAX(txn.occurred_at) AS last_at,
                        COALESCE(txn.merchant_display, txn.merchant_raw) AS derived
@@ -1327,6 +1384,70 @@ interface TxnDao {
               AND +category_id = :categoryId
               AND currency = :currency
             """ + INBOX_ORDER + " LIMIT 1"
+
+        /** The rows of the merchant `:key` resolves to, `+merchant_key` for [merchantMonth]'s reason. */
+        const val OF_MERCHANT = "AND +txn.merchant_key IN " + MerchantSql.KEYS_OF_KEY + " "
+
+        /**
+         * [merchantMonth]'s query: [MERCHANT_TOTALS_SQL]'s grouping cut to one
+         * identity's keys, so its line and that identity's in the ranking are
+         * one sum over one set of rows, named by one rule.
+         */
+        const val MERCHANT_MONTH_SQL =
+            """
+            SELECT g.identity_key AS identityKey,
+                   COALESCE(merchant_name.display, g.derived) AS displayName,
+                   g.currency AS currency, g.net_sen AS netSen, g.txn_count AS txnCount
+            FROM (
+                SELECT """ + MerchantSql.IDENTITY_OF_KEY + """ AS identity_key, txn.currency AS currency,
+                       """ + NET_SEN + """ AS net_sen,
+                       COUNT(*) AS txn_count,
+                       MAX(txn.occurred_at) AS last_at,
+                       COALESCE(txn.merchant_display, txn.merchant_raw) AS derived
+                FROM txn
+                WHERE """ + COUNTED + """
+                  AND txn.local_date BETWEEN :from AND :to
+                  """ + OF_MERCHANT + """
+                GROUP BY txn.currency
+            ) g
+            LEFT JOIN merchant_name ON merchant_name.merchant_key = g.identity_key
+            """
+
+        /** [merchantMonthRows]' query: [FEED_ROWS] cut to the merchant's [COUNTED] rows, in [FEED_ORDER]. */
+        const val MERCHANT_MONTH_ROWS_SQL = FEED_ROWS + """
+            AND """ + COUNTED + """
+            AND txn.local_date BETWEEN :from AND :to
+            AND txn.currency = :currency
+            """ + OF_MERCHANT + FEED_ORDER
+
+        /** [merchantMonthKeptOut]'s query: [NOT_IN_TOTAL_SQL] and one clause. */
+        const val MERCHANT_MONTH_KEPT_OUT_SQL = NOT_IN_TOTAL_ROWS + OF_MERCHANT + NOT_IN_TOTAL_GROUPS
+
+        /** [merchantMonthFirstHeld]'s query. */
+        const val MERCHANT_MONTH_FIRST_HELD_SQL =
+            """
+            SELECT id FROM txn
+            WHERE +state = 'PENDING'
+              AND local_date BETWEEN :from AND :to
+              AND currency = :currency
+              """ + OF_MERCHANT + INBOX_ORDER + " LIMIT 1"
+
+        /**
+         * [merchantName]'s query. The latest row is the one that supplies the
+         * single `MAX`, SQLite's bare-column rule, as [MERCHANT_TOTALS_SQL]
+         * names a merchant; the keys are sought in `index_txn_merchant_key`,
+         * over all time, since no month bounds a name.
+         */
+        const val MERCHANT_NAME_SQL =
+            """
+            SELECT COALESCE(
+                (SELECT display FROM merchant_name WHERE merchant_key = """ + MerchantSql.IDENTITY_OF_KEY + """),
+                (SELECT derived FROM (
+                    SELECT COALESCE(merchant_display, merchant_raw) AS derived, MAX(occurred_at)
+                    FROM txn
+                    WHERE state != 'REJECTED' AND merchant_key IN """ + MerchantSql.KEYS_OF_KEY + """
+                )))
+            """
 
         const val MONTH_BY_CATEGORY_SQL =
             """

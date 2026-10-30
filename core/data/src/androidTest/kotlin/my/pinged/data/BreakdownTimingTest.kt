@@ -2,7 +2,6 @@ package my.pinged.data
 
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import my.pinged.data.entity.TxnState
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -24,7 +23,7 @@ class BreakdownTimingTest {
     @After fun tearDown() { db.close() }
 
     @Measurement @Test fun aCategorysMonthIsMeasuredBesideTheMerchantRanking() {
-        seed()
+        db.seedTheRankingsLedger()
         val month = YearMonth.of(2026, 9)
         val from = LocalDates.of(month.atDay(1))
         val to = LocalDates.of(month.atEndOfMonth())
@@ -45,36 +44,5 @@ class BreakdownTimingTest {
             }.drop(10).sorted()
             Log.i(OpenTest.REPORT_TAG, "breakdown [$name]: median %.2fms, longest %.2fms".format(millis[millis.size / 2], millis.last()))
         }
-    }
-
-    /**
-     * 20,000 rows, about 830 a month from October 2024 to September 2026,
-     * across 500 merchants and the sixteen seeded categories, so Food &
-     * Drinks holds about 52 a month; one row in fifty awaits review and one
-     * in twenty is excluded. Merchants 0 to 99 are merged into 100 to 199.
-     */
-    private fun seed() {
-        val categories = db.categoryDao().all().map { it.id }
-        val start = YearMonth.of(2024, 10).atDay(1)
-        db.runInTransaction {
-            (0 until 20_000).chunked(500).forEach { chunk ->
-                db.txnDao().insertAll(
-                    chunk.map { i ->
-                        val day = start.plusDays((i * 731L) / 20_000)
-                        val merchant = "SHOP ${i % 500}"
-                        val pending = i % 50 == 0
-                        sampleTxn(
-                            amountSen = 100L + i % 9_000,
-                            occurredAt = 1_000L + i,
-                            localDate = LocalDates.of(day),
-                            categoryId = categories[i % categories.size],
-                            state = if (pending) TxnState.PENDING else TxnState.COMMITTED,
-                            isExcluded = !pending && i % 20 == 1,
-                        ).copy(merchantDisplay = merchant.lowercase(), merchantRaw = merchant, merchantKey = merchant)
-                    },
-                )
-            }
-        }
-        (0 until 100).forEach { db.merchantIdentityDao().merge(source = "SHOP $it", target = "SHOP ${it + 100}", targetName = "Shop ${it + 100}") }
     }
 }
