@@ -200,6 +200,36 @@ class BarsTest {
         assertFalse(drawn(of(1L to 1_000L)).greyed)
     }
 
+    @Test fun everyCategoryBarOpensItsBreakdownNegativeOnesIncluded() {
+        val bars = drawn(of(1L to 84_250L, 6L to -4_500L, UNCATEGORIZED to 2_000L))
+
+        assertEquals(
+            listOf(BarOpens.Breakdown(1L), BarOpens.Breakdown(6L), BarOpens.Uncategorized),
+            bars.bars.map { it.opens },
+        )
+    }
+
+    @Test fun everythingElseOpensExactlyTheCategoriesItFoldsLargestFirst() {
+        val bars = drawn(
+            of(
+                1L to 74_210L, 2L to 49_830L, 3L to 41_000L, 4L to 35_280L, 5L to 30_150L,
+                8L to 6_800L, 6L to 13_390L, 7L to 9_600L, 9L to -500L,
+            ),
+        )
+
+        assertEquals(
+            "The fold's sheet lists the three past the top five, and never the negative one",
+            BarOpens.Folded(
+                listOf(
+                    FoldedCategory(6L, "Shopping", "133.90"),
+                    FoldedCategory(7L, "Health", "96.00"),
+                    FoldedCategory(8L, "Entertainment", "68.00"),
+                ),
+            ),
+            bars.bars.single { it.name == "Everything else (3)" }.opens,
+        )
+    }
+
     private companion object {
         const val UNCATEGORIZED = 99L
     }

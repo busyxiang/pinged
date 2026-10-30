@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.charts.model.Bar
+import my.pinged.charts.model.BarOpens
 import my.pinged.charts.model.Bars
 import my.pinged.charts.model.label
 import my.pinged.charts.model.line
@@ -44,12 +45,23 @@ import my.pinged.ui.theme.dottedRule
  * `WHERE IT WENT`: the category bars (spec 8, #81 Bars), from plain values.
  * [Bars.Nothing] draws nothing at all, heading included.
  *
- * The Uncategorized bar, the one [Bar.ruleBefore] marks, is the one control
- * here: it calls [onOpenUncategorized], `:app`'s Search over the month's rows
- * to sort (#273). The others are inert.
+ * Every drawn bar is a control (#342), opening what [Bar.opens] names: a
+ * category's bar calls [onOpenBreakdown] with its id, net-negative ones
+ * included; `Everything else (N)` calls [onOpenFolded], the sheet of the
+ * categories it folds; the Uncategorized bar, the one [Bar.ruleBefore] marks, calls
+ * [onOpenUncategorized], `:app`'s Search over the month's rows to sort
+ * (#273). Each carries its own click label for TalkBack. A bar whose
+ * callback is null is inert, and so is the suppressed sentence, which is
+ * not a bar.
  */
 @Composable
-internal fun CategoryBars(bars: Bars, modifier: Modifier = Modifier, onOpenUncategorized: (() -> Unit)? = null) {
+internal fun CategoryBars(
+    bars: Bars,
+    modifier: Modifier = Modifier,
+    onOpenUncategorized: (() -> Unit)? = null,
+    onOpenBreakdown: ((categoryId: Long) -> Unit)? = null,
+    onOpenFolded: (() -> Unit)? = null,
+) {
     if (bars is Bars.Nothing) return
     Column(modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp)) {
         Spacer(Modifier.fillMaxWidth().height(1.dp).dottedRule(atTop = true))
@@ -59,7 +71,15 @@ internal fun CategoryBars(bars: Bars, modifier: Modifier = Modifier, onOpenUncat
                 Modifier.padding(top = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                bars.bars.forEach { BarRow(it, bars.greyed, onOpenUncategorized.takeIf { _ -> it.ruleBefore }) }
+                bars.bars.forEach { bar ->
+                    val action = when (val target = bar.opens) {
+                        BarOpens.Uncategorized -> onOpenUncategorized?.let { BarAction(SORT_UNCATEGORIZED, it) }
+                        is BarOpens.Breakdown -> onOpenBreakdown?.let { open -> BarAction(breakdownLabel(bar.name)) { open(target.categoryId) } }
+                        is BarOpens.Folded -> onOpenFolded?.let { BarAction(foldedLabel(target.categories.size), it) }
+                        null -> null
+                    }
+                    BarRow(bar, bars.greyed, action)
+                }
             }
 
             is Bars.Suppressed -> Column(Modifier.padding(top = 12.dp)) {
@@ -87,32 +107,31 @@ internal fun CategoryBars(bars: Bars, modifier: Modifier = Modifier, onOpenUncat
  * untrusted month and the fill does not** (#73): the ramp means magnitude
  * only, and the shape still shows roughly where the money went.
  *
- * With [onClick] the rule and the bar are one button, laid out as the two
- * were apart (the column's 9dp between them kept inside), so the bars draw
- * the same either way.
+ * With [action] the bar is a button under its label, laid out as it is
+ * without one, so the bars draw the same either way. Where a rule sets it
+ * apart the rule and the bar are one button, laid out as the two were apart
+ * (the column's 9dp between them kept inside).
  */
 @Composable
-private fun BarRow(bar: Bar, greyed: Boolean, onClick: (() -> Unit)? = null) {
-    if (onClick != null) {
-        Column(
-            Modifier.clickable(role = Role.Button, onClickLabel = SORT_UNCATEGORIZED, onClick = onClick),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
+private fun BarRow(bar: Bar, greyed: Boolean, action: BarAction? = null) {
+    val click = if (action == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = action.label, onClick = action.onClick)
+    if (bar.ruleBefore) {
+        Column(click, verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Spacer(Modifier.fillMaxWidth().height(1.dp).dottedRule(atTop = true))
             BarLine(bar, greyed)
         }
         return
     }
-    if (bar.ruleBefore) {
-        Spacer(Modifier.fillMaxWidth().height(1.dp).dottedRule(atTop = true))
-    }
-    BarLine(bar, greyed)
+    BarLine(bar, greyed, click)
 }
+
+/** What a tap on a bar does, and its name to TalkBack. */
+private class BarAction(val label: String, val onClick: () -> Unit)
 
 /** [BarRow]'s name, track and amount. */
 @Composable
-private fun BarLine(bar: Bar, greyed: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun BarLine(bar: Bar, greyed: Boolean, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             bar.name,
             style = BarName,
@@ -190,6 +209,12 @@ internal fun CollectingBlock(collecting: Collecting, modifier: Modifier = Modifi
 
 /** The Uncategorized bar's action, to TalkBack (#273). */
 internal const val SORT_UNCATEGORIZED = "Find the payments to sort"
+
+/** A category bar's action, to TalkBack (#342): its Breakdown. */
+internal fun breakdownLabel(name: String): String = "Show who got $name"
+
+/** `Everything else (N)`'s action, to TalkBack (#342): the sheet of what it folds. */
+internal fun foldedLabel(n: Int): String = "Show the $n ${if (n == 1) "category" else "categories"} it holds"
 
 /**
  * The bar names: Karla at 12.5sp with no tracking. Material's body style

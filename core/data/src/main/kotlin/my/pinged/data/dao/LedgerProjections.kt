@@ -79,6 +79,19 @@ data class MerchantTotal(
 )
 
 /**
+ * One line of a category's month by merchant (CONTEXT.md, Breakdown), per
+ * currency: [MerchantTotal] within one category, and with a line for the rows
+ * that have no merchant, whose [identityKey] is null.
+ */
+data class BreakdownLine(
+    val identityKey: String?,
+    val displayName: String?,
+    val currency: String,
+    val netSen: Long,
+    val txnCount: Int,
+)
+
+/**
  * Which line of the "not in the total" block a row falls on (#89). The SQL
  * spells these constants as string literals and Room converts them by name, so
  * a rename fails `NotInTotalTest` at the read rather than at compile time.

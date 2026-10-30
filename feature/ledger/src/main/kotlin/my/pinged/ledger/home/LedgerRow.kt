@@ -75,6 +75,9 @@ import my.pinged.ui.theme.dashedOutline
  * offered on its body whatever its state: what Pinged read is worth seeing on
  * a held row too, and the screen offers only the answers the row can take.
  * Either is null where the screen routes nowhere.
+ *
+ * [greyed] draws the amount in the untrusted grey (#73), for a screen whose
+ * every figure greys in a month with a day not captured: Breakdown's (#342).
  */
 @Composable
 internal fun LedgerRow(
@@ -87,6 +90,7 @@ internal fun LedgerRow(
     onOpenReview: (txnId: Long) -> Unit,
     onOpenEntry: ((EditTarget) -> Unit)? = null,
     onOpenDetail: ((EditTarget) -> Unit)? = null,
+    greyed: Boolean = false,
 ) {
     val txn = row.txn
     val manual = txn.rawCaptureId == null
@@ -104,6 +108,7 @@ internal fun LedgerRow(
             null
         },
         onOpenReview = { onOpenReview(txn.id) },
+        greyed = greyed,
     )
 }
 
@@ -223,6 +228,7 @@ private fun TxnRow(
     uncategorized: Boolean,
     onCategorize: (() -> Unit)?,
     onOpenReview: () -> Unit,
+    greyed: Boolean = false,
 ) {
     val excluded = txn.isExcluded
     Row(
@@ -318,7 +324,7 @@ private fun TxnRow(
             (if (txn.direction == Direction.REFUND) "+" else "") +
                 money(txn.amountSen, txn.currency, symbol = false),
             style = MonoNumerals.copy(fontSize = 15.sp),
-            color = if (excluded) Muted else Ink,
+            color = if (excluded || greyed) Muted else Ink,
             textDecoration = if (excluded) TextDecoration.LineThrough else null,
         )
     }

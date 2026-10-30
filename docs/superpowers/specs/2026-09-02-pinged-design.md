@@ -1507,6 +1507,12 @@ name, proportional bar, and ringgit amount. Horizontal bars rather than a
 pie: Malaysian category names are long, and the top three categories will
 have similar magnitudes, which pies compare badly. Implementation is a
 column of `Row`s containing `Box(Modifier.fillMaxWidth(fraction))`.
+Every bar drawn opens what it stands for (#342): a category's bar,
+net-negative ones included, opens its **Breakdown** (`CONTEXT.md`; section
+9.3), the month's merchants within that category; `Everything else (N)`
+opens a sheet of the categories it folds; and Uncategorized opens Search
+for the payments to sort (#273). The suppressed sentence that stands in for
+the bars is not a bar and opens nothing.
 
 **Daily rhythm.** A calendar grid for the selected month, one cell per
 day, Monday-first, on the same single-hue ramp as the category bars. It
@@ -1952,6 +1958,52 @@ negative or not captured opens that day; a blank cell does nothing. (#69)
 - **Back,** by gesture or chevron, pops to Charts with the same transition
   either way. The selected month is in the Charts screen's saved state, never
   on a key, so it survives the push, the pop and a process death.
+
+**Breakdown.** One category's month by merchant identity (#342;
+`CONTEXT.md`, Breakdown), opened from that category's bar or from a line of
+the `Everything else` sheet. Bars draw only past the collecting gate, so it
+never opens on thin data.
+
+- **Key.** `Breakdown(categoryId, month)`, pushed on the Charts tab's own
+  stack as `Day(date)` is. Everything is read when it opens, in one
+  transaction. A category deleted or merged since pops the screen back to
+  Charts.
+- **Header.** The category's icon and name, `SPENT IN SEPTEMBER 2026` (the
+  hero's words: `NET SPENT` at or below zero, `SO FAR` in the month still
+  running), the category's signed ringgit net, which is the bar's figure,
+  and `N TRANSACTIONS`, the lines' counts summed. When the category's month
+  has any row kept out (N + M > 0, as on Day): `RM… kept out: N excluded, M
+  awaiting review`, the last part opening the review inbox on the first held
+  row of this category and month.
+- **Lines.** `WHO GOT IT`: one per merchant identity (section 6.4, so a
+  merge is one line), its name, `N×` and signed net, in the ranking's order:
+  largest first, the net-negative after, ties by identity. `N×` counts every
+  counted ringgit row, refunds included. The counted rows with no merchant
+  key, manual entries among them, are one `No merchant` line ranked by its
+  net, absent when there are none. Excluded and held rows enter no line, no
+  expansion and no count. Every sum is SQLite's (section 15.3), and the
+  lines add up to the bar to the sen.
+- **Expanding.** A tap on a line, `No merchant` included, opens under it
+  exactly the rows behind its figure, drawn by the ledger's own row with
+  `RowActions`, so the chip and the merchant sheet work; a second tap closes
+  it. Which lines are open is the screen's saved state, by identity; a line
+  gone from a read is no longer open. The holder re-reads after every write
+  it makes, so a row re-filed elsewhere takes its amount and count off.
+- **Honesty.** Ringgit only, as the bar is. In an untrusted month every
+  total and count greys, the names stay in ink, and `MAY BE INCOMPLETE · N
+  DAYS NOT CAPTURED` says why (#73). No percentages (#67).
+- **Reads.** `TxnDao.breakdownLines`, `breakdownRows`, `breakdownKeptOut` and
+  `breakdownFirstHeld`, each through `index_txn_local_date_occurred_at` with
+  `+category_id`, so a month's rows are walked rather than the category's
+  history; `QueryPlanTest` pins each, and `breakdownLines`' KDoc records the
+  cost. No schema change.
+
+**`Everything else` sheet.** `Everything else (N)` opens a bottom sheet over
+Charts, the `Months` sheet's kind of control: `AUGUST 2026 · 4 CATEGORIES ·
+328.90`, then one line per folded category, its name and signed amount,
+largest first, with no bar track, the amounts grey in an untrusted month. A
+line closes the sheet and opens that category's Breakdown. Its figures are
+the bar's own read. (#342)
 
 ### 9.4 Manual entry
 

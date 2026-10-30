@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import my.pinged.charts.model.BarOpens
+import my.pinged.charts.model.Bars
 import my.pinged.charts.model.ChartsState
 import my.pinged.charts.model.Chip
 import my.pinged.charts.model.Hero
@@ -64,7 +67,9 @@ import java.time.YearMonth
  * total" block's *N awaiting review* line, which `:app` routes to the review
  * inbox the same way. [onOpenUncategorized] is the Uncategorized bar
  * (#273): Search over the month drawn, filtered to [uncategorizedId], which
- * `:app` routes to `:feature:ledger` the same way.
+ * `:app` routes to `:feature:ledger` the same way. [onOpenBreakdown] is any
+ * other category's bar, or a line of the `Everything else` sheet (#342):
+ * that category's month by merchant, routed the same way.
  */
 @Composable
 fun ChartsScreen(
@@ -73,6 +78,7 @@ fun ChartsScreen(
     onDayClick: (LocalDate) -> Unit = {},
     onOpenReview: () -> Unit = {},
     onOpenUncategorized: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
+    onOpenBreakdown: ((month: YearMonth, categoryId: Long) -> Unit)? = null,
 ) {
     // Reads on each resume and on `Databases.rewrites`: `rememberReadState` owns
     // both triggers, and what the screen shows while a read is in flight.
@@ -96,6 +102,8 @@ fun ChartsScreen(
         onOpenUncategorized = onOpenUncategorized?.let { open ->
             read.answer?.let { r -> r.uncategorizedId?.let { id -> { open(r.month, id) } } }
         },
+        // The read's month, for the same reason.
+        onOpenBreakdown = onOpenBreakdown?.let { open -> read.answer?.let { r -> { id: Long -> open(r.month, id) } } },
     )
     if (monthsOpen) {
         MonthsSheetHost(
@@ -116,6 +124,10 @@ fun ChartsScreen(
  * goes in its own slot in the `Month` branch, drawn by its own composable from
  * its own field of `MonthView`, and nothing here is shared between slots
  * beyond the column.
+ *
+ * The `Everything else` sheet is drawn from [state]'s own fold, so its lines
+ * are the bar's, and only while the bars drawn have one: a read that no
+ * longer folds closes it.
  */
 @Composable
 internal fun ChartsScreenContent(
@@ -128,12 +140,15 @@ internal fun ChartsScreenContent(
     onOpenMonths: () -> Unit = {},
     onOpenReview: () -> Unit = {},
     onOpenUncategorized: (() -> Unit)? = null,
+    onOpenBreakdown: ((categoryId: Long) -> Unit)? = null,
     /** [state] is a month other than [month], whose read is in flight (#285). */
     rereading: Boolean = false,
     /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
     replacing: Boolean = false,
 ) {
     val monthName = monthName(month)
+    // Saveable, as `Months`' flag is, so a sheet open at a process death is open after it.
+    var foldOpen by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         when {
             // Before the state, which may still hold an older read: a screen
@@ -178,13 +193,42 @@ internal fun ChartsScreenContent(
                     RhythmGridSection(view.grid, onDayClick)
                     // Category bars, or collecting (#91): one block stands in
                     // for both the bars and the merchants while the gate is shut.
-                    if (view.collecting.open) CategoryBars(view.bars, onOpenUncategorized = onOpenUncategorized) else CollectingBlock(view.collecting)
+                    if (view.collecting.open) {
+                        CategoryBars(
+                            view.bars,
+                            onOpenUncategorized = onOpenUncategorized,
+                            onOpenBreakdown = onOpenBreakdown,
+                            onOpenFolded = onOpenBreakdown?.let { { foldOpen = true } },
+                        )
+                    } else {
+                        CollectingBlock(view.collecting)
+                    }
                     // Top merchants (#92), behind the same gate.
                     if (view.collecting.open) TopMerchants(view.merchants)
                     NotInTotalBlock(view.notInTotal, onOpenReview = onOpenReview)
                 }
             }
         }
+    }
+    val shown = (state as? ChartsState.Month)?.view?.takeIf { it.collecting.open && !unavailable && !replacing }
+    val drawn = shown?.bars as? Bars.Drawn
+    val fold = drawn?.bars?.firstOrNull { it.opens is BarOpens.Folded }
+    val folded = (fold?.opens as? BarOpens.Folded)?.categories
+    // Closed by a read that landed with nothing folded, not by one in flight,
+    // so a sheet restored after a process death waits for its read.
+    LaunchedEffect(shown, fold) { if (shown != null && fold == null) foldOpen = false }
+    if (foldOpen && fold != null && folded != null && onOpenBreakdown != null) {
+        EverythingElseSheet(
+            month = shown.header.month,
+            folded = folded,
+            amount = fold.amount,
+            greyed = drawn.greyed,
+            onOpen = { id ->
+                foldOpen = false
+                onOpenBreakdown(id)
+            },
+            onDismiss = { foldOpen = false },
+        )
     }
 }
 

@@ -9,6 +9,15 @@ plugins {
     // Kotlin compilation AGP has already registered rather than registering one
     // of its own; there is no kotlin{} extension involved and none is needed.
     alias(libs.plugins.compose.compiler)
+    // Breakdown's screenshots (#342), as :feature:charts takes its own.
+    // `verifyRoborazziDebug` is what compares; plain `test` only renders.
+    alias(libs.plugins.roborazzi)
+}
+
+roborazzi {
+    // Committed next to the tests that draw them, as :feature:charts' are;
+    // see that module's build file.
+    outputDir.set(file("src/test/screenshots"))
 }
 
 android {
@@ -124,6 +133,9 @@ dependencies {
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.androidx.compose.ui.test.junit4)
+    // The screenshots, on Robolectric NATIVE graphics.
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
 
     androidTestImplementation(composeBom)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
