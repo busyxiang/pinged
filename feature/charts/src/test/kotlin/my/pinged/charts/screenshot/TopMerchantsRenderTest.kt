@@ -74,10 +74,28 @@ class TopMerchantsRenderTest {
         TopMerchants(merchants(of(Triple("Shopee", -4_500L, 1), Triple("Lazada", -1_290L, 1)), MonthTrust(0)))
     }
 
-    private fun capture(name: String, content: @Composable () -> Unit) {
+    /**
+     * At CI's 320dp, the narrowest screen drawn: a long name beside a wide
+     * count and amount ends in an ellipsis, and the amount stays whole.
+     */
+    @Test fun aLongNameAtTheNarrowestWidthLeavesTheAmountWhole() = capture("merchants_long_name_320", width = 320) {
+        TopMerchants(
+            merchants(
+                of(
+                    Triple("Restoran Nasi Kandar Pelita Jalan Ampang Cawangan Kedua", 123_450L, 123),
+                    Triple("Grab", 3_120L, 2), Triple("Shell", 2_800L, 1), Triple("Watsons", 2_150L, 1),
+                    Triple("Mr DIY", 1_990L, 2), Triple("Tealive", 1_250L, 1),
+                    Triple("Kedai Runcit Haji Ismail Bin Abdullah Kampung Baru", -104_500L, 11),
+                ),
+                MonthTrust(0),
+            ),
+        )
+    }
+
+    private fun capture(name: String, width: Int = 390, content: @Composable () -> Unit) {
         compose.setContent {
             PingedTheme {
-                Box(Modifier.testTag(TAG).width(390.dp).background(Card).padding(bottom = 16.dp)) { content() }
+                Box(Modifier.testTag(TAG).width(width.dp).background(Card).padding(bottom = 16.dp)) { content() }
             }
         }
         compose.onNodeWithTag(TAG).captureRoboImage(golden(name))

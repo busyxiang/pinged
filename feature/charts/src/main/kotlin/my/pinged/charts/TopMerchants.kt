@@ -4,15 +4,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -25,6 +22,7 @@ import my.pinged.charts.model.Merchants
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.DashLeader
 import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.LeaderLine
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
@@ -92,8 +90,9 @@ internal fun TopMerchantsNotReadYet(modifier: Modifier = Modifier) {
 
 /**
  * A name, its count, a dotted leader to the right edge, and the amount, on
- * one baseline. A long name ends in an ellipsis at 220dp, so the leader and
- * the amount always keep their place.
+ * one baseline, laid out by [LeaderLine]: a long name ends in an ellipsis in
+ * what the count and the amount leave it, so at CI's 320dp the amount is
+ * never cut, as it was under a fixed 220dp cap on the name.
  *
  * With [action] the whole line is the button.
  */
@@ -107,40 +106,11 @@ private fun RuledLine(
     action: TapAction? = null,
 ) {
     val click = action?.let { Modifier.clickable(role = Role.Button, onClickLabel = it.label, onClick = it.onClick) } ?: Modifier
-    Row(Modifier.fillMaxWidth().then(click)) {
-        Text(
-            name,
-            style = MerchantName,
-            color = nameColour,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.alignByBaseline().widthIn(max = 220.dp),
-        )
-        if (count != null) {
-            Text(
-                count,
-                style = MonoNumerals.copy(fontSize = 11.sp),
-                color = figure,
-                modifier = Modifier.alignByBaseline().padding(start = 6.dp),
-            )
-        }
-        Box(
-            Modifier
-                .weight(1f)
-                .align(Alignment.Bottom)
-                .padding(start = 8.dp, end = 8.dp, bottom = 5.dp)
-                .height(1.dp)
-                .dottedRule(),
-        )
-        Text(
-            amount,
-            style = MonoNumerals.copy(fontSize = 14.sp, lineHeight = 20.sp),
-            color = figure,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.alignByBaseline(),
-        )
+    LeaderLine(Modifier.fillMaxWidth().then(click)) {
+        Text(name, style = MerchantName, color = nameColour, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+        if (count != null) Text(count, style = MonoNumerals.copy(fontSize = 11.sp), color = figure, maxLines = 1, softWrap = false)
+        Box(Modifier.dottedRule())
+        Text(amount, style = MonoNumerals.copy(fontSize = 14.sp, lineHeight = 20.sp), color = figure, maxLines = 1, softWrap = false)
     }
 }
 
