@@ -147,6 +147,21 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
 @Serializable data class Breakdown(val categoryId: Long, val month: String) : NavKey
 
 /**
+ * One merchant identity's month (#344; CONTEXT.md, Merchant month), pushed on
+ * the Charts tab's own stack, as [Breakdown] is, from a `WHO GOT IT` row or a
+ * line of the `N more merchants` sheet, and drawn by `:feature:ledger`'s
+ * `MerchantMonthScreen`.
+ *
+ * [merchantKey] and [month] (`YearMonth`'s `2026-09`) and nothing else: the
+ * screen reads everything when it opens, resolving the key to the merchant
+ * it is part of then, so a restored back stack shows nothing stale and a
+ * merge since reads as the merchant it joined.
+ *
+ * See [Ledger] for why it is registered nowhere.
+ */
+@Serializable data class MerchantMonth(val merchantKey: String, val month: String) : NavKey
+
+/**
  * Spec 9.2's review inbox (#109), pushed on the **current** tab's stack, so
  * back returns to wherever the user came from, and drawn by
  * `:feature:ledger`'s `ReviewScreen`.

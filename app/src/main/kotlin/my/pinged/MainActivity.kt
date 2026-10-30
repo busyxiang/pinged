@@ -46,6 +46,8 @@ import my.pinged.ledger.day.DayScreen
 import my.pinged.ledger.day.DayViewModel
 import my.pinged.ledger.detail.DetailScreen
 import my.pinged.ledger.detail.DetailViewModel
+import my.pinged.ledger.merchantmonth.MerchantMonthScreen
+import my.pinged.ledger.merchantmonth.MerchantMonthViewModel
 import my.pinged.ledger.search.SearchRoute
 import my.pinged.ledger.search.SearchStart
 import my.pinged.ledger.entry.EditTarget
@@ -344,6 +346,23 @@ class MainActivity : ComponentActivity() {
                                         onOpenUncategorized = { month, id -> tabs.push(Search(month.toString(), id)) },
                                         // Onto Charts' stack too, for the same reason.
                                         onOpenBreakdown = { month, id -> tabs.push(Breakdown(id, month.toString())) },
+                                        onOpenMerchant = { month, key -> tabs.push(MerchantMonth(key, month.toString())) },
+                                    )
+                                }
+                                entry<MerchantMonth> { key ->
+                                    // Built from the key alone, as Breakdown's holder is.
+                                    val merchant: MerchantMonthViewModel = viewModel {
+                                        MerchantMonthViewModel(application, key.merchantKey, YearMonth.parse(key.month))
+                                    }
+                                    MerchantMonthScreen(
+                                        viewModel = merchant,
+                                        // The same expression NavDisplay's onBack
+                                        // is given; see `pop`.
+                                        onBack = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onOpenReview = { focus -> tabs.push(Review(focus)) },
+                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                     )
                                 }
                                 entry<Breakdown> { key ->

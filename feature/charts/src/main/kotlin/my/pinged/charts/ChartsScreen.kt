@@ -69,7 +69,9 @@ import java.time.YearMonth
  * (#273): Search over the month drawn, filtered to [uncategorizedId], which
  * `:app` routes to `:feature:ledger` the same way. [onOpenBreakdown] is any
  * other category's bar, or a line of the `Everything else` sheet (#342):
- * that category's month by merchant, routed the same way.
+ * that category's month by merchant, routed the same way. [onOpenMerchant]
+ * is a `WHO GOT IT` row, or a line of the `N more merchants` sheet (#344):
+ * that merchant identity's month, routed the same way.
  */
 @Composable
 fun ChartsScreen(
@@ -79,6 +81,7 @@ fun ChartsScreen(
     onOpenReview: () -> Unit = {},
     onOpenUncategorized: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
     onOpenBreakdown: ((month: YearMonth, categoryId: Long) -> Unit)? = null,
+    onOpenMerchant: ((month: YearMonth, identityKey: String) -> Unit)? = null,
 ) {
     // Reads on each resume and on `Databases.rewrites`: `rememberReadState` owns
     // both triggers, and what the screen shows while a read is in flight.
@@ -104,6 +107,7 @@ fun ChartsScreen(
         },
         // The read's month, for the same reason.
         onOpenBreakdown = onOpenBreakdown?.let { open -> read.answer?.let { r -> { id: Long -> open(r.month, id) } } },
+        onOpenMerchant = onOpenMerchant?.let { open -> read.answer?.let { r -> { key: String -> open(r.month, key) } } },
     )
     if (monthsOpen) {
         MonthsSheetHost(
@@ -127,7 +131,8 @@ fun ChartsScreen(
  *
  * The `Everything else` sheet is drawn from [state]'s own fold, so its lines
  * are the bar's, and only while the bars drawn have one: a read that no
- * longer folds closes it.
+ * longer folds closes it. The `N more merchants` sheet is drawn from
+ * [state]'s own rest by the same rule (#344).
  */
 @Composable
 internal fun ChartsScreenContent(
@@ -141,6 +146,7 @@ internal fun ChartsScreenContent(
     onOpenReview: () -> Unit = {},
     onOpenUncategorized: (() -> Unit)? = null,
     onOpenBreakdown: ((categoryId: Long) -> Unit)? = null,
+    onOpenMerchant: ((identityKey: String) -> Unit)? = null,
     /** [state] is a month other than [month], whose read is in flight (#285). */
     rereading: Boolean = false,
     /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
@@ -149,6 +155,7 @@ internal fun ChartsScreenContent(
     val monthName = monthName(month)
     // Saveable, as `Months`' flag is, so a sheet open at a process death is open after it.
     var foldOpen by rememberSaveable { mutableStateOf(false) }
+    var restOpen by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         when {
             // Before the state, which may still hold an older read: a screen
@@ -204,7 +211,9 @@ internal fun ChartsScreenContent(
                         CollectingBlock(view.collecting)
                     }
                     // Top merchants (#92), behind the same gate.
-                    if (view.collecting.open) TopMerchants(view.merchants)
+                    if (view.collecting.open) {
+                        TopMerchants(view.merchants, onOpenMerchant = onOpenMerchant, onOpenRest = onOpenMerchant?.let { { restOpen = true } })
+                    }
                     NotInTotalBlock(view.notInTotal, onOpenReview = onOpenReview)
                 }
             }
@@ -228,6 +237,20 @@ internal fun ChartsScreenContent(
                 onOpenBreakdown(id)
             },
             onDismiss = { foldOpen = false },
+        )
+    }
+    val rest = shown?.merchants?.rest
+    LaunchedEffect(shown, rest) { if (shown != null && rest == null) restOpen = false }
+    if (restOpen && rest != null && onOpenMerchant != null) {
+        MoreMerchantsSheet(
+            month = shown.header.month,
+            rest = rest,
+            greyed = shown.merchants.greyed,
+            onOpen = { key ->
+                restOpen = false
+                onOpenMerchant(key)
+            },
+            onDismiss = { restOpen = false },
         )
     }
 }

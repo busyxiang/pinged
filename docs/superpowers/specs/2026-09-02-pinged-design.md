@@ -1624,6 +1624,11 @@ does not ship before section 6.4 does. Without the merge, a shop paid
 through two rails splits its total between two rows, and the export that
 measured this found it in 4 of 7 Scan & Pay merchants.
 
+Every row opens what it stands for (#344): a merchant's row, net-negative
+ones included, opens its **Merchant month** (`CONTEXT.md`; section 9.3),
+that identity's payments in the month across every category; and `N more
+merchants` opens a sheet of the merchants it folds.
+
 ### Honesty rules, enforced in the presentation layer
 
 - **No unfair period comparison.** A month is compared only with the
@@ -2004,6 +2009,51 @@ Charts, the `Months` sheet's kind of control: `AUGUST 2026 · 4 CATEGORIES ·
 largest first, with no bar track, the amounts grey in an untrusted month. A
 line closes the sheet and opens that category's Breakdown. Its figures are
 the bar's own read. (#342)
+
+**Merchant month.** One merchant identity's month across every category
+(#344; `CONTEXT.md`, Merchant month), opened from its `WHO GOT IT` row or a
+line of the `N more merchants` sheet. Like the ranking, it opens only past
+the collecting gate.
+
+- **Key.** `MerchantMonth(merchantKey, month)`, pushed on the Charts tab's
+  own stack as `Breakdown` is. Everything is read when it opens, in one
+  transaction, and the screen never closes of itself.
+- **Following a merge.** Every read resolves the key it holds to its
+  identity then (section 6.4: the merge target, or the key). Merging the
+  merchant into another from one of the screen's own rows re-reads as the
+  target's month; separating a key off re-reads without that key's rows; a
+  rename re-reads the name. A month left with no counted row is a zero
+  header with its kept-out line, under the name the merchant goes by.
+- **Header.** Breakdown's, with no icon: the identity's name as `WHO GOT IT`
+  names it, the hero's label, the signed ringgit net and `N TRANSACTIONS`.
+  Net and count are SQLite's sums over exactly the rows `merchantTotals`
+  counts for the identity, so they are its row to the sen and `N
+  TRANSACTIONS` counts refunds as `N×` does. When the merchant's month has
+  any row kept out: `RM… kept out: N excluded, M awaiting review`, the last
+  part opening the review inbox on the first held row of this merchant and
+  month in the inbox's own order.
+- **Rows.** One flat list, with no lines and no day headings: every counted
+  ringgit row of the identity in the month, in every category, in the
+  feed's order, drawn by the ledger's own row with `RowActions`, so the chip
+  and the merchant sheet work and a tap opens Detail or Manual entry.
+- **Honesty.** Ringgit only. In an untrusted month every total and count
+  greys, the names stay in ink, and `MAY BE INCOMPLETE · N DAYS NOT
+  CAPTURED` says why (#73). No percentages (#67).
+- **Reads.** `TxnDao.merchantMonth`, `merchantMonthRows`,
+  `merchantMonthKeptOut` and `merchantMonthFirstHeld`, each through
+  `index_txn_local_date_occurred_at` with `+merchant_key`, so a month's rows
+  are walked rather than the merchant's history, and `merchantName` for a
+  month with nothing counted; `QueryPlanTest` pins each, and
+  `merchantMonth`'s KDoc records the cost. No schema change.
+
+**`N more merchants` sheet.** `N more merchants` opens a bottom sheet over
+Charts, the `Everything else` sheet's kind: `SEPTEMBER 2026 · 12 MERCHANTS ·
+410.20`, then one line per folded merchant in the ranking's order (largest
+first, ties by identity), each with its name, `N×` and signed amount as a
+`WHO GOT IT` line. The net-negative merchants are not on it; they have rows
+of their own. The amounts grey in an untrusted month. A line closes the
+sheet and opens that merchant's month. Its figures are the ranking's own
+read, so the sheet and the row cannot disagree. (#344)
 
 ### 9.4 Manual entry
 

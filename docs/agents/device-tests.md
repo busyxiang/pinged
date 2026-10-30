@@ -65,7 +65,9 @@ Gradle's configuration cache can reuse the previous filter, so pass
 `class=` runs only its first class; for several, use
 `-Pandroid.testInstrumentationRunnerArguments.tests_regex='.*(A|B|C).*'`.
 A filter that ran too little looks like a pass: check the result XML's
-`classname`s.
+`classname`s. Alternate whole names, `.*(FooReadsTest|FooViewModelTest).*`:
+`.*Foo(Reads|ViewModel)Test.*` selected no test at all, and the build passed
+in 4s with an empty result XML. Why is not understood.
 
 Before calling work done, run the suites the change can reach, which is what
 CI's emulator job runs on a pull request into `main` that is not a draft, at

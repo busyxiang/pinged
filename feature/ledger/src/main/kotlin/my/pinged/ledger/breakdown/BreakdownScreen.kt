@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,11 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,59 +31,42 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.layout.FirstBaseline
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withLink
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import my.pinged.data.dao.FeedRow
 import my.pinged.ledger.BackChevron
+import my.pinged.ledger.MonthHeader
+import my.pinged.ledger.MonthHeaderNotReadYet
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.home.CategoryActions
-import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
-import my.pinged.ledger.home.OPEN_REVIEW
 import my.pinged.ledger.home.RowCategoryChooser
-import my.pinged.ledger.home.categoryIcon
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ledger.home.dayLabel
 import my.pinged.read.rememberReadState
-import my.pinged.ui.monthName
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.DashLeader
-import my.pinged.ui.theme.Display
-import my.pinged.ui.theme.DottedCell
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
+import my.pinged.ui.theme.LeaderLine
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.ReadingLayout
-import my.pinged.ui.theme.ReadingStatus
-import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dottedRule
-import my.pinged.ui.theme.heroFigure
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -181,7 +161,7 @@ internal fun BreakdownScreenContent(
                 replacing -> item { Notice(REPLACING_YOUR_DATA) }
                 storageUnavailable || read == null || view == null -> item { Notice(CANNOT_READ_YOUR_DATA) }
                 else -> {
-                    item { Header(view) { onOpenReview(read.firstHeld) } }
+                    item { MonthHeader(view.name, view.iconKey, view.figures) { onOpenReview(read.firstHeld) } }
                     item { TornEdge(Modifier.background(Paper).padding(top = 20.dp)) }
                     item {
                         Text(WHO_GOT_IT, style = MonoLabel, color = Muted, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 6.dp))
@@ -197,7 +177,7 @@ internal fun BreakdownScreenContent(
                             onOpenReview = onOpenReview,
                             onOpenEntry = onOpenEntry,
                             onOpenDetail = onOpenDetail,
-                            greyed = view.greyed,
+                            greyed = view.figures.greyed,
                         )
                     }
                     item { Spacer(Modifier.height(20.dp)) }
@@ -234,7 +214,7 @@ private fun LazyListScope.lines(
 ) {
     view.lines.forEach { line ->
         val open = line.key in expanded
-        item(key = "line-" + line.key.saved) { LineRow(line, open, view.greyed) { onToggle(line.key) } }
+        item(key = "line-" + line.key.saved) { LineRow(line, open, view.figures.greyed) { onToggle(line.key) } }
         val rows = read.rows[line.key]
         if (open && rows != null) {
             item(key = "rows-" + line.key.saved) {
@@ -265,51 +245,6 @@ private fun Chevron(onBack: () -> Unit) {
 }
 
 /**
- * The icon and name, the label, the figure, the incomplete line in an
- * untrusted month, the count and the kept-out line. The kept-out line's
- * *M awaiting review* is a link in the accent, as Day's is; the rest of the
- * line opens nothing.
- */
-@Composable
-private fun Header(view: Breakdown, onOpenReview: () -> Unit) {
-    val figure = if (view.greyed) Muted else Ink
-    Column(Modifier.fillMaxWidth().background(Paper).padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            categoryIcon(view.iconKey)?.let {
-                Icon(painterResource(it), contentDescription = null, tint = Ink, modifier = Modifier.size(22.dp))
-            }
-            Text(view.name, fontFamily = Display, fontSize = 25.sp, lineHeight = 1.15.em, color = Ink)
-        }
-        Text(view.label, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 12.dp))
-        Text(
-            heroFigure(view.figure, senSize = 26.sp, senColour = if (view.greyed) Faint else Muted),
-            style = FigureStyle,
-            color = figure,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        view.incomplete?.let { Text(it, style = MonoLabel, color = Stamp, modifier = Modifier.padding(top = 7.dp)) }
-        Text(view.count, style = MonoLabel, color = figure, modifier = Modifier.padding(top = 7.dp))
-        view.keptOut?.let { line ->
-            val review = view.awaitingReview
-            val text = buildAnnotatedString {
-                if (review == null) {
-                    append(line)
-                } else {
-                    append(line.removeSuffix(review))
-                    withLink(
-                        LinkAnnotation.Clickable(
-                            tag = OPEN_REVIEW,
-                            styles = TextLinkStyles(SpanStyle(color = Stamp, textDecoration = TextDecoration.Underline)),
-                        ) { onOpenReview() },
-                    ) { append(review) }
-                }
-            }
-            Text(text, fontFamily = Body, fontSize = 14.sp, lineHeight = 20.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
-        }
-    }
-}
-
-/**
  * One line: the name, `N×`, a dotted leader, the signed net and the chevron
  * that says whether it is open, on one baseline as `WHO GOT IT` sets them.
  * The whole line is the button; at the board's 27dp it is above WCAG
@@ -326,50 +261,13 @@ private fun LineRow(line: Line, open: Boolean, greyed: Boolean, onClick: () -> U
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RuledLine(Modifier.weight(1f)) {
+        LeaderLine(Modifier.weight(1f)) {
             Text(line.name, style = MerchantName, color = if (line.noMerchant) Muted else Ink, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
             Text(line.count, style = MonoNumerals.copy(fontSize = 11.sp), color = figure, maxLines = 1, softWrap = false)
             Box(Modifier.dottedRule())
             Text(line.amount, style = MonoNumerals.copy(fontSize = 14.sp, lineHeight = 20.sp), color = figure, maxLines = 1, softWrap = false)
         }
         LineChevron(open, Modifier.padding(start = 6.dp))
-    }
-}
-
-/**
- * The name, the count, the leader and the amount, on the name's baseline.
- *
- * The count and the amount are measured first, and the name gets what is
- * left after them and the leader's 12dp least, so a long name ends in an
- * ellipsis and never pushes the amount out of the line. At CI's 320dp the
- * board's 220dp name cap did: "Restoran Sri Melayu Masakan Kampung Baru"
- * cut the 99.80 beside it to "99.". The leader takes whatever the name does
- * not, 5dp above the line's foot.
- */
-@Composable
-private fun RuledLine(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Layout(content, modifier) { measurables, constraints ->
-        val (nameM, countM, leaderM, amountM) = measurables
-        val countGap = 6.dp.roundToPx()
-        val leaderGap = 8.dp.roundToPx()
-        val count = countM.measure(Constraints())
-        val amount = amountM.measure(Constraints())
-        val fixed = count.width + countGap + 2 * leaderGap + amount.width
-        val name = nameM.measure(Constraints(maxWidth = (constraints.maxWidth - fixed - 12.dp.roundToPx()).coerceAtLeast(0)))
-        val leaderWidth = (constraints.maxWidth - fixed - name.width).coerceAtLeast(0)
-        val leader = leaderM.measure(Constraints.fixed(leaderWidth, 1.dp.roundToPx()))
-        val baseline = maxOf(name[FirstBaseline], count[FirstBaseline], amount[FirstBaseline])
-        val height = maxOf(
-            baseline + (name.height - name[FirstBaseline]),
-            baseline + (count.height - count[FirstBaseline]),
-            baseline + (amount.height - amount[FirstBaseline]),
-        )
-        layout(constraints.maxWidth, height) {
-            name.place(0, baseline - name[FirstBaseline])
-            count.place(name.width + countGap, baseline - count[FirstBaseline])
-            leader.place(name.width + countGap + count.width + leaderGap, height - 5.dp.roundToPx() - leader.height)
-            amount.place(constraints.maxWidth - amount.width, baseline - amount[FirstBaseline])
-        }
     }
 }
 
@@ -386,29 +284,15 @@ private fun LineChevron(open: Boolean, modifier: Modifier = Modifier) {
 
 /**
  * The read in flight: `design/LoadingBreakdown.dc.html`, or `LoadingWaiting`'s
- * status line while an export or the integrity check holds the database. The
- * month is the key's, and whether it is still running is the clock's; the
- * category's name is a read, so a dotted cell and rule stand where the board
- * draws it. The figure is the hero's dash, and four leaders end in dashes.
+ * status line while an export or the integrity check holds the database:
+ * [MonthHeaderNotReadYet] with the category's icon cell, and four leaders
+ * ending in dashes.
  */
 @Composable
 private fun NotReadYet(month: YearMonth, today: LocalDate, modifier: Modifier = Modifier) {
     ReadingLayout(modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxSize().clipToBounds()) {
-            Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DottedCell(Modifier.size(22.dp))
-                    Box(Modifier.widthIn(min = 140.dp).height(20.dp).dottedRule())
-                }
-                Text(
-                    (if (month == YearMonth.from(today)) "SPENT SO FAR IN " else "SPENT IN ") + monthName(month),
-                    style = MonoLabel,
-                    color = Muted,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-                Text(HERO_NOT_READ_YET, style = FigureStyle, color = Rule, modifier = Modifier.padding(top = 4.dp))
-                ReadingStatus(Modifier.padding(top = 7.dp))
-            }
+            MonthHeaderNotReadYet(month, today, icon = true)
             TornEdge(Modifier.padding(top = 20.dp))
             Column(
                 Modifier
@@ -447,9 +331,6 @@ internal const val HIDE_ROWS = "Hide its transactions"
 
 /** The rows under an open line, as a test finds them. */
 internal const val EXPANSION = "breakdown-expansion"
-
-/** The board's 46px serif figure; [heroFigure] sets its sen at 26. */
-private val FigureStyle = TextStyle(fontFamily = Display, fontSize = 46.sp, lineHeight = 1.05.em)
 
 /** The merchant names, as `WHO GOT IT` sets them. */
 private val MerchantName: TextStyle = TextStyle(fontFamily = Body, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
