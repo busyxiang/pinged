@@ -5,6 +5,14 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.15.0](https://github.com/busyxiang/pinged/compare/v0.14.0...v0.15.0) (2026-10-30)
+
+
+### Features
+
+* open a category's month by merchant from its Charts bar ([#348](https://github.com/busyxiang/pinged/issues/348)) ([88b837b](https://github.com/busyxiang/pinged/commit/88b837b5b344d92d2b28069242826675312c5fbf))
+* open a merchant's month from its WHO GOT IT row on Charts ([#351](https://github.com/busyxiang/pinged/issues/351)) ([a7eb2a3](https://github.com/busyxiang/pinged/commit/a7eb2a31aef588ca44a3c94f0c5b4500ae084d2f))
+
 ## [0.14.0](https://github.com/busyxiang/pinged/compare/v0.13.0...v0.14.0) (2026-10-26)
 
 
