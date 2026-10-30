@@ -12,10 +12,10 @@ These are the source of truth; the pages below are generated from them.
 |---|---|
 | First run | `Onboarding` `Stored` `Battery` `Sources` `Empty` |
 | Every day | `Main` `MainScrolled` `MainScrolled320` `MainEnd` `Inbox` `Detail` `DetailExcluded` `Cash` |
-| Looking back | `Charts` `ChartsMonth` `Day` `Search` |
+| Looking back | `Charts` `ChartsMonth` `Day` `Breakdown` `BreakdownUntrusted` `Search` |
 | When it breaks | `Stopped` `Backup` `Settings` |
-| While it loads | `LoadingSpending` `LoadingWaiting` `LoadingCharts` `LoadingInbox` `LoadingDetail` `LoadingDay` `LoadingList` `LoadingSettings` `LoadingSheet` `LoadingSearch` |
-| Sheets and lists | `Chooser` `Categories` `Category` `Merge` `Months` `MerchantSheet` `Export` `Wipe` `Teach` `PackImport` `Rules` `Unread` |
+| While it loads | `LoadingSpending` `LoadingWaiting` `LoadingCharts` `LoadingInbox` `LoadingDetail` `LoadingDay` `LoadingList` `LoadingSettings` `LoadingSheet` `LoadingSearch` `LoadingBreakdown` |
+| Sheets and lists | `Chooser` `Categories` `Category` `Merge` `Months` `EverythingElse` `MerchantSheet` `Export` `Wipe` `Teach` `PackImport` `Rules` `Unread` |
 | Rejected directions | `Quiet` `Warung` `Dark` |
 
 `canvas.json` — artboard layout, two pages. Only consumed by the Claude
@@ -52,7 +52,21 @@ RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded,
 four items awaiting review. Category bars sum to the hero total. Keep new
 mockups consistent with those figures.
 
-One board is pinned elsewhere on purpose: `ChartsMonth` shows the same person two
+Two boards are pinned elsewhere on purpose. `ChartsMonth` shows the same person two
 weeks later, on Wednesday 14 October, because a month still in progress is its
 subject. Its figures are its own: RM1,101.40 so far, which its grid days and
 its category bars both sum to.
+
+`Breakdown` opens the Food & Drinks bar on `Charts`: its lines, `No merchant`
+included, sum to that bar's RM842.50, and every merchant but foodpanda stays
+under Lotus's RM174.30 so that `WHO GOT IT` on `Charts` is still its top five.
+Every Food & Drinks merchant another board draws has its line, and the
+expanded one is `MainEnd`'s Restoran Nasi Kandar. Its one row awaiting review
+is taken to be `Inbox`'s unnamed RM45.00 debit, filed under Food & Drinks.
+`BreakdownUntrusted` is the same month with one day not captured, which the
+scenario does not have; it differs from `Breakdown` only in grey, its one
+explaining line and the board's note.
+
+`EverythingElse` is pinned to August 2026. `Charts` draws September as six
+bars, and folds only above six, so no September bar opens it. Its
+four categories are August's own and sum to RM328.90.
