@@ -4,6 +4,29 @@ Instrumented tests need an emulator or phone attached. `:core:parse` is a plain
 JVM module and has no instrumented source set, so anything device-specific is
 tested from `:feature:capture`.
 
+## Before writing a test
+
+Each line is a shape of test code that has flaked here, and passed on a dev
+emulator before it failed on CI. Its section has the cause, the figures and
+the way to make it fail on purpose.
+
+- A tap or read straight after `MainActivity` launches, with no
+  `compose.awaitTheTabBar()` first. [The app before its first
+  sample](#the-app-before-its-first-sample).
+- A tap with no `performScrollTo()` first, or `performScrollTo()` on a lazy
+  row the list has not composed. [CI's screen](#cis-screen).
+- A step after typing into a field, on a screen that measures its layout
+  once. [The keyboard](#the-keyboard).
+- An assert straight after `waitForIdle()` on a result that DataStore,
+  `Dispatchers.IO` or `runBlocking` produces, on the device or under
+  Robolectric. [Work the compose clock does not
+  drive](#work-the-compose-clock-does-not-drive).
+- A write straight after building a holder that reads in its `init`.
+  [A holder that reads on arrival](#a-holder-that-reads-on-arrival).
+
+A rule added for a new flake gets a line here too, written as the code a
+reader would see in their own test, not as the cause.
+
 ## The lease
 
 Sessions in other worktrees share the one emulator and install the same
@@ -84,7 +107,8 @@ result XML is at the test's own assertion.
 
 A session that fixes a flaky test also updates this file, in the same branch.
 Add the cause as a rule that stops the next test or screen from repeating
-it, with the figures that showed it. If an existing rule covers the cause,
+it, with the figures that showed it, and a line under [Before writing a
+test](#before-writing-a-test). If an existing rule covers the cause,
 explain why the rule was missed. A cause that stays only in the commit is
 found again by the next flake.
 
