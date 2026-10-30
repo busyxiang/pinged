@@ -150,5 +150,5 @@ One category's month, by merchant identity: each merchant's net and how many of 
 _Avoid_: category detail, drill-down, category merchants
 
 **Merchant month**:
-One merchant identity's month, in every category: every counted ringgit payment to it, their net and how many there are, and what was kept out. Its net and count are the merchant's `WHO GOT IT` row to the sen. It follows the merchant: merged into another, it is that one's month.
-_Avoid_: merchant detail, merchant breakdown, merchant history
+One merchant identity's month: every counted payment to it in ringgit, their net, how many there are, and what was kept out. Its net and count are the merchant's `WHO GOT IT` row to the sen. A merge changes which payments it holds; it never closes it.
+_Avoid_: merchant breakdown, merchant detail, merchant history
