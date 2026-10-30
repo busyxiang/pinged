@@ -21,9 +21,10 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /**
- * Charts' Uncategorized bar is the one bar that opens anything (#273): Search
- * over the month's rows to sort, with a click label for TalkBack as the "not
- * in the total" lines carry. Every other bar stays inert.
+ * Charts' Uncategorized bar opens Search over the month's rows to sort
+ * (#273), with a click label for TalkBack as the "not in the total" lines
+ * carry, and nothing else does: every other bar opens its Breakdown (#342),
+ * which `BarBreakdownTest` covers.
  */
 @RunWith(RobolectricTestRunner::class)
 class UncategorizedBarTest {
@@ -33,6 +34,7 @@ class UncategorizedBarTest {
     private val september = YearMonth.of(2026, 9)
     private val today = LocalDate.of(2026, 9, 20)
     private var opened = 0
+    private val breakdowns = mutableListOf<Long>()
 
     private fun draw() {
         val read = chartsRead(
@@ -52,6 +54,7 @@ class UncategorizedBarTest {
                     ChartsState.Month(monthView(read)),
                     unavailable = false,
                     onOpenUncategorized = { opened++ },
+                    onOpenBreakdown = { breakdowns += it },
                 )
             }
         }
@@ -69,9 +72,10 @@ class UncategorizedBarTest {
         bar.performScrollTo().performClick()
 
         assertEquals("The Uncategorized bar did not open its search", 1, opened)
+        assertEquals("The Uncategorized bar opened a Breakdown", emptyList<Long>(), breakdowns)
     }
 
-    @Test fun aNamedBarIsInert() {
+    @Test fun aNamedBarDoesNotOpenTheSearch() {
         draw()
 
         compose.onNodeWithText("Food & Drinks").performScrollTo().performClick()

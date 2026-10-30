@@ -132,6 +132,21 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
 @Serializable data class Day(val date: String) : NavKey
 
 /**
+ * One category's month by merchant (#342; CONTEXT.md, Breakdown), pushed on
+ * the Charts tab's own stack, as [Day] is, from a category bar or a line of
+ * the `Everything else` sheet, and drawn by `:feature:ledger`'s
+ * `BreakdownScreen`.
+ *
+ * [categoryId] and [month] (`YearMonth`'s `2026-09`) and nothing else: the
+ * screen reads everything when it opens, so a restored back stack shows
+ * nothing stale, and a category deleted or merged meanwhile pops it. Which
+ * lines are open is in the screen's own saved state.
+ *
+ * See [Ledger] for why it is registered nowhere.
+ */
+@Serializable data class Breakdown(val categoryId: Long, val month: String) : NavKey
+
+/**
  * Spec 9.2's review inbox (#109), pushed on the **current** tab's stack, so
  * back returns to wherever the user came from, and drawn by
  * `:feature:ledger`'s `ReviewScreen`.

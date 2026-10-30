@@ -40,6 +40,8 @@ import androidx.lifecycle.createSavedStateHandle
 import my.pinged.capture.CaptureAlerts
 import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
+import my.pinged.ledger.breakdown.BreakdownScreen
+import my.pinged.ledger.breakdown.BreakdownViewModel
 import my.pinged.ledger.day.DayScreen
 import my.pinged.ledger.day.DayViewModel
 import my.pinged.ledger.detail.DetailScreen
@@ -340,6 +342,28 @@ class MainActivity : ComponentActivity() {
                                         // Onto Charts' stack, as Day is: Back
                                         // returns to this month.
                                         onOpenUncategorized = { month, id -> tabs.push(Search(month.toString(), id)) },
+                                        // Onto Charts' stack too, for the same reason.
+                                        onOpenBreakdown = { month, id -> tabs.push(Breakdown(id, month.toString())) },
+                                    )
+                                }
+                                entry<Breakdown> { key ->
+                                    // Built from the key alone, as Day's holder is; the
+                                    // entry's own `createSavedStateHandle` keeps which
+                                    // lines are open across a process death.
+                                    val breakdown: BreakdownViewModel = viewModel {
+                                        BreakdownViewModel(application, key.categoryId, YearMonth.parse(key.month), createSavedStateHandle())
+                                    }
+                                    BreakdownScreen(
+                                        viewModel = breakdown,
+                                        // The same expression NavDisplay's onBack
+                                        // is given; see `pop`.
+                                        onBack = tabs::pop,
+                                        // A category deleted or merged since: back to Charts.
+                                        onGone = tabs::pop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onOpenReview = { focus -> tabs.push(Review(focus)) },
+                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                     )
                                 }
                                 entry<Day> { key ->

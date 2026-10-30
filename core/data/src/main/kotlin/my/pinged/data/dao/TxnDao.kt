@@ -895,6 +895,59 @@ interface TxnDao {
     fun merchantTotals(from: LocalDate, to: LocalDate, limit: Int): List<MerchantTotal>
 
     /**
+     * One category's `[from, to]` by merchant identity (CONTEXT.md,
+     * Breakdown): [merchantTotals] cut to [categoryId], and with the
+     * category's rows that have no merchant kept, as one line whose identity
+     * is null. So the lines of one currency sum to [monthByCategory]'s figure
+     * for the category, and their counts to every row in it.
+     *
+     * [COUNTED], per currency, signed, and grouped in SQL (spec 15.3). The
+     * name is [merchantTotals]', the identity's own or its latest row's, so a
+     * line and its `WHO GOT IT` row cannot name one merchant two ways.
+     * Unordered: the caller ranks, as Charts ranks [merchantTotals].
+     *
+     * `+category_id`, for the reason [TO_SORT_COUNT_SQL] gives, so the
+     * period's rows are walked through `index_txn_local_date_occurred_at`
+     * and not the category's every row ever: without it, on all four of
+     * Breakdown's reads, the planner took `index_txn_category_id`.
+     * `QueryPlanTest` pins it.
+     *
+     * Measured on emulator-5554 by `BreakdownTimingTest` over
+     * [merchantTotals]' constructed ledger -- 20,000 rows across 24 months,
+     * 500 merchants, 100 merged -- for Food & Drinks' September, about 52
+     * rows: median of 50 after 10 warm-up reads, this 0.58ms, [breakdownRows]
+     * for its busiest line 0.58ms, [breakdownKeptOut] 0.35ms and
+     * [breakdownFirstHeld] 0.32ms, against [merchantTotals]' 2.15ms for the
+     * whole month in the same ledger.
+     */
+    @Query(BREAKDOWN_LINES_SQL)
+    fun breakdownLines(categoryId: Long, from: LocalDate, to: LocalDate): List<BreakdownLine>
+
+    /**
+     * The rows behind one of [breakdownLines]' lines in [currency]: [identity]'s,
+     * or with a null [identity] the rows with no merchant. Drawn as the feed
+     * draws them, with its names and in its order (spec 9.3, Breakdown).
+     *
+     * `IS`, not `=`, so the null identity matches the null `merchant_key` and
+     * nothing else: [MerchantSql.IDENTITY] is null exactly when that is.
+     */
+    @Query(BREAKDOWN_ROWS_SQL)
+    fun breakdownRows(categoryId: Long, from: LocalDate, to: LocalDate, identity: String?, currency: String): List<FeedRow>
+
+    /** [notInTotal] cut to [categoryId]: Breakdown's kept-out line. */
+    @Query(BREAKDOWN_KEPT_OUT_SQL)
+    fun breakdownKeptOut(categoryId: Long, from: LocalDate, to: LocalDate): List<NotInTotal>
+
+    /**
+     * The first of [categoryId]'s rows in `[from, to]` awaiting review, in
+     * [currency], in the review inbox's own order ([AWAITING_REVIEW_SQL]'s),
+     * so the inbox opens on the first of its cards that Breakdown's
+     * *M awaiting review* counts. Null when none is.
+     */
+    @Query(BREAKDOWN_FIRST_HELD_SQL)
+    fun breakdownFirstHeld(categoryId: Long, from: LocalDate, to: LocalDate, currency: String): Long?
+
+    /**
      * Spec 15.2's search: the rows the feed would draw that match [text] and
      * [filter], in the feed's order and with its names, at most [limit] of
      * them. A list, as [dayRows] is: its reader re-reads on every change of
@@ -1038,6 +1091,9 @@ interface TxnDao {
         /** [awaitingReviewCount]'s query. */
         const val AWAITING_REVIEW_COUNT_SQL = "SELECT COUNT(*) FROM txn WHERE state = 'PENDING'"
 
+        /** The review inbox's order, newest first, which [breakdownFirstHeld] picks its first card by. */
+        const val INBOX_ORDER = "ORDER BY txn.occurred_at DESC, txn.id DESC"
+
         /**
          * [awaitingReview]'s query. Every join is by primary key; a manual
          * entry has no capture and draws no notification text.
@@ -1055,8 +1111,7 @@ interface TxnDao {
             LEFT JOIN category ON category.id = txn.category_id
             LEFT JOIN raw_capture ON raw_capture.id = txn.raw_capture_id
             WHERE txn.state = 'PENDING'
-            ORDER BY txn.occurred_at DESC, txn.id DESC
-            """
+            """ + INBOX_ORDER
 
         /**
          * [detail]'s query. Every join is by primary key, as
@@ -1172,6 +1227,23 @@ interface TxnDao {
             GROUP BY currency
             """
 
+        /** [NOT_IN_TOTAL_SQL] up to its `GROUP BY`, so [BREAKDOWN_KEPT_OUT_SQL] adds one clause and differs in nothing else. */
+        const val NOT_IN_TOTAL_ROWS =
+            """
+            SELECT CASE WHEN state = 'PENDING' THEN 'PENDING'
+                        WHEN exclusion_reason = 'USER' THEN 'USER_EXCLUDED'
+                        ELSE 'TRANSFERS' END AS line,
+                   currency,
+                   COUNT(*) AS txnCount,
+                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
+            FROM txn
+            WHERE (+state = 'PENDING' OR (+state = 'COMMITTED' AND is_excluded = 1))
+              AND local_date BETWEEN :from AND :to
+            """
+
+        /** [NOT_IN_TOTAL_SQL]'s grouping. */
+        const val NOT_IN_TOTAL_GROUPS = "GROUP BY line, currency"
+
         /**
          * [notInTotal]'s query. Every reason but `USER` is one a pack rule
          * set, so the `ELSE` is "Transfers, left out" by definition rather
@@ -1183,19 +1255,7 @@ interface TxnDao {
          * through every pending or committed row ever written.
          * `QueryPlanTest.theNotInTotalAggregateTakesThePeriodRange` pins it.
          */
-        const val NOT_IN_TOTAL_SQL =
-            """
-            SELECT CASE WHEN state = 'PENDING' THEN 'PENDING'
-                        WHEN exclusion_reason = 'USER' THEN 'USER_EXCLUDED'
-                        ELSE 'TRANSFERS' END AS line,
-                   currency,
-                   COUNT(*) AS txnCount,
-                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
-            FROM txn
-            WHERE (+state = 'PENDING' OR (+state = 'COMMITTED' AND is_excluded = 1))
-              AND local_date BETWEEN :from AND :to
-            GROUP BY line, currency
-            """
+        const val NOT_IN_TOTAL_SQL = NOT_IN_TOTAL_ROWS + NOT_IN_TOTAL_GROUPS
 
         const val MERCHANT_TOTALS_SQL =
             """
@@ -1219,6 +1279,54 @@ interface TxnDao {
             ORDER BY g.net_sen DESC
             LIMIT :limit
             """
+
+        /**
+         * [breakdownLines]' query: [MERCHANT_TOTALS_SQL]'s grouping within one
+         * category, with no `merchant_key IS NOT NULL`, so the rows with no
+         * merchant group under the null identity rather than being left out.
+         */
+        const val BREAKDOWN_LINES_SQL =
+            """
+            SELECT g.identity_key AS identityKey,
+                   COALESCE(merchant_name.display, g.derived) AS displayName,
+                   g.currency AS currency, g.net_sen AS netSen, g.txn_count AS txnCount
+            FROM (
+                SELECT """ + MerchantSql.IDENTITY + """ AS identity_key, txn.currency AS currency,
+                       SUM(CASE WHEN txn.direction = 'EXPENSE' THEN txn.amount_sen
+                                ELSE -txn.amount_sen END) AS net_sen,
+                       COUNT(*) AS txn_count,
+                       MAX(txn.occurred_at) AS last_at,
+                       COALESCE(txn.merchant_display, txn.merchant_raw) AS derived
+                FROM txn """ + MerchantSql.ALIAS_JOIN + """
+                WHERE """ + COUNTED + """
+                  AND txn.local_date BETWEEN :from AND :to
+                  AND +txn.category_id = :categoryId
+                GROUP BY identity_key, txn.currency
+            ) g
+            LEFT JOIN merchant_name ON merchant_name.merchant_key = g.identity_key
+            """
+
+        /** [breakdownRows]' query: [FEED_ROWS] cut to one line's [COUNTED] rows, in [FEED_ORDER]. */
+        const val BREAKDOWN_ROWS_SQL = FEED_ROWS + """
+            AND """ + COUNTED + """
+            AND txn.local_date BETWEEN :from AND :to
+            AND +txn.category_id = :categoryId
+            AND txn.currency = :currency
+            AND """ + MerchantSql.IDENTITY + """ IS :identity
+            """ + FEED_ORDER
+
+        /** [breakdownKeptOut]'s query: [NOT_IN_TOTAL_SQL] and one clause, `+category_id` for [breakdownLines]' reason. */
+        const val BREAKDOWN_KEPT_OUT_SQL = NOT_IN_TOTAL_ROWS + "AND +category_id = :categoryId " + NOT_IN_TOTAL_GROUPS
+
+        /** [breakdownFirstHeld]'s query. */
+        const val BREAKDOWN_FIRST_HELD_SQL =
+            """
+            SELECT id FROM txn
+            WHERE +state = 'PENDING'
+              AND local_date BETWEEN :from AND :to
+              AND +category_id = :categoryId
+              AND currency = :currency
+            """ + INBOX_ORDER + " LIMIT 1"
 
         const val MONTH_BY_CATEGORY_SQL =
             """

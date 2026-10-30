@@ -42,6 +42,7 @@ sealed interface Bars {
  * @property rampStep the `ChartRamp` step, darkest first; null fills grey.
  * @property quiet the name is drawn grey: `Everything else` and Uncategorized.
  * @property ruleBefore a dotted rule sets the bar apart: Uncategorized only.
+ * @property opens what a tap on the bar opens (#342); null for none.
  */
 data class Bar(
     val name: String,
@@ -51,7 +52,26 @@ data class Bar(
     val rampStep: Int?,
     val quiet: Boolean = false,
     val ruleBefore: Boolean = false,
+    val opens: BarOpens? = null,
 )
+
+/** What a bar opens (#342). */
+sealed interface BarOpens {
+    /** One category's month by merchant (CONTEXT.md, Breakdown), net-negative categories included. */
+    data class Breakdown(val categoryId: Long) : BarOpens
+
+    /**
+     * `Everything else (N)`: the sheet of the categories it folds, largest
+     * first, from the same read as the bar, so the sheet sums to it.
+     */
+    data class Folded(val categories: List<FoldedCategory>) : BarOpens
+
+    /** Search over the month's rows to sort (#273). */
+    data object Uncategorized : BarOpens
+}
+
+/** One line of the `Everything else` sheet: a folded category and its signed amount without the symbol. */
+data class FoldedCategory(val categoryId: Long, val name: String, val amount: String)
 
 /**
  * The bars for a month's [totals] by category (#81, Bars; #68). Only the
@@ -85,10 +105,13 @@ fun bars(
     val rest = ranked.drop(shown.size)
 
     val parts = buildList {
-        shown.forEachIndexed { i, it -> add(Part(nameOf(it, names), it.netSen, rampStep = i)) }
-        if (rest.isNotEmpty()) add(Part("Everything else (${rest.size})", rest.sumOf { it.netSen }, null, quiet = true))
-        negative.forEach { add(Part(nameOf(it, names), it.netSen, rampStep = null)) }
-        uncategorized?.let { add(Part(nameOf(it, names), it.netSen, null, quiet = true, ruleBefore = true)) }
+        shown.forEachIndexed { i, it -> add(Part(nameOf(it, names), it.netSen, rampStep = i, opens = BarOpens.Breakdown(it.categoryId))) }
+        if (rest.isNotEmpty()) {
+            val folded = BarOpens.Folded(rest.map { FoldedCategory(it.categoryId, nameOf(it, names), ringgitDigits(it.netSen)) })
+            add(Part("Everything else (${rest.size})", rest.sumOf { it.netSen }, null, quiet = true, opens = folded))
+        }
+        negative.forEach { add(Part(nameOf(it, names), it.netSen, rampStep = null, opens = BarOpens.Breakdown(it.categoryId))) }
+        uncategorized?.let { add(Part(nameOf(it, names), it.netSen, null, quiet = true, ruleBefore = true, opens = BarOpens.Uncategorized)) }
     }
     val largest = parts.maxOfOrNull { it.sen } ?: 0L
     if (largest <= 0L) {
@@ -101,7 +124,7 @@ fun bars(
         )
     }
     return Bars.Drawn(
-        parts.map { Bar(it.name, ringgitDigits(it.sen), it.sen, fraction(it.sen, largest), it.rampStep, it.quiet, it.ruleBefore) },
+        parts.map { Bar(it.name, ringgitDigits(it.sen), it.sen, fraction(it.sen, largest), it.rampStep, it.quiet, it.ruleBefore, it.opens) },
         greyed = trust.untrusted,
     )
 }
@@ -113,6 +136,7 @@ private data class Part(
     val rampStep: Int?,
     val quiet: Boolean = false,
     val ruleBefore: Boolean = false,
+    val opens: BarOpens? = null,
 )
 
 /** [sen] of [largest], clamped to `(0, 1]`; a bar at or below zero has no width. */

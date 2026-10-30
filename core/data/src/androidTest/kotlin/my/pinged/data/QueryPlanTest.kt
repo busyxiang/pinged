@@ -230,6 +230,32 @@ class QueryPlanTest {
     }
 
     /**
+     * Breakdown's four reads (#342) seek the month in the range index, as
+     * the Charts bar they open from does, and never walk
+     * `index_txn_category_id`, which holds the category's every row ever:
+     * `SEARCH`, since a `SCAN` of the range index names it too. The lines
+     * group as [theMerchantRankingTakesTheRangeIndexAndLooksIdentitiesUpByKey]'s
+     * do, and the rows come in the feed's order with no sort.
+     */
+    @Test fun breakdownsReadsSeekTheMonthAndNotTheCategory() {
+        val category = db.categoryDao().requireUncategorizedId()
+        val lines = plan(bindable(TxnDao.BREAKDOWN_LINES_SQL), *MONTH, category)
+        val rows = plan(bindable(TxnDao.BREAKDOWN_ROWS_SQL), *MONTH, category, "MYR", "A")
+        val keptOut = plan(bindable(TxnDao.BREAKDOWN_KEPT_OUT_SQL), *MONTH, category)
+        val firstHeld = plan(bindable(TxnDao.BREAKDOWN_FIRST_HELD_SQL), *MONTH, category, "MYR")
+        for (p in listOf(lines, rows, keptOut, firstHeld)) {
+            assertTrue(
+                "Does not read txn by a local_date range:\n$p",
+                p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at (local_date>? AND local_date<?)"),
+            )
+            assertTrue("Walks the category's index:\n$p", !p.contains("index_txn_category_id"))
+        }
+        assertLooksUpByKey(lines, tables = listOf("merchant_alias", "merchant_name"))
+        assertLooksUpByKey(rows)
+        assertNoSort(rows)
+    }
+
+    /**
      * The retroactive fix's row filter ([MerchantSql.ELIGIBLE]), as the count
      * and the move both use it: `merchant_key IN (...)` is a seek on
      * `index_txn_merchant_key` and not a scan of every payment. The bare
