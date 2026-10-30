@@ -141,3 +141,10 @@ _Avoid_: reject, dismiss, ignore rule
 **Taught message**:
 A rule the user made by tapping a message's amount and merchant on the Teach screen. It reads only messages of exactly that shape from that app, and only once every rule Pinged shipped with has failed. Its first three transactions wait for review. Settings lists each under MESSAGES, and deleting one leaves the transactions it wrote.
 _Avoid_: user template, custom rule, user regex
+
+
+### Charts
+
+**Breakdown**:
+One category's month, by merchant identity: each merchant's net and how many of its transactions are counted, a line for the transactions with no merchant, and what was kept out. Its lines add up to the category's bar to the sen.
+_Avoid_: category detail, drill-down, category merchants
