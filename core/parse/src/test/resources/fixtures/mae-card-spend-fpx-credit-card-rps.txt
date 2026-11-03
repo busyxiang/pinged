@@ -1,0 +1,16 @@
+package: com.maybank2u.life
+title: Maybank2u: Card Transaction
+expect: matched
+rule: mae-card-spend-v1
+amount_sen: 7500
+merchant: FPX-CREDIT CARD-RPS KUALA LUMPUR MYS
+merchant_display: Credit Card-rps Kuala Lumpur
+direction: EXPENSE
+# A real MAE card notification, copied from Pinged's own record of the
+# capture. The card's last four digits are masked as **** (CLAUDE.md,
+# fixtures). It is the card side of an FPX bill paid by card: MAE posted
+# it alongside "Successful payment of RM75.00 to IBILIK 02", which reads
+# like mae-fpx-card-funded-ibilik.txt. The merchant is the FPX gateway,
+# not the payee, so it shares no token with IBILIK 02 (issue #255).
+
+You've just spent RM 75.00 at FPX-CREDIT CARD-RPS KUALA LUMPUR MYS with your MasterCard Platinum ending ****. View your receipt now.
