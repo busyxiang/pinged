@@ -60,6 +60,7 @@ class RoundTripTest {
         "merchant_name" to source.merchantIdentityDao().allNames().byKey { it.merchantKey },
         "user_reject_rule" to source.userRejectRuleDao().all().byKey { it.id },
         "user_template_rule" to source.userTemplateRuleDao().all().byKey { it.id },
+        "standing_answer" to source.standingAnswerDao().all().byKey { it.id },
     )
 
     /**
@@ -124,7 +125,8 @@ class RoundTripTest {
         assertEquals(1, report.merchantNames)
         assertEquals(1, report.userRejectRules)
         assertEquals(1, report.userTemplateRules)
-        assertEquals(33, report.rows)
+        assertEquals(2, report.standingAnswers)
+        assertEquals(35, report.rows)
         assertEquals(Backup.FORMAT_VERSION, report.formatVersion)
         assertNotNull("The export stamps its own time and the report carries it", report.exportedAt)
 
@@ -208,6 +210,23 @@ class RoundTripTest {
         assertEquals(1, report.userRejectRules)
         assertEquals(0, report.userTemplateRules)
         assertEquals(0, restored.userTemplateRuleDao().countAll())
+    }
+
+    /** A format-5 file -- every export before spec 7.3's standing answers -- restores with none. */
+    @Test fun aFormatFiveFileRestoresWithNoStandingAnswers() {
+        val original = fresh()
+        seedOneOfEverything(original)
+        val formatFive = String(exportBytes(original), Charsets.UTF_8)
+            .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":5")
+            .let { it.substring(0, it.indexOf(",\"${Backup.STANDING_ANSWERS}\":")) + "}" }
+
+        val restored = fresh()
+        val report = ImportJson.read(restored, ByteArrayInputStream(formatFive.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(5, report.formatVersion)
+        assertEquals(1, report.userTemplateRules)
+        assertEquals(0, report.standingAnswers)
+        assertEquals(0, restored.standingAnswerDao().countAll())
     }
 
     /**

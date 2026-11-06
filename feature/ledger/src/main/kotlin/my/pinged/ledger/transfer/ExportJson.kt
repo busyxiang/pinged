@@ -16,6 +16,7 @@ import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.UserTemplateRule
 
 /**
@@ -103,7 +104,8 @@ object ExportJson {
             db.merchantIdentityDao().countAliases() +
             db.merchantIdentityDao().countNames() +
             db.userRejectRuleDao().countAll() +
-            db.userTemplateRuleDao().countAll()
+            db.userTemplateRuleDao().countAll() +
+            db.standingAnswerDao().countAll()
 
     /** The healthy path's rows: every one, read through [db]'s transaction. */
     private fun everyRowOf(db: PingedDatabase) = DocumentSource(
@@ -117,6 +119,7 @@ object ExportJson {
         merchantNames = { db.merchantIdentityDao().allNames() },
         userRejectRules = { db.userRejectRuleDao().all() },
         userTemplateRules = { db.userTemplateRuleDao().all() },
+        standingAnswers = { db.standingAnswerDao().all() },
     )
 
     /**
@@ -177,6 +180,7 @@ object ExportJson {
             written = writeWhole(w, MERCHANT_NAME_SECTION, source.merchantNames(), written, onProgress)
             written = writeWhole(w, USER_REJECT_RULE_SECTION, source.userRejectRules(), written, onProgress)
             written = writeWhole(w, USER_TEMPLATE_RULE_SECTION, source.userTemplateRules(), written, onProgress)
+            written = writeWhole(w, STANDING_ANSWER_SECTION, source.standingAnswers(), written, onProgress)
 
             w.endObject()
         }
@@ -287,6 +291,7 @@ internal class DocumentSource(
     val merchantNames: () -> List<MerchantName>,
     val userRejectRules: () -> List<UserRejectRule>,
     val userTemplateRules: () -> List<UserTemplateRule>,
+    val standingAnswers: () -> List<StandingAnswer>,
 )
 
 /**

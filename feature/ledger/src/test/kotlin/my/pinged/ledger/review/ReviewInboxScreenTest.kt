@@ -25,6 +25,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.entity.PendingReason
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.MERCHANT
 import my.pinged.ledger.SOURCE_LABEL
@@ -219,6 +220,43 @@ class ReviewInboxScreenTest {
             0,
             compose.onAllNodesWithText(busyLine(Operation.RESTORE, Withheld.ANSWERED)).fetchSemanticsNodes().size,
         )
+    }
+
+    /** Spec 7.3: Always is drawn beside Undo only while a Leave out offers it, and reports its tap. */
+    @Test fun alwaysIsDrawnOnlyWhenOfferedAndIsDisabledWhileTheLedgerIsReplaced() {
+        var always = 0
+        val busy = mutableStateOf<Operation?>(null)
+        val undoable = mutableStateOf(Undoable("ACCEPTED · RM650.00", rows = emptyList()))
+        compose.setContent {
+            PingedTheme {
+                ReviewInboxScreenContent(
+                    cards = emptyList(),
+                    storageUnavailable = false,
+                    busy = busy.value,
+                    onBack = {},
+                    onAnswer = { _, _ -> },
+                    undoable = undoable.value,
+                    onAlways = { always++ },
+                )
+            }
+        }
+        compose.onAllNodesWithText(ALWAYS).assertCountEquals(0)
+
+        val offer = AlwaysOffer(
+            StandingAnswer(matchedRuleId = "tng-reload-v1", sourcePackage = "my.com.tngdigital.ewallet", merchantKey = null, createdAt = 0L),
+            said = "ALWAYS LEAVING OUT · RM100.00",
+        )
+        undoable.value = Undoable("LEFT OUT · RM100.00", rows = emptyList(), always = offer)
+        compose.onNodeWithText(ALWAYS).assertIsEnabled().performClick()
+        assertEquals("Always did not report its tap", 1, always)
+
+        busy.value = Operation.RESTORE
+        compose.onNodeWithText(ALWAYS).assertIsNotEnabled().performClick()
+        assertEquals("Always was tapped through while the ledger was being replaced", 1, always)
+
+        undoable.value = Undoable("ALWAYS LEAVING OUT · RM100.00", rows = emptyList(), standing = 3L)
+        compose.onAllNodesWithText(ALWAYS).assertCountEquals(0)
+        compose.onNodeWithText("ALWAYS LEAVING OUT · RM100.00").assertIsDisplayed()
     }
 
     private fun content(cards: List<ReviewCard>) {

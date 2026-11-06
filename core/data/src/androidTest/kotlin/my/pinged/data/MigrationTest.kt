@@ -41,6 +41,7 @@ class MigrationTest {
         const val MIGRATED_2_TO_5 = "migration-2-5.db"
         const val MIGRATED_1_TO_5 = "migration-1-5.db"
         const val MIGRATED_TO_6 = "migration-%d-6.db"
+        const val MIGRATED_TO_7 = "migration-%d-7.db"
 
         /** One unread capture, in the columns every version from v1 shares. */
         const val CAPTURE_SQL =
@@ -318,6 +319,37 @@ class MigrationTest {
                 assertEquals("v$from's alias", if (from >= 2) 1L else 0L, v6.count("merchant_alias"))
                 assertEquals(0L, v6.count("user_template_rule"))
                 assertEquals(6L, v6.pragma("user_version"))
+            }
+        }
+    }
+
+    /**
+     * Spec 7.3's v6 -> v7: `standing_answer`, empty, and every row kept, from
+     * each released version as a phone that skipped the releases between takes
+     * it. v6's taught rule is the row the step before it added.
+     */
+    @Test fun everyReleasedVersionMigratesToSevenKeepingEveryRow() {
+        for (from in 1..6) {
+            val name = MIGRATED_TO_7.format(from)
+            helper.createDatabase(name, from).use { old ->
+                old.execSQL(CAPTURE_SQL)
+                // v2 added it.
+                if (from >= 2) old.execSQL("INSERT INTO merchant_alias (merchant_key, canonical_key) VALUES ('A', 'B')")
+                if (from >= 6) {
+                    old.execSQL(
+                        "INSERT INTO user_template_rule (source_package, pattern, direction, has_merchant_group, " +
+                            "match_count, sample_text, created_at) VALUES ('com.maybank2u.life', '^Paid$', " +
+                            "'EXPENSE', 0, 0, 'Paid', 1)",
+                    )
+                }
+            }
+
+            helper.runMigrationsAndValidate(name, 7, true, MIGRATION_3_4).use { v7 ->
+                assertEquals("v$from's capture", 1L, v7.count("raw_capture"))
+                assertEquals("v$from's alias", if (from >= 2) 1L else 0L, v7.count("merchant_alias"))
+                assertEquals("v$from's taught rule", if (from >= 6) 1L else 0L, v7.count("user_template_rule"))
+                assertEquals(0L, v7.count("standing_answer"))
+                assertEquals(7L, v7.pragma("user_version"))
             }
         }
     }

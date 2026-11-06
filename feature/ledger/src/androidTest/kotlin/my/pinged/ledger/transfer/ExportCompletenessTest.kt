@@ -13,6 +13,7 @@ import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.UserTemplateRule
 import org.json.JSONObject
 import org.junit.After
@@ -75,6 +76,7 @@ class ExportCompletenessTest {
         MERCHANT_NAME_SECTION to MerchantName::class.java,
         USER_REJECT_RULE_SECTION to UserRejectRule::class.java,
         USER_TEMPLATE_RULE_SECTION to UserTemplateRule::class.java,
+        STANDING_ANSWER_SECTION to StandingAnswer::class.java,
     )
 
     /**

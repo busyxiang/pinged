@@ -64,6 +64,7 @@ class ImportFailureTest {
         assertEquals("a merged merchant survived", 0, target.merchantIdentityDao().countAliases())
         assertEquals("a merchant's name survived", 0, target.merchantIdentityDao().countNames())
         assertEquals("an ignored message survived", 0, target.userRejectRuleDao().countAll())
+        assertEquals("a standing answer survived", 0, target.standingAnswerDao().countAll())
         assertEquals(
             "the seeded categories were deleted and not put back",
             16,
@@ -462,6 +463,65 @@ class ImportFailureTest {
         val target = fresh()
         val thrown = assertThrows(ImportIntegrityException::class.java) { importInto(target, document) }
         assertTrue(thrown.message!!, thrown.message!!.contains("ignored-message rule the backup does not contain"))
+        assertUntouched(target)
+    }
+
+    // ---- spec 7.3's standing answers ----------------------------------------
+
+    /** A standing answer with no rule could match nothing, and is refused by its column. */
+    @Test fun aStandingAnswerWithNoRuleIsRefused() {
+        val document = goodExport().editingOnly(Backup.STANDING_ANSWERS) {
+            it.replaceFirst("\"matched_rule_id\":\"mae-transferred-v1\"", "\"matched_rule_id\":null")
+        }
+        val target = fresh()
+        val thrown = assertThrows(ImportFormatException::class.java) { importInto(target, document) }
+        assertTrue(
+            "The message has to name the table and the column: ${thrown.message}",
+            thrown.message!!.contains("standing_answer") && thrown.message!!.contains("matched_rule_id"),
+        )
+        assertUntouched(target)
+    }
+
+    /** Two answers to one counterparty: the unique index refuses the second. */
+    @Test fun aDuplicateStandingAnswerToOneCounterpartyRollsTheWholeImportBack() {
+        val document = goodExport().editingOnly(Backup.STANDING_ANSWERS) {
+            it.replaceFirst(
+                "[{",
+                "[{\"id\":53,\"matched_rule_id\":\"mae-transferred-v1\",\"source_package\":\"com.maybank2u.life\"," +
+                    "\"merchant_key\":\"RAY FOO\",\"created_at\":9},{",
+            )
+        }
+        val target = fresh()
+        assertThrows(ImportIntegrityException::class.java) { importInto(target, document) }
+        assertUntouched(target)
+    }
+
+    /** A ledger holding nothing but a standing answer is not empty: the import would merge two sets of them. */
+    @Test fun importingIntoALedgerHoldingOnlyAStandingAnswerIsRefused() {
+        val document = goodExport()
+        val target = fresh()
+        target.standingAnswerDao().answer(
+            my.pinged.data.entity.StandingAnswer(matchedRuleId = "tng-reload-v1", sourcePackage = "my.com.tngdigital.ewallet", merchantKey = null, createdAt = 1L),
+        )
+
+        val thrown = assertThrows(ImportNotEmptyException::class.java) { importInto(target, document) }
+
+        assertTrue(thrown.message!!, thrown.message!!.contains("1 standing answer(s)"))
+        assertEquals("the target's own answer was replaced", listOf("tng-reload-v1"), target.standingAnswerDao().all().map { it.matchedRuleId })
+    }
+
+    /** Two answers with no counterparty, which the unique index lets through: the import's own check. */
+    @Test fun aDuplicateStandingAnswerWithNoCounterpartyRollsTheWholeImportBack() {
+        val document = goodExport().editingOnly(Backup.STANDING_ANSWERS) {
+            it.replaceFirst(
+                "[{",
+                "[{\"id\":53,\"matched_rule_id\":\"tng-reload-v0\",\"source_package\":\"my.com.tngdigital.ewallet\"," +
+                    "\"merchant_key\":null,\"created_at\":9},{",
+            )
+        }
+        val target = fresh()
+        val thrown = assertThrows(ImportIntegrityException::class.java) { importInto(target, document) }
+        assertTrue(thrown.message!!, thrown.message!!.contains("more than once"))
         assertUntouched(target)
     }
 

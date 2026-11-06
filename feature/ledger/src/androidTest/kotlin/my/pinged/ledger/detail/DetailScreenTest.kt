@@ -287,16 +287,23 @@ class DetailScreenTest {
         compose.onNodeWithText(CHANGE_CATEGORY).performScrollTo()
     }
 
-    @Test fun aTransferThePackExcludedIsNotTheUsersToCountBack() {
+    /** Spec 7.3's way back for a transfer Leave out or a standing answer left out wrongly. */
+    @Test fun countAsSpendingTakesBackATransferThePackExcluded() {
         val dao = context.freshLedger()
         val id = dao.insert(
             row(merchant = MERCHANT, excluded = ExclusionReason.TRANSFER).copy(rawCaptureId = capture()),
         )
         screen(id)
 
-        waitFor(DELETE)
-        compose.onAllNodesWithText(COUNT_AS_SPENDING).assertCountEquals(0)
+        waitFor(COUNT_AS_SPENDING)
         compose.onAllNodesWithText(NOT_SPENDING).assertCountEquals(0)
+        compose.onNodeWithText(COUNT_AS_SPENDING).performScrollTo().performClick()
+
+        waitFor(NOT_SPENDING)
+        dao.byId(id)!!.let {
+            assertFalse("Count as spending left a TRANSFER row excluded", it.isExcluded)
+            assertNull(it.exclusionReason)
+        }
     }
 
     @Test fun aNoteIsSavedAndLeavesTheRowUnedited() {

@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +50,7 @@ import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.parse.Direction
+import my.pinged.parse.ExclusionReason
 import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ledger.settings.grouped
@@ -71,9 +73,11 @@ import my.pinged.ui.theme.dottedRule
 /**
  * What the user has taught, and a way to forget it, drawn from
  * `design/Rules.dc.html`: learned merchants (#50) under MERCHANTS, spec 5.8's
- * taught messages under MESSAGES, and spec 5.7's "never a transaction" rules
- * under IGNORED. Read and delete only: a category is changed by tapping it
- * again in the chooser, and a message is taught again from the unread list.
+ * taught messages under MESSAGES, spec 5.7's "never a transaction" rules
+ * under IGNORED, and spec 7.3's standing answers under LEFT OUT. Read and
+ * delete only: a category is changed by tapping it again in the chooser, a
+ * message is taught again from the unread list, and an answer is given again
+ * from the review inbox.
  *
  * Read on each foreground, so a payment counted or a merge made elsewhere
  * shows in the PAYMENTS figure on return, and again when a restore or a delete
@@ -91,6 +95,7 @@ fun LearnedScreen(viewModel: LearnedViewModel, onBack: () -> Unit, modifier: Mod
         modifier,
         onDeleteIgnored = viewModel::deleteIgnored,
         onDeleteMessage = viewModel::deleteMessage,
+        onDeleteLeftOut = viewModel::deleteLeftOut,
         busy = busy,
     )
 }
@@ -103,6 +108,7 @@ internal enum class TaughtTab(val label: String, val nothing: String, val countI
     MERCHANTS("MERCHANTS", NOTHING_TAUGHT, { it.items.size }, paymentsLabel(NOT_READ_YET)),
     MESSAGES("MESSAGES", NO_MESSAGES, { it.messages.size }, "READ $NOT_READ_YET"),
     IGNORED("IGNORED", NOTHING_IGNORED, { it.ignored.size }, hidesLabel(NOT_READ_YET)),
+    LEFT_OUT("LEFT OUT", NOTHING_LEFT_OUT, { it.leftOut.size }, NOT_READ_YET),
 }
 
 /**
@@ -120,6 +126,7 @@ internal fun LearnedContent(
     initialTab: TaughtTab = TaughtTab.MERCHANTS,
     onDeleteMessage: (TaughtRuleRow) -> Unit = {},
     busy: Operation? = null,
+    onDeleteLeftOut: (LeftOut) -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val writable = busy == null
@@ -162,18 +169,24 @@ internal fun LearnedContent(
             TaughtTab.IGNORED -> items(state.ignored, key = { it.id }) { rule ->
                 IgnoredRow(rule, writable, onDelete = { onDeleteIgnored(rule) })
             }
+            TaughtTab.LEFT_OUT -> items(state.leftOut, key = { it.row.id }) { answer ->
+                LeftOutRow(answer, writable, onDelete = { onDeleteLeftOut(answer) })
+            }
         }
     }
 }
 
 /**
  * The board's chips, `MERCHANTS 38`: the selected one filled in [Stamp], the
- * other outlined. 30dp drawn, as the board sets them, in a 44dp target.
+ * others outlined. 30dp drawn, as the board sets them, in a 44dp target.
  * [count] null draws none, for `SettingsState.sourcesOn`'s reason.
+ *
+ * A FlowRow, so a chip that does not fit drops to a second row rather than
+ * off the screen: four do not fit CI's 320dp in one.
  */
 @Composable
 private fun Tabs(selected: TaughtTab, count: (TaughtTab) -> String?, onSelect: (TaughtTab) -> Unit) {
-    Row(Modifier.padding(start = 20.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+    FlowRow(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         TaughtTab.entries.forEach { tab ->
             val on = tab == selected
             val shape = RoundedCornerShape(2.dp)
@@ -244,6 +257,33 @@ private fun MessageRow(rule: TaughtRuleRow, writable: Boolean, onDelete: () -> U
             Text(rule.sampleText, style = MonoLabel.copy(letterSpacing = 0.sp, lineHeight = 18.sp), color = Muted)
             Text(messageLabel(rule), style = MonoLabel, color = Faint)
         }
+        DeleteButton(writable, onDelete)
+    }
+}
+
+/**
+ * One standing answer, in one line: its app, what it leaves out, and to whom
+ * ([leftOutLabel]). Deleting it sends later transfers back to review and
+ * changes no transaction.
+ */
+@Composable
+private fun LeftOutRow(answer: LeftOut, writable: Boolean, onDelete: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .dottedRule(atTop = false)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            leftOutLabel(answer),
+            fontFamily = Body,
+            fontWeight = FontWeight.Medium,
+            fontSize = 14.5.sp,
+            color = Ink,
+            modifier = Modifier.weight(1f),
+        )
         DeleteButton(writable, onDelete)
     }
 }
@@ -358,6 +398,22 @@ internal fun messageLabel(rule: TaughtRuleRow): String = listOfNotNull(
     "READ ${grouped(rule.matchCount)}",
 ).joinToString(Separator)
 
+/**
+ * A LEFT OUT row: `Maybank MAE · Transfers to RAY FOO`. The app's label, what
+ * the answer's rule suggests leaving out, and the counterparty when the
+ * answer has one.
+ */
+internal fun leftOutLabel(answer: LeftOut): String {
+    val what = when (answer.exclusion) {
+        ExclusionReason.TRANSFER -> "Transfers"
+        ExclusionReason.CARD_PAYMENT -> "Card payments"
+        ExclusionReason.ATM_WITHDRAWAL -> "ATM withdrawals"
+        ExclusionReason.USER -> "Payments"
+    }
+    val to = answer.row.counterparty?.let { " to $it" } ?: ""
+    return (answer.row.label ?: answer.row.sourcePackage) + Separator + what + to
+}
+
 /** The IGNORED row's count, in the board's voice. */
 internal fun hidesLabel(hidden: Int): String = hidesLabel(grouped(hidden))
 
@@ -365,6 +421,8 @@ private fun hidesLabel(hidden: String): String = "HIDES $hidden"
 internal const val DELETE = "Delete"
 internal const val NOTHING_IGNORED =
     "Nothing ignored. Tap 'Never a transaction' on a notification Pinged could not read."
+internal const val NOTHING_LEFT_OUT =
+    "Nothing left out for good. Tap 'Always' after leaving out a transfer in the review inbox."
 internal const val NO_MESSAGES =
     "No messages taught. Tap 'Teach Pinged this' on a notification Pinged could not read."
 internal const val NOTHING_TAUGHT =

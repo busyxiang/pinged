@@ -9,11 +9,14 @@ import my.pinged.data.LocalDates
 import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.StaleCaptureException
+import my.pinged.data.dao.StandingAnswerDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.ParseStatus
+import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.parse.DictionaryEntry
+import my.pinged.parse.ExclusionReason
 import my.pinged.parse.Filer
 import my.pinged.parse.MatchOutcome
 import my.pinged.parse.Merchant
@@ -54,19 +57,23 @@ import my.pinged.parse.TaughtTemplate
  * automatically, which the same section forbids. The pair reaches the review
  * inbox instead.
  *
- * **`exclusion_reason`.** A matched rule can carry one (spec 7.3), and it is
- * deliberately not written onto the transaction: spec 7.3 asks Leave out /
- * Keep as expense / Not a payment, so the exclusion is the user's answer, and
- * `is_excluded` with a reason means "already excluded" -- money out of every
- * total with nobody asked. The proposal survives on
- * `raw_capture.matched_rule_id`, from which `Graph.suggestedExclusion`
- * re-derives it when the user leaves the row out.
+ * **`exclusion_reason`, unless the user has already answered.** A matched
+ * rule can carry one (spec 7.3), and it is not written onto the transaction
+ * on the rule's say-so: spec 7.3 asks Leave out / Keep as expense / Not a
+ * payment, so the exclusion is the user's answer, and `is_excluded` with a
+ * reason means "already excluded" -- money out of every total with nobody
+ * asked. The proposal survives on `raw_capture.matched_rule_id`, from which
+ * `Graph.suggestedExclusion` re-derives it when the user leaves the row out.
+ * The one exception is a standing answer the user gave ([standingAnswers]),
+ * which [commit] consults on a capture's first read only.
  */
 internal class ParsePass(
     private val captures: RawCaptureDao,
     private val txns: TxnDao,
     /** Where a learned rule is looked up, by the capture's merchant identity. */
     private val merchants: MerchantIdentityDao,
+    /** Spec 7.3's standing answers, asked by [commit] for a transfer on its first read. */
+    private val standingAnswers: StandingAnswerDao,
     private val matcher: RuleMatcher,
     /**
      * Spec 5.8's taught rules ([TaughtTemplate.matcher]), asked only once
@@ -437,7 +444,7 @@ internal class ParsePass(
             }
         }
 
-        val decision = ConfidenceGate.decide(
+        val reasons = ConfidenceGate.reasons(
             confidence = outcome.confidence,
             kind = outcome.kind,
             merchantRaw = merchantRaw,
@@ -445,6 +452,7 @@ internal class ParsePass(
             duplicateSuspect = slotSuspectOf != null || layerTwoSuspect != null || unpaired,
             thresholdSen = checkLimitSen,
         )
+        val decision = ConfidenceGate.decide(reasons, leftOutAs = standingExclusion(capture, outcome, merchant.key, reasons))
 
         // Learned, then dictionary, then Uncategorized: [Filer]'s order. The
         // learned rule answers by `category.id`, so it wins whether or not
@@ -474,6 +482,8 @@ internal class ParsePass(
             confidence = outcome.confidence,
             state = decision.state,
             pendingReason = decision.reason,
+            isExcluded = decision.exclusion != null,
+            exclusionReason = decision.exclusion,
             createdAt = at,
             updatedAt = at,
         )
@@ -499,6 +509,36 @@ internal class ParsePass(
             packVersion = matcher.packVersion,
             taughtRuleId = taughtRuleId,
         )
+    }
+
+    /**
+     * The exclusion a standing answer (spec 7.3) writes for [capture], or null
+     * when none is consulted or none matches. The value is what Leave out
+     * would have written -- the rule's suggestion from [matcher], `TRANSFER`
+     * when it has none -- so the row is identical to a Leave out row.
+     *
+     * **Consulted on a capture's first read only**: `pack_version` still
+     * [NO_PACK], which every outcome a pack decided moves off. Layer 1's
+     * two drops keep [NO_PACK], and neither is ever handed back to `NEW`. A capture
+     * spec 5.5's re-parse or a taught rule handed back to `NEW` has been read
+     * before, and is not settled by an answer made since; a row already in
+     * the review inbox never comes back here at all.
+     *
+     * Looked up only when [ConfidenceGate.standingAnswerApplies], which no
+     * capture but a transfer passes. Outside `commitCapture`'s transaction, as
+     * the filing is: an answer deleted between the two settles one capture
+     * the user would have been asked about, which their Undo or Count as
+     * spending takes back. A damaged page throws, as the filing's does.
+     */
+    private fun standingExclusion(
+        capture: RawCapture,
+        outcome: MatchOutcome.Matched,
+        merchantKey: String?,
+        reasons: Set<PendingReason>,
+    ): ExclusionReason? {
+        if (capture.packVersion != NO_PACK || !ConfidenceGate.standingAnswerApplies(reasons)) return null
+        standingAnswers.idFor(outcome.ruleId, capture.sourcePackage, merchantKey) ?: return null
+        return matcher.suggestedExclusion(capture.sourcePackage, outcome.ruleId) ?: ExclusionReason.TRANSFER
     }
 
     /**

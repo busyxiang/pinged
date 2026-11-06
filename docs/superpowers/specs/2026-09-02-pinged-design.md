@@ -620,6 +620,26 @@ references the table: a transaction names its rule only as text in
 `raw_capture.matched_rule_id` (`taught-<id>`), so deleting one leaves what it
 wrote untouched.
 
+### `standing_answer`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | Long PK | |
+| matched_rule_id | Text | the rule that read the transfer, as `raw_capture.matched_rule_id` stores it |
+| source_package | Text | the app |
+| merchant_key | Text? | `txn.merchant_key` as the rule read it; null for none, which matches only none |
+| created_at | Long | |
+
+The user's "always leave out" on a transfer card (section 7.3). The three
+key columns are unique together, compared exactly: a rule's next version is
+another id, and a merge (section 6.4) neither moves nor copies an answer,
+because the key is the merchant key and not its identity. SQLite's unique
+index treats NULLs as distinct, so it covers only an answer with a
+counterparty: the DAO checks with `IS` before it inserts, and an import
+refuses a file holding two answers of one key. Nothing references the table
+and no `txn` column records that an answer wrote a row, so deleting one
+changes no row. Added in schema v7 and backup format 6.
+
 ### `capture_source`
 
 | Column | Type | Notes |
@@ -1544,7 +1564,8 @@ self, and ATM withdrawals as `kind: TRANSFER_SUSPECT` with an
 section should not be read as saying otherwise.** A tagged capture is
 written with `is_excluded = false` and `exclusion_reason = null`, and lands
 `PENDING` — so it is not in any total, but it has not been silently removed
-from one either. The distinction matters: auto-exclusion would mean money
+from one either — unless the user has already answered for it with a
+standing answer (below). The distinction matters: auto-exclusion would mean money
 left the totals without the user being asked, which is the same class of
 silent wrongness as dropping a duplicate. The pack's `exclusion_reason` is a
 **suggestion**, used to pre-select the inbox's answer, and it needs no
@@ -1562,11 +1583,38 @@ loaded pack's rule `matched_rule_id` names, searched among the capture's
 package's rules and then the shared rules. A rule no longer in the pack, or
 one that suggests no reason, gives `TRANSFER`.
 
-**"Always exclude Touch 'n Go reloads" waits for a user-rules milestone.** It
-needs a standing rule, and the schema can store none: `merchant_rule` has no
-kind or exclusion column, and `user_reject_rule` decides only what the unread
-list shows (section 5.7), never what the ledger counts. Until then every such
-capture is asked about.
+**A standing answer answers for the user afterwards.** After a Leave out on a
+transfer card, the snackbar offers **Always** beside Undo. It stores a
+standing answer (`standing_answer`, section 4) keyed on the rule that read the
+capture, its app and its `merchant_key`: so a Touch 'n Go reload's answer
+covers every reload, which reads no counterparty, while a MAE transfer's
+covers transfers to that one counterparty. Always is offered on every Leave
+out of a transfer card whose capture names its rule, unless an answer of that
+key is already stored, and after no other answer. Tapped, it keeps the Leave
+out and the snackbar reads `ALWAYS LEAVING OUT · RM100.00`, whose Undo deletes
+the answer and nothing else.
+
+Stage two consults standing answers only on a capture's first read, while its
+`pack_version` is still 0: a capture re-parse hands back to `NEW` under a
+newer pack, a Corrections re-read, and a card already awaiting review when the
+answer was made are never settled by one. On a first read, when a rule that reads transfers matched and an answer of its key is stored, the transaction is written
+`COMMITTED`, `is_excluded = true`, with the exclusion reason Leave out would
+have written -- the rule's suggestion, `TRANSFER` when it has none -- so the
+row is identical to a Leave out row. A duplicate suspect or an amount over the
+check limit still holds it, exactly as it is held with no answer: those are
+facts about this one capture that the user has not seen. Rule review and
+missing merchant do not: every rule in the pack that reads transfers declares
+`confidence: REVIEW`, and a merchant is missing exactly when the key is null,
+so the answer's own key fixes both.
+
+Settings lists each answer under LEFT OUT (section 9.5): `Maybank MAE ·
+Transfers to RAY FOO`, the app's label, the noun for the rule's suggested
+reason, and the counterparty by the exact key's own name. An answer whose rule
+the loaded pack no longer has is listed as a transfer, so it can be deleted.
+Deleting one sends later transfers back to review and re-files nothing. A
+transfer an answer left out wrongly comes back through the detail screen's
+Count as spending (section 9.7). Not built: "always keep as expense", and
+carrying an answer across a rule's version change.
 
 Excluded transactions are retained with `is_excluded = true`. They render
 greyed in the list and are absent from all totals and charts. They are not
@@ -1972,13 +2020,14 @@ with no merchant -- is asked once, about the reason stored, and the lower
 ones are not asked separately.
 
 **Every answer can be undone.** After an answer a snackbar names it and
-offers **Undo**; it stays until it is used or the next answer replaces it, so
+offers **Undo**, and after a Leave out **Always** beside it (section 7.3); it stays until it is used or the next answer replaces it, so
 it covers the last answer only (the whole of it, for a batch). An answer that
 writes nothing, because its row moved, is not a later answer and leaves the
 offer as it was. Undo puts each
 row the answer wrote back to `PENDING` with the reason it had, and
 `is_excluded = false`, `exclusion_reason = null`, guarded on the state the
-answer wrote. The rows return in one transaction, all or none: when another
+answer wrote. The Undo after **Always** deletes the standing answer it stored
+and nothing else: the Leave out stays. The rows return in one transaction, all or none: when another
 writer has changed any of them since, nothing is written and the cards re-read.
 A restore or a delete-everything withdraws the offer as it starts: Undo names
 rows by id, and a restore keeps ids while a delete restarts them, so an id
@@ -2267,6 +2316,7 @@ launching an activity from one needs the `PendingIntent` overload of
 - Learned merchant rules: review, edit, delete
 - User reject rules: review with sample text, delete (section 5.7)
 - Rules you taught: review with sample text and match count, delete (5.8)
+- Standing answers, under LEFT OUT: review, delete (7.3)
 - Import a parser pack, with validation and dry run (section 5.9)
 - Categories: add, rename, delete-if-unused
 - Check payments over: the check limit's six steps (section 7.1), under
@@ -2406,9 +2456,11 @@ Its actions write only what the row can take:
 - **Change category**, the list's chooser, on a row that is not excluded.
 - **Not spending**, on a committed row that is not excluded:
   `is_excluded = 1`, `exclusion_reason = USER`. The row stays in the list,
-  greyed, and leaves every total. **Count as spending** undoes it, and only a
-  `USER` exclusion: a transfer's is the pack's, and the inbox's Keep as
-  expense answers it. Neither sets `user_edited`, and a re-parse carries the
+  greyed, and leaves every total. **Count as spending** clears any exclusion
+  on a committed, captured row, not only a `USER` one: it is the way back
+  for a transfer the inbox's Leave out or a standing answer (section 7.3)
+  left out wrongly once its Undo has gone, and a row records nothing of what
+  left it out. Neither sets `user_edited`, and a re-parse carries the
   exclusion columns over unchanged.
 - **Delete this entry**, on a committed row: Not a payment (`REJECTED`),
   after one confirmation. The capture stays as evidence, and the screen

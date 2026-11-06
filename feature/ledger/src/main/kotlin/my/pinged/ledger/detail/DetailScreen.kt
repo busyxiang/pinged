@@ -71,7 +71,6 @@ import my.pinged.ledger.home.UnderlinedField
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ledger.home.notSpendingBadge
 import my.pinged.parse.Direction
-import my.pinged.parse.ExclusionReason
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
 import my.pinged.ui.theme.Body
@@ -116,7 +115,7 @@ import java.time.format.TextStyle as JavaTextStyle
  *
  * An excluded row is drawn as `design/DetailExcluded.dc.html` (#229): the
  * eyebrow, hero, badge, Category row and small print all say it is in no
- * total. One the user left out offers Count as spending, filled, over Delete.
+ * total, and offers Count as spending, filled, over Delete.
  *
  * Re-read on each foreground and when a delete or restore rewrites the
  * ledger, as the `Day` screen is. [onBack] is also where Delete this entry
@@ -458,9 +457,10 @@ private fun NoteField(txn: Txn, save: (String) -> Unit, writable: Boolean) {
  * Each is offered only where it can write, as `LedgerRow` gates its own
  * controls: the chooser not on an excluded row, which is in no total;
  * Not spending and Delete only on a committed row, since a held one is the
- * inbox's to answer; and Count as spending only on what the user excluded,
- * since a transfer's exclusion is the pack's and the inbox's Keep as expense
- * takes it back. All but Change category are off unless [writable].
+ * inbox's to answer; and Count as spending on any excluded captured row,
+ * whoever left it out -- the user, the inbox's Leave out or a standing answer
+ * (spec 7.3) -- as `TxnDao.countAsSpending` writes. All but Change category
+ * are off unless [writable].
  */
 @Composable
 private fun Actions(
@@ -472,7 +472,7 @@ private fun Actions(
     writable: Boolean,
 ) {
     val committed = txn.state == TxnState.COMMITTED
-    val countBack = committed && txn.exclusionReason == ExclusionReason.USER
+    val countBack = committed && txn.isExcluded && txn.rawCaptureId != null
     val pair = buildList {
         if (canCategorize) add(Triple(CHANGE_CATEGORY, true, onCategorize))
         if (committed && !txn.isExcluded) add(Triple(NOT_SPENDING, writable, actions.notSpending))
