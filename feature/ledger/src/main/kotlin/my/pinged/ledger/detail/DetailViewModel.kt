@@ -68,7 +68,6 @@ class DetailViewModel internal constructor(
         scope = viewModelScope,
         runner = runner,
         screen = read.rowScreen(),
-        transfers = transfers,
     )
 
     /** `TxnDao.setCapturedNote`. */

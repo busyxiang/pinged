@@ -10,10 +10,8 @@ import kotlinx.coroutines.runBlocking
 import my.pinged.data.LocalDates
 import my.pinged.data.entity.Category
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.settings.Operation
-import my.pinged.ledger.settings.TransferJob
-import my.pinged.ledger.settings.TransferState
 import my.pinged.read.LedgerAccess
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.ScreenRead
 import my.pinged.read.test.ScriptedRunner
 import org.junit.After
@@ -40,12 +38,12 @@ import java.time.LocalDate
 class RowActionsReplacingTest {
     private val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
     private val runner = ScriptedRunner(ApplicationProvider.getApplicationContext())
-    private val transfers = MutableStateFlow(TransferState())
+    private val claim = MutableStateFlow<LedgerReplacement?>(null)
 
     private val screen: ScreenRead<Unit, Long?> =
-        ScreenRead.fixed(scope, runner, "The test cannot be read") { db -> db.txnDao().byId(ROW)?.categoryId }
+        ScreenRead.fixed(scope, runner, "The test cannot be read", claim) { db -> db.txnDao().byId(ROW)?.categoryId }
 
-    private val rows = RowActions(scope, runner, screen.rowScreen(), transfers)
+    private val rows = RowActions(scope, runner, screen.rowScreen())
 
     @After fun end() {
         scope.cancel()
@@ -67,7 +65,7 @@ class RowActionsReplacingTest {
 
     @Test fun aCategoryAddedDuringADeleteIsNotWrittenAndIsOnceItEnds() {
         seed()
-        replacing(Operation.DELETE)
+        replacing(LedgerReplacement.DELETE)
 
         val added = runBlocking { rows.addCategory("Kucing", "dog") }
 
@@ -127,13 +125,13 @@ class RowActionsReplacingTest {
 
     private var asked = 0
 
-    private fun replacing(operation: Operation = Operation.RESTORE) {
-        transfers.value = TransferState(running = TransferJob.Running(operation, 0))
+    private fun replacing(replacement: LedgerReplacement = LedgerReplacement.RESTORE) {
+        claim.value = replacement
         asked = runner.calls.size
     }
 
     private fun cleared() {
-        transfers.value = TransferState()
+        claim.value = null
     }
 
     private fun refusedWithoutWriting() {
