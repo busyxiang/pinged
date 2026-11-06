@@ -122,6 +122,10 @@ android {
         getByName("test") { kotlin.directories.add(rootProject.file("core/read/src/sharedTest/kotlin").path) }
     }
 
+    // `createComposeRule` launches `ui-test-manifest`'s stub Activity, which
+    // Robolectric finds only in the merged manifest this includes.
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
     // `BuildConfig.VERSION_NAME` is what Settings' footer prints (design 9.2).
     buildFeatures {
         compose = true
@@ -195,6 +199,12 @@ dependencies {
     // `AppStatusTest`, on Robolectric for `ScriptedRunner`'s in-memory ledger.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // `TabBarBadgeTest`: a Compose tree on Robolectric, with no Activity of
+    // the app's. `ui-test-manifest` is test-only, as in `:feature:charts`, so
+    // its stub Activity stays out of the APK.
+    testImplementation(composeBom)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.compose.ui.test.manifest)
 
     // `MainActivity` lives here, so `LaunchTest` is the only place the
     // application itself can be started.

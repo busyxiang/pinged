@@ -22,6 +22,8 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * `design/Wipe.dc.html`'s body, **as behaviour and type rather than as
@@ -50,6 +52,7 @@ import org.junit.Test
  * the sheet's two such strings would drift from the rest of the app with
  * nothing failing.
  */
+@RunWith(RobolectricTestRunner::class)
 class WipeSheetTest {
     @get:Rule val compose = createComposeRule()
 

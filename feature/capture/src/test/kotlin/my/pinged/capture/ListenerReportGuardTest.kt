@@ -1,13 +1,14 @@
 package my.pinged.capture
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * What [ListenerStatus.report] does when `capture_health` will not read.
@@ -28,9 +29,9 @@ import org.junit.runner.RunWith
  * answer from the cache -- a test passing for a reason that has nothing to do
  * with the guard.
  */
-@RunWith(AndroidJUnit4::class)
+@RunWith(RobolectricTestRunner::class)
 class ListenerReportGuardTest {
-    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val context: Context = ApplicationProvider.getApplicationContext()
 
     /**
      * The heartbeat read, which is the first of the two.

@@ -2,17 +2,17 @@ package my.pinged
 
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * #237: a count of what awaits review that is not read yet, or could not be
  * read, is not 0. No badge says nothing awaits review; the badge stays, with
  * the loading boards' dash.
  */
-@RunWith(AndroidJUnit4::class)
+@RunWith(RobolectricTestRunner::class)
 class TabBarBadgeTest {
     @get:Rule val compose = createComposeRule()
 

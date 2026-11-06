@@ -1,7 +1,7 @@
 package my.pinged.ledger.transfer
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -12,10 +12,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(AndroidJUnit4::class)
+@RunWith(RobolectricTestRunner::class)
 class TransferStoreTest {
-    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Before fun forgetTheExport() = runBlocking { TransferStore.forget(context) }
 
@@ -83,7 +84,7 @@ class TransferStoreTest {
     }
 
     private companion object {
-        /** Long enough for a DataStore read off a loaded emulator. */
+        /** Long enough for a DataStore read off a loaded machine. */
         const val TIMEOUT_MILLIS = 5_000L
     }
 }
