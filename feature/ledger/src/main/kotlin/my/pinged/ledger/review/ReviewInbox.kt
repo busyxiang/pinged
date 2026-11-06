@@ -17,15 +17,12 @@ import my.pinged.data.entity.Category
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.TxnState
-import my.pinged.ledger.LedgerBusy
+import my.pinged.read.LedgerAccess
 import my.pinged.read.LedgerReplacement
-import my.pinged.read.RawRunnerAccess
+import my.pinged.read.LedgerReplacements
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
-import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
 
 /**
  * Spec 9.2's review inbox: every transaction awaiting review, newest first,
@@ -34,7 +31,7 @@ import my.pinged.ledger.settings.Transfers
  * Shaped like `RowActions`: owned by a view model, which hands over its
  * [scope]. The cards are `:core:read`'s [ScreenRead] (#296), and every answer
  * is its `write`: leased and guarded, a database that will not open is
- * [ReadState.unavailable] rather than a process kill on a tap, and the cards
+ * `LedgerAccess.Unreadable` rather than a process kill on a tap, and the cards
  * are read again in the answer's own turn, which is how a missed answer
  * redraws its row as it now is.
  *
@@ -45,11 +42,11 @@ import my.pinged.ledger.settings.Transfers
  * highest-precedence reason is stored, and lower ones that also fired are not
  * asked separately.
  *
- * **During a restore or a delete-everything nothing is answered** ([busy]).
- * An answer asked for then is dropped on the spot, not queued behind the gate:
- * it was chosen against a ledger that is about to be replaced. The screen
- * disables its buttons on the same flow, so a drop is only reachable by a tap
- * racing the operation's start.
+ * **During a restore or a delete-everything nothing is answered.** [read]
+ * refuses an answer asked for then on the spot, not queued behind the gate
+ * (#376): it was chosen against a ledger that is about to be replaced. The
+ * screen disables its buttons while its read is `LedgerAccess.Withholding`,
+ * so a refusal is only reachable by a tap racing the operation's start.
  *
  * **Every answer can be undone, the last one only** ([undoable], [undo]).
  * An answer that wrote replaces whatever was on offer; one that wrote nothing
@@ -60,14 +57,15 @@ import my.pinged.ledger.settings.Transfers
  * standing answer for the card's rule, app and counterparty, and the offer
  * becomes one whose Undo deletes only that answer.
  *
- * **A restore or a delete-everything withdraws the offer**, as it starts
- * and again when `Databases.rewrites` moves. The offer names rows by id, and
+ * **A restore or a delete-everything withdraws the offer**, as [read] says
+ * one has started (withholding, or turned away by its gate) and again when
+ * `Databases.rewrites` moves. The offer names rows by id, and
  * a restore keeps ids while a delete restarts them, so afterwards an id may
  * name another payment that the guard cannot tell from the one answered: a
  * committed row with no reason, not excluded.
  *
- * [transfers] is a parameter so the busy state has one source in production,
- * `Transfers.state`, the same flow the settings screen draws its notice from.
+ * [replacement] is the claim [read] refuses answers on: `LedgerReplacements.current`
+ * in production.
  *
  * [checkLimit] is the check limit now, `CheckLimit.sen` in production, read
  * with every read of the cards and carried on each
@@ -77,13 +75,11 @@ import my.pinged.ledger.settings.Transfers
  */
 class ReviewInbox(
     private val scope: CoroutineScope,
-    private val runner: ReadRunner,
+    runner: ReadRunner,
     private val checkLimit: suspend () -> Long,
-    private val transfers: StateFlow<TransferState> = Transfers.state,
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private val gate = LedgerBusy(scope, transfers)
-
     /**
      * Every card awaiting review, newest first. `ReviewScreen` reads it on
      * resume and on `Databases.rewrites` through `rememberReadState`, and it
@@ -91,7 +87,7 @@ class ReviewInbox(
      * other modules that drive an inbox; a screen reads through `ReviewScreen`.
      */
     val read: ScreenRead<Unit, List<ReviewCard>> =
-        ScreenRead.fixedStaged(scope, runner, "The review inbox cannot be read", dispatcher) {
+        ScreenRead.fixedStaged(scope, runner, "The review inbox cannot be read", dispatcher, replacement) {
             // Outside the transaction: a DataStore read has no place in one.
             val limitSen = checkLimit()
             transaction { db ->
@@ -112,16 +108,15 @@ class ReviewInbox(
     /** The cards from the last read, newest first; null before one lands. */
     val cards: List<ReviewCard>? get() = read.state.value.answer
 
-    /** The restore or delete-everything running, while one is; see the class KDoc. */
-    val busy: StateFlow<LedgerReplacement?> = gate.busy
-
     /** The last answer, while it can still be undone; see the class KDoc. */
     private val _undoable = MutableStateFlow<Undoable?>(null)
     val undoable: StateFlow<Undoable?> = _undoable.asStateFlow()
 
     init {
         scope.launch {
-            transfers.collect { if (it.replacingLedger != null) _undoable.value = null }
+            read.state.collect {
+                if (it.ledger is LedgerAccess.Withholding || it.ledger == LedgerAccess.BeingReplaced) _undoable.value = null
+            }
         }
         // Read here, not on the collector's first value: a collector started
         // a dispatch later would take a ledger replaced meanwhile as its own.
@@ -143,13 +138,12 @@ class ReviewInbox(
      * since the cards were read. Without `Uncategorized`, for the reason
      * `chooserChoices` gives.
      */
-    @OptIn(RawRunnerAccess::class)
     suspend fun choices(): List<Category>? =
-        (runner.read("The categories could not be read") { db ->
+        (read.lookup("The categories could not be read") { db ->
             val categories = db.categoryDao()
             val unsorted = categories.uncategorizedIdOrNull()
             categories.all().filter { it.id != unsorted }
-        } as? Outcome.Done)?.value
+        }.await() as? Outcome.Done)?.value
 
     /**
      * File [card]'s payment under [categoryId] (§9.2), as a one-off, and leave
@@ -348,16 +342,19 @@ class ReviewInbox(
         writtenOn(what, unavailable) { db, now -> db.txnDao().write(now) }
 
     /**
-     * One write of an answer or an Undo: [write] on the ledger at `now`, or
-     * null without running it while a restore or a delete runs (see the class
-     * KDoc), and [unavailable] when the database will not open. It is [read]'s
-     * `write`, so the cards are read again in its turn before this returns.
+     * One write of an answer or an Undo: [write] on the ledger at `now`; null
+     * when a restore or a delete turned it away (`Outcome.Replacing`, from the
+     * claim or the gate: see the class KDoc), so the caller writes nothing
+     * more; and [unavailable] when the database will not open. It is [read]'s
+     * `write`, so the cards are read again in its turn before this returns,
+     * unless the claim refused it.
      */
-    private suspend fun <T : Any> writtenOn(what: String, unavailable: T, write: (PingedDatabase, now: Long) -> T): T? {
-        if (gate.replacing) return null
-        val outcome = read.write(what) { db -> write(db, System.currentTimeMillis()) }.await()
-        return (outcome as? Outcome.Done)?.value ?: unavailable
-    }
+    private suspend fun <T : Any> writtenOn(what: String, unavailable: T, write: (PingedDatabase, now: Long) -> T): T? =
+        when (val outcome = read.write(what) { db -> write(db, System.currentTimeMillis()) }.await()) {
+            is Outcome.Done -> outcome.value
+            Outcome.Refused -> unavailable
+            Outcome.Replacing -> null
+        }
 
     /**
      * Offer [answer] for Undo in place of the last; null, an answer that

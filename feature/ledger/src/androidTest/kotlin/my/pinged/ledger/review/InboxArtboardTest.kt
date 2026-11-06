@@ -20,6 +20,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.ringgit
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.Card
@@ -255,7 +256,7 @@ class InboxArtboardTest {
 
     private fun inbox(vararg cards: ReviewCard = oneOverOneUnder()) = compose.setContent {
         PingedTheme {
-            ReviewInboxScreenContent(cards = cards.toList(), storageUnavailable = false, busy = null, onBack = {}, onAnswer = { _, _ -> })
+            ReviewInboxScreenContent(cards = cards.toList(), ledger = LedgerAccess.Readable, onBack = {}, onAnswer = { _, _ -> })
         }
     }
 

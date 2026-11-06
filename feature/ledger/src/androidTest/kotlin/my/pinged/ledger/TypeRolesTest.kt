@@ -66,6 +66,7 @@ import my.pinged.ledger.settings.SettingsState
 import my.pinged.ledger.settings.Storage
 import my.pinged.ledger.settings.TransferJob
 import my.pinged.ledger.sources.CaptureBanner
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Mono
 import my.pinged.ui.theme.MonoLabel
@@ -250,8 +251,7 @@ class TypeRolesTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = emptyList(),
-                    storageUnavailable = false,
-                    busy = null,
+                    ledger = LedgerAccess.Readable,
                     onBack = {},
                     onAnswer = { _, _ -> },
                     undoable = Undoable("ACCEPTED · RM650.00", emptyList()),
@@ -334,7 +334,7 @@ class TypeRolesTest {
 
     private fun review(card: ReviewCard) = compose.setContent {
         PingedTheme {
-            ReviewInboxScreenContent(cards = listOf(card), storageUnavailable = false, busy = null, onBack = {}, onAnswer = { _, _ -> })
+            ReviewInboxScreenContent(cards = listOf(card), ledger = LedgerAccess.Readable, onBack = {}, onAnswer = { _, _ -> })
         }
     }
 

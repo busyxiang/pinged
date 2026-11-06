@@ -138,7 +138,7 @@ class NotReadYetBoardsTest {
     }
 
     private fun inbox() = show {
-        ReviewInboxScreenContent(cards = null, storageUnavailable = false, busy = null, onBack = {}, onAnswer = { _, _ -> })
+        ReviewInboxScreenContent(cards = null, ledger = LedgerAccess.Readable, onBack = {}, onAnswer = { _, _ -> })
     }
 
     private fun styleOf(text: String): TextStyle =

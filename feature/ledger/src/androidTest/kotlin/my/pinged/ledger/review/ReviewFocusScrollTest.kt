@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertFalse
 import org.junit.Rule
@@ -31,8 +32,7 @@ class ReviewFocusScrollTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = cards,
-                    storageUnavailable = false,
-                    busy = null,
+                    ledger = LedgerAccess.Readable,
                     onBack = {},
                     onAnswer = { _, _ -> },
                     focus = FOCUSED,

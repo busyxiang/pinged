@@ -3,7 +3,7 @@ package my.pinged.ledger
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -25,7 +25,7 @@ import org.junit.Assert.assertTrue
  */
 internal suspend fun holdWhile(
     operation: Operation,
-    busy: StateFlow<LedgerReplacement?>,
+    busy: Flow<LedgerReplacement?>,
     releases: MutableList<CountDownLatch>,
     requester: Job = Job(),
     start: (Job, suspend () -> Unit) -> Unit,

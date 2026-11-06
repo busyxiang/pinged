@@ -17,6 +17,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.SOURCE_LABEL
 import my.pinged.ledger.ledgerTxn
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -104,8 +105,7 @@ class ReviewDuplicateScreenTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = listOf(card),
-                    storageUnavailable = false,
-                    busy = null,
+                    ledger = LedgerAccess.Readable,
                     onBack = {},
                     onAnswer = { card, answer -> answers += card.txn.id to answer },
                 )

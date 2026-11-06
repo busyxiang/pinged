@@ -32,6 +32,7 @@ import my.pinged.ledger.SOURCE_LABEL
 import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
 import my.pinged.ledger.ledgerTxn
+import my.pinged.read.LedgerAccess
 import my.pinged.read.LedgerReplacement
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
@@ -169,8 +170,7 @@ class ReviewInboxScreenTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = cards.value,
-                    storageUnavailable = false,
-                    busy = null,
+                    ledger = LedgerAccess.Readable,
                     onBack = { backs++ },
                     onAnswer = { card, _ -> cards.value = cards.value - card },
                 )
@@ -190,8 +190,7 @@ class ReviewInboxScreenTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = listOf(rent),
-                    storageUnavailable = false,
-                    busy = busy.value,
+                    ledger = busy.value?.let(LedgerAccess::Withholding) ?: LedgerAccess.Readable,
                     onBack = {},
                     onAnswer = { card, answer -> answers += card.txn.id to answer },
                     undoable = Undoable("ACCEPTED · RM650.00", rows = emptyList()),
@@ -231,8 +230,7 @@ class ReviewInboxScreenTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = emptyList(),
-                    storageUnavailable = false,
-                    busy = busy.value,
+                    ledger = busy.value?.let(LedgerAccess::Withholding) ?: LedgerAccess.Readable,
                     onBack = {},
                     onAnswer = { _, _ -> },
                     undoable = undoable.value,
@@ -264,8 +262,7 @@ class ReviewInboxScreenTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = cards,
-                    storageUnavailable = false,
-                    busy = null,
+                    ledger = LedgerAccess.Readable,
                     onBack = { backs++ },
                     onAnswer = { card, answer -> answers += card.txn.id to answer },
                 )

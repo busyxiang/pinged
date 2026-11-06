@@ -206,9 +206,7 @@ class ReplacingNoticeTest {
         assertReplaces(MERCHANT) { replacing ->
             ReviewInboxScreenContent(
                 cards = listOf(card),
-                storageUnavailable = false,
-                replacing = replacing,
-                busy = LedgerReplacement.RESTORE,
+                ledger = if (replacing) LedgerAccess.BeingReplaced else LedgerAccess.Withholding(LedgerReplacement.RESTORE),
                 onBack = {},
                 onAnswer = { _, _ -> },
             )

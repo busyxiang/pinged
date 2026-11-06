@@ -18,6 +18,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerAccess
 import my.pinged.read.LedgerReplacement
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
@@ -106,8 +107,7 @@ class ReviewSwipeScreenTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = cards.value,
-                    storageUnavailable = false,
-                    busy = busy.value,
+                    ledger = busy.value?.let(LedgerAccess::Withholding) ?: LedgerAccess.Readable,
                     onBack = {},
                     onAnswer = { card, answer -> answers += card.txn.id to answer },
                     onAcceptAll = { acceptAlls++ },
@@ -142,8 +142,7 @@ class ReviewSwipeScreenTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = cards,
-                    storageUnavailable = false,
-                    busy = busy,
+                    ledger = busy?.let(LedgerAccess::Withholding) ?: LedgerAccess.Readable,
                     onBack = {},
                     onAnswer = { card, answer -> answers += card.txn.id to answer },
                     onAcceptAll = { acceptAlls++ },
