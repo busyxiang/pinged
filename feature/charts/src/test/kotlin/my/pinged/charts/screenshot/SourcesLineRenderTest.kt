@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
+import my.pinged.charts.SourcesLineActions
 import my.pinged.charts.SourcesLineText
 import my.pinged.data.SourcesLine
 import my.pinged.data.entity.CaptureSource
@@ -34,12 +35,12 @@ class SourcesLineRenderTest {
 
     private fun on(pkg: String, label: String) = CaptureSource(pkg, label, enabled = true, firstSeenAt = 0L)
 
-    /** Charts passes `onOpenUnread`, so the unreadable names are drawn as the tap targets it ships (#368). */
+    /** Charts passes the line its taps, so the unreadable names are drawn as the tap targets it ships (#368). */
     private fun capture(name: String, line: SourcesLine) {
         compose.setContent {
             PingedTheme {
                 Box(Modifier.testTag(LINE).width(320.dp).background(Paper).padding(horizontal = 20.dp, vertical = 6.dp)) {
-                    SourcesLineText(line, onOpenUnread = {})
+                    SourcesLineText(line, SourcesLineActions(openSources = {}, openUnread = {}))
                 }
             }
         }

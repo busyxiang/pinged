@@ -80,7 +80,7 @@ class SourcesLineTapTest {
         compose.setContent {
             PingedTheme {
                 // Narrow, so the warning wraps to lines no link's touch area reaches.
-                SourcesLineText(line, Modifier.width(120.dp), onOpenSources = { sources++ }, onOpenUnread = { unread += it })
+                SourcesLineText(line, SourcesLineActions(openSources = { sources++ }, openUnread = { unread += it }), Modifier.width(120.dp))
             }
         }
         compose.waitForIdle()

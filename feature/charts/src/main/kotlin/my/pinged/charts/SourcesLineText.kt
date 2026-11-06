@@ -18,6 +18,17 @@ import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Muted
 
 /**
+ * Where the sources line's taps go, which `:app` routes: [openSources] is
+ * `NO APP IS READ YET` (#365), Capture sources; [openUnread] is an unreadable
+ * source's name (#368), Could not read filtered to that app. One value, built
+ * once, so Charts and Spending route the same line the same way.
+ */
+class SourcesLineActions(
+    val openSources: () -> Unit,
+    val openUnread: (NamedSource) -> Unit,
+)
+
+/**
  * The sources line (#365; CONTEXT.md, Sources line), in the mono label style
  * under a month's total. Public so Spending draws the same line (#367).
  *
@@ -25,9 +36,10 @@ import my.pinged.ui.theme.Muted
  * not told about. It is never greyed and never in the accent: it is a claim
  * about apps, and greying stays the capture record's (#73).
  *
- * `NO APP IS READ YET` opens Capture sources through [onOpenSources]. With
- * [onOpenUnread], each unreadable source's name in the cannot-read sentence
- * is underlined and opens Could not read filtered to that app (#368). Each
+ * With [actions], `NO APP IS READ YET` opens Capture sources, and each
+ * unreadable source's name in the cannot-read sentence is underlined and
+ * opens Could not read filtered to that app (#368); with none, the line
+ * opens nothing. Each
  * is a link on its own run, never a click on the whole text: a line can hold
  * both, and a tap on the warning's words between them must open neither. A
  * screen reader reads a link as its text alone and so would not say where it
@@ -37,11 +49,11 @@ import my.pinged.ui.theme.Muted
 @Composable
 fun SourcesLineText(
     line: SourcesLine,
+    actions: SourcesLineActions?,
     modifier: Modifier = Modifier,
-    onOpenSources: (() -> Unit)? = null,
-    onOpenUnread: ((NamedSource) -> Unit)? = null,
 ) {
-    val opens = onOpenSources?.takeIf { SourcesLine.Segment.NoAppRead in line.segments }
+    val opens = actions?.openSources?.takeIf { SourcesLine.Segment.NoAppRead in line.segments }
+    val onOpenUnread = actions?.openUnread
     val text = buildAnnotatedString {
         for (segment in line.segments) {
             when {
@@ -55,13 +67,13 @@ fun SourcesLineText(
             }
         }
     }
-    val actions = buildList {
+    val spoken = buildList {
         if (opens != null) add(CustomAccessibilityAction(OPEN_CAPTURE_SOURCES) { opens(); true })
         if (onOpenUnread != null) {
             line.unreadable.forEach { source -> add(CustomAccessibilityAction(openUnreadLabel(source.name)) { onOpenUnread(source); true }) }
         }
     }
-    val drawn = if (actions.isEmpty()) modifier else modifier.semantics { customActions = actions }
+    val drawn = if (spoken.isEmpty()) modifier else modifier.semantics { customActions = spoken }
     Text(text, style = MonoLabel, color = Muted, modifier = drawn)
 }
 

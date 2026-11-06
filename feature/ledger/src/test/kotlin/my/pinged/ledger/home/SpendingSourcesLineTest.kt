@@ -9,6 +9,7 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.flowOf
+import my.pinged.charts.SourcesLineActions
 import my.pinged.charts.openUnreadLabel
 import my.pinged.data.NamedSource
 import my.pinged.data.SourcesLine
@@ -59,8 +60,7 @@ class SpendingSourcesLineTest {
                 categoriesById = emptyMap(),
                 onHeroBottom = {},
                 heroNotReadYetShown = true,
-                onOpenSources = onOpenSources,
-                onOpenUnread = onOpenUnread,
+                sourcesLine = SourcesLineActions(openSources = onOpenSources, openUnread = onOpenUnread),
             )
         }
     }

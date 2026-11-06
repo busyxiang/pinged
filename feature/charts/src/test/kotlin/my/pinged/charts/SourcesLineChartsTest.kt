@@ -59,8 +59,7 @@ class SourcesLineChartsTest {
                     september,
                     ChartsState.Month(monthView(read)),
                     unavailable = false,
-                    onOpenSources = onOpenSources,
-                    onOpenUnread = onOpenUnread,
+                    sourcesLine = SourcesLineActions(openSources = onOpenSources, openUnread = onOpenUnread),
                 )
             }
         }

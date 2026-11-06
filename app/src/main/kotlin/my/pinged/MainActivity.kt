@@ -40,6 +40,7 @@ import androidx.lifecycle.createSavedStateHandle
 import my.pinged.capture.CaptureAlerts
 import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
+import my.pinged.charts.SourcesLineActions
 import my.pinged.data.NamedSource
 import my.pinged.ledger.breakdown.BreakdownScreen
 import my.pinged.ledger.breakdown.BreakdownViewModel
@@ -148,6 +149,14 @@ class MainActivity : ComponentActivity() {
                             Tab.Settings to settingsStack,
                         ),
                         selection,
+                    )
+                }
+                // The sources line's taps, on Spending and Charts alike: onto
+                // the current tab's stack, so Back returns to the line.
+                val sourcesLine = remember(tabs) {
+                    SourcesLineActions(
+                        openSources = { tabs.push(Sources) },
+                        openUnread = { source -> tabs.push(Unread(source.pkg, source.name)) },
                     )
                 }
                 val predictivePop = defaultPredictivePopTransitionSpec<NavKey>()
@@ -263,10 +272,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                         onOpenSearch = { tabs.push(Search()) },
                                         onOpenToSort = { month, id -> tabs.push(Search(month.toString(), id)) },
-                                        // Onto Spending's stack, as Charts'
-                                        // line pushes onto Charts'.
-                                        onOpenSources = { tabs.push(Sources) },
-                                        onOpenUnread = { source -> tabs.push(Unread(source.pkg, source.name)) },
+                                        sourcesLine = sourcesLine,
                                         heard = current.heard,
                                         // Both lead to settings' root, where the
                                         // export sheet is hosted and the
@@ -351,11 +357,7 @@ class MainActivity : ComponentActivity() {
                                         // Onto Charts' stack too, for the same reason.
                                         onOpenBreakdown = { month, id -> tabs.push(Breakdown(id, month.toString())) },
                                         onOpenMerchant = { month, key -> tabs.push(MerchantMonth(key, month.toString())) },
-                                        // Onto Charts' stack too: Back returns
-                                        // to the line it was opened from.
-                                        onOpenSources = { tabs.push(Sources) },
-                                        // Onto Charts' stack too, for the same reason.
-                                        onOpenUnread = { source -> tabs.push(Unread(source.pkg, source.name)) },
+                                        sourcesLine = sourcesLine,
                                     )
                                 }
                                 entry<MerchantMonth> { key ->
