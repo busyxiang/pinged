@@ -15,7 +15,7 @@ import my.pinged.ui.theme.Stamp
 
 /**
  * `RESTORING A BACKUP · NOTHING CAN BE CHANGED UNTIL IT FINISHES` (#331): what
- * a screen or sheet whose writes [LedgerBusy] refuses says while [busy] runs,
+ * a screen or sheet whose read withholds its writes says while [busy] runs (#376),
  * in [Stamp], as the review inbox's and the entry screen's lines are. At the
  * top of Detail and of each Settings sub-screen, and under a sheet's header.
  */

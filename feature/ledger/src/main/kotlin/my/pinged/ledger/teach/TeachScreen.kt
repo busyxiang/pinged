@@ -42,15 +42,16 @@ import androidx.compose.ui.unit.sp
 import java.time.ZoneId
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
+import my.pinged.ledger.notice
 import my.pinged.ledger.unread.postedOf
 import my.pinged.ledger.unread.sourceOf
+import my.pinged.ledger.withholding
 import my.pinged.parse.Direction
 import my.pinged.parse.TaughtTemplate
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
@@ -61,7 +62,6 @@ import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.Quote
-import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
@@ -69,7 +69,6 @@ import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
-import my.pinged.read.LedgerReplacement
 
 /**
  * Spec 5.8's Teach screen, drawn from `design/Teach.dc.html`: the message as
@@ -83,7 +82,6 @@ import my.pinged.read.LedgerReplacement
 @Composable
 fun TeachScreen(viewModel: TeachViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsState()
-    val busy by viewModel.busy.collectAsState()
     // Saved: back to the list, which no longer shows what the rule reads.
     LaunchedEffect(state.saved) { if (state.saved) onBack() }
     TeachContent(
@@ -94,13 +92,12 @@ fun TeachScreen(viewModel: TeachViewModel, onBack: () -> Unit, modifier: Modifie
         onDirection = viewModel::direction,
         onSave = { viewModel.save() },
         modifier = modifier,
-        busy = busy,
     )
 }
 
 /**
  * [TeachScreen] without its holder, so a test can draw any state. While
- * [busy] runs a ledger replacement the screen says so under its header and
+ * [state] withholds for a ledger replacement the screen says so under its header and
  * Save is off; the taps and the direction, which write nothing, stay on (#331).
  */
 @Composable
@@ -113,8 +110,8 @@ internal fun TeachContent(
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault(),
-    busy: LedgerReplacement? = null,
 ) {
+    val busy = state.ledger.withholding
     val capture = state.capture
     val selection = state.selection
     Column(modifier.fillMaxSize().background(Paper)) {
@@ -124,10 +121,8 @@ internal fun TeachContent(
             ListNotReadYet(caption = null, icon = false)
             return@Column
         }
-        if (!state.storageUnavailable && !state.replacing && busy != null) ChangedLine(busy)
-        val notice = when {
-            state.replacing -> REPLACING_YOUR_DATA
-            state.storageUnavailable -> CANNOT_READ_YOUR_DATA
+        if (busy != null) ChangedLine(busy)
+        val notice = state.ledger.notice ?: when {
             capture == null || selection == null -> GONE
             else -> null
         }

@@ -202,13 +202,12 @@ class ReplacingSettingsScreensTest {
         check(ready.step == TeachSelection.Step.READY) { "The selection is not ready to save: $ready" }
         compose.setContent {
             TeachContent(
-                TeachState(loaded = true, capture = capture, selection = ready),
+                TeachState(loaded = true, capture = capture, selection = ready, ledger = LedgerAccess.Withholding(LedgerReplacement.RESTORE)),
                 onBack = {},
                 onTap = { tapped += "tap" },
                 onNoMerchant = {},
                 onDirection = {},
                 onSave = { tapped += "save" },
-                busy = LedgerReplacement.RESTORE,
             )
         }
 
@@ -229,7 +228,7 @@ class ReplacingSettingsScreensTest {
                 2 -> SourcesScreenContent(SourcesState(loaded = true, ledger = LedgerAccess.BeingReplaced), { _, _ -> }, {})
                 3 -> CorrectionsContent(CorrectionsState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {}, {})
                 4 -> UnreadContent(UnreadState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {}, {}, {})
-                else -> TeachContent(TeachState(loaded = true, replacing = true), {}, {}, {}, {}, {}, busy = LedgerReplacement.RESTORE)
+                else -> TeachContent(TeachState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {}, {}, {}, {})
             }
         }
         for (each in 0..5) {

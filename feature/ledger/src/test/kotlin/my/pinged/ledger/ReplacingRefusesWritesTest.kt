@@ -110,11 +110,11 @@ class ReplacingRefusesWritesTest {
         val captureId = runBlocking {
             runner.read("The test cannot be seeded") { db -> db.rawCaptureDao().insert(unmatched()) }
         }.let { (it as Outcome.Done).value }
-        val model = TeachViewModel(app, captureId, runStageTwo = {}, runner, transfers)
+        val model = TeachViewModel(app, captureId, runStageTwo = {}, runner, replacement)
         val words = requireNotNull(model.state.value.selection) { "The capture was not read: ${model.state.value}" }.words.words
         model.tap(words.indexOf("RM1.00"))
         model.noMerchant()
-        transfers.value = TransferState(running = TransferJob.Running(Operation.RESTORE, 0))
+        replacement.value = LedgerReplacement.RESTORE
         val before = runner.calls.size
 
         model.save()
@@ -124,10 +124,10 @@ class ReplacingRefusesWritesTest {
             emptyList<String>(),
             runner.calls.drop(before).map { it.what },
         )
-        assertFalse("Teach's save refused for a replacement raised unavailable", model.state.value.storageUnavailable)
+        assertFalse("Teach's save refused for a replacement raised unavailable", model.state.value.ledger == LedgerAccess.Unreadable)
         assertFalse("Teach's save refused for a replacement left the screen", model.state.value.saved)
 
-        transfers.value = TransferState()
+        replacement.value = null
         val after = runner.calls.size
         model.save()
 
@@ -142,9 +142,9 @@ class ReplacingRefusesWritesTest {
     @Test fun teachsReadTurnedAwayByAReplacementIsReplacing() {
         runner.replacing = true
 
-        val state = TeachViewModel(app, captureId = 1L, runStageTwo = {}, runner, transfers).state.value
+        val state = TeachViewModel(app, captureId = 1L, runStageTwo = {}, runner, replacement).state.value
 
-        assertEquals(TeachState(loaded = true, replacing = true), state)
+        assertEquals(TeachState(loaded = true, ledger = LedgerAccess.BeingReplaced), state)
     }
 
     private fun detail() = DetailViewModel(app, txnId = 1L, createdAt = 0L, runner, replacement)
