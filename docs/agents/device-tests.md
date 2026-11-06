@@ -28,6 +28,8 @@ the way to make it fail on purpose.
 - A seeded `RawCapture` at `UNMATCHED` with no `packVersion`, read back
   from the unread list. [A capture stage two may
   requeue](#a-capture-stage-two-may-requeue).
+- A tap on a word near a link in a text, asserting it opens nothing.
+  [A link's touch area](#a-links-touch-area).
 
 A rule added for a new flake gets a line here too, written as the code a
 reader would see in their own test, not as the cause.
@@ -282,3 +284,14 @@ path is the explanation that fits, not one observed. Seed the capture with
 `packVersion = Graph.parsePack().packVersion`, as stage two would have
 marked it, and with a wording no pack rule reads or rejects.
 
+## A link's touch area
+
+Compose widens a pointer target smaller than 48dp to 48dp when a tap hits
+nothing else, and a `LinkAnnotation` run is such a target: at the sources
+line's 16dp lines, a link reaches 16dp above and below itself. So a tap on
+a word in the line under a link opens that link, whatever the text around
+it does. `SourcesLineTapTest`'s first version tapped `CANNOT` one line under
+`NO APP IS READ YET` at CI's 320dp width, and it opened Capture sources with
+the whole-text click removed as with it, so it could not fail. It now draws
+the line 120dp wide and asserts the word it taps is two lines below every
+link before it taps.

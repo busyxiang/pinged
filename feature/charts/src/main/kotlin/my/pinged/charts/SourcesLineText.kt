@@ -1,6 +1,5 @@
 package my.pinged.charts
 
-import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -26,13 +25,14 @@ import my.pinged.ui.theme.Muted
  * not told about. It is never greyed and never in the accent: it is a claim
  * about apps, and greying stays the capture record's (#73).
  *
- * A line that says `NO APP IS READ YET` opens Capture sources through
- * [onOpenSources]. With [onOpenUnread], each unreadable source's name in the
- * cannot-read sentence is underlined and opens Could not read filtered to
- * that app (#368): a link for a tap, since the name sits mid-sentence in a
- * line that wraps, and a custom action labelled [openUnreadLabel] for a
- * screen reader, which reads a link as its text alone and so would not say
- * where it goes. The same app in the `FROM` list opens nothing.
+ * `NO APP IS READ YET` opens Capture sources through [onOpenSources]. With
+ * [onOpenUnread], each unreadable source's name in the cannot-read sentence
+ * is underlined and opens Could not read filtered to that app (#368). Each
+ * is a link on its own run, never a click on the whole text: a line can hold
+ * both, and a tap on the warning's words between them must open neither. A
+ * screen reader reads a link as its text alone and so would not say where it
+ * goes, so each also has a custom action, [OPEN_CAPTURE_SOURCES] or
+ * [openUnreadLabel]. The same app in the `FROM` list opens nothing.
  */
 @Composable
 fun SourcesLineText(
@@ -44,24 +44,32 @@ fun SourcesLineText(
     val opens = onOpenSources?.takeIf { SourcesLine.Segment.NoAppRead in line.segments }
     val text = buildAnnotatedString {
         for (segment in line.segments) {
-            if (onOpenUnread != null && segment is SourcesLine.Segment.App && segment.unreadable) {
-                val link = LinkAnnotation.Clickable(segment.source.pkg, UNREADABLE_NAME) { onOpenUnread(segment.source) }
-                withLink(link) { append(segment.text) }
-            } else {
-                append(segment.text)
+            when {
+                opens != null && segment is SourcesLine.Segment.NoAppRead ->
+                    withLink(LinkAnnotation.Clickable(NO_APP_READ) { opens() }) { append(segment.text) }
+                onOpenUnread != null && segment is SourcesLine.Segment.App && segment.unreadable -> {
+                    val link = LinkAnnotation.Clickable(segment.source.pkg, UNREADABLE_NAME) { onOpenUnread(segment.source) }
+                    withLink(link) { append(segment.text) }
+                }
+                else -> append(segment.text)
             }
         }
     }
-    var drawn = if (opens != null) modifier.clickable(onClickLabel = "Open Capture sources", onClick = opens) else modifier
-    if (onOpenUnread != null && line.unreadable.isNotEmpty()) {
-        drawn = drawn.semantics {
-            customActions = line.unreadable.map { source ->
-                CustomAccessibilityAction(openUnreadLabel(source.name)) { onOpenUnread(source); true }
-            }
+    val actions = buildList {
+        if (opens != null) add(CustomAccessibilityAction(OPEN_CAPTURE_SOURCES) { opens(); true })
+        if (onOpenUnread != null) {
+            line.unreadable.forEach { source -> add(CustomAccessibilityAction(openUnreadLabel(source.name)) { onOpenUnread(source); true }) }
         }
     }
+    val drawn = if (actions.isEmpty()) modifier else modifier.semantics { customActions = actions }
     Text(text, style = MonoLabel, color = Muted, modifier = drawn)
 }
+
+/** The accessible label of `NO APP IS READ YET`'s action. */
+const val OPEN_CAPTURE_SOURCES = "Open Capture sources"
+
+/** `NO APP IS READ YET`'s link tag. */
+private const val NO_APP_READ = "capture-sources"
 
 /** The accessible label of an unreadable [name]'s action (#368). */
 fun openUnreadLabel(name: String): String = "Open Could not read for $name"
