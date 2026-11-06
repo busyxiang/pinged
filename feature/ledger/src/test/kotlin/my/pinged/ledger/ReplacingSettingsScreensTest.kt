@@ -151,11 +151,14 @@ class ReplacingSettingsScreensTest {
         val txn = ledgerTxn(amountSen = 1_000L)
         compose.setContent {
             CorrectionsContent(
-                CorrectionsState(loaded = true, items = listOf(Corrections.Correction(1L, 1, 2, null, "rule", txn, txn, emptySet()))),
+                CorrectionsState(
+                    loaded = true,
+                    items = listOf(Corrections.Correction(1L, 1, 2, null, "rule", txn, txn, emptySet())),
+                    ledger = LedgerAccess.Withholding(LedgerReplacement.RESTORE),
+                ),
                 onBack = {},
                 onAccept = { tapped += "accept" },
                 onDecline = { tapped += "decline" },
-                busy = LedgerReplacement.RESTORE,
             )
         }
 
@@ -215,7 +218,7 @@ class ReplacingSettingsScreensTest {
                 0 -> CategoriesContent(CategoriesState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, { _, _ -> }, { _, _, _ -> }, {})
                 1 -> LearnedContent(LearnedState(loaded = true, replacing = true), {}, {}, busy = LedgerReplacement.RESTORE)
                 2 -> SourcesScreenContent(SourcesState(loaded = true, replacing = true), { _, _ -> }, {}, busy = LedgerReplacement.RESTORE)
-                3 -> CorrectionsContent(CorrectionsState(loaded = true, replacing = true), {}, {}, {}, busy = LedgerReplacement.RESTORE)
+                3 -> CorrectionsContent(CorrectionsState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {}, {})
                 4 -> UnreadContent(UnreadState(loaded = true, replacing = true), {}, {}, {}, {}, busy = LedgerReplacement.RESTORE)
                 else -> TeachContent(TeachState(loaded = true, replacing = true), {}, {}, {}, {}, {}, busy = LedgerReplacement.RESTORE)
             }

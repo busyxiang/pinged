@@ -153,7 +153,7 @@ class ReplacingRefusesWritesTest {
 
     private fun learned() = LearnedViewModel(app, runner, transfers)
 
-    private fun corrections() = CorrectionsViewModel(app, runner, Dispatchers.Unconfined, transfers)
+    private fun corrections() = CorrectionsViewModel(app, runner, Dispatchers.Unconfined, replacement)
 
     /**
      * The write [holder] makes, while [operation] runs, asks the runner for
