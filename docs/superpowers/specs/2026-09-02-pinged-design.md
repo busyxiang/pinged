@@ -2074,14 +2074,14 @@ One screen, pushed over the list with the tab bar hidden:
   is `sen * 10 + d`, backspace `sen / 10`, the field takes digits only so a
   keyboard's decimal separator never reaches it, and a digit that would pass
   `Amount`'s ceiling (RM1,000,000.00) is ignored.
-- **Paid / Received**, a two-segment control beside the amount. `Paid` is
-  the default, so the common path takes no tap on it. `Received` saves the
+- **Paid / Received**, a two-segment control on a row above the amount, the
+  date chip opposite it. `Paid` is the default, so the common path takes no tap on it. `Received` saves the
   row as `REFUND`, which subtracts from totals, charts and merchant months
   as a captured refund does; no new `Direction` exists. Under it the chip row
   is labelled `COUNTS AGAINST` (section 9.2's wording) and the title reads
   `Add money received` (`Edit money received` when corrected). The row's
   small print stays *Entered by hand*.
-- **A date chip** beside the amount, reading `Today`, moving the entry to any
+- **A date chip** on that row, reading `Today`, moving the entry to any
   past day, the history start's before included, at the current time of day.
   Never a future day.
 - **A row of category chips**, most used in the last 90 days first, then

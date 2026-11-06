@@ -61,6 +61,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.LocalDate
@@ -82,6 +83,7 @@ import my.pinged.ui.money
 import my.pinged.ui.ringgit
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
+import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.ButtonLabel
@@ -189,18 +191,23 @@ internal fun ManualEntryScreenContent(
             // the line below says so instead.
             if (!state.storageUnavailable) NotReadYet()
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AmountField(
-                    sen = state.draft.amountSen,
-                    onAmount = onAmount,
-                    focusOnArrival = state.editing == null,
-                    modifier = Modifier.weight(1f),
-                )
-                Column(horizontalAlignment = Alignment.End) {
-                    DirectionControl(state.draft.direction, onDirection)
-                    DateChip(day = state.draft.day, today = state.today, onDay = onDay)
-                }
+            // Kind and date on one row above the figure (#355), which then
+            // has the whole width: beside it, the two controls left it
+            // under 100dp at CI's 320dp.
+            Row(
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DirectionControl(state.draft.direction, onDirection)
+                DateChip(day = state.draft.day, today = state.today, onDay = onDay)
             }
+            AmountField(
+                sen = state.draft.amountSen,
+                onAmount = onAmount,
+                focusOnArrival = state.editing == null,
+                modifier = Modifier.fillMaxWidth(),
+            )
             CategoryChips(
                 state.categories,
                 selected = state.draft.category?.categoryId,
@@ -408,7 +415,7 @@ private fun AmountField(sen: Long, onAmount: (Long) -> Unit, focusOnArrival: Boo
         cursorBrush = SolidColor(Color.Transparent),
         onTextLayout = { drawn = it },
         modifier = modifier
-            .padding(start = 20.dp, end = 8.dp, top = 24.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 12.dp)
             .focusRequester(focus)
             .onFocusChanged { focused = it.isFocused }
             .drawWithContent {
@@ -564,7 +571,7 @@ private fun CategoryChip(category: Category, chosen: Boolean, onTap: () -> Unit)
 }
 
 /**
- * The date chip beside the amount (#103): `Today`, or the past day the entry
+ * The date chip opposite the Paid/Received control, above the amount (#103): `Today`, or the past day the entry
  * is moved to, and a tap opens [EntryDatePicker]. Picking a day closes it.
  * The artboard has no date chip; it is outlined in [Border] like the
  * category chips, since `Rule` is the dotted rules' colour.
@@ -574,7 +581,6 @@ private fun DateChip(day: LocalDate?, today: LocalDate, onDay: (LocalDate) -> Un
     var picking by rememberSaveable { mutableStateOf(false) }
     Box(
         Modifier
-            .padding(end = 20.dp, top = 24.dp)
             .clip(RoundedCornerShape(2.dp))
             .clickable(role = Role.Button) { picking = true }
             .heightIn(min = 44.dp)
@@ -598,33 +604,41 @@ private fun DateChip(day: LocalDate?, today: LocalDate, onDay: (LocalDate) -> Un
     }
 }
 
+/** [DirectionControl]'s segments, in order: direction, label, test tag. */
+private val SEGMENTS = listOf(
+    Triple(Direction.EXPENSE, PAID, PAID_SEGMENT),
+    Triple(Direction.REFUND, RECEIVED, RECEIVED_SEGMENT),
+)
+
 /**
- * Paid or Received (#355), a two-segment control stacked over the date chip
- * beside the amount: side by side they would leave the figure under 80dp at
- * CI's 320dp width. Paid is the default, so the common path takes no tap on
- * it. Each segment is a 44dp-high selectable of its own.
+ * Paid or Received (#355), a two-segment control on the row above the
+ * amount, opposite the date chip. Paid is the default, so the common path
+ * takes no tap on it. Each segment is a 44dp-high selectable of its own.
  */
 @Composable
 private fun DirectionControl(direction: Direction, onDirection: (Direction) -> Unit) {
-    Row(
-        Modifier
-            .padding(end = 20.dp, top = 12.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .border(1.dp, Border, RoundedCornerShape(2.dp))
-            .selectableGroup(),
-    ) {
-        for ((value, label, tag) in listOf(Triple(Direction.EXPENSE, PAID, PAID_SEGMENT), Triple(Direction.REFUND, RECEIVED, RECEIVED_SEGMENT))) {
+    // Each segment draws its own hairline and the pair overlap by 1dp, with
+    // the selected one on top: a border on the row would be drawn over the
+    // selected segment's Ink edge, leaving only its inner side dark.
+    Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy((-1).dp)) {
+        for ((value, label, tag) in SEGMENTS) {
             val on = direction == value
+            val shape = RoundedCornerShape(2.dp)
             Box(
                 Modifier
-                    .then(if (on) Modifier.background(Ink) else Modifier)
+                    .zIndex(if (on) 1f else 0f)
+                    .clip(shape)
+                    // Selected is the day header's Card tint inside an Ink
+                    // hairline, not a fill: Save stays the one filled element.
+                    .then(if (on) Modifier.background(Card) else Modifier)
+                    .border(1.dp, if (on) Ink else Border, shape)
                     .selectable(selected = on, role = Role.RadioButton) { onDirection(value) }
                     .heightIn(min = 44.dp)
                     .padding(horizontal = 10.dp)
                     .testTag(tag),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = MonoLabel, color = if (on) Paper else Ink)
+                Text(label, style = MonoLabel, color = if (on) Ink else Muted)
             }
         }
     }

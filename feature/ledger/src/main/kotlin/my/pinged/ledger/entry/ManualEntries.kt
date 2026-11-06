@@ -378,6 +378,9 @@ class ManualEntries(
      * asked: a draft [save] would refuse, a restore or delete running, or a
      * ledger that will not open, where [save] then refuses as well.
      *
+     * Only a capture of the draft's own [ManualDraft.direction] matches (#355):
+     * money received meets a captured `REFUND`, a payment a captured `EXPENSE`.
+     *
      * Near is layer 2's window around the moment [save] would date the
      * draft, or the whole of its day when [ManualDraft.backdated], whose time
      * of day is made up (`TxnDao.nearbyCapture`). [editing] is the entry
