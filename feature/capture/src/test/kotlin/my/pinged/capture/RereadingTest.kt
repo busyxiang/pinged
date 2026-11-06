@@ -23,6 +23,7 @@ import my.pinged.parse.ExclusionReason
 import my.pinged.parse.LearnedRules
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 /**
@@ -173,6 +174,14 @@ class RereadingTest {
 
         assertEquals(held(PendingReason.DUPLICATE_SUSPECT), verdict(again.after))
         assertNull(again.pairCaptureId)
+    }
+
+    /** A lookup's failure is [Corrections]' to decide, so the re-reading lets it through. */
+    @Test fun aPairLookupThatThrowsThrowsOutOfTheRereading() {
+        val damage = IllegalStateException("page 7 is damaged")
+        val stale = stale(payment("RM23.00"), "tng-payment-v1") { it.copy(state = TxnState.PENDING, pendingReason = PendingReason.RULE_REVIEW, confidence = Confidence.REVIEW) }
+
+        assertSame(damage, runCatching { again(stale, pairs = { throw damage }) }.exceptionOrNull())
     }
 
     // ---- #255: a waiting FPX payment, paired again ------------------------------

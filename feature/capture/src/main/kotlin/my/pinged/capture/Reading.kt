@@ -35,8 +35,10 @@ internal data class PairQuery(
  * decides -- amount, window, `direction`, another app or the same app under
  * another rule, and not `REJECTED` -- in the order its index returns them,
  * `occurred_at` then `id`. The merchant clause and the re-read's "older than"
- * are the [Reading]'s. `PairCandidatesContractTest` holds the Room and the
- * in-memory adapter to identical answers.
+ * are the [Reading]'s. The SQL has no `ORDER BY`: the order is
+ * `index_txn_amount_sen_occurred_at`'s, which `QueryPlanTest` pins the query
+ * to, and `PairCandidatesContractTest` holds the Room and the in-memory
+ * adapter to identical answers in it.
  *
  * May throw; the [Reading] writes nothing and lets it through.
  */
@@ -86,8 +88,9 @@ internal class RoomStandingAnswers(private val dao: StandingAnswerDao) : Standin
  * are [ParsePass]'s; paging, the field diff and accept are [Corrections]'.
  *
  * Writes nothing and reads only through its three ports -- [pairs][PairCandidates]
- * per call, [standingAnswers] and [learned] -- and the clock is an input, so a
- * JVM test reads exactly what the phone does.
+ * per call, [standingAnswers] and [learned] -- and the clock and the source
+ * label are inputs, so a JVM test reads exactly what the phone does. A port
+ * that throws throws out of here, and nothing has been written.
  *
  * @param matcher the pack: its merchant normalization, and the exclusion a
  *   standing answer writes ([RuleMatcher.suggestedExclusion]).
@@ -149,21 +152,14 @@ internal class Reading(
         outcome: MatchOutcome.Matched,
         prior: Prior,
         pairs: PairCandidates,
-        sourceLabel: String?,
+        sourceLabel: (String) -> String?,
         now: Long,
     ): First {
         val occurredAt = occurredAt(capture)
         val merchant = MerchantColumns.of(outcome.merchantRaw, matcher.merchantNormalization)
-        // Asked whatever layer one said, as it always was; only damage skips it.
+        // Asked whatever layer one said; only damage skips it.
         val pair = if (prior == Prior.PairUnknown) null else pairOf(capture, outcome, merchant, occurredAt, pairs)
-        val reasons = ConfidenceGate.reasons(
-            confidence = outcome.confidence,
-            kind = outcome.kind,
-            merchantRaw = merchant.raw,
-            amountSen = outcome.amountSen,
-            duplicateSuspect = prior != Prior.None || pair != null,
-            thresholdSen = checkLimitSen,
-        )
+        val reasons = reasons(outcome, merchant, duplicateSuspect = prior != Prior.None || pair != null)
         val decision = ConfidenceGate.decide(reasons, leftOutAs = standingExclusion(capture, outcome, merchant.key, reasons))
         // Learned, then dictionary, then Uncategorized: [Filer]'s order. The
         // learned rule answers by `category.id`, so it wins whether or not
@@ -185,7 +181,9 @@ internal class Reading(
             merchantKey = merchant.key,
             categoryId = categoryId,
             sourcePackage = capture.sourcePackage,
-            sourceLabel = sourceLabel,
+            // Asked last, after the lookups that can meet damage the pass
+            // attributes to this capture's pair (`ParsePass.pairsFor`).
+            sourceLabel = sourceLabel(capture.sourcePackage),
             confidence = outcome.confidence,
             state = decision.state,
             pendingReason = decision.reason,
@@ -233,16 +231,7 @@ internal class Reading(
         } else {
             pairOf(capture, outcome, merchant, stored.occurredAt, pairs, olderThan = stored.id)
         }
-        val decision = ConfidenceGate.decide(
-            ConfidenceGate.reasons(
-                confidence = outcome.confidence,
-                kind = outcome.kind,
-                merchantRaw = merchant.raw,
-                amountSen = outcome.amountSen,
-                duplicateSuspect = carried || pair != null,
-                thresholdSen = checkLimitSen,
-            ),
-        )
+        val decision = ConfidenceGate.decide(reasons(outcome, merchant, duplicateSuspect = carried || pair != null))
         val after = stored.copy(
             amountSen = outcome.amountSen,
             direction = outcome.direction,
@@ -256,6 +245,17 @@ internal class Reading(
         )
         return Again(after, pairCaptureId = pair?.rawCaptureId)
     }
+
+    /** Spec 7.1's conditions for [outcome], held over the check limit this Reading was given. */
+    private fun reasons(outcome: MatchOutcome.Matched, merchant: MerchantColumns, duplicateSuspect: Boolean): Set<PendingReason> =
+        ConfidenceGate.reasons(
+            confidence = outcome.confidence,
+            kind = outcome.kind,
+            merchantRaw = merchant.raw,
+            amountSen = outcome.amountSen,
+            duplicateSuspect = duplicateSuspect,
+            thresholdSen = checkLimitSen,
+        )
 
     /**
      * Spec 7.2 layer two: the first of [pairs]' candidates written before

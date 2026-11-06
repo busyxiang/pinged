@@ -135,7 +135,7 @@ internal object ReadingFixtures {
         outcome: MatchOutcome.Matched = matched(capture),
         prior: Reading.Prior = Reading.Prior.None,
         pairs: PairCandidates = NOTHING,
-    ): Reading.First = reading.first(capture, outcome, prior, pairs, sourceLabel = "Touch 'n Go eWallet", now = AT + MINUTE)
+    ): Reading.First = reading.first(capture, outcome, prior, pairs, sourceLabel = { "Touch 'n Go eWallet" }, now = AT + MINUTE)
 
     /** [capture]'s transaction as it stands in the ledger, with an id of its own, and the rule that read it. */
     fun inLedger(capture: RawCapture, reading: Reading = reading()): InMemoryPairCandidates.Row =

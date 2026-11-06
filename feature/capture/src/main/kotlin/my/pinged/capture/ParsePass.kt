@@ -123,7 +123,8 @@ internal class ParsePass(
     private val progress: Progress = Progress(),
 ) {
     /**
-     * Built per pass over the live rule port, never a per-pass table of rules:
+     * What this pass makes of each matched capture. Its learned rules are the
+     * live port, never a per-pass table of rules:
      * a rule the user teaches part-way through a pass runs its retroactive fix
      * at once, and every later capture of the pass has to be filed by the new
      * rule or the fix would miss it. The window is one capture, as
@@ -439,7 +440,7 @@ internal class ParsePass(
             outcome = outcome,
             prior = prior,
             pairs = pairsFor(capture),
-            sourceLabel = sourceLabel(capture.sourcePackage),
+            sourceLabel = sourceLabel,
             now = System.currentTimeMillis(),
         )
 

@@ -26,6 +26,7 @@ import my.pinged.parse.MatchMode
 import my.pinged.parse.TaughtTemplate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 /**
@@ -360,6 +361,18 @@ class FirstReadingTest {
 
         assertEquals(held(PendingReason.DUPLICATE_SUSPECT), verdict(first.txn))
         assertNull(first.duplicateOf)
+    }
+
+    /**
+     * What a lookup's failure means -- damage to its page, a pair unknown --
+     * is the pass's to decide, so the Reading lets it through untouched.
+     */
+    @Test fun aPortThatThrowsThrowsOutOfTheFirstReading() {
+        val damage = IllegalStateException("page 7 is damaged")
+        val refusing = Reading(ReadingFixtures.matcher, REVIEW_THRESHOLD_SEN, standingAnswers = { _, _, _ -> throw damage }, uncategorizedId = uncategorizedId)
+
+        assertSame(damage, runCatching { firstReading(capture("Payment of RM1.00 to KEDAI successful"), pairs = { throw damage }) }.exceptionOrNull())
+        assertSame(damage, runCatching { firstReading(reload(), refusing) }.exceptionOrNull())
     }
 
     /** Layer one's suspect is the one named, over a layer-two pair the lookup also finds. */
