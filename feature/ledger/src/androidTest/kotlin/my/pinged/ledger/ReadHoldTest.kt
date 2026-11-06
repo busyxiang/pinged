@@ -34,7 +34,8 @@ import java.util.concurrent.CopyOnWriteArrayList
  * monitor for as long as its body runs, so a capture, stage two and a
  * replacement for damage all wait for it.
  *
- * Measured by wrapping the production runner and timing each transaction's body.
+ * Measured by wrapping the production runner and timing each transaction's body,
+ * at its shortest over 3 reads ([holdsOver]).
  * A JVM test cannot say it: the cost is the size of the ledger and of SQLCipher's
  * scans, which an in-memory database on Robolectric does not reproduce.
  */
@@ -45,6 +46,48 @@ class ReadHoldTest {
     @Before fun startFromTheSeed() = app.discardTheDatabase()
 
     @After fun leaveNothingBehind() = app.discardTheDatabase()
+
+    /** What [holdsOver] measured: [answer] from the first read, and every read's transactions in [reads]. */
+    private class Holds<T>(val answer: T, val reads: List<List<Long>>) {
+        /**
+         * Per transaction, the shortest it held the connection across [reads];
+         * the longest of those. 0 for a read that took no transaction.
+         */
+        val longest: Long = reads.first().indices.maxOfOrNull { i -> reads.minOf { it[i] } } ?: 0L
+    }
+
+    /**
+     * [read] [READS] times over the same ledger, each through its own
+     * [TimedRunner]. Every read takes the same transactions over the same
+     * rows, so a transaction's work is the same in each, and only its
+     * shortest is the work: time the reading thread spends off the CPU
+     * inside the body counts as a hold, and a busy host deals that out to
+     * whichever transaction happens to be running.
+     *
+     * Measured on emulator-5554 with qemu pinned to one host CPU beside two
+     * busy loops, over 30 reads of [aThousandCorrectionsAwaitingAreReadWithNoTransactionNearTheBound]'s
+     * ledger: one page held 90ms of wall time on 19ms of thread CPU, with
+     * no GC in it, while the pages either side held under 40ms. 2 of the 30
+     * reads had a transaction over 66ms. Taking each transaction's shortest
+     * of 3 reads, the worst of 28 windows was 40ms. CI's two failures had
+     * that shape: one page at 97ms and at 140ms, every other page at 5 to 34ms.
+     * Thread CPU time is no better a measure: on a starved guest the cold first
+     * read's pages took 74ms of it, against 17ms unstarved.
+     *
+     * A hold that comes only on some reads is what this cannot see. Nothing
+     * else uses the database while these tests run, so nothing inside a
+     * transaction waits on anything but its own statements.
+     */
+    private suspend fun <T> holdsOver(read: suspend (ReadRunner) -> T): Holds<T> {
+        val runners = List(READS) { TimedRunner(GuardedRunner(app)) }
+        val answer = runners.map { read(it) }.first()
+        val reads = runners.map { it.transactions.toList() }
+        assertTrue(
+            "The reads took different numbers of transactions ($reads), so no transaction can be set beside itself",
+            reads.all { it.size == reads.first().size },
+        )
+        return Holds(answer, reads)
+    }
 
     /** [GuardedRunner], with the length of every transaction's body recorded in milliseconds. */
     private class TimedRunner(private val inner: ReadRunner) : ReadRunner {
@@ -137,18 +180,19 @@ class ReadHoldTest {
         Databases.txnDao(app).insert(ledgerTxn(amountSen = 32, categoryId = category, rawCaptureId = seed))
         cloneCaptures(seed, copies = 999, sourceExpr = "c.source_package", postedExpr = "c.posted_at - n.i", withTxn = true)
         while (Corrections.sweep(app, Databases.rawCaptureDao(app), Databases.txnDao(app), matcher).more) { }
-        val runner = TimedRunner(GuardedRunner(app))
-        val model = CorrectionsViewModel(app, runner)
 
-        model.read.refreshed()
+        val holds = holdsOver { runner ->
+            val model = CorrectionsViewModel(app, runner)
+            model.read.refreshed()
+            model.read.state.value.toState()
+        }
 
-        val state = model.read.state.value.toState()
-        assertEquals("The list was not read, so there is no length to hold it to", 1_000, state.items.size)
-        assertTrue("The read took no transaction at all, so it measured nothing of the database", runner.transactions.isNotEmpty())
+        assertEquals("The list was not read, so there is no length to hold it to", 1_000, holds.answer.items.size)
+        assertTrue("The read took no transaction at all, so it measured nothing of the database", holds.reads.first().isNotEmpty())
         assertTrue(
-            "A transaction held Room's connection for ${runner.transactions.max()}ms over 1,000 awaiting " +
-                "captures (${runner.transactions}), past the 66ms a lease may leave up",
-            runner.transactions.max() < 66,
+            "A transaction held Room's connection for ${holds.longest}ms at its shortest over 1,000 awaiting " +
+                "captures (${holds.reads}), past the 66ms a lease may leave up",
+            holds.longest < 66,
         )
     }
 
@@ -173,22 +217,28 @@ class ReadHoldTest {
             postedExpr = "${now - 3_600_000L} - (n.i % 100000) * 1000",
             withTxn = false,
         )
-        val runner = TimedRunner(GuardedRunner(app))
-        val model = SourcesViewModel(app, runner)
 
-        model.read.refreshed()
+        val holds = holdsOver { runner ->
+            val model = SourcesViewModel(app, runner)
+            model.read.refreshed()
+            model.read.state.value.toState()
+        }
 
-        val state = model.read.state.value.toState()
-        assertEquals("The allow-list was not read", packages.toSet(), state.suggested.map { it.pkg }.toSet())
+        assertEquals("The allow-list was not read", packages.toSet(), holds.answer.suggested.map { it.pkg }.toSet())
         assertEquals(
             "SourceGaps.refresh did not scan the captures, so nothing was measured of what it costs",
             2_000,
             sources.byPackage(packages.first())?.expectedMonthlyCount,
         )
         assertTrue(
-            "A transaction held Room's connection for ${runner.transactions.maxOrNull()}ms over ten sources " +
-                "and 20,000 captures (${runner.transactions}), past the 66ms a lease may leave up",
-            (runner.transactions.maxOrNull() ?: 0L) < 66,
+            "A transaction held Room's connection for ${holds.longest}ms at its shortest over ten sources " +
+                "and 20,000 captures (${holds.reads}), past the 66ms a lease may leave up",
+            holds.longest < 66,
         )
+    }
+
+    private companion object {
+        /** How many times [holdsOver] reads; its KDoc has the measurement behind 3. */
+        const val READS = 3
     }
 }

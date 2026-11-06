@@ -23,6 +23,8 @@ the way to make it fail on purpose.
   drive](#work-the-compose-clock-does-not-drive).
 - A write straight after building a holder that reads in its `init`.
   [A holder that reads on arrival](#a-holder-that-reads-on-arrival).
+- `System.nanoTime()` around a step, from one run, held to a bound.
+  [A duration on a busy host](#a-duration-on-a-busy-host).
 
 A rule added for a new flake gets a line here too, written as the code a
 reader would see in their own test, not as the cause.
@@ -218,3 +220,41 @@ the later read held 300ms, the old test failed every time at the CI assertion;
 with the wait it passed under the same hold. The holder itself still lets a
 stale read overwrite a newer one; no screen reaches that, because a save
 happens seconds after the screen opens.
+
+## A duration on a busy host
+
+A test that times a step on the device and holds it to a bound measures wall
+time, and wall time includes every moment the thread was runnable but not
+running. CI's emulator shares a 4-vCPU runner with Gradle, so a descheduling
+lands on whichever step happens to be running. `ReadHoldTest` failed on main
+twice this way: one page's transaction at 97ms in one run and 140ms in
+another, against the 66ms bound, while the other nine pages took 5 to 34ms.
+
+Starving the host reproduced it. Pin qemu to one host CPU and run two busy
+loops on that CPU, inside the lease's script, and unpin it on exit:
+
+    taskset -acp 0 $(pgrep -f qemu-system-x86_64-headless)
+    taskset -c 0 sh -c 'while :; do :; done' &   # twice
+    # on exit: kill the loops, then taskset -acp 0-11 <the same pid>
+
+Busy loops inside the guest do not do the same. They reproduced timing races
+in app code, but not CI's render timeouts.
+
+Logging each transaction's wall time beside `Debug.threadCpuTimeNanos()` and
+`Debug.getRuntimeStat("art.gc.gc-count")` showed what the outlier was. One page
+took 90ms of wall time on 19ms of CPU, with no GC in it. Unstarved, wall time
+and CPU time were equal to the millisecond. So it was not GC, and it was not
+the transaction doing more work. Thread CPU time is no fix either: on the
+starved guest, the cold first read's pages took 74ms of it, against 17ms
+unstarved.
+
+A step's work is the same each time it runs on the same data, and a
+descheduling is not. So a test times the step several times on the same data
+and holds the bound against each step's shortest run. It also checks that
+every run took the same steps, or the shortest pairs different work.
+`ReadHoldTest` reads 3 times. Starved, the old single-read test failed 3 runs
+of 3 and the new one passed 5 of 5. With the pages put back into one
+transaction, a real hold, the new one failed at 211ms and 212ms unstarved, and
+at 794ms starved. This cannot see a hold that comes only on some runs, such as
+contention with another caller. A test that needs to see that has to make the
+contention happen on every run.
