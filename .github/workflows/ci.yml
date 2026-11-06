@@ -208,6 +208,19 @@ jobs:
         if: failure() && steps.gradle.outcome == 'failure'
         run: python3 .github/scripts/test_failures.py
 
+      # Every run, passing or not, so each test's duration exists for every
+      # push (#357). `test/` as well as `testDebugUnitTest/`: :core:parse is a
+      # plain JVM module and has no variants.
+      - name: Keep the test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ github.job }}
+          path: |
+            **/build/test-results/testDebugUnitTest/*.xml
+            **/build/test-results/test/*.xml
+          retention-days: 14
+
       - name: Keep the reports from a failed run
         if: failure()
         uses: actions/upload-artifact@v7
@@ -377,6 +390,21 @@ jobs:
       - name: Name the failed tests
         if: failure() && steps.instrumented.outcome == 'failure'
         run: python3 .github/scripts/test_failures.py
+
+      # Every run that ran a suite, passing or not, so each test's duration
+      # exists for every push (#357). Not on a shard that selected nothing,
+      # which has no results and would only warn so. :smoke's line is the path
+      # the step above reads, whatever AGP names the file in it.
+      - name: Keep the test results
+        if: always() && steps.suites.outputs.tasks != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ github.job }}-${{ matrix.shard }}
+          path: |
+            */build/outputs/androidTest-results/connected/**/TEST-*.xml
+            */*/build/outputs/androidTest-results/connected/**/TEST-*.xml
+            smoke/build/outputs/androidTest-results/connected/minified/*.xml
+          retention-days: 14
 
       - name: Keep the reports from a failed run
         if: failure()
