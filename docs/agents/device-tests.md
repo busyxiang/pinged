@@ -86,7 +86,8 @@ An empty selection is the opposite: no suite can be reached, and the bare
 The whole `connectedDebugAndroidTest` is for when the selection rules
 themselves are in doubt; main's push runs every suite regardless.
 A local run skips `:core:data`'s `@Measurement` tests, which log a figure and
-assert nothing; CI runs them, and `CI=true` before `./gradlew` runs them here.
+assert nothing, and so does a PR's CI run; main's push runs them, and
+`PINGED_MEASURE=true` before `./gradlew` runs them here.
 
 ## Loops
 
