@@ -161,6 +161,9 @@ class ParseWorker(context: Context, params: WorkerParameters) :
         progress: ParsePass.Progress,
     ): ParsePass.Summary {
         val access = DatabaseAccess.production(app)
+        // Before any lease, and once per run: a DataStore read has no place
+        // inside one, and every pass of the run gates by the same limit.
+        val checkLimitSen = CheckLimit.sen(app)
         return access.damageScope {
             var finished: ParsePass.Summary? = null
             while (finished == null) {
@@ -187,6 +190,7 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                             // runs stops its entries filing on the next one.
                             dictionary = Graph.parsePack().dictionary,
                             categoryIds = db.categoryDao().seededIds(),
+                            checkLimitSen = checkLimitSen,
                             isStopped = { isStopped },
                             progress = progress,
                         ).run()

@@ -1,5 +1,6 @@
 package my.pinged.ledger
 
+import my.pinged.capture.CheckLimit
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +100,7 @@ class WritesReadBackTest {
     }
 
     @Test fun aReviewAnswerIsReadBackOnceInItsOwnTurn() {
-        val model = ReviewViewModel(app, runner)
+        val model = ReviewViewModel(app, runner, Dispatchers.Unconfined) { CheckLimit.DEFAULT_SEN }
         val card = ReviewCard(ledgerTxn(amountSen = 1_000L, state = TxnState.PENDING, pendingReason = PendingReason.OVER_THRESHOLD))
 
         model.answer(card, ReviewAnswer.ACCEPT)
@@ -108,7 +109,7 @@ class WritesReadBackTest {
     }
 
     @Test fun aRefusedReviewAnswerOffersNoUndoAndRaisesStorageUnavailable() {
-        val model = ReviewViewModel(app, runner)
+        val model = ReviewViewModel(app, runner, Dispatchers.Unconfined) { CheckLimit.DEFAULT_SEN }
         val card = ReviewCard(ledgerTxn(amountSen = 1_000L, state = TxnState.PENDING, pendingReason = PendingReason.OVER_THRESHOLD))
         runner.refusing = true
 

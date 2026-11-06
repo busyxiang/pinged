@@ -118,18 +118,31 @@ class ConfidenceGateTest {
     }
 
     /**
-     * The threshold is a parameter because the setting behind it does not
-     * exist yet: spec 7.1 calls it user-configurable and there is no store for
-     * it anywhere in this milestone. When one arrives it has exactly one call
-     * site to fill.
+     * The check limit the user picked (#362), one of [CheckLimit.STEPS_SEN],
+     * and the boundary still strict at each: at RM1,000, RM800 counts, RM1,200
+     * waits and RM1,000.00 exactly counts.
      */
     @Test
-    fun theThresholdIsSubstitutable() {
-        assertEquals(
-            PendingReason.OVER_THRESHOLD,
-            decide(amountSen = 20_001L, thresholdSen = 20_000L).reason,
-        )
-        assertNull(decide(amountSen = 60_000L, thresholdSen = 100_000L).reason)
+    fun atRm1000TheLimitIsTheUsersAndStillStrict() {
+        assertNull(decide(amountSen = 80_000L, thresholdSen = 100_000L).reason)
+        assertEquals(PendingReason.OVER_THRESHOLD, decide(amountSen = 120_000L, thresholdSen = 100_000L).reason)
+        assertNull(decide(amountSen = 100_000L, thresholdSen = 100_000L).reason)
+        assertEquals(PendingReason.OVER_THRESHOLD, decide(amountSen = 20_001L, thresholdSen = 20_000L).reason)
+    }
+
+    /**
+     * The highest step frees an RM4,999 payment as far as its amount goes,
+     * and no other condition: each still holds it alone.
+     */
+    @Test
+    fun atRm5000EveryOtherReasonStillHolds() {
+        val limit = 500_000L
+        val amount = 499_900L
+        assertNull(decide(amountSen = amount, thresholdSen = limit).reason)
+        assertEquals(PendingReason.RULE_REVIEW, decide(confidence = Confidence.REVIEW, amountSen = amount, thresholdSen = limit).reason)
+        assertEquals(PendingReason.MERCHANT_MISSING, decide(merchantRaw = null, amountSen = amount, thresholdSen = limit).reason)
+        assertEquals(PendingReason.TRANSFER_SUSPECT, decide(kind = Kind.TRANSFER_SUSPECT, amountSen = amount, thresholdSen = limit).reason)
+        assertEquals(PendingReason.DUPLICATE_SUSPECT, decide(duplicateSuspect = true, amountSen = amount, thresholdSen = limit).reason)
     }
 
     /**

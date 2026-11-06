@@ -110,7 +110,7 @@ class InboxArtboardTest {
     @Test fun aCardIsPaddedAsTheBoardPadsIt() {
         inbox()
         val surface = bounds(compose.onNodeWithTag(reviewSurfaceTag(FIRST)))
-        val reason = bounds(textIn(FIRST, reasonSentence(PendingReason.OVER_THRESHOLD)))
+        val reason = bounds(textIn(FIRST, card(FIRST).reason))
         assertEquals("The reason line starts ${dp(reason.left - surface.left)}dp in, not 15", 15f, dp(reason.left - surface.left), 0.5f)
         assertEquals("The reason line starts ${dp(reason.top - surface.top)}dp down, not 14", 14f, dp(reason.top - surface.top), 0.5f)
     }
@@ -206,7 +206,7 @@ class InboxArtboardTest {
     /** The board's mono caps label, at [MonoLabel]'s 12sp floor rather than its 9.5. */
     @Test fun theReasonLineIsTheMonoLabelInStamp() {
         inbox(card(FIRST))
-        val text = reasonSentence(PendingReason.OVER_THRESHOLD)
+        val text = card(FIRST).reason
         assertMonoLabel("The reason line", text)
         val ink = darkest(textIn(FIRST, text).captureToImage().toPixelMap())
         assertTrue("The reason line is painted $ink, not Stamp", distance(ink, Stamp) < distance(ink, Ink))

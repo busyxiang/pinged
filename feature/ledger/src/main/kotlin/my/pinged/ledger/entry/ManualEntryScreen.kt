@@ -342,8 +342,8 @@ private fun WarningButton(label: String, enabled: Boolean, onClick: () -> Unit) 
 
 /**
  * `Pinged already has RM12.50 from Touch 'n Go eWallet at 12:41`, and
- * `, awaiting review` when the capture is held (spec 9.4): a held payment over
- * RM500 is exactly what a user types in after seeing the total not move. The
+ * `, awaiting review` when the capture is held (spec 9.4): a payment held over
+ * the check limit is exactly what a user types in after seeing the total not move. The
  * time alone, not the day: the capture is on the entry's own day.
  */
 internal fun nearbyLine(nearby: NearbyCapture, zone: ZoneId = ZoneId.systemDefault()): String =
