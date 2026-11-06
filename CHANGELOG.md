@@ -5,6 +5,22 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.16.0](https://github.com/busyxiang/pinged/compare/v0.15.0...v0.16.0) (2026-11-06)
+
+
+### Features
+
+* always leave out a transfer the user has already left out ([#361](https://github.com/busyxiang/pinged/issues/361)) ([#372](https://github.com/busyxiang/pinged/issues/372)) ([3ab119d](https://github.com/busyxiang/pinged/commit/3ab119d2f6b1539e461c43405f430e47f2a5d0b8))
+* let the user choose the check limit in Settings ([#362](https://github.com/busyxiang/pinged/issues/362)) ([#370](https://github.com/busyxiang/pinged/issues/370)) ([20fdcb3](https://github.com/busyxiang/pinged/commit/20fdcb37eea95bc226ad9429f329ef95579697a7))
+* name the apps a month's totals come from ([#360](https://github.com/busyxiang/pinged/issues/360)) ([#373](https://github.com/busyxiang/pinged/issues/373)) ([ea249ad](https://github.com/busyxiang/pinged/commit/ea249ad937485d90b78d00856f8587f525a1220e))
+* pair MAE's card spend at the FPX gateway with its FPX payment ([#255](https://github.com/busyxiang/pinged/issues/255)) ([#353](https://github.com/busyxiang/pinged/issues/353)) ([3f6e9c1](https://github.com/busyxiang/pinged/commit/3f6e9c147ba67fe5aa2086ae760a6b41809322b0))
+* record money received from the manual entry screen ([#356](https://github.com/busyxiang/pinged/issues/356)) ([fa27dfc](https://github.com/busyxiang/pinged/commit/fa27dfc250367917a845c4dec01a8fa63c5e22dd))
+
+
+### Bug Fixes
+
+* refuse a write during a ledger replacement in the screen's read, not in each holder ([#376](https://github.com/busyxiang/pinged/issues/376)) ([#384](https://github.com/busyxiang/pinged/issues/384)) ([714ed3d](https://github.com/busyxiang/pinged/commit/714ed3df7f16a3f07816d2cf700bfa40711b8a9c))
+
 ## [0.15.0](https://github.com/busyxiang/pinged/compare/v0.14.0...v0.15.0) (2026-10-30)
 
 
