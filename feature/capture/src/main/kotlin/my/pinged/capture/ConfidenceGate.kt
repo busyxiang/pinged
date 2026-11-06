@@ -4,6 +4,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.PendingReasons
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
+import my.pinged.parse.ExclusionReason
 import my.pinged.parse.Kind
 
 /**
@@ -40,8 +41,35 @@ internal object ConfidenceGate {
      */
     const val DEFAULT_THRESHOLD_SEN: Long = REVIEW_THRESHOLD_SEN
 
-    /** The gate's answer: a state, and the reason if that state is PENDING. */
-    data class Decision(val state: TxnState, val reason: PendingReason?)
+    /**
+     * The gate's answer: a state, the reason if that state is PENDING, and the
+     * exclusion a standing answer wrote, if one settled it ([decide]).
+     */
+    data class Decision(val state: TxnState, val reason: PendingReason?, val exclusion: ExclusionReason? = null)
+
+    /**
+     * The reasons that hold a transfer for review even when a standing answer
+     * (spec 7.3) matches it: facts about this one capture -- its amount, its
+     * neighbours -- that the user never saw when they answered.
+     *
+     * `RULE_REVIEW` and `MERCHANT_MISSING` are not here, because the answer's
+     * own key fixes both: a rule's confidence is the rule's, and the rule id
+     * is in the key; a merchant is missing exactly when `merchant_key` is
+     * null (`MerchantColumns`), and a null key matches only a null key. The
+     * card the user answered showed them. Every rule in pack 18 that reads transfers
+     * declares `confidence: REVIEW`, and `tng-reload-v1` reads no merchant,
+     * so holding for either would mean no standing answer ever applied.
+     */
+    val HELD_DESPITE_STANDING_ANSWER: Set<PendingReason> =
+        setOf(PendingReason.DUPLICATE_SUSPECT, PendingReason.OVER_THRESHOLD)
+
+    /**
+     * Whether a standing answer may settle a transaction for which [reasons]
+     * fired: a transfer, and none of [HELD_DESPITE_STANDING_ANSWER]. Stage two
+     * asks before it looks one up.
+     */
+    fun standingAnswerApplies(reasons: Set<PendingReason>): Boolean =
+        PendingReason.TRANSFER_SUSPECT in reasons && reasons.none { it in HELD_DESPITE_STANDING_ANSWER }
 
     /**
      * Every condition of spec 7.1 that holds for this transaction.
@@ -80,10 +108,22 @@ internal object ConfidenceGate {
         amountSen: Long,
         duplicateSuspect: Boolean,
         thresholdSen: Long = DEFAULT_THRESHOLD_SEN,
-    ): Decision {
-        val reason = PendingReasons.mostSpecific(
-            reasons(confidence, kind, merchantRaw, amountSen, duplicateSuspect, thresholdSen),
-        )
+    ): Decision = decide(reasons(confidence, kind, merchantRaw, amountSen, duplicateSuspect, thresholdSen))
+
+    /**
+     * The decision for [fired], the set [reasons] returned.
+     *
+     * [leftOutAs] is the exclusion a matching standing answer writes, null
+     * when none matches. It settles the row -- `COMMITTED`, no reason,
+     * excluded as Leave out would have excluded it -- only when
+     * [standingAnswerApplies]; otherwise the row is held exactly as it
+     * would be with no answer at all.
+     */
+    fun decide(fired: Set<PendingReason>, leftOutAs: ExclusionReason? = null): Decision {
+        if (leftOutAs != null && standingAnswerApplies(fired)) {
+            return Decision(state = TxnState.COMMITTED, reason = null, exclusion = leftOutAs)
+        }
+        val reason = PendingReasons.mostSpecific(fired)
         return Decision(
             state = if (reason == null) TxnState.COMMITTED else TxnState.PENDING,
             reason = reason,

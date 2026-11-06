@@ -119,6 +119,7 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
         onAnswer = { card, answer -> viewModel.answer(card, answer) },
         undoable = undoable,
         onUndo = { viewModel.inbox.undo() },
+        onAlways = { viewModel.inbox.always() },
         modifier = modifier,
         focus = focus,
         onAcceptAll = { viewModel.inbox.acceptAll() },
@@ -138,7 +139,8 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
  * [undoable] is the last answer, drawn as a bar pinned to the bottom with
  * [onUndo] on it. It stays until the next answer replaces it, it is used, or
  * a restore or a delete-everything withdraws it: no timeout, so the Undo for the card that emptied the inbox is still there
- * however long the user looks at the empty screen.
+ * however long the user looks at the empty screen. A Leave out's bar also
+ * carries Always ([Undoable.always]), which reports [onAlways].
  *
  * [focus] scrolls the list to that transaction's card once, on the first read
  * that has cards; a card no longer awaiting review leaves the list at the top.
@@ -164,6 +166,7 @@ fun ReviewInboxScreenContent(
     modifier: Modifier = Modifier,
     undoable: Undoable? = null,
     onUndo: () -> Unit = {},
+    onAlways: () -> Unit = {},
     focus: Long? = null,
     onAcceptAll: () -> Unit = {},
     choices: suspend () -> List<Category>? = { null },
@@ -227,7 +230,7 @@ fun ReviewInboxScreenContent(
             )
         }
         if (undoable != null) {
-            UndoBar(undoable, enabled = busy == null, onUndo, Modifier.align(Alignment.BottomCenter))
+            UndoBar(undoable, enabled = busy == null, onUndo, onAlways, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
@@ -280,29 +283,44 @@ private fun Cards(
 }
 
 /**
- * The snackbar: what the last answer did, and Undo. Disabled with the answers
- * while a restore or a delete runs.
+ * The snackbar: what the last answer did, Always after a Leave out that
+ * offers it, and Undo. Disabled with the answers while a restore or a
+ * delete runs.
+ *
+ * Always and Undo each take 12dp a side rather than Undo's 16 alone: at
+ * CI's 320dp that leaves the line 154dp, where `LEFT OUT · RM100.00` (151.5dp)
+ * keeps one line and a four-figure amount wraps at the `·`, inside the
+ * buttons' 48dp. At 16dp even RM100.00 wraps. `UndoBarFitTest` measures it.
  */
 @Composable
-private fun UndoBar(undoable: Undoable, enabled: Boolean, onUndo: () -> Unit, modifier: Modifier) {
+private fun UndoBar(undoable: Undoable, enabled: Boolean, onUndo: () -> Unit, onAlways: () -> Unit, modifier: Modifier) {
+    val pad = if (undoable.always != null) 12.dp else 16.dp
     Row(
         modifier
             .fillMaxWidth()
             .padding(12.dp)
             .background(Ink, RoundedCornerShape(2.dp))
-            .padding(start = 16.dp),
+            .padding(start = 16.dp)
+            .testTag(UNDO_BAR),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(undoable.said, style = MonoLabel, color = Paper, modifier = Modifier.weight(1f))
-        Box(
-            Modifier
-                .clickable(enabled = enabled, role = Role.Button, onClick = onUndo)
-                .heightIn(min = 48.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(UNDO, style = ButtonLabel.copy(fontSize = 14.sp), color = if (enabled) Paper else Muted)
-        }
+        if (undoable.always != null) BarAction(ALWAYS, enabled, pad, onAlways)
+        BarAction(UNDO, enabled, pad, onUndo)
+    }
+}
+
+/** One of the snackbar's buttons: a 48dp target in [pad] either side of its label. */
+@Composable
+private fun BarAction(label: String, enabled: Boolean, pad: Dp, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = pad),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = ButtonLabel.copy(fontSize = 14.sp), color = if (enabled) Paper else Muted)
     }
 }
 
@@ -693,6 +711,12 @@ const val NOTHING_AWAITING_REVIEW = "NOTHING AWAITING REVIEW"
 
 /** The snackbar's button. */
 const val UNDO = "Undo"
+
+/** The snackbar's second button after a Leave out: store a standing answer (§7.3). */
+const val ALWAYS = "Always"
+
+/** The snackbar, as a test finds it. */
+const val UNDO_BAR = "undo-bar"
 
 /** Between two cards, and under the last: the board's list gap. */
 private val CARD_GAP = 12.dp

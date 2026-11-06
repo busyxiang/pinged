@@ -94,15 +94,29 @@ class TxnDetailTest {
         assertEquals(before, db.txnDao().byId(id))
     }
 
-    @Test fun countAsSpendingLeavesAPackExclusionAsItIs() {
-        val id = transfer(hash = "c2")
+    /** Spec 7.3's way back for a transfer left out wrongly, by Leave out or a standing answer. */
+    @Test fun countAsSpendingTakesATransferAndACardPaymentBackIntoTheTotals() {
+        val transfer = transfer(hash = "c2", reason = ExclusionReason.TRANSFER)
+        val cardPayment = transfer(hash = "c3", reason = ExclusionReason.CARD_PAYMENT)
+        val day = db.txnDao().byId(transfer)!!.localDate
+        val total = { db.txnDao().monthTotals(day, day).sumOf { it.netSen } }
+        assertEquals("precondition: both are out of the total", 0L, total())
+
+        assertEquals("A TRANSFER row was not counted back", 1, db.txnDao().countAsSpending(transfer, NOW))
+        assertEquals("A CARD_PAYMENT row was not counted back", 1, db.txnDao().countAsSpending(cardPayment, NOW))
+
+        listOf(transfer, cardPayment).forEach {
+            val row = db.txnDao().byId(it)!!
+            assertEquals(false to null, row.isExcluded to row.exclusionReason)
+        }
+        assertEquals(2_000L, total())
+    }
+
+    @Test fun countAsSpendingLeavesAManualEntryAsItIs() {
+        val id = db.txnDao().insert(sampleTxn(rawCaptureId = null, pkg = null, categoryId = groceries, isExcluded = true))
         val before = db.txnDao().byId(id)
 
-        assertEquals(
-            "Count as spending undoes only what the user excluded; a transfer is the inbox's",
-            0,
-            db.txnDao().countAsSpending(id, NOW),
-        )
+        assertEquals("A manual entry is deleted, never counted back", 0, db.txnDao().countAsSpending(id, NOW))
         assertEquals(before, db.txnDao().byId(id))
     }
 
@@ -148,10 +162,10 @@ class TxnDetailTest {
         assertNull(db.txnDao().byId(id)!!.note)
     }
 
-    private fun transfer(hash: String): Long {
+    private fun transfer(hash: String, reason: ExclusionReason = ExclusionReason.TRANSFER): Long {
         val capture = db.rawCaptureDao().insert(sampleCapture(hash = hash))
         return db.txnDao().insert(
-            sampleTxn(rawCaptureId = capture, categoryId = groceries, isExcluded = true, exclusionReason = ExclusionReason.TRANSFER),
+            sampleTxn(rawCaptureId = capture, categoryId = groceries, isExcluded = true, exclusionReason = reason),
         )
     }
 

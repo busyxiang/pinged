@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import my.pinged.data.entity.StandingAnswer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,7 +28,10 @@ class WipeTest {
 
     @Before fun startWithSomethingToDelete() {
         Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
-        DatabaseFactory.build(context).useDb { it.rawCaptureDao().insert(sampleCapture(hash = "doomed")) }
+        DatabaseFactory.build(context).useDb {
+            it.rawCaptureDao().insert(sampleCapture(hash = "doomed"))
+            it.standingAnswerDao().answer(StandingAnswer(matchedRuleId = "tng-reload-v1", sourcePackage = "my.com.tngdigital.ewallet", merchantKey = null, createdAt = 1L))
+        }
     }
 
     @Test fun nothingSurvives() = runBlocking {
@@ -44,11 +48,12 @@ class WipeTest {
         assertFalse("the wrapped key is still there", DatabaseKey.exists(context))
     }
 
-    /** The app has to work afterwards, on a new key and an empty ledger. */
+    /** The app has to work afterwards, on a new key and an empty ledger: spec 7.3's standing answers gone too. */
     @Test fun theAppOpensAgainAfterwards() = runBlocking {
         assertEquals(Wipe.Leftover.NONE, Wipe.everything(context))
         DatabaseFactory.build(context).useDb { db ->
             assertEquals(0, db.rawCaptureDao().countAll())
+            assertEquals("a standing answer survived delete everything", 0, db.standingAnswerDao().countAll())
         }
     }
 

@@ -20,6 +20,7 @@ import my.pinged.data.entity.RuleOrigin
 import my.pinged.data.entity.MerchantAlias
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.UserTemplateRule
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.PendingReason
@@ -278,6 +279,15 @@ fun seedOneOfEverything(db: PingedDatabase): SeededLedger {
                 sampleText = "Kiosk debit RM3.00",
                 createdAt = 6L,
             ),
+        ),
+    )
+
+    // Spec 7.3: a standing answer with a counterparty and one without, the
+    // second of a rule the pack does not have, which an import still takes.
+    db.standingAnswerDao().insertAll(
+        listOf(
+            StandingAnswer(id = 51L, matchedRuleId = "mae-transferred-v1", sourcePackage = "com.maybank2u.life", merchantKey = "RAY FOO", createdAt = 7L),
+            StandingAnswer(id = 52L, matchedRuleId = "tng-reload-v0", sourcePackage = "my.com.tngdigital.ewallet", merchantKey = null, createdAt = 8L),
         ),
     )
 

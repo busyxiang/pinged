@@ -78,6 +78,20 @@ class LeftOutDetailTest {
         compose.onNodeWithText(DELETE).performScrollTo()
     }
 
+    /**
+     * Spec 7.3's way back for a transfer the inbox's Leave out or a standing
+     * answer left out: Count as spending is offered whoever excluded the row.
+     */
+    @Test fun aTransferLeftOutOffersCountAsSpending() {
+        draw(ExclusionReason.TRANSFER)
+        compose.onNodeWithText(COUNT_AS_SPENDING).performScrollTo()
+    }
+
+    @Test fun aCardPaymentLeftOutOffersCountAsSpending() {
+        draw(ExclusionReason.CARD_PAYMENT)
+        compose.onNodeWithText(COUNT_AS_SPENDING).performScrollTo()
+    }
+
     /** The board's hero: the ringgit in Muted and the sen in Faint, where a counted row's are Ink and Muted. */
     @Test fun aLeftOutRowsHeroIsGreyed() {
         draw(ExclusionReason.USER)

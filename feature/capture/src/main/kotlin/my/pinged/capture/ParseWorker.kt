@@ -173,6 +173,7 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                             captures = db.rawCaptureDao(),
                             txns = db.txnDao(),
                             merchants = db.merchantIdentityDao(),
+                            standingAnswers = db.standingAnswerDao(),
                             matcher = matcher,
                             // Read per pass, as the categories below are, so a rule
                             // saved or deleted between two runs counts on the next.

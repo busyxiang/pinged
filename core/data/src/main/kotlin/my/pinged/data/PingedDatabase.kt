@@ -12,6 +12,7 @@ import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.dao.RawCaptureDao
+import my.pinged.data.dao.StandingAnswerDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.dao.UserRejectRuleDao
 import my.pinged.data.dao.UserTemplateRuleDao
@@ -22,6 +23,7 @@ import my.pinged.data.entity.MerchantAlias
 import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnFts
 import my.pinged.data.entity.UserRejectRule
@@ -31,7 +33,7 @@ import my.pinged.data.entity.UserTemplateRule
     entities = [
         RawCapture::class, Txn::class, Category::class, CaptureSource::class,
         MerchantRule::class, CaptureDay::class, MerchantAlias::class, MerchantName::class,
-        TxnFts::class, UserRejectRule::class, UserTemplateRule::class,
+        TxnFts::class, UserRejectRule::class, UserTemplateRule::class, StandingAnswer::class,
     ],
     version = PingedDatabase.VERSION,
     exportSchema = true,
@@ -44,11 +46,14 @@ import my.pinged.data.entity.UserTemplateRule
     // is one CREATE TABLE and its index; `raw_capture.user_reject_rule_id` was
     // in v1 already. v6 is the same for spec 5.8's `user_template_rule`; a
     // taught rule's transactions name it as text in `matched_rule_id`, in v1.
+    // v7 is the same for spec 7.3's `standing_answer`: nothing references it,
+    // and no `txn` column records which answer wrote a row.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3, spec = PingedDatabase.IndexExistingRows::class),
         AutoMigration(from = 4, to = 5),
         AutoMigration(from = 5, to = 6),
+        AutoMigration(from = 6, to = 7),
     ],
 )
 abstract class PingedDatabase : RoomDatabase() {
@@ -59,7 +64,7 @@ abstract class PingedDatabase : RoomDatabase() {
          * because reading it back through `openHelper` is a path ruling R42
          * keeps to an allowlist.
          */
-        const val VERSION = 6
+        const val VERSION = 7
     }
 
     /**
@@ -93,6 +98,8 @@ abstract class PingedDatabase : RoomDatabase() {
     abstract fun userRejectRuleDao(): UserRejectRuleDao
 
     abstract fun userTemplateRuleDao(): UserTemplateRuleDao
+
+    abstract fun standingAnswerDao(): StandingAnswerDao
 
     /**
      * Whether [close] has been called on this instance, which Room's own

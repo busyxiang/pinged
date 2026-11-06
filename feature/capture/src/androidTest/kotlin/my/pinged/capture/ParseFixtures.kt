@@ -184,6 +184,7 @@ internal object ParseFixtures {
             captures = Databases.rawCaptureDao(context),
             txns = Databases.txnDao(context),
             merchants = Databases.merchantIdentityDao(context),
+            standingAnswers = Databases.standingAnswerDao(context),
             matcher = matcher,
             uncategorizedId = Databases.categoryDao(context).requireUncategorizedId(),
             sourceLabel = sourceLabel ?: { pkg -> sources.byPackage(pkg)?.label },

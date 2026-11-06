@@ -29,6 +29,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.UserRejectRule
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.UserTemplateRule
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
@@ -306,6 +307,8 @@ object ImportJson {
             userRejectRules = counts[Backup.USER_REJECT_RULES] ?: 0,
             // Absent from a file older than format 5.
             userTemplateRules = counts[Backup.USER_TEMPLATE_RULES] ?: 0,
+            // Absent from a file older than format 6.
+            standingAnswers = counts[Backup.STANDING_ANSWERS] ?: 0,
         )
         state.report()
         return report
@@ -322,6 +325,7 @@ object ImportJson {
             db.merchantIdentityDao().countNames().let { if (it > 0) add("$it renamed merchant(s)") }
             db.userRejectRuleDao().countAll().let { if (it > 0) add("$it ignored message(s)") }
             db.userTemplateRuleDao().countAll().let { if (it > 0) add("$it taught message(s)") }
+            db.standingAnswerDao().countAll().let { if (it > 0) add("$it standing answer(s)") }
         }
         if (held.isEmpty()) return
         throw ImportNotEmptyException(
@@ -336,10 +340,11 @@ object ImportJson {
     }
 
     /**
-     * The two references SQLite is not checking, plus the one seeded row the
-     * app cannot run without. All three inside the import's transaction, so a
-     * failure rolls the restore back rather than leaving a ledger that opens
-     * and then misbehaves.
+     * The references SQLite is not checking, the duplicate standing answer
+     * its unique index cannot see, and the one seeded row the app cannot run
+     * without. All inside the import's transaction, so a failure rolls the
+     * restore back rather than leaving a ledger that opens and then
+     * misbehaves.
      */
     private fun verifyReferences(db: PingedDatabase) {
         val dangling = db.rawCaptureDao().danglingDuplicateOfCount()
@@ -369,6 +374,15 @@ object ImportJson {
                     "would be missing from the list of notifications Pinged could not " +
                     "read with no rule to delete that brings them back (spec 5.7). " +
                     "Nothing was imported.",
+            )
+        }
+        val doubled = db.standingAnswerDao().duplicateCount()
+        if (doubled > 0) {
+            throw ImportIntegrityException(
+                "$doubled transfer(s) in this backup are answered 'always leave out' more " +
+                    "than once, for the same rule, app and counterparty. Spec 7.3 keeps one " +
+                    "answer each, so that deleting it sends those transfers back to review, " +
+                    "and Pinged never writes a file like this. Nothing was imported.",
             )
         }
         val chained = db.merchantIdentityDao().chainedAliasCount()
@@ -654,6 +668,14 @@ object ImportJson {
         sourcePackage = r.text("source_package"),
         skeleton = r.text("skeleton"),
         sampleText = r.text("sample_text"),
+        createdAt = r.long("created_at"),
+    )
+
+    internal fun standingAnswer(r: BackupRow) = StandingAnswer(
+        id = r.rowId("id"),
+        matchedRuleId = r.text("matched_rule_id"),
+        sourcePackage = r.text("source_package"),
+        merchantKey = r.optText("merchant_key"),
         createdAt = r.long("created_at"),
     )
 

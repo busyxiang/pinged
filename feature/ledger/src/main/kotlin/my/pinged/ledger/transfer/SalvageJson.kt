@@ -307,6 +307,9 @@ private class References {
         userTemplateRules = {
             reader.whole("user_template_rule") { it.userTemplateRuleDao().all() } ?: lost("user_template_rule")
         },
+        standingAnswers = {
+            reader.whole("standing_answer") { it.standingAnswerDao().all() } ?: lost("standing_answer")
+        },
     )
 
     fun report(rows: Int, unreadable: Map<String, Unreadable>) = SalvageReport(

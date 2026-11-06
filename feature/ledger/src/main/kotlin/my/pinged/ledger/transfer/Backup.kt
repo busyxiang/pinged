@@ -9,6 +9,7 @@ import my.pinged.data.entity.MerchantAlias
 import my.pinged.data.entity.MerchantName
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RawCapture
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.UserRejectRule
 import my.pinged.data.entity.UserTemplateRule
@@ -82,8 +83,11 @@ object Backup {
      *
      * 5 added spec 5.8's `user_template_rules` (schema 6). An older file has
      * none, and nothing else in one names a taught rule but as text.
+     *
+     * 6 added spec 7.3's `standing_answers` (schema 7). An older file has
+     * none, and restores with every transfer asked about, as it was.
      */
-    const val FORMAT_VERSION = 5
+    const val FORMAT_VERSION = 6
 
     /** The oldest format [ImportJson] still reads; see [BackupSection.sinceFormat]. */
     const val OLDEST_READABLE = 1
@@ -112,6 +116,7 @@ object Backup {
     const val MERCHANT_NAMES = "merchant_names"
     const val USER_REJECT_RULES = "user_reject_rules"
     const val USER_TEMPLATE_RULES = "user_template_rules"
+    const val STANDING_ANSWERS = "standing_answers"
 
     /**
      * Derived from [ALL_SECTIONS] rather than restated: the two were hand-
@@ -409,6 +414,26 @@ internal val USER_TEMPLATE_RULE_SECTION = BackupSection<UserTemplateRule>(
 )
 
 /**
+ * Spec 7.3's standing answers. Nothing points at one, and one names its rule,
+ * app and counterparty only as text, so it may go anywhere; last, beside the
+ * other rules the user made. A rule the pack lacks is no reason to refuse
+ * one: the settings list shows it, so it can be deleted.
+ */
+internal val STANDING_ANSWER_SECTION = BackupSection<StandingAnswer>(
+    name = Backup.STANDING_ANSWERS,
+    table = "standing_answer",
+    columns = listOf(
+        BackupColumn("id", "id") { w, r -> w.value(r.id) },
+        BackupColumn("matched_rule_id", "matchedRuleId") { w, r -> w.value(r.matchedRuleId) },
+        BackupColumn("source_package", "sourcePackage") { w, r -> w.value(r.sourcePackage) },
+        BackupColumn("merchant_key", "merchantKey") { w, r -> w.value(r.merchantKey) },
+        BackupColumn("created_at", "createdAt") { w, r -> w.value(r.createdAt) },
+    ),
+    sinceFormat = 6,
+    insert = { db, rows -> db.standingAnswerDao().insertAll(rows.map(ImportJson::standingAnswer)) },
+)
+
+/**
  * Every section, **in the order they appear in the file, and the order is
  * load-bearing.**
  *
@@ -429,6 +454,7 @@ internal val ALL_SECTIONS: List<BackupSection<*>> = listOf(
     MERCHANT_NAME_SECTION,
     USER_REJECT_RULE_SECTION,
     USER_TEMPLATE_RULE_SECTION,
+    STANDING_ANSWER_SECTION,
 )
 
 /** What an import wrote, for the screen that reports it back to the user. */
@@ -445,10 +471,11 @@ data class ImportReport(
     val merchantNames: Int,
     val userRejectRules: Int,
     val userTemplateRules: Int,
+    val standingAnswers: Int,
 ) {
     val rows: Int
         get() = categories + captureSources + captureDays + merchantRules + rawCaptures + txns +
-            merchantAliases + merchantNames + userRejectRules + userTemplateRules
+            merchantAliases + merchantNames + userRejectRules + userTemplateRules + standingAnswers
 }
 
 /**
