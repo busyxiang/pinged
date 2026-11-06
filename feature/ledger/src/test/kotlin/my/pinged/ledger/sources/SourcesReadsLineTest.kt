@@ -27,6 +27,6 @@ class SourcesReadsLineTest {
         }
         // The state under test: Suggested is empty because nothing is installed.
         compose.onNodeWithText("NO KNOWN SOURCE IS INSTALLED ON THIS DEVICE").assertExists()
-        compose.onNodeWithText("Pinged reads Touch 'n Go, MAE and Boost. Add payments from other apps by hand.").assertExists()
+        compose.onNodeWithText("Pinged reads Boost, MAE and Touch 'n Go. Add payments from other apps by hand.").assertExists()
     }
 }

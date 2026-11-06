@@ -1775,7 +1775,8 @@ source, Unreadable source, Sources line).
 - Each app is named in capitals: a pack app by the pack's own `label`, as
   section 9.6's sentence names it, so the two screens never name one app
   two ways; any other by its `capture_source` label, or its package with
-  none. The names are sorted, so the order is the same on every read.
+  none. The names are sorted, ignoring case, so the order is the same on
+  every read and the same as section 9.6's sentence (`AppNames`).
 
 `SourcesLine` in `:core:data` is the one calculation, read in the screen's own
 transaction, so Charts and Spending (#367) cannot name different apps. It
@@ -2335,10 +2336,12 @@ package's notification content get stored in `raw_capture`.
 
 - **Suggested** — known Malaysian bank and wallet packages that are actually
   installed on this device. Under its heading, one sentence names the apps
-  Pinged reads and says the rest are entered by hand: "Pinged reads Touch 'n
-  Go eWallet and Maybank MAE. Add payments from other apps by hand." It is
+  Pinged reads and says the rest are entered by hand: "Pinged reads Maybank
+  MAE and Touch 'n Go eWallet. Add payments from other apps by hand." It is
   built from the loaded pack's packages, each named by the pack's own
-  `label`, so a package added to the pack is named with no screen edit. It
+  `label`, so a package added to the pack is named with no screen edit, and
+  listed once each, sorted, by the joiner the sources line uses
+  (`AppNames`), so the two never list the pack's apps in two orders. It
   describes the pack, not the device, so it shows whether or not those apps
   are installed, in onboarding's step 2 and from Settings alike. Suggested
   itself does not grow to apps the pack cannot read: every notification from

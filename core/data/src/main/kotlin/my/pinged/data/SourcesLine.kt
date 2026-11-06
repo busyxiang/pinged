@@ -25,8 +25,8 @@ data class NamedSource(val pkg: String, val name: String)
  *   taught rule since deleted) is in [from] too.
  * - [byHand]: the month has a counted manual entry.
  *
- * Each list is sorted by name, then package, so the order is stable from one
- * read to the next and the same on both screens. A name is in capitals: a
+ * Each list is in [AppNames]' order, so it is stable from one read to the
+ * next and the same on both screens and in Capture sources' sentence. A name is in capitals: a
  * pack app's is the pack's own `label`, as Capture sources' sentence names it
  * (`readsLine`, #366), so the two screens never name one app two ways; any
  * other app's is its `capture_source` label, or its package when it has no
@@ -92,17 +92,9 @@ class SourcesLine private constructor(
     /** [segments] as one string, for a screen that draws it plainly. */
     val text: String = segments.joinToString("") { it.text }
 
-    /** `A`, `A AND B`, `A, B AND C`: no comma before the last name. */
-    private fun listed(sources: List<NamedSource>, unreadable: Boolean): List<Segment> = buildList {
-        sources.forEachIndexed { i, source ->
-            when {
-                i == 0 -> Unit
-                i == sources.lastIndex -> add(Segment.Words(" AND "))
-                else -> add(Segment.Words(", "))
-            }
-            add(Segment.App(source, unreadable))
-        }
-    }
+    /** `A`, `A AND B`, `A, B AND C`, as [AppNames] lists apps everywhere. */
+    private fun listed(sources: List<NamedSource>, unreadable: Boolean): List<Segment> =
+        AppNames.listed(sources, " AND ", name = { Segment.App(it, unreadable) }, words = { Segment.Words(it) })
 
     override fun equals(other: Any?): Boolean =
         other is SourcesLine && from == other.from && unreadable == other.unreadable && byHand == other.byHand
@@ -139,8 +131,8 @@ class SourcesLine private constructor(
             val on = sources.filter { it.enabled }.map { it.pkg }
             val read = on.filter { it in rulePackages }
             return SourcesLine(
-                from = (read + paidFrom).distinct().map(::named).sortedWith(ORDER),
-                unreadable = (on - rulePackages).distinct().map(::named).sortedWith(ORDER),
+                from = AppNames.ordered((read + paidFrom).map(::named)),
+                unreadable = AppNames.ordered((on - rulePackages).map(::named)),
                 byHand = byHand,
             )
         }
@@ -168,7 +160,5 @@ class SourcesLine private constructor(
                 packLabels = pack.packages.associate { it.pkg to it.label },
             )
         }
-
-        private val ORDER = compareBy<NamedSource>({ it.name }, { it.pkg })
     }
 }
