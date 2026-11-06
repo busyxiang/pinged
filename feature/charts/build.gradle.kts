@@ -34,14 +34,21 @@ android {
 
     // `boundedWaitUntil`, which every androidTest `waitUntil` goes through;
     // :feature:ledger's build file includes the same directory.
+    // src/sharedTest holds `chartsRead`, the month a test draws, for both sets:
+    // a test that measures bounds stays in androidTest, because Robolectric's
+    // drawing is not the device's.
     sourceSets {
         getByName("androidTest") {
+            kotlin.directories.add("src/sharedTest/kotlin")
             kotlin.directories.add(rootProject.file("core/ui/src/sharedAndroidTest/kotlin").path)
             // `retireAndAnnounce`, which the tests that replace an instance as another caller go through.
             kotlin.directories.add(rootProject.file("core/data/src/sharedAndroidTest/kotlin").path)
         }
-        // `HeldClock`, which every not-read-yet test steps its frames with.
-        getByName("test") { kotlin.directories.add(rootProject.file("core/ui/src/sharedTest/kotlin").path) }
+        getByName("test") {
+            kotlin.directories.add("src/sharedTest/kotlin")
+            // `HeldClock`, which every not-read-yet test steps its frames with.
+            kotlin.directories.add(rootProject.file("core/ui/src/sharedTest/kotlin").path)
+        }
     }
 
     testOptions {

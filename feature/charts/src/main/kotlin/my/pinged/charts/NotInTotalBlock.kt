@@ -40,7 +40,7 @@ internal fun NotInTotalBlock(lines: List<KeptOut>, modifier: Modifier = Modifier
     Column(
         modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = CHARTS_END_GAP)
             .dottedRule(atTop = true),
     ) {
         Text("NOT IN THE TOTAL", style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 16.dp))
