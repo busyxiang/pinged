@@ -138,10 +138,13 @@ class ReplacingSettingsScreensTest {
     @Test fun sourcesSwitchesNothing() {
         compose.setContent {
             SourcesScreenContent(
-                state = SourcesState(loaded = true, suggested = listOf(SourceRow("my.bank", "My Bank", seenCount = 3, enabled = false))),
+                state = SourcesState(
+                    loaded = true,
+                    suggested = listOf(SourceRow("my.bank", "My Bank", seenCount = 3, enabled = false)),
+                    ledger = LedgerAccess.Withholding(LedgerReplacement.RESTORE),
+                ),
                 onToggle = { pkg, _ -> tapped += pkg },
                 onBack = {},
-                busy = LedgerReplacement.RESTORE,
             )
         }
 
@@ -220,7 +223,7 @@ class ReplacingSettingsScreensTest {
             when (screen) {
                 0 -> CategoriesContent(CategoriesState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, { _, _ -> }, { _, _, _ -> }, {})
                 1 -> LearnedContent(LearnedState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {})
-                2 -> SourcesScreenContent(SourcesState(loaded = true, replacing = true), { _, _ -> }, {}, busy = LedgerReplacement.RESTORE)
+                2 -> SourcesScreenContent(SourcesState(loaded = true, ledger = LedgerAccess.BeingReplaced), { _, _ -> }, {})
                 3 -> CorrectionsContent(CorrectionsState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {}, {})
                 4 -> UnreadContent(UnreadState(loaded = true, replacing = true), {}, {}, {}, {}, busy = LedgerReplacement.RESTORE)
                 else -> TeachContent(TeachState(loaded = true, replacing = true), {}, {}, {}, {}, {}, busy = LedgerReplacement.RESTORE)

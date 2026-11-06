@@ -8,9 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
-import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
+import my.pinged.ledger.refused
 import my.pinged.capture.GuardedRunner
 import my.pinged.capture.Graph
 import my.pinged.capture.SourceCounters
@@ -18,6 +16,7 @@ import my.pinged.capture.SourceGaps
 import my.pinged.data.entity.CaptureSource
 import my.pinged.read.LedgerReplacement
 import my.pinged.read.LedgerAccess
+import my.pinged.read.LedgerReplacements
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadSteps
 import my.pinged.read.ReadState
@@ -75,14 +74,12 @@ data class SourcesState(
     /** False until the first read completes, so an empty screen is not a lie. */
     val loaded: Boolean = false,
     /**
-     * The database could not be opened at all (spec 11.1). The screen draws
-     * `CANNOT READ YOUR DATA` in place of each empty list rather than an empty
-     * allow-list, which would read as "no app has ever notified you" -- a
-     * confident answer this state cannot support.
+     * What the screen may do with the ledger (#376). Refused, the screen draws
+     * its notice in place of each empty list rather than an empty allow-list,
+     * which would read as "no app has ever notified you" -- a confident answer
+     * that state cannot support (spec 11.1).
      */
-    val storageUnavailable: Boolean = false,
-    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
-    val replacing: Boolean = false,
+    val ledger: LedgerAccess = LedgerAccess.Readable,
 )
 
 /**
@@ -91,9 +88,8 @@ data class SourcesState(
  * list, which an empty allow-list would contradict (spec 11.1).
  */
 fun ReadState<Unit, SourcesState>.toState(): SourcesState {
-    if (ledger == LedgerAccess.BeingReplaced) return SourcesState(loaded = true, replacing = true)
-    if (ledger == LedgerAccess.Unreadable) return SourcesState(loaded = true, storageUnavailable = true)
-    return answer ?: SourcesState()
+    if (ledger.refused) return SourcesState(loaded = true, ledger = ledger)
+    return answer?.copy(ledger = ledger) ?: SourcesState(ledger = ledger)
 }
 
 /**
@@ -113,14 +109,9 @@ fun ReadState<Unit, SourcesState>.toState(): SourcesState {
 class SourcesViewModel internal constructor(
     app: Application,
     runner: ReadRunner,
-    transfers: StateFlow<TransferState> = Transfers.state,
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
 ) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
-
-    private val gate = LedgerBusy(viewModelScope, transfers)
-
-    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * A getter, not a field: `private val context: Context = app` is what lint's
@@ -140,13 +131,13 @@ class SourcesViewModel internal constructor(
      *
      * The failure that is not this screen's to survive is the database that
      * cannot be opened (spec 11.1): the runner turns it into
-     * `ReadState.unavailable`, where unguarded it reached the thread's uncaught
+     * `LedgerAccess.Unreadable`, where unguarded it reached the thread's uncaught
      * handler and killed the process on every launch. The banner does not wait
      * on this read: `AppStatus` runs its own probe on resume, because this
      * screen may not be composed at all.
      */
     val read: ScreenRead<Unit, SourcesState> =
-        ScreenRead.fixedStaged(viewModelScope, runner, "The allow-list cannot be read") { readAllowList() }
+        ScreenRead.fixedStaged(viewModelScope, runner, "The allow-list cannot be read", replacement = replacement) { readAllowList() }
 
     /**
      * The allow-list write, and the only one in the app. Three statements, in
@@ -176,11 +167,11 @@ class SourcesViewModel internal constructor(
      * The returned `Job` completes after that read, so a caller sequencing work
      * after the toggle sees the state it produced.
      *
-     * Not asked for at all while the ledger is being replaced ([busy], #331):
-     * a source switched on then would be switched off again by the restore
+     * Refused by [read] while the ledger is being replaced (#331, #376): a
+     * source switched on then would be switched off again by the restore
      * after the user saw it on.
      */
-    fun setEnabled(pkg: String, on: Boolean): Job = gate.unlessReplacing {
+    fun setEnabled(pkg: String, on: Boolean): Job =
         read.write("The allow-list cannot be changed") { db ->
             val dao = db.captureSourceDao()
             val label = label(InstalledApps(context.packageManager), pkg, known = null, usePackLabel = true)
@@ -195,7 +186,6 @@ class SourcesViewModel internal constructor(
             dao.setLabel(pkg, label)
             dao.setEnabled(pkg, on)
         }
-    }
 
     /**
      * One read of the allow-list, as [read]'s staged body: the database in one

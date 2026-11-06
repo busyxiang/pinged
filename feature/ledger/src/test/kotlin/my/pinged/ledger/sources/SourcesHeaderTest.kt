@@ -3,6 +3,7 @@ package my.pinged.ledger.sources
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.NOT_READ_YET
 import my.pinged.ui.theme.READING_DELAY_MILLIS
 import org.junit.Rule
@@ -28,7 +29,7 @@ class SourcesHeaderTest {
 
     @Test fun anUnreadableLedgerClaimsNoCount() {
         compose.setContent {
-            SourcesScreenContent(state = SourcesState(loaded = true, storageUnavailable = true), onToggle = { _, _ -> }, onBack = {})
+            SourcesScreenContent(state = SourcesState(loaded = true, ledger = LedgerAccess.Unreadable), onToggle = { _, _ -> }, onBack = {})
         }
         compose.onNodeWithText("0 ENABLED", substring = true).assertDoesNotExist()
     }

@@ -83,7 +83,7 @@ class ReplacingRefusesWritesTest {
 
     @Test fun anAllowListToggleIsRefusedDuringADelete() {
         refuses("The allow-list cannot be changed", Operation.DELETE) {
-            SourcesViewModel(app, runner, transfers).let { it.read to { it.setEnabled("my.bank", true) } }
+            SourcesViewModel(app, runner, replacement).let { it.read to { it.setEnabled("my.bank", true) } }
         }
     }
 

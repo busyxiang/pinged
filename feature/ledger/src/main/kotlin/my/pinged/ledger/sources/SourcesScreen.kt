@@ -20,8 +20,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,14 +36,14 @@ import java.util.Locale
 import my.pinged.capture.Graph
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
+import my.pinged.ledger.notice
+import my.pinged.ledger.refused
+import my.pinged.ledger.withholding
 import my.pinged.parse.ParsePack
-import my.pinged.read.LedgerReplacement
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Body
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
@@ -88,13 +86,11 @@ fun SourcesScreen(
     // while this screen shows would leave a source switched ON that the delete
     // has taken away, which is consent shown inverted.
     val state = viewModel.read.rememberReadState().toState()
-    val busy by viewModel.busy.collectAsState()
     SourcesScreenContent(
         state = state,
         onToggle = viewModel::setEnabled,
         onBack = onBack,
         modifier = modifier,
-        busy = busy,
     )
 }
 
@@ -103,7 +99,7 @@ fun SourcesScreen(
  *
  * Nothing here knows what a `CaptureSource` is or that a `DataStore` exists.
  *
- * While [busy] runs a ledger replacement the screen says so under its header
+ * While [state] withholds for a ledger replacement the screen says so under its header
  * and no switch moves (#331): a restore replaces the allow-list too.
  *
  * [pack] is what the sentence under ON YOUR PHONE names (#366, [readsLine]):
@@ -115,16 +111,16 @@ fun SourcesScreenContent(
     onToggle: (String, Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    busy: LedgerReplacement? = null,
     pack: ParsePack = Graph.parsePack(),
 ) {
+    val busy = state.ledger.withholding
     val reads = remember(pack) { readsLine(pack) }
     val suggested = state.suggested
     val seenNotCaptured = state.seenNotCaptured
     val loaded = state.loaded
     // The lists are empty before the first read and on a ledger that would
     // not open, and neither is "0 ENABLED" (#237).
-    val enabledCount = if (loaded && !state.storageUnavailable && !state.replacing) {
+    val enabledCount = if (loaded && !state.ledger.refused) {
         (suggested.count { it.enabled } + seenNotCaptured.count { it.enabled }).toString()
     } else {
         NOT_READ_YET
@@ -149,7 +145,7 @@ fun SourcesScreenContent(
             item(key = "header") {
                 Column(Modifier.fillMaxWidth().background(Paper)) {
                     Header(enabledCount = enabledCount, reading = false, onBack = onBack)
-                    if (!state.storageUnavailable && !state.replacing && busy != null) ChangedLine(busy)
+                    if (busy != null) ChangedLine(busy)
                     SectionLabel("ON YOUR PHONE", Modifier.padding(start = 20.dp, top = 26.dp))
                     // Whatever the read answered, including nothing installed:
                     // it is a fact about the pack, not about this phone.
@@ -172,13 +168,8 @@ fun SourcesScreenContent(
                         // answer, and this is the state where nothing could be
                         // read at all. It is drawn as an [Alert] for the same
                         // reason -- see there.
-                        if (state.replacing) {
-                            Alert(REPLACING_YOUR_DATA)
-                        } else if (state.storageUnavailable) {
-                            Alert(CANNOT_READ_YOUR_DATA)
-                        } else {
-                            Note("NO KNOWN SOURCE IS INSTALLED ON THIS DEVICE")
-                        }
+                        val notice = state.ledger.notice
+                        if (notice != null) Alert(notice) else Note("NO KNOWN SOURCE IS INSTALLED ON THIS DEVICE")
                     }
                 }
             }
@@ -212,13 +203,8 @@ fun SourcesScreenContent(
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
                     SectionLabel("SEEN RECENTLY, NOT CAPTURED")
                     if (seenNotCaptured.isEmpty()) {
-                        if (state.replacing) {
-                            Alert(REPLACING_YOUR_DATA)
-                        } else if (state.storageUnavailable) {
-                            Alert(CANNOT_READ_YOUR_DATA)
-                        } else {
-                            Note("NOTHING ELSE HAS POSTED YET")
-                        }
+                        val notice = state.ledger.notice
+                        if (notice != null) Alert(notice) else Note("NOTHING ELSE HAS POSTED YET")
                     }
                 }
             }
