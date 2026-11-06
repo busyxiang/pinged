@@ -2269,7 +2269,15 @@ package's notification content get stored in `raw_capture`.
 **Screen structure.**
 
 - **Suggested** — known Malaysian bank and wallet packages that are actually
-  installed on this device.
+  installed on this device. Under its heading, one sentence names the apps
+  Pinged reads and says the rest are entered by hand: "Pinged reads Touch 'n
+  Go eWallet and Maybank MAE. Add payments from other apps by hand." It is
+  built from the loaded pack's packages, each named by the pack's own
+  `label`, so a package added to the pack is named with no screen edit. It
+  describes the pack, not the device, so it shows whether or not those apps
+  are installed, in onboarding's step 2 and from Settings alike. Suggested
+  itself does not grow to apps the pack cannot read: every notification from
+  one would go to Could not read and look like a broken parser.
 - **Recently seen** — packages observed posting notifications, with counts,
   so a source the suggested list missed is discoverable.
 
