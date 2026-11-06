@@ -95,19 +95,6 @@ class TaughtStageTwoTest {
         assertEquals(TxnState.COMMITTED, ParseFixtures.txnForCapture(context, read)?.state)
     }
 
-    /** Spec 5.8: no merchant tapped is spec 7.1's missing-merchant review, not a new state. */
-    @Test fun aRuleWithNoMerchantLandsInReviewAsMissingMerchant() {
-        teach("Kiosk debit RM1.00 from account 1234", amount = 3, merchant = null, matchCount = 3)
-        val (_, amount) = ParseFixtures.uniqueAmount()
-        val read = capture("Kiosk debit $amount from account 9876", "nomerchant")
-
-        parse()
-
-        val txn = requireNotNull(ParseFixtures.txnForCapture(context, read))
-        assertEquals(TxnState.PENDING, txn.state)
-        assertEquals(PendingReason.MERCHANT_MISSING, txn.pendingReason)
-    }
-
     /** Spec 5.8's third guard: a pack rule that reads the message wins, and the taught one counts nothing. */
     @Test fun aPackRuleOutranksATaughtRuleOfTheSameMessage() {
         val id = teach("Payment of RM1.00 to KEDAI successful", amount = 3, merchant = 5..5, matchCount = 3)

@@ -4,12 +4,8 @@ import my.pinged.data.DuplicateWindows
 import my.pinged.data.SlotRefreshOutcome
 import my.pinged.data.dao.CaptureRef
 import my.pinged.data.dao.RawCaptureDao
-import my.pinged.data.dao.TxnDao
-import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.RawCapture
-import my.pinged.data.entity.Txn
 import my.pinged.data.slotRefreshOutcome
-import my.pinged.parse.Direction
 import my.pinged.parse.Merchant
 import my.pinged.parse.MerchantNormalization
 
@@ -165,52 +161,9 @@ internal object Dedup {
     }
 
     /**
-     * Spec 7.2 layer 2: identical `amount_sen` within ten minutes from a
-     * **different** `source_package`, or from the same one read by a rule other
-     * than [ruleId], where merchant tokens overlap or one merchant is absent.
-     *
-     * Returns the transaction the new capture looks like a duplicate of, or null.
-     * It never modifies anything: the resolution is a review-inbox prompt.
-     *
-     * Only the *newer* of a pair is flagged, which falls out of the ordering rather
-     * than being checked -- stage two processes captures in `posted_at` order, so
-     * when the second app's capture is parsed the first app's transaction is
-     * already in the table.
-     *
-     * `is_authoritative` is deliberately not consulted; see [ParsePass].
-     *
-     * [olderThan] is for spec 5.5's re-read (`Corrections.reread`), which pairs
-     * a transaction already in the table: only rows written before it, by
-     * `txn.id`, so a row is never its own pair and the newer of a pair stays
-     * the one flagged. Stage two writes nothing until after this returns, so
-     * every row is older.
-     *
-     * `direction` has to match, for the reason on [TxnDao.findDuplicateSuspects]:
-     * an expense and the refund reversing it satisfy every clause spec 7.2 writes
-     * down, and the Merge the inbox would offer erases the reversal.
-     */
-    fun layerTwo(
-        dao: TxnDao,
-        sourcePackage: String,
-        ruleId: String,
-        amountSen: Long,
-        occurredAt: Long,
-        direction: Direction,
-        merchantRaw: String?,
-        normalization: MerchantNormalization,
-        olderThan: Long = Long.MAX_VALUE,
-    ): Txn? = dao.findDuplicateSuspects(
-        amountSen = amountSen,
-        from = occurredAt - DuplicateWindows.LAYER_TWO_MILLIS,
-        to = occurredAt + DuplicateWindows.LAYER_TWO_MILLIS,
-        direction = direction,
-        sourcePackage = sourcePackage,
-        ruleId = ruleId,
-    ).firstOrNull { it.id < olderThan && merchantsAgree(merchantRaw, it.merchantRaw, normalization) }
-
-    /**
      * Spec 7.2 layer 2's merchant clause: "merchant tokens overlap or one merchant
-     * is absent".
+     * is absent". The rest of layer 2 is the [Reading]'s pairing and the SQL
+     * behind its [PairCandidates].
      *
      * An absent merchant counts as agreement, because a card-alert app routinely
      * posts an amount with no merchant and that pairing is the exact case layer 2

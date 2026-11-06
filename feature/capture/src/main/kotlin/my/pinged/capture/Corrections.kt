@@ -12,7 +12,6 @@ import my.pinged.data.Databases
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.StaleCaptureException
 import my.pinged.data.dao.TxnDao
-import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
@@ -24,7 +23,7 @@ import my.pinged.parse.RuleMatcher
  * own DAO where it holds the connection, or a short transaction of its own
  * where the re-reading runs outside one (`CorrectionsViewModel`).
  */
-typealias TxnLookup = suspend (read: (TxnDao) -> Txn?) -> Txn?
+typealias TxnLookup = suspend (read: (TxnDao) -> List<Txn>) -> List<Txn>
 
 /** [TxnLookup] on [txns], for a caller already on the connection. */
 fun lookupOn(txns: TxnDao): TxnLookup = { read -> read(txns) }
@@ -137,26 +136,11 @@ object Corrections {
     }
 
     /**
-     * What the current pack would write for [capture], against [txn].
+     * What the current pack would write for [capture], against [txn]: its
+     * [Reading.reread], and the [Field]s that tells the user about.
      *
-     * Spec 7.1's gate runs again on the new outcome for a row still `PENDING`,
-     * which can move to a new reason or be released. A `COMMITTED` row keeps
-     * its state and reason (spec 5.5), so STATUS is never its difference; a
-     * card bill read as spending before the rule existed stays counted, as any
-     * rule does not reach history.
-     *
-     * A pending row that was a suspect stays one. One that was not is paired
-     * again, before the gate, by [Dedup.layerTwo] through [lookUp] -- the one
-     * function stage two pairs with, so the two cannot disagree -- against
-     * rows written before it, so a payment whose card spend already counts it
-     * is held as that spend's duplicate rather than released (#255). Only a
-     * pending row is looked up: a committed one keeps its state whatever the
-     * gate says.
-     *
-     * The gate holds over [checkLimitSen], the check limit now and not the one
-     * the row arrived under, so a row awaiting review under a limit since
-     * raised past it is offered its release -- as a STATUS difference the user
-     * accepts, never applied unasked (#362).
+     * The re-reading pairs through [lookUp], and the gate holds over
+     * [checkLimitSen], the check limit now.
      */
     internal suspend fun reread(
         capture: RawCapture,
@@ -178,49 +162,8 @@ object Corrections {
         )
         if (outcome !is MatchOutcome.Matched) return Reread.NotComparable
 
-        val merchant = MerchantColumns.of(outcome.merchantRaw, matcher.merchantNormalization)
-        // Spec 5.5: a COMMITTED row is never sent back to awaiting review. It
-        // was answered in the inbox, or never held, and either way the gate's
-        // verdict on it is settled; a Keep both row's `duplicate_of_id` stays
-        // set forever and would otherwise re-raise the duplicate every pack.
-        val committed = txn.state == TxnState.COMMITTED
-        val carried = capture.duplicateOfId != null || txn.pendingReason == PendingReason.DUPLICATE_SUSPECT
-        val pair = if (committed || carried) {
-            null
-        } else {
-            lookUp { txns ->
-                Dedup.layerTwo(
-                    dao = txns,
-                    sourcePackage = capture.sourcePackage,
-                    ruleId = outcome.ruleId,
-                    amountSen = outcome.amountSen,
-                    occurredAt = txn.occurredAt,
-                    direction = outcome.direction,
-                    merchantRaw = merchant.raw,
-                    normalization = matcher.merchantNormalization,
-                    olderThan = txn.id,
-                )
-            }
-        }
-        val decision = ConfidenceGate.decide(
-            confidence = outcome.confidence,
-            kind = outcome.kind,
-            merchantRaw = merchant.raw,
-            amountSen = outcome.amountSen,
-            duplicateSuspect = carried || pair != null,
-            thresholdSen = checkLimitSen,
-        )
-        val after = txn.copy(
-            amountSen = outcome.amountSen,
-            direction = outcome.direction,
-            merchantRaw = merchant.raw,
-            merchantDisplay = merchant.display,
-            merchantKey = merchant.key,
-            confidence = outcome.confidence,
-            state = if (committed) txn.state else decision.state,
-            pendingReason = if (committed) txn.pendingReason else decision.reason,
-            updatedAt = now,
-        )
+        val again = rereadThrough(Reading(matcher, checkLimitSen), lookUp, capture, outcome, txn, now)
+        val after = again.after
         val changed = buildSet {
             if (after.amountSen != txn.amountSen) add(Field.AMOUNT)
             if (after.direction != txn.direction) add(Field.DIRECTION)
@@ -242,12 +185,38 @@ object Corrections {
                     before = txn,
                     after = after,
                     changed = changed,
-                    pairCaptureId = pair?.rawCaptureId,
+                    pairCaptureId = again.pairCaptureId,
                 ),
             )
             unseen -> Reread.Silent(outcome.ruleId, after)
             else -> Reread.Agrees(outcome.ruleId)
         }
+    }
+
+    /**
+     * [reading]'s re-reading with its pair candidates read through [lookUp].
+     *
+     * The Reading asks its port synchronously and [lookUp] suspends -- the
+     * screen runs each lookup in a short transaction of its own -- so the
+     * re-reading runs first over a port that only notes the question, and,
+     * when it asked one, again over [lookUp]'s answer to it. The Reading is a
+     * function of its inputs, so the second run is the first with the pair
+     * filled in, and a row it does not pair (committed, or already a suspect)
+     * costs no lookup at all.
+     */
+    private suspend fun rereadThrough(
+        reading: Reading,
+        lookUp: TxnLookup,
+        capture: RawCapture,
+        outcome: MatchOutcome.Matched,
+        txn: Txn,
+        now: Long,
+    ): Reading.Again {
+        var asked: PairQuery? = null
+        val unpaired = reading.reread(capture, outcome, txn, pairs = { query -> emptyList<Txn>().also { asked = query } }, now = now)
+        val query = asked ?: return unpaired
+        val near = lookUp { txns -> RoomPairCandidates(txns).near(query) }
+        return reading.reread(capture, outcome, txn, pairs = { near }, now = now)
     }
 
     /**

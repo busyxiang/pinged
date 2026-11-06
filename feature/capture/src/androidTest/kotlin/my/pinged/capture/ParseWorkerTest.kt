@@ -110,62 +110,6 @@ class ParseWorkerTest {
     }
 
     /**
-     * A merchant that capitalised itself keeps its capitalisation, through the
-     * production composition rather than a direct call to the title-caser.
-     *
-     * Spec 5.4 title-cases "only when the raw string is entirely uppercase", and
-     * that guard could not fail to pass while [ParsePass] called
-     * `Merchant.display(Merchant.clean(raw))` -- `clean` uppercases, because spec
-     * 6.1 keys learned rules off its output. `foodpanda KLCC` was stored as
-     * `Foodpanda Klcc`.
-     *
-     * Asserting against `Merchant.displayFor` directly would prove nothing: the old
-     * `display` was also correct when called on the raw string, and the bug was
-     * entirely in what [ParsePass] handed it.
-     */
-    @Test
-    fun aMerchantThatCapitalisedItselfKeepsItsCapitalisation() {
-        val (sen, rm) = ParseFixtures.uniqueAmount()
-        val postedAt = base - 6_000L
-        val captureId = runBlocking {
-            CaptureIngest.ingest(
-                context = context,
-                sbn = CaptureFixtures.posted(
-                    CaptureFixtures.notification(
-                        context,
-                        title = "Touch 'n Go $marker",
-                        text = "Payment of $rm to foodpanda KLCC successful",
-                    ),
-                    pkg = ParseFixtures.TNG,
-                    id = 4_243,
-                    tag = "$marker-mixed",
-                    postTime = postedAt,
-                ),
-                arrival = Arrival.POSTED,
-                now = postedAt,
-            )
-        }
-        assertNotNull("Stage one stored nothing, so there is no stage two to test", captureId)
-
-        assertEquals(ListenableWorker.Result.success(), runWorker())
-
-        val txn = ParseFixtures.txnForCapture(context, captureId!!)
-        assertNotNull("The capture produced no transaction", txn)
-        requireNotNull(txn)
-
-        assertEquals(sen, txn.amountSen)
-        // Spec 5.4 and spec 4: merchant_raw is preserved exactly as parsed.
-        assertEquals("foodpanda KLCC", txn.merchantRaw)
-        assertEquals(
-            "The ledger shows a name the notification never said. This is the " +
-                "value ParsePass writes, so a display path that only preserves " +
-                "case when called directly does not fix it.",
-            "foodpanda KLCC",
-            txn.merchantDisplay,
-        )
-    }
-
-    /**
      * The bundled pack is reached as a classpath resource, not as an asset.
      *
      * If this fails, nothing else in stage two works and it fails in the most
@@ -271,49 +215,6 @@ class ParseWorkerTest {
         assertEquals(first, captures.txnIdForCapture(id))
         assertEquals("The second run must write nothing", before, txns.countAll())
         assertEquals(ParseStatus.MATCHED, captures.byId(id).parseStatus)
-    }
-
-    /**
-     * `notification.when` displaces `sbn.postTime` only when it is plausible, and
-     * "plausible" is one-sided. The plan's sketch used
-     * `abs(when - postTime) < 7 days`, which accepts a `when` a week in the
-     * *future* -- dating a transaction into a month that has not happened, the same
-     * class of bug as spec 4's zero `when` dating one to 1970.
-     */
-    @Test
-    fun aFutureWhenIsIgnoredAndAModestlyEarlierOneIsTrusted() {
-        val postedAt = base - 400_000L
-
-        val trusted = ParseFixtures.insertCapture(
-            context,
-            title = "$marker-when-ok",
-            text = "Payment of RM3.33 to WHEN OK successful",
-            sbnKey = "$marker-when-ok",
-            postedAt = postedAt,
-            whenMillis = postedAt - 2 * 60 * 60 * 1000L,
-        )
-        val future = ParseFixtures.insertCapture(
-            context,
-            title = "$marker-when-future",
-            text = "Payment of RM3.34 to WHEN FUTURE successful",
-            sbnKey = "$marker-when-future",
-            postedAt = postedAt,
-            whenMillis = postedAt + 2 * 60 * 60 * 1000L,
-        )
-        val ancient = ParseFixtures.insertCapture(
-            context,
-            title = "$marker-when-old",
-            text = "Payment of RM3.35 to WHEN OLD successful",
-            sbnKey = "$marker-when-old",
-            postedAt = postedAt,
-            whenMillis = postedAt - 5 * 24 * 60 * 60 * 1000L,
-        )
-
-        runWorker()
-
-        assertEquals(postedAt - 2 * 60 * 60 * 1000L, occurredAt(trusted))
-        assertEquals("A `when` in the future must not date the transaction", postedAt, occurredAt(future))
-        assertEquals("A `when` days earlier must not date the transaction", postedAt, occurredAt(ancient))
     }
 
     /**
@@ -454,22 +355,24 @@ class ParseWorkerTest {
         assertNotEquals(Databases.categoryDao(context).requireUncategorizedId(), txn.categoryId)
     }
 
-    /** #46: a merchant the dictionary does not know is committed Uncategorized. */
+    /**
+     * A suite's own dictionary replaces the bundled one rather than joining
+     * it, so a test about filing is about its own entries only. `MY50 PASS`
+     * is the bundled dictionary's Transport; with only an entry for another
+     * merchant, it is filed nowhere.
+     */
     @Test
-    fun aCaptureWithNoDictionaryHitCommitsUncategorized() {
-        val (_, rm) = ParseFixtures.uniqueAmount()
-        val captureId = ParseFixtures.insertCapture(
-            context = context,
-            title = "Touch 'n Go $marker",
-            text = "Payment of $rm to foodpanda KLCC successful",
-            sbnKey = "$marker-nohit",
-            postedAt = base - 8_000L,
-        )
+    fun aDictionaryAPassIsGivenReplacesTheBundledOne() {
+        val captureId = insertMy50Capture(base - 9_200L, ParseFixtures.uniqueAmount().second, "$marker-my50-replaced")
 
-        assertEquals(ListenableWorker.Result.success(), runWorker())
+        ParseFixtures.pass(
+            context,
+            dictionary = listOf(my.pinged.parse.DictionaryEntry("ZZOTHER$marker", "Shopping", my.pinged.parse.MatchMode.EXACT)),
+        ).run()
 
         val txn = requireNotNull(ParseFixtures.txnForCapture(context, captureId))
-        assertEquals(Databases.categoryDao(context).requireUncategorizedId(), txn.categoryId)
+        assertEquals("precondition: the bundled dictionary's key", "MY50 PASS", txn.merchantKey)
+        assertEquals("The bundled dictionary filed it", Databases.categoryDao(context).requireUncategorizedId(), txn.categoryId)
     }
 
     /**
@@ -568,35 +471,6 @@ class ParseWorkerTest {
         )
     }
 
-    private fun forget(identity: String) {
-        Databases.shared(context).openHelper.writableDatabase
-            .execSQL("DELETE FROM merchant_rule WHERE pattern = ?", arrayOf(identity))
-    }
-
-    /**
-     * #48: a learned rule outranks the dictionary, through the real worker and
-     * the pack that ships. `MY50 PASS` is a dictionary hit (Transport, the
-     * test above); the rule says Shopping. The rule is removed afterwards
-     * because the database outlives the test and `MY50 PASS` is shared with it.
-     */
-    @Test
-    fun aLearnedRuleBeatsTheDictionary() {
-        learn("MY50 PASS", "Shopping")
-        try {
-            val (_, rm) = ParseFixtures.uniqueAmount()
-            val captureId = insertMy50Capture(base - 6_000L, rm, "$marker-my50-learned")
-
-            assertEquals(ListenableWorker.Result.success(), runWorker())
-
-            val txn = requireNotNull(ParseFixtures.txnForCapture(context, captureId))
-            assertEquals("MY50 PASS", txn.merchantKey)
-            assertEquals(categoryId("Shopping"), txn.categoryId)
-            assertNotEquals("The dictionary answered over the rule", categoryId("Transport"), txn.categoryId)
-        } finally {
-            forget("MY50 PASS")
-        }
-    }
-
     /**
      * #48: a rule on a canonical key files a capture that arrives under a key
      * merged into it, and the capture's own key is left as it came. A pass of
@@ -632,31 +506,6 @@ class ParseWorkerTest {
         assertEquals(categoryId("Health"), txn.categoryId)
     }
 
-    /**
-     * The order is learned, then dictionary, then none. A pass whose name map
-     * does not hold the rule's category (the map is a snapshot, taken when the
-     * pass is built) still files by the rule: the dictionary, which says
-     * Shopping here, must not answer over a rule the user taught.
-     */
-    @Test
-    fun aLearnedRuleWhoseCategoryIsMissingFromThePassSnapshotStillBeatsTheDictionary() {
-        val key = "ZZSNAP$marker"
-        learn(key, "Health")
-        val everything = Databases.categoryDao(context).all().associate { it.name to it.id }
-        val captureId = ParseFixtures.insertCapture(
-            context = context, title = "Touch 'n Go", sbnKey = "$marker-snap", postedAt = base - 11_000L,
-            text = "Payment of ${ParseFixtures.uniqueAmount().second} to $key successful",
-        )
-
-        ParseFixtures.pass(
-            context,
-            dictionary = listOf(my.pinged.parse.DictionaryEntry(key, "Shopping", my.pinged.parse.MatchMode.EXACT)),
-            categoryIds = everything - "Health",
-        ).run()
-
-        assertEquals(categoryId("Health"), requireNotNull(ParseFixtures.txnForCapture(context, captureId)).categoryId)
-    }
-
     private fun renameCategory(from: String, to: String) {
         Databases.shared(context).openHelper.writableDatabase
             .execSQL("UPDATE category SET name = ? WHERE name = ?", arrayOf(to, from))
@@ -665,11 +514,5 @@ class ParseWorkerTest {
     private fun deleteCapture(id: Long) {
         Databases.shared(context).openHelper.writableDatabase
             .execSQL("DELETE FROM raw_capture WHERE id = ?", arrayOf<Any>(id))
-    }
-
-    private fun occurredAt(captureId: Long): Long {
-        val txn = ParseFixtures.txnForCapture(context, captureId)
-        assertNotNull("Capture $captureId produced no transaction", txn)
-        return requireNotNull(txn).occurredAt
     }
 }

@@ -2,7 +2,6 @@ package my.pinged.capture
 
 import my.pinged.data.DatabaseAccess
 import my.pinged.data.Databases
-import my.pinged.data.PingedDatabase
 import android.content.Context
 import android.util.Log
 import androidx.work.BackoffPolicy
@@ -16,7 +15,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import my.pinged.parse.TaughtTemplate
 
 /**
  * STAGE TWO. Reads the `raw_capture` table, parses, and writes transactions.
@@ -172,25 +170,9 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                 // run's own lease, as the guard's block cannot.
                 finished = access.leased { db ->
                     try {
-                        ParsePass(
-                            captures = db.rawCaptureDao(),
-                            txns = db.txnDao(),
-                            merchants = db.merchantIdentityDao(),
-                            standingAnswers = db.standingAnswerDao(),
+                        ParsePass.over(
+                            db = db,
                             matcher = matcher,
-                            // Read per pass, as the categories below are, so a rule
-                            // saved or deleted between two runs counts on the next.
-                            taught = TaughtTemplate.matcher(db.userTemplateRuleDao().all().map { it.stored() }),
-                            // requireUncategorizedId, not the nullable form: spec 7.1
-                            // files an unknown merchant here, and a missing seed row
-                            // must fail saying so rather than send a 0 down the money
-                            // path into a foreign-key error far from the cause.
-                            uncategorizedId = db.categoryDao().requireUncategorizedId(),
-                            sourceLabel = sourceLabels(db),
-                            // Read per pass, so a category deleted between two
-                            // runs stops its entries filing on the next one.
-                            dictionary = Graph.parsePack().dictionary,
-                            categoryIds = db.categoryDao().seededIds(),
                             checkLimitSen = checkLimitSen,
                             isStopped = { isStopped },
                             progress = progress,
@@ -244,17 +226,6 @@ class ParseWorker(context: Context, params: WorkerParameters) :
                 }
             }
         }
-    }
-
-    /**
-     * `capture_source.label` for `txn.source_label` (spec 4), memoized for the
-     * run. A batch is usually one or two packages, and the alternative is a
-     * point query per capture for an answer that does not change.
-     */
-    private fun sourceLabels(db: PingedDatabase): (String) -> String? {
-        val dao = db.captureSourceDao()
-        val cache = HashMap<String, String?>()
-        return { pkg -> cache.getOrPut(pkg) { dao.byPackage(pkg)?.label } }
     }
 
     companion object {

@@ -4,22 +4,18 @@ import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.util.Log
 import java.util.concurrent.CancellationException
 import my.pinged.data.Databases
+import my.pinged.data.PingedDatabase
 import my.pinged.data.LiveLearnedRules
-import my.pinged.data.LocalDates
 import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.StaleCaptureException
 import my.pinged.data.dao.StandingAnswerDao
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.ParseStatus
-import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
-import my.pinged.data.entity.Txn
 import my.pinged.parse.DictionaryEntry
-import my.pinged.parse.ExclusionReason
 import my.pinged.parse.Filer
 import my.pinged.parse.MatchOutcome
-import my.pinged.parse.Merchant
 import my.pinged.parse.RuleMatcher
 import my.pinged.parse.Skeleton
 import my.pinged.parse.TaughtTemplate
@@ -43,7 +39,7 @@ import my.pinged.parse.TaughtTemplate
  * A capture is filed by the learned rule for its merchant identity, else by the
  * pack's dictionary, else under `Uncategorized` (spec 7.1's non-blocking chip).
  * There is no `:core:categorize` module (spec #45): [Filer] lives in
- * `:core:parse` and [commit] asks it, so the filing runs in stage two from the
+ * `:core:parse` and the [Reading] asks it, so the filing runs in stage two from the
  * durable `raw_capture` table and never in the listener.
  *
  * ## What is not here
@@ -65,15 +61,15 @@ import my.pinged.parse.TaughtTemplate
  * asked. The proposal survives on `raw_capture.matched_rule_id`, from which
  * `Graph.suggestedExclusion` re-derives it when the user leaves the row out.
  * The one exception is a standing answer the user gave ([standingAnswers]),
- * which [commit] consults on a capture's first read only.
+ * which the [Reading] consults on a capture's first read only.
  */
 internal class ParsePass(
     private val captures: RawCaptureDao,
-    private val txns: TxnDao,
+    txns: TxnDao,
     /** Where a learned rule is looked up, by the capture's merchant identity. */
-    private val merchants: MerchantIdentityDao,
-    /** Spec 7.3's standing answers, asked by [commit] for a transfer on its first read. */
-    private val standingAnswers: StandingAnswerDao,
+    merchants: MerchantIdentityDao,
+    /** Spec 7.3's standing answers, asked by the [Reading] for a transfer on its first read. */
+    standingAnswers: StandingAnswerDao,
     private val matcher: RuleMatcher,
     /**
      * Spec 5.8's taught rules ([TaughtTemplate.matcher]), asked only once
@@ -82,7 +78,7 @@ internal class ParsePass(
      * review: the snapshot is never ahead of the count, only behind it.
      */
     private val taught: RuleMatcher = TaughtTemplate.matcher(emptyList()),
-    private val uncategorizedId: Long,
+    uncategorizedId: Long,
     private val sourceLabel: (String) -> String?,
     /**
      * The pack's dictionary. An entry whose category is absent from
@@ -98,13 +94,13 @@ internal class ParsePass(
      * entry's category name to an id, whatever the user has renamed it to. A snapshot of the moment the
      * pass was built; a learned rule is read by id and does not depend on it.
      */
-    private val categoryIds: Map<String, Long> = emptyMap(),
+    categoryIds: Map<String, Long> = emptyMap(),
     /**
      * Spec 7.1's check limit, [CheckLimit.sen] as [ParseWorker] read it at the
      * start of the run: the gate holds a payment over it. A limit changed while
      * a run is under way reaches the run after it.
      */
-    private val checkLimitSen: Long = ConfidenceGate.DEFAULT_THRESHOLD_SEN,
+    checkLimitSen: Long = ConfidenceGate.DEFAULT_THRESHOLD_SEN,
     /** Across every pass sharing [progress], not per pass. */
     private val maxRows: Int = MAX_ROWS_PER_RUN,
     private val isStopped: () -> Boolean = { false },
@@ -127,13 +123,24 @@ internal class ParsePass(
     private val progress: Progress = Progress(),
 ) {
     /**
-     * Built per pass over the live rule port, never a per-pass table of rules:
+     * What this pass makes of each matched capture. Its learned rules are the
+     * live port, never a per-pass table of rules:
      * a rule the user teaches part-way through a pass runs its retroactive fix
      * at once, and every later capture of the pass has to be filed by the new
      * rule or the fix would miss it. The window is one capture, as
      * `learnedCategoryFor` runs just outside `commitCapture`'s transaction.
      */
-    private val filer = Filer(dictionary, categoryIds, LiveLearnedRules(merchants))
+    private val reading = Reading(
+        matcher = matcher,
+        checkLimitSen = checkLimitSen,
+        standingAnswers = RoomStandingAnswers(standingAnswers),
+        learned = LiveLearnedRules(merchants),
+        dictionary = dictionary,
+        categoryIds = categoryIds,
+        uncategorizedId = uncategorizedId,
+    )
+
+    private val pairs = RoomPairCandidates(txns)
 
     /**
      * What one run did. [remaining] is true when this run knowingly left work
@@ -414,78 +421,27 @@ internal class ParsePass(
         slotSuspectOf: Long?,
         taughtRuleId: Long? = null,
     ) {
-        val occurredAt = occurredAt(capture)
-        val merchant = MerchantColumns.of(outcome.merchantRaw, matcher.merchantNormalization)
-        val merchantRaw = merchant.raw
-
         // A layer-two lookup that meets damage leaves the capture a suspect
         // with no pair named, on the next pass: a transaction on the damaged
         // page may be this purchase through another app, and parsed as new it
         // would count twice with nobody told. Skipped instead, it is money
         // left out of the ledger for as long as the page is damaged.
-        val unpaired = capture.id in progress.unpaired
-        val layerTwoSuspect = if (unpaired) {
-            null
-        } else {
-            try {
-                Dedup.layerTwo(
-                    dao = txns,
-                    sourcePackage = capture.sourcePackage,
-                    ruleId = outcome.ruleId,
-                    amountSen = outcome.amountSen,
-                    occurredAt = occurredAt,
-                    direction = outcome.direction,
-                    merchantRaw = merchantRaw,
-                    normalization = matcher.merchantNormalization,
-                )
-            } catch (damage: SQLiteDatabaseCorruptException) {
-                progress.unpaired += capture.id
-                throw DamagedCaptureException(capture.id, damage)
-            }
+        val prior = when {
+            capture.id in progress.unpaired -> Reading.Prior.PairUnknown
+            slotSuspectOf != null -> Reading.Prior.SlotSuspect(slotSuspectOf)
+            else -> Reading.Prior.None
         }
-
-        val reasons = ConfidenceGate.reasons(
-            confidence = outcome.confidence,
-            kind = outcome.kind,
-            merchantRaw = merchantRaw,
-            amountSen = outcome.amountSen,
-            duplicateSuspect = slotSuspectOf != null || layerTwoSuspect != null || unpaired,
-            thresholdSen = checkLimitSen,
-        )
-        val decision = ConfidenceGate.decide(reasons, leftOutAs = standingExclusion(capture, outcome, merchant.key, reasons))
-
-        // Learned, then dictionary, then Uncategorized: [Filer]'s order. The
-        // learned rule answers by `category.id`, so it wins whether or not
-        // [categoryIds], a snapshot taken when the pass was built, still names
-        // that category: the foreign key's RESTRICT means the id exists. A lookup
-        // that meets a damaged page throws out of here as the commit's own write
-        // would, and [decide] leaves the capture at `NEW` rather than file it
-        // under Uncategorized on a question that could not be answered.
-        val categoryId = filer.file(merchant.key).categoryId ?: uncategorizedId
-
-        val at = System.currentTimeMillis()
-        val txn = Txn(
-            rawCaptureId = capture.id,
-            amountSen = outcome.amountSen,
-            direction = outcome.direction,
-            occurredAt = occurredAt,
-            // Computed here, once, and stored. Spec 15.7: deriving the day at
-            // query time depends on the process zone, cannot use an index, and
-            // reshuffles history when the user travels.
-            localDate = LocalDates.of(occurredAt),
-            merchantRaw = merchantRaw,
-            merchantDisplay = merchant.display,
-            merchantKey = merchant.key,
-            categoryId = categoryId,
-            sourcePackage = capture.sourcePackage,
-            sourceLabel = sourceLabel(capture.sourcePackage),
-            confidence = outcome.confidence,
-            state = decision.state,
-            pendingReason = decision.reason,
-            isExcluded = decision.exclusion != null,
-            exclusionReason = decision.exclusion,
-            createdAt = at,
-            updatedAt = at,
+        // A standing answer's or a learned rule's lookup that meets a damaged
+        // page throws out of here as the commit's own write would, and
+        // [decide] leaves the capture at `NEW` rather than file it under
+        // Uncategorized on a question that could not be answered.
+        val read = reading.first(
+            capture = capture,
+            outcome = outcome,
+            prior = prior,
+            pairs = pairsFor(capture),
+            sourceLabel = sourceLabel,
+            now = System.currentTimeMillis(),
         )
 
         // commitCapture, never insert-then-mark. The two writes are one
@@ -498,68 +454,31 @@ internal class ParsePass(
         // in that state by an older build.
         captures.commitCapture(
             captureId = capture.id,
-            txn = txn,
+            txn = read.txn,
             status = ParseStatus.MATCHED,
             ruleId = outcome.ruleId,
             rejectId = null,
             // Spec 5.3: a capture that matched both a template and a reject is
             // MATCHED, and the collision is recorded for rule review.
             collisionId = outcome.rejectCollisionId,
-            duplicateOf = slotSuspectOf ?: layerTwoSuspect?.rawCaptureId,
+            duplicateOf = read.duplicateOf,
             packVersion = matcher.packVersion,
             taughtRuleId = taughtRuleId,
         )
     }
 
     /**
-     * The exclusion a standing answer (spec 7.3) writes for [capture], or null
-     * when none is consulted or none matches. The value is what Leave out
-     * would have written -- the rule's suggestion from [matcher], `TRANSFER`
-     * when it has none -- so the row is identical to a Leave out row.
-     *
-     * **Consulted on a capture's first read only**: `pack_version` still
-     * [NO_PACK], which every outcome a pack decided moves off. Layer 1's
-     * two drops keep [NO_PACK], and neither is ever handed back to `NEW`. A capture
-     * spec 5.5's re-parse or a taught rule handed back to `NEW` has been read
-     * before, and is not settled by an answer made since; a row already in
-     * the review inbox never comes back here at all.
-     *
-     * Looked up only when [ConfidenceGate.standingAnswerApplies], which no
-     * capture but a transfer passes. Outside `commitCapture`'s transaction, as
-     * the filing is: an answer deleted between the two settles one capture
-     * the user would have been asked about, which their Undo or Count as
-     * spending takes back. A damaged page throws, as the filing's does.
+     * Layer two's lookup for [capture]. Its damage is the lookup's and not the
+     * capture's own: recorded in [Progress.unpaired], so the next pass reads
+     * the capture as [Reading.Prior.PairUnknown].
      */
-    private fun standingExclusion(
-        capture: RawCapture,
-        outcome: MatchOutcome.Matched,
-        merchantKey: String?,
-        reasons: Set<PendingReason>,
-    ): ExclusionReason? {
-        if (capture.packVersion != NO_PACK || !ConfidenceGate.standingAnswerApplies(reasons)) return null
-        standingAnswers.idFor(outcome.ruleId, capture.sourcePackage, merchantKey) ?: return null
-        return matcher.suggestedExclusion(capture.sourcePackage, outcome.ruleId) ?: ExclusionReason.TRANSFER
-    }
-
-    /**
-     * `occurred_at` for a capture. `sbn.postTime` is the value, and
-     * `notification.when` displaces it only when it is non-zero, **not in the
-     * future**, and no more than [WHEN_TRUST_WINDOW_MILLIS] before it.
-     *
-     * The one-sided window is the point. Spec 4 keeps `when` because a push can be
-     * delivered long after the event, and distrusts it because it is app-controlled
-     * and "regularly left at or set to zero". A symmetric tolerance accepts a
-     * `when` in the *future*, dating a transaction into a month that has not
-     * happened; a wide one lets a bank that puts a statement date in `when` move a
-     * purchase into the previous month, changing a total the user has read. So:
-     * past only, capped at a day, which is as much delay as Doze produces.
-     *
-     * `when_millis` is already null unless it was non-zero (`NotificationFields`).
-     */
-    private fun occurredAt(capture: RawCapture): Long {
-        val whenMillis = capture.whenMillis ?: return capture.postedAt
-        val drift = capture.postedAt - whenMillis
-        return if (drift in 0..WHEN_TRUST_WINDOW_MILLIS) whenMillis else capture.postedAt
+    private fun pairsFor(capture: RawCapture) = PairCandidates { query ->
+        try {
+            pairs.near(query)
+        } catch (damage: SQLiteDatabaseCorruptException) {
+            progress.unpaired += capture.id
+            throw DamagedCaptureException(capture.id, damage)
+        }
     }
 
     private fun mark(
@@ -590,6 +509,65 @@ internal class ParsePass(
         private const val TAG = "PingedParse"
 
         /**
+         * A pass over [db] that reads what a run of [ParseWorker] reads, per
+         * pass: the bundled pack's dictionary, the taught rules as their
+         * `match_count` stands now, the seeded categories that exist and each
+         * app's label. [checkLimitSen] is read by the caller, before any lease
+         * ([CheckLimit.sen] suspends on DataStore, which has no place inside one).
+         *
+         * Each of [dictionary], [categoryIds] and [sourceLabel], when
+         * given, **replaces** what would be read, and nothing is merged into it:
+         * a test about filing passes its own dictionary and no other entry can
+         * file its capture. Only tests give them.
+         */
+        fun over(
+            db: PingedDatabase,
+            matcher: RuleMatcher,
+            checkLimitSen: Long,
+            isStopped: () -> Boolean = { false },
+            progress: Progress = Progress(),
+            maxRows: Int = MAX_ROWS_PER_RUN,
+            onCaptureFinished: (Long) -> Unit = {},
+            dictionary: List<DictionaryEntry>? = null,
+            categoryIds: Map<String, Long>? = null,
+            sourceLabel: ((String) -> String?)? = null,
+        ) = ParsePass(
+            captures = db.rawCaptureDao(),
+            txns = db.txnDao(),
+            merchants = db.merchantIdentityDao(),
+            standingAnswers = db.standingAnswerDao(),
+            matcher = matcher,
+            // Read per pass, so a rule saved or deleted between two runs counts on the next.
+            taught = TaughtTemplate.matcher(db.userTemplateRuleDao().all().map { it.stored() }),
+            // requireUncategorizedId, not the nullable form: spec 7.1 files an
+            // unknown merchant here, and a missing seed row must fail saying so
+            // rather than send a 0 down the money path into a foreign-key error
+            // far from the cause.
+            uncategorizedId = db.categoryDao().requireUncategorizedId(),
+            sourceLabel = sourceLabel ?: sourceLabels(db),
+            dictionary = dictionary ?: Graph.parsePack().dictionary,
+            // Read per pass, so a category deleted between two runs stops its
+            // entries filing on the next one.
+            categoryIds = categoryIds ?: db.categoryDao().seededIds(),
+            checkLimitSen = checkLimitSen,
+            maxRows = maxRows,
+            isStopped = isStopped,
+            onCaptureFinished = onCaptureFinished,
+            progress = progress,
+        )
+
+        /**
+         * `capture_source.label` for `txn.source_label` (spec 4), memoized for
+         * the pass. A batch is usually one or two packages, and the alternative
+         * is a point query per capture for an answer that does not change.
+         */
+        private fun sourceLabels(db: PingedDatabase): (String) -> String? {
+            val dao = db.captureSourceDao()
+            val cache = HashMap<String, String?>()
+            return { pkg -> cache.getOrPut(pkg) { dao.byPackage(pkg)?.label } }
+        }
+
+        /**
          * Rows per `claimNextIds`.
          *
          * A query bound and not a transaction bound: each capture's decision
@@ -608,9 +586,6 @@ internal class ParsePass(
          * WorkManager's ten-minute limit and be killed at an arbitrary point.
          */
         const val MAX_ROWS_PER_RUN = 2_000
-
-        /** See [occurredAt]. */
-        const val WHEN_TRUST_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
 
         /**
          * The `pack_version` recorded for an outcome no pack produced, i.e.
