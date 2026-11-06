@@ -5,7 +5,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,6 +58,13 @@ import my.pinged.ui.theme.rememberUpdating
 import my.pinged.ui.theme.updating
 import java.time.LocalDate
 import java.time.YearMonth
+
+/**
+ * The Paper left under the screen's last line, scrolled to its end, above
+ * the tab bar (#389). `NotInTotalBlock`, the last section when it draws,
+ * carries it as its own bottom padding, as its goldens show.
+ */
+internal val CHARTS_END_GAP = 24.dp
 
 /**
  * The Charts tab (spec 9.3, #81): the selected month's header and hero, and
@@ -225,6 +234,10 @@ internal fun ChartsScreenContent(
                 }
             }
         }
+        // Every state ends on the gap: `NotInTotalBlock` carries it when it
+        // draws, and nothing else above here pads its bottom.
+        val endsPadded = !unavailable && !replacing && (state as? ChartsState.Month)?.view?.notInTotal?.isNotEmpty() == true
+        if (!endsPadded) Spacer(Modifier.height(CHARTS_END_GAP))
     }
     val shown = (state as? ChartsState.Month)?.view?.takeIf { it.collecting.open && !unavailable && !replacing }
     val drawn = shown?.bars as? Bars.Drawn
