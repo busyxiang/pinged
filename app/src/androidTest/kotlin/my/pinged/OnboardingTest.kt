@@ -13,10 +13,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
+import my.pinged.capture.Graph
 import my.pinged.capture.ListenerStatus
 import my.pinged.capture.PingedComponents
 import my.pinged.ledger.onboarding.ALLOW_ACCESS
 import my.pinged.ledger.onboarding.ONBOARDING_HEADLINE
+import my.pinged.ledger.sources.readsLine
 import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -90,6 +92,12 @@ class OnboardingTest {
             assertTrue(
                 "Coming back with the grant did not lead on to capture sources",
                 compose.waitFor { compose.countOf(SOURCES_SECTION) == 1 },
+            )
+            // #366: step 2 says which apps Pinged reads, as Settings' way in does.
+            assertEquals(
+                "First run's sources did not say which apps Pinged reads",
+                1,
+                compose.countOf(readsLine(Graph.parsePack())),
             )
             assertTrue("The grant did not end first run", runBlocking { FirstRun.done(context) })
 

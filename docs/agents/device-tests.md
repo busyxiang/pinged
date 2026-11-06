@@ -131,7 +131,10 @@ composed: scroll the list itself first, with `performScrollToKey` or
 `emu --ci-size`: it sets 320x640 at density 160 and resets both when the
 command ends, fails or is killed. That includes the suites a change reaches
 and not only the tests it adds: a change to what a screen draws breaks tests
-it never touched, and only on the short screen.
+it never touched, and only on the short screen. #366's one sentence under
+ON YOUR PHONE pushed Sources' lower list out of composition at that size, and
+`SourcesAllowListTest`, which waited for a row there without scrolling, failed
+every run until it scrolled the list with `performScrollToNode`.
 
 ## The keyboard
 
