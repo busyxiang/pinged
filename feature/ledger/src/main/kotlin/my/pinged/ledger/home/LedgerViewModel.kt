@@ -35,6 +35,7 @@ import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.TxnDao
+import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
 import java.time.YearMonth
 import java.util.concurrent.atomic.AtomicBoolean
@@ -56,18 +57,22 @@ import java.util.concurrent.atomic.AtomicBoolean
  * feed does, on `Databases.generation`, which also moves when a connection
  * that met damage is replaced; `LedgerScreen` reads [read] again on
  * `Databases.rewrites`, through `rememberReadState`, which does not.
+ *
+ * **Two ways to the database.** [runner] opens, leases and guards the
+ * summary, the `Months` sheet and the row actions. The feed and its day
+ * subtotals lease through [DatabaseAccess] instead, because Paging calls its
+ * `PagingSource` itself, so no runner sees them.
  */
-class LedgerViewModel(
+class LedgerViewModel internal constructor(
     app: Application,
     /** Where [picked] survives a process death, as Charts' month does: the entry's own. */
     private val handle: SavedStateHandle,
+    runner: ReadRunner,
 ) : AndroidViewModel(app) {
+    constructor(app: Application, handle: SavedStateHandle) : this(app, handle, GuardedRunner(app))
 
     /** What the feed's pages and the day subtotals lease the instance through. */
     private val access = DatabaseAccess.production(app)
-
-    /** Opens, leases and guards every read and write this screen makes. */
-    private val runner = GuardedRunner(app)
 
     /**
      * Spending's two one-shot reads, through `:core:read`: the month's summary
@@ -139,7 +144,8 @@ class LedgerViewModel(
     /**
      * Tests only: a suspension point between [ReopeningFeed]'s open and its
      * hand-back, where a reset has to land for the refusal in [items] to be
-     * observable at all.
+     * observable at all. The feed's open is not the runner's, so no runner
+     * can stand in for it.
      */
     @VisibleForTesting
     internal var afterOpen: suspend () -> Unit = {}
@@ -147,7 +153,8 @@ class LedgerViewModel(
     /**
      * Tests only: runs before each page of the feed is read, outside the
      * lease, so a test can make new rows land after the screen has acted on
-     * the old ones -- CI's emulator does that on its own.
+     * the old ones -- CI's emulator does that on its own. A page is read
+     * through [DatabaseAccess], not the runner, for the reason the class gives.
      */
     @VisibleForTesting
     internal var beforePage: suspend () -> Unit = {}
@@ -160,6 +167,13 @@ class LedgerViewModel(
      * another [ScreenRead]. Holding the database instead also stalls the main
      * thread: a pick under `withTheDatabaseHeld` never let Compose go idle in
      * 30s.
+     *
+     * The runner sees the same moment, but `ScriptedRunner` cannot stand in
+     * for its users: `MonthPickerTest` holds a pick here and measures the
+     * dimmed summary's drawn ink, and counts the read a lifecycle resume
+     * starts, both on the device beside a feed that reads the real ledger.
+     * `ScriptedRunner`'s ledger is in memory, on the JVM. What needs neither
+     * pixels nor an activity, `SpendingReadTest` holds through the runner.
      */
     @VisibleForTesting
     internal var beforeSummary: suspend () -> Unit

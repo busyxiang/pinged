@@ -13,6 +13,7 @@ import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
+import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
 import my.pinged.ui.RINGGIT
 import java.time.LocalDate
@@ -36,15 +37,21 @@ import java.time.YearMonth
  * category leaves its line's figure and count on that re-read. [today] is
  * asked as each read begins.
  */
-class BreakdownViewModel(
+class BreakdownViewModel internal constructor(
     app: Application,
     val categoryId: Long,
     val month: YearMonth,
     private val handle: SavedStateHandle,
+    runner: ReadRunner,
     private val today: () -> LocalDate = LocalDate::now,
 ) : AndroidViewModel(app) {
-
-    private val runner = GuardedRunner(app)
+    constructor(
+        app: Application,
+        categoryId: Long,
+        month: YearMonth,
+        handle: SavedStateHandle,
+        today: () -> LocalDate = LocalDate::now,
+    ) : this(app, categoryId, month, handle, GuardedRunner(app), today)
 
     /**
      * The month's read. `BreakdownScreen` reads it again on resume and on

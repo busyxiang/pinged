@@ -17,6 +17,9 @@ import my.pinged.parse.ExclusionReason
 /** [ledgerTxn]'s `merchant_display`, which is the row's first line. */
 internal const val MERCHANT = "Warung Pak Ali"
 
+/** [ledgerTxn]'s `merchant_key`, and its `merchant_raw`. */
+internal const val MERCHANT_KEY = "WARUNG PAK ALI"
+
 /** [ledgerTxn]'s `source_label`, which the row prints after its category. */
 internal const val SOURCE_LABEL = "Touch 'n Go eWallet"
 
@@ -63,9 +66,9 @@ internal fun ledgerTxn(
     direction = Direction.EXPENSE,
     occurredAt = occurredAt,
     localDate = localDate,
-    merchantRaw = "WARUNG PAK ALI",
+    merchantRaw = MERCHANT_KEY,
     merchantDisplay = MERCHANT,
-    merchantKey = "WARUNG PAK ALI",
+    merchantKey = MERCHANT_KEY,
     categoryId = categoryId,
     sourcePackage = "my.com.tngdigital.ewallet",
     sourceLabel = SOURCE_LABEL,
