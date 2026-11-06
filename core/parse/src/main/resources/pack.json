@@ -1,5 +1,5 @@
 {
-  "pack_version": 17,
+  "pack_version": 18,
   "fragments": {
     "amount": "(?:RM|MYR)\\s?(?<amount>[0-9,]+(?:\\.[0-9]{1,2})?)"
   },
@@ -186,7 +186,7 @@
         },
         {
           "id": "mae-fpx-v1", "priority": 110,
-          "direction": "EXPENSE", "confidence": "REVIEW",
+          "direction": "EXPENSE", "confidence": "HIGH",
           "requires": {
             "text_contains_all": ["Successful payment of", "FPX ID"],
             "text_contains_none": ["gagal", "tidak berjaya", "unsuccessful", "failed", "declined"]

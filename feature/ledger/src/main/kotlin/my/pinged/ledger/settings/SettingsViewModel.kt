@@ -452,7 +452,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
      * already said will not all read.
      */
     private suspend fun countCorrections(db: PingedDatabase, met: Met): Int? = try {
-        Corrections.pending(app, db.rawCaptureDao(), Graph.ruleMatcher())?.size
+        Corrections.pending(app, db.rawCaptureDao(), db.txnDao(), Graph.ruleMatcher())?.size
     } catch (thrown: SQLException) {
         met.record(thrown)
         null

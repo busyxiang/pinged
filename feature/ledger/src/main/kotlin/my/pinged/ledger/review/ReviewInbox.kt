@@ -77,8 +77,10 @@ class ReviewInbox(
     val read: ScreenRead<Unit, List<ReviewCard>> =
         ScreenRead.fixed(scope, runner, "The review inbox cannot be read") { db ->
             val txns = db.txnDao()
+            val normalization = Graph.ruleMatcher().merchantNormalization
             txns.awaitingReview().map { row ->
-                ReviewCard(row, pair = row.txn.takeIf { it.pendingReason == PendingReason.DUPLICATE_SUSPECT }?.let(txns::duplicatePair))
+                val pair = row.txn.takeIf { it.pendingReason == PendingReason.DUPLICATE_SUSPECT }?.let(txns::duplicatePair)
+                ReviewCard(row, pair = pair, merge = pair?.let { MergeWay.of(row.txn, it, normalization) } ?: MergeWay.HELD)
             }
         }
 
@@ -199,11 +201,27 @@ class ReviewInbox(
      * Merge a duplicate card: dismiss the row awaiting review and keep its
      * [ReviewCard.pair] untouched (`TxnDao.merge`). Writes nothing for a card
      * with no pair, or once the pair has been dismissed.
+     *
+     * A gateway pair ([ReviewCard.merge]) dismisses the gateway row instead,
+     * whichever it is, commits the other and moves the category to it
+     * (`TxnDao.mergeGateway`); it writes nothing once either row has moved
+     * since the card was drawn.
      */
     fun merge(card: ReviewCard): Job {
         val pair = card.pair ?: return scope.launch {}
-        return settle(card, TxnState.REJECTED, "The payments could not be merged", line = "MERGED · " + amountOf(card)) { now ->
-            merge(card.txn.id, card.txn.pendingReason, pair.id, now)
+        val line = "MERGED · " + amountOf(card)
+        val (dismiss, keep) = when (card.merge) {
+            MergeWay.HELD -> return settle(card, TxnState.REJECTED, "The payments could not be merged", line = line) { now ->
+                merge(card.txn.id, card.txn.pendingReason, pair.id, now)
+            }
+            MergeWay.GATEWAY_HELD -> card.txn to pair
+            MergeWay.GATEWAY_PAIR -> pair to card.txn
+        }
+        return scope.launch {
+            val wrote = writtenOn("The payments could not be merged", unavailable = emptyList()) { db, now ->
+                listOfNotNull(db.txnDao().mergeGateway(dismiss, keep, db.categoryDao().uncategorizedIdOrNull(), now))
+            } ?: return@launch
+            answered(wrote.firstOrNull()?.let { Undoable(said = line, rows = emptyList(), merged = it) })
         }
     }
 
@@ -220,7 +238,9 @@ class ReviewInbox(
     fun undo(): Job = scope.launch {
         val offered = _undoable.value ?: return@launch
         _undoable.compareAndSet(offered, null)
-        written("The answer could not be undone", unavailable = false) { now -> unsettle(offered.rows, now) }
+        written("The answer could not be undone", unavailable = false) { now ->
+            offered.merged?.let { unmergeGateway(it, now) } ?: unsettle(offered.rows, now)
+        }
             ?: return@launch
     }
 

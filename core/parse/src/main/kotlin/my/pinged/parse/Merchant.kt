@@ -73,6 +73,24 @@ object Merchant {
         MerchantKey(strip(TextNormalizer.forMatch(raw).uppercase(Locale.ROOT), normalization))
 
     /**
+     * Whether [raw] names a payment gateway rather than whoever was paid: it
+     * starts with one of the pack's `acquirer_prefixes`, matched as [clean]
+     * matches them. MAE's card spend at an FPX bill reads
+     * `FPX-CREDIT CARD-RPS KUALA LUMPUR MYS`, the gateway, while the FPX
+     * notice six seconds later names the payee (#255).
+     *
+     * Spec 7.2's layer 2 counts such a merchant as absent, and Merge keeps the
+     * row that names the payee over it (spec 9.2). Driven by the existing
+     * prefix list, so no pack key says which prefixes are gateways: every
+     * acquirer prefix is one.
+     */
+    fun isGatewayOnly(raw: String?, normalization: MerchantNormalization): Boolean {
+        if (raw.isNullOrBlank()) return false
+        val text = TextNormalizer.forMatch(raw)
+        return normalization.prefixes.any { text.startsWith(it, ignoreCase = true) }
+    }
+
+    /**
      * Spec 5.4's `merchant_display`, derived from [raw] and from nothing else.
      *
      * The same prefixes and suffixes [clean] removes are removed here, matched

@@ -201,8 +201,8 @@ class DaoTest {
     @Test fun duplicateSuspectsExcludeTheSamePackage() {
         val txnDao = db.txnDao()
         txnDao.insert(sampleTxn(amountSen = 12_000, occurredAt = 5_000, pkg = "com.a"))
-        assertEquals(1, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.b").size)
-        assertEquals(0, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.a").size)
+        assertEquals(1, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.b", ruleId = null).size)
+        assertEquals(0, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.a", ruleId = null).size)
     }
 
     /**
@@ -219,14 +219,14 @@ class DaoTest {
         txnDao.insert(sampleTxn(amountSen = 12_000, occurredAt = at + w, pkg = "com.a"))
         txnDao.insert(sampleTxn(amountSen = 12_000, occurredAt = at + w + 1, pkg = "com.a"))
 
-        val hits = txnDao.findDuplicateSuspects(12_000, at - w, at + w, Direction.EXPENSE, "com.b")
+        val hits = txnDao.findDuplicateSuspects(12_000, at - w, at + w, Direction.EXPENSE, "com.b", ruleId = null)
         assertEquals(listOf(at - w, at + w), hits.map { it.occurredAt }.sorted())
     }
 
     @Test fun layerTwoNeedsTheAmountToBeIdentical() {
         val txnDao = db.txnDao()
         txnDao.insert(sampleTxn(amountSen = 12_001, occurredAt = 5_000, pkg = "com.a"))
-        assertEquals(0, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.b").size)
+        assertEquals(0, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.b", ruleId = null).size)
     }
 
     @Test fun layerTwoIgnoresRejectedTransactions() {
@@ -234,7 +234,7 @@ class DaoTest {
         txnDao.insert(
             sampleTxn(amountSen = 12_000, occurredAt = 5_000, pkg = "com.a", state = TxnState.REJECTED),
         )
-        assertEquals(0, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.b").size)
+        assertEquals(0, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.b", ruleId = null).size)
     }
 
     @Test fun layerTwoKeepsPendingTransactionsAsCandidates() {
@@ -242,7 +242,7 @@ class DaoTest {
         txnDao.insert(
             sampleTxn(amountSen = 12_000, occurredAt = 5_000, pkg = "com.a", state = TxnState.PENDING),
         )
-        assertEquals(1, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.b").size)
+        assertEquals(1, txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.EXPENSE, "com.b", ruleId = null).size)
     }
 
     /**
@@ -259,7 +259,7 @@ class DaoTest {
         txnDao.insert(sampleTxn(amountSen = 12_000, occurredAt = 5_000, pkg = "com.a"))
         assertEquals(
             0,
-            txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.REFUND, "com.b").size,
+            txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.REFUND, "com.b", ruleId = null).size,
         )
     }
 
@@ -271,7 +271,7 @@ class DaoTest {
         )
         assertEquals(
             1,
-            txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.REFUND, "com.b").size,
+            txnDao.findDuplicateSuspects(12_000, 0, 10_000, Direction.REFUND, "com.b", ruleId = null).size,
         )
     }
 
@@ -298,7 +298,7 @@ class DaoTest {
             "Five minutes must be inside the 10-minute layer-2 window",
             1,
             db.txnDao()
-                .findDuplicateSuspects(12_000, at - DuplicateWindows.LAYER_TWO_MILLIS, at + DuplicateWindows.LAYER_TWO_MILLIS, Direction.EXPENSE, "com.b")
+                .findDuplicateSuspects(12_000, at - DuplicateWindows.LAYER_TWO_MILLIS, at + DuplicateWindows.LAYER_TWO_MILLIS, Direction.EXPENSE, "com.b", ruleId = null)
                 .size,
         )
     }

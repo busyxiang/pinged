@@ -66,6 +66,27 @@ class ReviewDuplicateScreenTest {
         }
     }
 
+    @Test fun eachRowIsHeadedByWhatMergeDoesToIt() {
+        content()
+
+        assertHeading(DUPLICATE_HELD, "DISMISSED BY MERGE")
+        assertHeading(DUPLICATE_PAIR, "KEPT BY MERGE")
+    }
+
+    /** #255: a gateway pair's Merge dismisses the pair, and the card says so. */
+    @Test fun aCardWhoseMergeDismissesThePairHeadsThePairDismissed() {
+        content(duplicate.copy(merge = MergeWay.GATEWAY_PAIR))
+
+        assertHeading(DUPLICATE_PAIR, "DISMISSED BY MERGE")
+        assertHeading(DUPLICATE_HELD, "KEPT BY MERGE")
+    }
+
+    private fun assertHeading(side: String, heading: String) {
+        compose.onNode(hasText(heading) and hasAnyAncestor(hasTestTag(side)))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     @Test fun aDuplicateCardCannotBeSwiped() {
         content()
 
@@ -78,11 +99,11 @@ class ReviewDuplicateScreenTest {
         assertEquals("A swipe answered a duplicate card", emptyList<Any>(), answers)
     }
 
-    private fun content() {
+    private fun content(card: ReviewCard = duplicate) {
         compose.setContent {
             PingedTheme {
                 ReviewInboxScreenContent(
-                    cards = listOf(duplicate),
+                    cards = listOf(card),
                     storageUnavailable = false,
                     busy = null,
                     onBack = {},

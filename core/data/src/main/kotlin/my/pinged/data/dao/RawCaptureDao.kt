@@ -565,6 +565,14 @@ interface RawCaptureDao : MerchantDecisions {
     @Query("SELECT merchant_key FROM txn WHERE id = :id")
     fun merchantKeyOf(id: Long): String?
 
+    /**
+     * The pair a re-read found (spec 5.5, 7.2), where the review inbox looks
+     * for it (`TxnDao.duplicatePair`). Only onto a capture with none: one
+     * already recorded is layer 1's or stage two's, and stays.
+     */
+    @Query("UPDATE raw_capture SET duplicate_of_id = :duplicateOf WHERE id = :id AND duplicate_of_id IS NULL")
+    fun recordDuplicateOf(id: Long, duplicateOf: Long): Int
+
     /** The transaction [captureId] wrote, off the unique `txn(raw_capture_id)`. */
     @Query("SELECT * FROM txn WHERE raw_capture_id = :captureId")
     fun txnForCapture(captureId: Long): Txn?
@@ -625,7 +633,8 @@ interface RawCaptureDao : MerchantDecisions {
     /**
      * A re-read applied: [corrected]'s parse-derived columns onto its row,
      * the user's merchant decisions carried to its new key
-     * ([MerchantDecisions.carry]), and the capture marked compared, as one unit.
+     * ([MerchantDecisions.carry]), the pair the re-read found recorded as
+     * [duplicateOf], and the capture marked compared, as one unit.
      *
      * Returns false, having written nothing, when the transaction has been
      * edited, or its state or reason is no longer [compared]'s. A capture
@@ -641,6 +650,7 @@ interface RawCaptureDao : MerchantDecisions {
         ruleId: String,
         compared: Txn,
         corrected: Txn,
+        duplicateOf: Long? = null,
     ): Boolean {
         corrected.requireStorable()
         val previousKey = merchantKeyOf(corrected.id)
@@ -661,6 +671,7 @@ interface RawCaptureDao : MerchantDecisions {
         if (rewritten == 0) return false
         val key = corrected.merchantKey
         if (previousKey != null && key != null) carry(from = previousKey, to = key)
+        if (duplicateOf != null) recordDuplicateOf(captureId, duplicateOf)
         if (markCompared(captureId, fromPackVersion, toPackVersion, ruleId) == 0) {
             throw StaleCaptureException(
                 "Capture $captureId is no longer MATCHED at pack $fromPackVersion; " +

@@ -439,7 +439,7 @@ private fun ReviewCardView(
 
         if (card.asksCategory) CategoryLine(card, enabled, onChooseCategory)
 
-        if (card.kind == CardKind.DUPLICATE) card.pair?.let { SideBySide(txn, it) }
+        if (card.kind == CardKind.DUPLICATE) card.pair?.let { SideBySide(txn, it, dismissesPair = card.merge == MergeWay.GATEWAY_PAIR) }
 
         // The first two answers as the board's equal halves; a transfer
         // card's third gets a row of its own below them, since thirds at
@@ -461,12 +461,14 @@ private fun ReviewCardView(
 /**
  * A duplicate card's two rows (§9.2), each with its source, time and amount,
  * headed by what Merge does to it: the row awaiting review is the one it
- * dismisses, its pair the one it keeps.
+ * dismisses and its pair the one it keeps, unless [dismissesPair] (a gateway
+ * pair, §7.2), when the headings swap with the rows they name.
  */
 @Composable
-private fun SideBySide(held: Txn, pair: Txn) {
+private fun SideBySide(held: Txn, pair: Txn, dismissesPair: Boolean) {
+    val (heldHeading, pairHeading) = if (dismissesPair) KEPT to DISMISSED else DISMISSED to KEPT
     Row(Modifier.padding(top = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        listOf(Triple(held, "DISMISSED BY MERGE", DUPLICATE_HELD), Triple(pair, "KEPT BY MERGE", DUPLICATE_PAIR))
+        listOf(Triple(held, heldHeading, DUPLICATE_HELD), Triple(pair, pairHeading, DUPLICATE_PAIR))
             .forEach { (row, heading, tag) ->
                 Column(
                     Modifier
@@ -790,6 +792,9 @@ const val REVIEW_HEADER = "review-header"
 
 /** The box that quotes a card's notification word for word. */
 internal const val VERBATIM = "review-verbatim"
+
+private const val DISMISSED = "DISMISSED BY MERGE"
+private const val KEPT = "KEPT BY MERGE"
 
 /** The test tag of a duplicate card's column for the row awaiting review. */
 const val DUPLICATE_HELD = "duplicate-held"

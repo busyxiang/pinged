@@ -2,11 +2,14 @@ package my.pinged.ledger.review
 
 import my.pinged.capture.REVIEW_THRESHOLD_SEN
 import my.pinged.data.dao.Answered
+import my.pinged.data.dao.GatewayMerge
 import my.pinged.data.dao.ReviewRow
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Direction
+import my.pinged.parse.Merchant
+import my.pinged.parse.MerchantNormalization
 import my.pinged.ui.ringgit
 
 /**
@@ -22,6 +25,7 @@ import my.pinged.ui.ringgit
  * @property pair for a duplicate card, the transaction it may duplicate
  *   (`TxnDao.duplicatePair`); null for every other card, and for a duplicate
  *   whose pair cannot be found, which is then a plain card.
+ * @property merge which row Merge dismisses; see [MergeWay].
  */
 data class ReviewCard(
     val txn: Txn,
@@ -30,14 +34,16 @@ data class ReviewCard(
     val title: String? = null,
     val body: String? = null,
     val pair: Txn? = null,
+    val merge: MergeWay = MergeWay.HELD,
 ) {
-    constructor(row: ReviewRow, pair: Txn? = null) : this(
+    constructor(row: ReviewRow, pair: Txn? = null, merge: MergeWay = MergeWay.HELD) : this(
         txn = row.txn,
         merchant = row.displayName,
         category = row.categoryName,
         title = row.captureTitle,
         body = row.captureBigText?.takeIf { it.isNotEmpty() } ?: row.captureText,
         pair = pair,
+        merge = merge,
     )
 
     /**
@@ -82,10 +88,49 @@ enum class CardKind(val answers: List<ReviewAnswer>) {
 }
 
 /**
- * The last answer, on offer for Undo: what the snackbar [said], and every row
- * it wrote, which `TxnDao.unsettle` takes back together.
+ * Which row of a duplicate card Merge dismisses (§7.2). Decided once, when
+ * the card is read, so the card's headings and the write cannot disagree.
  */
-data class Undoable(val said: String, val rows: List<Answered>)
+enum class MergeWay {
+    /** The row awaiting review, its pair untouched: every pair but a gateway one. */
+    HELD,
+
+    /** The row awaiting review, which is gateway-only; its category moves to the pair. */
+    GATEWAY_HELD,
+
+    /**
+     * The pair, which is gateway-only and usually already counted; the row
+     * awaiting review is committed and takes the pair's category (#255).
+     */
+    GATEWAY_PAIR,
+    ;
+
+    companion object {
+        /**
+         * [GATEWAY_HELD] or [GATEWAY_PAIR] when exactly one of [held] and
+         * [pair] is gateway-only ([Merchant.isGatewayOnly]) and not
+         * `user_edited`, so a person's edit is never the row dismissed in its
+         * place; [HELD] for every other pair.
+         */
+        fun of(held: Txn, pair: Txn, normalization: MerchantNormalization): MergeWay {
+            val heldGateway = Merchant.isGatewayOnly(held.merchantRaw, normalization)
+            val pairGateway = Merchant.isGatewayOnly(pair.merchantRaw, normalization)
+            return when {
+                pairGateway && !heldGateway && !pair.userEdited -> GATEWAY_PAIR
+                heldGateway && !pairGateway && !held.userEdited -> GATEWAY_HELD
+                else -> HELD
+            }
+        }
+    }
+}
+
+/**
+ * The last answer, on offer for Undo: what the snackbar [said], and every row
+ * it wrote, which `TxnDao.unsettle` takes back together -- or, for a gateway
+ * Merge, the two rows it wrote ([merged]), which `TxnDao.unmergeGateway`
+ * takes back instead.
+ */
+data class Undoable(val said: String, val rows: List<Answered>, val merged: GatewayMerge? = null)
 
 /** The snackbar's line for an answer that wrote [to] on [card]'s row: `ACCEPTED · RM650.00`. */
 internal fun said(to: TxnState, card: ReviewCard): String =

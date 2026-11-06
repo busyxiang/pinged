@@ -31,7 +31,7 @@ class CorrectionsReadTest {
     @Test fun aSweptHistoryReadsAsAnEmptyListUnderThePacksVersion() = runBlocking {
         app.discardTheDatabase()
         val matcher = Graph.ruleMatcher()
-        while (Corrections.sweep(app, Databases.rawCaptureDao(app), matcher).more) { }
+        while (Corrections.sweep(app, Databases.rawCaptureDao(app), Databases.txnDao(app), matcher).more) { }
         val model = CorrectionsViewModel(app)
 
         model.read.refreshed()

@@ -226,7 +226,7 @@ class ParseWorker(context: Context, params: WorkerParameters) :
         return access.damageScope {
             access.leased { db ->
                 try {
-                    Corrections.sweep(app, db.rawCaptureDao(), matcher, isStopped = { isStopped })
+                    Corrections.sweep(app, db.rawCaptureDao(), db.txnDao(), matcher, isStopped = { isStopped })
                 } catch (failure: RuntimeException) {
                     if (failure is java.util.concurrent.CancellationException) throw failure
                     if (Databases.poisons(failure)) {

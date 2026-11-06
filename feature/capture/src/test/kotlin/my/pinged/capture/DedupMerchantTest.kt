@@ -44,16 +44,33 @@ class DedupMerchantTest {
     }
 
     /**
-     * The acquirer prefix is why the comparison goes through
-     * [my.pinged.parse.Merchant.clean] rather than comparing raw strings: the
-     * wallet says `TNG*STARBUCKS KLCC` and the bank says `Starbucks KLCC`, and
-     * as raw strings those share nothing at all.
+     * Case and the acquirer's noise are why the comparison goes through
+     * [my.pinged.parse.Merchant.clean] rather than comparing raw strings. No
+     * acquirer prefix here: a prefixed merchant is gateway-only, which agrees
+     * with anything before cleaning is reached.
      */
     @Test
     fun cleaningIsWhatMakesTheClauseWork() {
-        assertTrue(agree("TNG*STARBUCKS KLCC", "Starbucks KLCC"))
-        assertTrue(agree("GRAB*MCD KLCC", "mcd klcc"))
+        assertTrue(agree("STARBUCKS", "Starbucks KLCC MYS"))
         assertTrue(agree("SHOPEE SDN BHD", "shopee"))
+    }
+
+    /**
+     * #255: MAE's card spend at the FPX gateway names the gateway, not the
+     * payee, so it shares no token with the FPX notice that names the payee.
+     * Both merchants are the committed fixtures' own.
+     */
+    @Test
+    fun aGatewayOnlyMerchantCountsAsAbsent() {
+        assertTrue(agree("FPX-CREDIT CARD-RPS KUALA LUMPUR MYS", "IBILIK 02"))
+        assertTrue(agree("IBILIK 02", "FPX-CREDIT CARD-RPS KUALA LUMPUR MYS"))
+        // Matched as the pack matches its prefixes: case folded.
+        assertTrue(agree("fpx-credit card-rps kuala lumpur mys", "IBILIK 02"))
+    }
+
+    @Test
+    fun aMerchantThatOnlyContainsAPrefixStillHasToShareAToken() {
+        assertFalse(agree("PAYMENT FPX-CREDIT CARD", "IBILIK 02"))
     }
 
     @Test
