@@ -1,5 +1,6 @@
 package my.pinged.ledger.review
 
+import my.pinged.capture.CheckLimit
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -82,7 +83,7 @@ class ReviewUndoTest {
         compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
 
     private companion object {
-        val OVER = reasonSentence(PendingReason.OVER_THRESHOLD)
-        val RULE = reasonSentence(PendingReason.RULE_REVIEW)
+        val OVER = reasonSentence(PendingReason.OVER_THRESHOLD, 65_000L, CheckLimit.DEFAULT_SEN)
+        val RULE = reasonSentence(PendingReason.RULE_REVIEW, 0L, CheckLimit.DEFAULT_SEN)
     }
 }

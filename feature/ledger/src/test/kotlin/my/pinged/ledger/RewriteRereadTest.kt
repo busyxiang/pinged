@@ -1,5 +1,6 @@
 package my.pinged.ledger
 
+import my.pinged.capture.CheckLimit
 import android.app.Application
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.core.app.ApplicationProvider
@@ -102,7 +103,7 @@ class RewriteRereadTest {
     }
 
     @Test fun theReviewInboxReadsAgainWhenTheLedgerIsReplaced() {
-        val viewModel = ReviewViewModel(app, runner)
+        val viewModel = ReviewViewModel(app, runner, Dispatchers.Unconfined) { CheckLimit.DEFAULT_SEN }
         compose.setContent { ReviewScreen(viewModel, onBack = {}) }
         compose.waitForIdle()
         assertEquals("The inbox was not read once when shown", 1, reads(INBOX))

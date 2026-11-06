@@ -68,6 +68,10 @@ _Avoid_: pending (the stored state), held, flagged, needs review
 The one place every transaction awaiting review is answered.
 _Avoid_: review queue, inbox (alone), corrections (that is the re-parse list)
 
+**Check limit**:
+The amount above which a captured payment waits for review instead of counting. It decides only what happens to a payment when it arrives: changing it moves nothing already counted or already awaiting review.
+_Avoid_: threshold, review threshold, RM500 limit
+
 **Standing answer**:
 The user's "always leave out", given once on a transfer card: every later transfer that the same shipped rule reads from the same app, to the same counterparty, is left out of spending without asking. It answers only notifications that arrive after it exists, never one already awaiting review, and a transfer that is awaiting review for another reason, such as a likely duplicate, is still asked about. A merge does not carry it. Settings lists each under LEFT OUT, and deleting one sends later transfers back to review and re-files nothing.
 _Avoid_: exclusion rule, auto-exclude, transfer rule, always-exclude

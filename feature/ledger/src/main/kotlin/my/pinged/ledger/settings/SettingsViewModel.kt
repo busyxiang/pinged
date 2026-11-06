@@ -30,6 +30,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import my.pinged.capture.CheckLimit
 import my.pinged.capture.Corrections
 import my.pinged.capture.Graph
 import my.pinged.data.DatabaseAccess
@@ -79,11 +80,13 @@ internal interface StoredSettings {
     suspend fun damaged(context: Context): Boolean
     suspend fun lastCheckAt(context: Context): Long
     suspend fun lastExportAt(context: Context): Long
+    suspend fun checkLimit(context: Context): Long
 
     object OnDisk : StoredSettings {
         override suspend fun damaged(context: Context) = IntegrityStore.damaged(context)
         override suspend fun lastCheckAt(context: Context) = IntegrityStore.lastCheckAt(context)
         override suspend fun lastExportAt(context: Context) = TransferStore.lastExportAt(context)
+        override suspend fun checkLimit(context: Context) = CheckLimit.sen(context)
     }
 }
 
@@ -204,6 +207,27 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Saves [sen], one of `CheckLimit.STEPS_SEN`, as spec 7.1's check limit,
+     * and draws it. **Writes no ledger row** (#362): rows awaiting review stay
+     * there and counted rows stay counted, whichever way it moves; stage two,
+     * Corrections and the review inbox read it when they next run.
+     *
+     * On [Transfers]' turn, so it lands wholly before or after a delete
+     * everything, which resets it. A store that refuses the write is logged
+     * and the row keeps the value it had.
+     */
+    fun setCheckLimit(sen: Long): Job = viewModelScope.launch {
+        Transfers.reading {
+            try {
+                CheckLimit.set(app, sen)
+                _state.update { it.copy(checkLimitSen = sen) }
+            } catch (thrown: IOException) {
+                Log.w(TAG, "The check limit could not be saved", thrown)
+            }
+        }
+    }
+
+    /**
      * Reads what the rows display, on [Transfers]' turn. **Runs no integrity
      * check**: 121ms per 10,000 captures (design 2.1) is not a cost to pay on
      * arrival at a screen.
@@ -294,6 +318,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         val storage = if (met.damage) Storage.DAMAGED else recorded
         val lastExportAt = storedOrNull("the last export") { stored.lastExportAt(app) }
         val lastCheckAt = storedOrNull("the last check") { stored.lastCheckAt(app) }
+        val checkLimitSen = storedOrNull("the check limit") { stored.checkLimit(app) }
         _state.update {
             it.copy(
                 storage = storage,
@@ -308,6 +333,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
                 exportRows = exportRows,
                 lastExportAt = lastExportAt,
                 lastCheckAt = lastCheckAt,
+                checkLimitSen = checkLimitSen,
                 loaded = true,
                 reads = it.reads + 1,
             )

@@ -151,6 +151,12 @@ data class SettingsState(
      */
     val categoryCount: Int? = null,
     /**
+     * Spec 7.1's check limit, in sen (`CheckLimit.sen`): the "Check payments
+     * over" row's value and the step its sheet checks. Null when it could not
+     * be read, as [sourcesOn] is.
+     */
+    val checkLimitSen: Long? = null,
+    /**
      * What the delete sheet itemises, or null when it may not itemise
      * anything -- see [WipeCounts], and [SettingsViewModel.wipeCounts] for
      * when it is left null. Only the delete sheet reads it.

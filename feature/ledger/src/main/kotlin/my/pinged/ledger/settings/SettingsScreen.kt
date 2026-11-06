@@ -36,6 +36,7 @@ import my.pinged.ledger.categories.CATEGORIES
 import my.pinged.ledger.learned.TAUGHT
 import my.pinged.ledger.unread.UNREAD_ROW
 import my.pinged.ledger.licences.LICENCES_TITLE
+import my.pinged.ledger.review.limit
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Chevron
@@ -106,20 +107,23 @@ fun SettingsScreen(
     var confirmingWipe by remember { mutableStateOf(false) }
 
     SettingsPage(state, buildVersion, packVersion, onOpenLicences, onRescue, modifier) {
-        SettingsRows(
-            state = state,
-            onOpenSources = onOpenSources,
-            onOpenCorrections = onOpenCorrections,
-            onOpenLearned = onOpenLearned,
-            onOpenCategories = onOpenCategories,
-            onOpenUnread = onOpenUnread,
-            onExport = onExport,
-            onRestore = { confirmingRestore = true },
-            onCheck = viewModel::check,
-            onDelete = { confirmingWipe = true },
-            alertsOn = alertsOn,
-            onAlerts = onAlerts,
-        )
+        CheckLimitChooser(state.checkLimitSen, onSave = viewModel::setCheckLimit) { openCheckLimit ->
+            SettingsRows(
+                state = state,
+                onOpenSources = onOpenSources,
+                onOpenCorrections = onOpenCorrections,
+                onOpenLearned = onOpenLearned,
+                onOpenCategories = onOpenCategories,
+                onOpenUnread = onOpenUnread,
+                onExport = onExport,
+                onRestore = { confirmingRestore = true },
+                onCheck = viewModel::check,
+                onDelete = { confirmingWipe = true },
+                alertsOn = alertsOn,
+                onAlerts = onAlerts,
+                onCheckLimit = openCheckLimit,
+            )
+        }
     }
 
     // Named before the picker is ever shown: spec 11.2 discards the device's
@@ -494,6 +498,7 @@ internal fun SettingsRows(
     alertsOn: Boolean? = null,
     onAlerts: (() -> Unit)? = null,
     onOpenUnread: () -> Unit = {},
+    onCheckLimit: () -> Unit = {},
 ) {
     NotReadYetOr(state.loaded) {
         val readable = state.storage == Storage.HEALTHY || state.storage == Storage.DAMAGED
@@ -557,11 +562,21 @@ internal fun SettingsRows(
             onClick = onOpenLearned,
         )
         // The artboard's "Categories · 16": every row the list shows, Uncategorized
-        // included. The section's last row, so no divider.
+        // included.
         SettingsRow(
             CATEGORIES,
             value = state.read { state.categoryCount?.let { grouped(it) } },
             onClick = onOpenCategories,
+        )
+        // Spec 7.1's check limit (#362), the step now as its value, as Check my
+        // data draws its time. It moves no row, but a pick during a delete
+        // would race the delete's reset, so it waits as the transfers do. The
+        // section's last row, so no divider.
+        SettingsRow(
+            CHECK_LIMIT_ROW,
+            value = state.read { state.checkLimitSen?.let(::limit) },
+            onClick = onCheckLimit,
+            enabled = idle,
             divider = false,
         )
 

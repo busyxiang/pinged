@@ -301,7 +301,7 @@ internal object ParseFixtures {
      * different package, and this database survives the run -- so a fixed amount
      * would let a transaction from the *previous* run satisfy that clause and turn
      * a committed row into a review item. Every value is well under spec 7.1's
-     * RM500 threshold.
+     * default check limit, RM500.
      */
     fun uniqueAmount(): Pair<Long, String> {
         val sen = 10_000L + (System.nanoTime() % 30_000L)

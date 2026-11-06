@@ -152,8 +152,20 @@ object Corrections {
      * is held as that spend's duplicate rather than released (#255). Only a
      * pending row is looked up: a committed one keeps its state whatever the
      * gate says.
+     *
+     * The gate holds over [checkLimitSen], the check limit now and not the one
+     * the row arrived under, so a row awaiting review under a limit since
+     * raised past it is offered its release -- as a STATUS difference the user
+     * accepts, never applied unasked (#362).
      */
-    internal suspend fun reread(capture: RawCapture, txn: Txn, matcher: RuleMatcher, now: Long, lookUp: TxnLookup): Reread {
+    internal suspend fun reread(
+        capture: RawCapture,
+        txn: Txn,
+        matcher: RuleMatcher,
+        now: Long,
+        lookUp: TxnLookup,
+        checkLimitSen: Long,
+    ): Reread {
         // A REJECTED transaction is somebody's decision that it is not money.
         // `user_edited` is not asked here: [RawCaptureDao.matchedStaleAfter]
         // never returns an edited row, and the write refuses one.
@@ -196,6 +208,7 @@ object Corrections {
             merchantRaw = merchant.raw,
             amountSen = outcome.amountSen,
             duplicateSuspect = carried || pair != null,
+            thresholdSen = checkLimitSen,
         )
         val after = txn.copy(
             amountSen = outcome.amountSen,
@@ -257,6 +270,7 @@ object Corrections {
         val version = matcher.packVersion
         val prefs = context.captureStore.data.first()
         if ((prefs[COMPARED_PACK_VERSION] ?: 0) >= version) return Swept(0, 0, more = false)
+        val checkLimitSen = CheckLimit.sen(context)
 
         var afterId = if (prefs[CURSOR_PACK_VERSION] == version) prefs[CURSOR_AFTER_ID] ?: 0L else 0L
         var compared = 0
@@ -269,7 +283,7 @@ object Corrections {
                 val page = captures.matchedStaleAfter(version, afterId, want)
                 for (capture in page) {
                     if (isStopped() || Databases.gated) return Swept(compared, offered, more = true)
-                    if (settle(captures, txns, capture, matcher)) offered++
+                    if (settle(captures, txns, capture, matcher, checkLimitSen)) offered++
                     afterId = capture.id
                     compared++
                 }
@@ -304,9 +318,15 @@ object Corrections {
     }
 
     /** One capture's comparison and its write. True when it awaits an answer. */
-    private suspend fun settle(captures: RawCaptureDao, txns: TxnDao, capture: RawCapture, matcher: RuleMatcher): Boolean {
+    private suspend fun settle(
+        captures: RawCaptureDao,
+        txns: TxnDao,
+        capture: RawCapture,
+        matcher: RuleMatcher,
+        checkLimitSen: Long,
+    ): Boolean {
         val txn = captures.txnForCapture(capture.id) ?: return false
-        return when (val reread = reread(capture, txn, matcher, System.currentTimeMillis(), lookupOn(txns))) {
+        return when (val reread = reread(capture, txn, matcher, System.currentTimeMillis(), lookupOn(txns), checkLimitSen)) {
             is Reread.Agrees -> {
                 captures.markCompared(capture.id, capture.packVersion, matcher.packVersion, reread.ruleId)
                 false
@@ -341,7 +361,7 @@ object Corrections {
      * which refuses it.
      */
     suspend fun pending(context: Context, captures: RawCaptureDao, txns: TxnDao, matcher: RuleMatcher): List<Correction>? =
-        pending(comparedVersion(context), matcher, lookupOn(txns)) { afterId ->
+        pending(comparedVersion(context), matcher, lookupOn(txns), CheckLimit.sen(context)) { afterId ->
             stalePage(captures, matcher.packVersion, afterId)
         }
 
@@ -378,8 +398,8 @@ object Corrections {
     }
 
     /**
-     * [pending] with the swept version, [comparedVersion], already read, and
-     * each page fetched by [readPage] -- [stalePage], in a transaction of its
+     * [pending] with the swept version, [comparedVersion], and the check limit,
+     * [CheckLimit.sen], already read, and each page fetched by [readPage] -- [stalePage], in a transaction of its
      * own for a caller that must not hold the connection across the matching,
      * which runs each re-read's pairing ([reread]) through [lookUp] the same way:
      * on emulator-5554, 1,000 awaiting captures took 230ms to read and re-read
@@ -389,6 +409,7 @@ object Corrections {
         compared: Int,
         matcher: RuleMatcher,
         lookUp: TxnLookup,
+        checkLimitSen: Long,
         readPage: suspend (afterId: Long) -> StalePage,
     ): List<Correction>? {
         if (compared < matcher.packVersion) return null
@@ -398,7 +419,7 @@ object Corrections {
         while (true) {
             val page = readPage(afterId)
             for (stale in page.rows) {
-                val reread = reread(stale.capture, stale.txn, matcher, now, lookUp)
+                val reread = reread(stale.capture, stale.txn, matcher, now, lookUp, checkLimitSen)
                 if (reread is Reread.Differs) found += reread.correction
             }
             if (page.last) return found

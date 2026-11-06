@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import my.pinged.capture.CaptureCaches
+import my.pinged.capture.CheckLimit
 import my.pinged.data.DatabaseAccess
 import my.pinged.data.DatabaseUnavailableException
 import my.pinged.data.Databases
@@ -625,13 +626,14 @@ object Transfers {
      * `DatabaseKey.destroy` unlinks the database file, then the `-wal` and
      * `-shm` beside it, then the wrapped key file, and only then touches the
      * Keystore -- the one line of it that can throw. [Wipe.everything]'s own
-     * [IntegrityStore.forget], then [CaptureCaches.clear] and
-     * [TransferStore.forget], are later still. So anything reaching this catch
+     * [IntegrityStore.forget], then [CaptureCaches.clear],
+     * [TransferStore.forget] and [CheckLimit.reset], are later still. So anything reaching this catch
      * -- or returned as a [Wipe.Leftover], which that same `forget` is the
      * only source of -- happened after the key was unlinked, and without the
      * key this app cannot read the ledger again whether or not its file went.
      * What is left over is a stale Keystore alias, a stale integrity verdict,
-     * or a DataStore still holding capture counters, all of which the next
+     * a DataStore still holding capture counters, or a check limit not yet back
+     * at RM500, all of which the next
      * delete finishes off; the message says so.
      */
     fun deleteEverything(context: Context, requester: Job, beforeStart: suspend () -> Unit = {}): Deferred<Answer> =
@@ -640,6 +642,9 @@ object Transfers {
                 try {
                     val leftover = Wipe.everything(context)
                     forgetWipedLedger(context)
+                    // Spec 11.3 names it among what a delete removes; a restore,
+                    // which shares `forgetWipedLedger`, keeps it (#362).
+                    CheckLimit.reset(context)
                     if (leftover == Wipe.Leftover.NONE) {
                         TransferJob.Deleted
                     } else {

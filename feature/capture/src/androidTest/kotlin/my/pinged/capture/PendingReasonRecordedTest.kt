@@ -9,6 +9,8 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +42,10 @@ class PendingReasonRecordedTest {
     fun prepare() {
         ParseFixtures.prepare(context)
     }
+
+    /** The limit is one value for the whole device: left set, every later suite gates by it. */
+    @After
+    fun resetTheCheckLimit() = runBlocking { CheckLimit.reset(context) }
 
     /** Condition 1: the matched rule declares `confidence: REVIEW`. */
     @Test
@@ -216,7 +222,7 @@ class PendingReasonRecordedTest {
         assertEquals(PendingReason.DUPLICATE_SUSPECT, txn.pendingReason)
     }
 
-    /** Condition 5: the amount exceeds the threshold, default RM500. */
+    /** Condition 5: the amount exceeds the check limit, default RM500. */
     @Test
     fun overThresholdIsRecordedForAnAmountAboveTheDefaultThreshold() {
         val id = ParseFixtures.insertCapture(
@@ -250,6 +256,32 @@ class PendingReasonRecordedTest {
         assertEquals(ConfidenceGate.DEFAULT_THRESHOLD_SEN, txn.amountSen)
         assertEquals(TxnState.COMMITTED, txn.state)
         assertNull(txn.pendingReason)
+    }
+
+    /**
+     * #362: stage two gates by the limit the user saved, read by the worker
+     * itself. At RM1,000 an RM800 payment counts, an RM1,200 one waits, and
+     * RM1,000.00 exactly counts.
+     */
+    @Test
+    fun theWorkerHoldsByTheSavedCheckLimit() {
+        runBlocking { CheckLimit.set(context, 100_000L) }
+        fun payment(rm: String, n: Int) = ParseFixtures.insertCapture(
+            context,
+            text = "Payment of $rm to LIMIT $n $marker successful",
+            title = marker,
+            sbnKey = "$marker-limit-$n", postedAt = base - 3_360_000L - n * 60_000L,
+        )
+        val under = payment("RM800.00", 1)
+        val over = payment("RM1,200.00", 2)
+        val at = payment("RM1,000.00", 3)
+
+        ParseFixtures.runWorker(context)
+
+        fun stored(id: Long) = requireNotNull(ParseFixtures.txnForCapture(context, id)).let { Triple(it.amountSen, it.state, it.pendingReason) }
+        assertEquals("RM800 was held under RM1,000", Triple(80_000L, TxnState.COMMITTED, null), stored(under))
+        assertEquals(Triple(120_000L, TxnState.PENDING, PendingReason.OVER_THRESHOLD), stored(over))
+        assertEquals("The boundary is not strict", Triple(100_000L, TxnState.COMMITTED, null), stored(at))
     }
 
     /**

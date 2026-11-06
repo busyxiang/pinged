@@ -6,10 +6,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
 import my.pinged.parse.Kind
 
-/**
- * Spec 7.1's RM500, the one threshold there is (spec #109 keeps it fixed):
- * public so the review inbox's "OVER YOUR RM500 CHECK LIMIT" is this number and not a copy.
- */
+/** Spec 7.1's default check limit, RM500: [CheckLimit.DEFAULT_SEN], and the gate's default. */
 const val REVIEW_THRESHOLD_SEN: Long = 50_000L
 
 /**
@@ -31,12 +28,8 @@ internal object ConfidenceGate {
 
     /**
      * Spec 7.1's threshold: "`amount_sen` exceeds a user-configurable threshold,
-     * default RM500".
-     *
-     * **The setting is not backed by anything** -- there is no settings store in
-     * this milestone -- so this constant is the default and the only value. A
-     * parameter of [decide] rather than a literal inside it, so the store, when it
-     * exists, has one call site to fill.
+     * default RM500". The default only: both production callers, stage two's
+     * `ParsePass` and `Corrections.reread`, pass [CheckLimit.sen].
      */
     const val DEFAULT_THRESHOLD_SEN: Long = REVIEW_THRESHOLD_SEN
 

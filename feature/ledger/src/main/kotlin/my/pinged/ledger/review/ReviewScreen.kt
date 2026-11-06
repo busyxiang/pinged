@@ -403,7 +403,7 @@ private fun ReviewCardView(
             .padding(horizontal = 15.dp, vertical = 14.dp),
     ) {
         // The board's caps label at MonoLabel's 12sp floor rather than its 9.5.
-        Text(reasonSentence(txn.pendingReason), style = MonoLabel, color = Stamp)
+        Text(card.reason, style = MonoLabel, color = Stamp)
         if (card.kind == CardKind.TRANSFER) {
             Text(
                 transferQuestion(card),

@@ -1,6 +1,8 @@
 package my.pinged.ledger.review
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,11 +62,19 @@ import my.pinged.ledger.settings.Transfers
  *
  * [transfers] is a parameter so the busy state has one source in production,
  * `Transfers.state`, the same flow the settings screen draws its notice from.
+ *
+ * [checkLimit] is the check limit now, `CheckLimit.sen` in production, read
+ * with every read of the cards and carried on each
+ * ([ReviewCard.checkLimitSen]), so a card's label, the Accept all button and
+ * the batch it writes are all one read's limit (#362). [dispatcher] is where
+ * the read runs; a JVM test passes the one it drives.
  */
 class ReviewInbox(
     private val scope: CoroutineScope,
     private val runner: ReadRunner,
+    private val checkLimit: suspend () -> Long,
     private val transfers: StateFlow<TransferState> = Transfers.state,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val gate = LedgerBusy(scope, transfers)
 
@@ -75,12 +85,21 @@ class ReviewInbox(
      * other modules that drive an inbox; a screen reads through `ReviewScreen`.
      */
     val read: ScreenRead<Unit, List<ReviewCard>> =
-        ScreenRead.fixed(scope, runner, "The review inbox cannot be read") { db ->
-            val txns = db.txnDao()
-            val normalization = Graph.ruleMatcher().merchantNormalization
-            txns.awaitingReview().map { row ->
-                val pair = row.txn.takeIf { it.pendingReason == PendingReason.DUPLICATE_SUSPECT }?.let(txns::duplicatePair)
-                ReviewCard(row, pair = pair, merge = pair?.let { MergeWay.of(row.txn, it, normalization) } ?: MergeWay.HELD)
+        ScreenRead.fixedStaged(scope, runner, "The review inbox cannot be read", dispatcher) {
+            // Outside the transaction: a DataStore read has no place in one.
+            val limitSen = checkLimit()
+            transaction { db ->
+                val txns = db.txnDao()
+                val normalization = Graph.ruleMatcher().merchantNormalization
+                txns.awaitingReview().map { row ->
+                    val pair = row.txn.takeIf { it.pendingReason == PendingReason.DUPLICATE_SUSPECT }?.let(txns::duplicatePair)
+                    ReviewCard(
+                        row,
+                        checkLimitSen = limitSen,
+                        pair = pair,
+                        merge = pair?.let { MergeWay.of(row.txn, it, normalization) } ?: MergeWay.HELD,
+                    )
+                }
             }
         }
 

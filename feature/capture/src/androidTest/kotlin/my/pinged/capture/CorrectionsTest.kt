@@ -64,7 +64,10 @@ class CorrectionsTest {
 
     /** The mark is durable and shared: left reset, the next suite's worker runs this sweep. */
     @After
-    fun leaveTheSweepFinished() = runBlocking { Corrections.markSwept(context, packVersion) }
+    fun leaveTheSweepFinished() = runBlocking {
+        Corrections.markSwept(context, packVersion)
+        CheckLimit.reset(context)
+    }
 
     private fun sweep(limit: Int = Corrections.MAX_COMPARED_PER_RUN): Corrections.Swept =
         runBlocking { Corrections.sweep(context, captures, txns, matcher, limit = limit) }
@@ -730,6 +733,35 @@ class CorrectionsTest {
         assertNull(offered(id))
         assertEquals(TxnState.COMMITTED, txn(id).state)
         assertNull(txn(id).pendingReason)
+    }
+
+    /**
+     * #362: the re-read gates by the check limit now. An RM800 payment held
+     * under RM500 is offered its release once the limit is RM1,000 -- as a
+     * STATUS difference, the row untouched until the offer is accepted.
+     */
+    @Test
+    fun aRowHeldUnderALimitSinceRaisedIsOfferedItsReleaseAndWaitsForTheAnswer() {
+        val id = readByAnOlderPack(
+            text = "Payment of RM800.00 to KEDAI 30 $marker successful",
+            title = "Touch 'n Go $marker",
+            at = base - 700L,
+            oldRule = "tng-payment-v1",
+            olderRead = "state = 'PENDING', pending_reason = 'OVER_THRESHOLD'",
+        )
+        val held = txn(id)
+        assertEquals("precondition: RM500 held it", PendingReason.OVER_THRESHOLD, held.pendingReason)
+        runBlocking { CheckLimit.set(context, 100_000L) }
+
+        sweep()
+        val correction = offered(id)
+
+        assertNotNull("A row now under the check limit was not offered its release", correction)
+        assertEquals(setOf(Corrections.Field.STATUS), correction!!.changed)
+        assertEquals(TxnState.COMMITTED to null, correction.after.state to correction.after.pendingReason)
+        assertEquals("The re-read moved the row before anyone answered", held, txn(id))
+        assertTrue(Corrections.accept(captures, correction))
+        assertEquals(TxnState.COMMITTED, txn(id).state)
     }
 
     /** Amount, merchant and confidence still reach a committed row; its status does not move. */

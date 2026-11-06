@@ -73,7 +73,7 @@ class ManualEntryThenCaptureTest {
         assertEquals(PendingReason.DUPLICATE_SUSPECT, captured.pendingReason)
         assertEquals("The capture changed the manual entry", typed, txns.byId(manualId))
 
-        val inbox = ReviewInbox(scope = scope, runner = GuardedRunner(context))
+        val inbox = ReviewInbox(scope = scope, runner = GuardedRunner(context), checkLimit = { CheckLimit.sen(context) })
         // A `ScreenRead`'s calls are made on its scope's thread, the main thread here.
         withTimeout(TIMEOUT) { withContext(Dispatchers.Main) { inbox.read.refresh() }.join() }
         val card = inbox.cards.orEmpty().single { it.txn.id == captured.id }

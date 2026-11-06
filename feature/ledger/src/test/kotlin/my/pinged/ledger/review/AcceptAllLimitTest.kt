@@ -68,9 +68,35 @@ class AcceptAllLimitTest {
         assertNull("Accept all was offered with nothing it may take", AcceptAll.of(cards))
     }
 
-    private fun card(id: Long, reason: PendingReason, amountSen: Long) = ReviewCard(
+    /**
+     * #362: Accept all reads the limit the cards were read under, not RM500.
+     * Raised to RM1,000, an RM800 card held under RM500 is in the batch and its sum.
+     */
+    @Test fun afterARaiseACardNowUnderTheLimitIsBatchedAndSummed() {
+        val cards = listOf(
+            card(1L, PendingReason.OVER_THRESHOLD, 80_000L, limitSen = 100_000L),
+            card(2L, PendingReason.RULE_REVIEW, 12_000L, limitSen = 100_000L),
+            card(3L, PendingReason.OVER_THRESHOLD, 120_000L, limitSen = 100_000L),
+        )
+
+        assertEquals("Accept 2 · RM920.00 · 1 over RM1,000 left to check", AcceptAll.of(cards)?.label)
+    }
+
+    /** Lowered to RM200, an RM300 rule-review card is left out, and the note names RM200. */
+    @Test fun afterALowerACardOverTheNewLimitIsLeftOutAndTheNoteNamesIt() {
+        val cards = listOf(
+            card(1L, PendingReason.RULE_REVIEW, 30_000L, limitSen = 20_000L),
+            card(2L, PendingReason.MERCHANT_MISSING, 5_000L, limitSen = 20_000L),
+        )
+
+        assertFalse("An RM300 card over RM200 is in the batch", cards[0].isBatchable)
+        assertEquals("Accept 1 · RM50.00 · 1 over RM200 left to check", AcceptAll.of(cards)?.label)
+    }
+
+    private fun card(id: Long, reason: PendingReason, amountSen: Long, limitSen: Long = REVIEW_THRESHOLD_SEN) = ReviewCard(
         txn = ledgerTxn(amountSen = amountSen, state = TxnState.PENDING, pendingReason = reason, id = id),
         title = "Notification $id",
         body = "Body $id",
+        checkLimitSen = limitSen,
     )
 }

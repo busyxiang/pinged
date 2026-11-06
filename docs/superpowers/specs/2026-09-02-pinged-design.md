@@ -1352,10 +1352,30 @@ A transaction is set `PENDING` if any of the following hold:
 - matched rule declares `kind: TRANSFER_SUSPECT`
 - `amount` was extracted but `merchant` is missing or empty
 - `DuplicateDetector` flagged it
-- `amount_sen` exceeds a user-configurable threshold, default RM500
+- `amount_sen` exceeds the **check limit**, a setting, default RM500
 
 Otherwise it is `COMMITTED`. The gate is a deterministic rule list, not a
 numeric score, so the app can always state exactly why an item needs review.
+
+**The check limit** (#362) is one of six steps: RM100, RM200, RM500 (the
+default), RM1,000, RM2,000 or RM5,000, one for every capture source. There is
+no "Never" and no typed amount, because the limit is the only guard between a
+pack misreading RM32.00 as RM3,200.00 and the totals. The test is strict,
+`amount_sen` > limit (#223), so RM1,000.00 exactly counts under RM1,000. The
+setting lives in a Preferences DataStore, not Room, so it changes no schema.
+It is this phone's: the JSON export (section 12) does not carry it, a restore
+keeps the phone's limit, and delete everything (section 11.3) puts it back to
+RM500.
+
+**It decides only what happens to a payment when it arrives.** Saving a step
+writes no `txn` row: rows awaiting review stay there and counted rows stay
+counted, whichever way it moves. Stage two's gate reads it when it runs, and
+so does a Corrections re-read (section 5.5), so a row awaiting review under a
+limit since raised past it is offered its release as a status difference the
+user accepts. The review inbox reads it for Accept all and for a card's label
+(section 9.2), and Accept all is how a raise releases the cards it now covers;
+no separate prompt is offered. This supersedes #109's amendment 5, which kept
+the threshold fixed at RM500.
 
 `confidence: REVIEW` says a rule's reading may be wrong. It is not how a
 possible double count is held: that is the duplicate detector's (section
@@ -1852,7 +1872,10 @@ One card per `PENDING` transaction showing:
   its `big_text` if present, else its `text`
 - the app's interpretation (amount, merchant, category, source, time)
 - the specific reason it needs review, as one short label stating the fact
-  ("OVER YOUR RM500 CHECK LIMIT", "AMOUNT FOUND, NO NAME ATTACHED")
+  ("OVER YOUR RM500 CHECK LIMIT", "AMOUNT FOUND, NO NAME ATTACHED"). Over the
+  check limit names the limit now, while the amount is still over it; under
+  it, after a raise, the card reads "OVER YOUR CHECK LIMIT WHEN IT ARRIVED",
+  since the limit a row arrived under is not stored (section 7.1)
 - two or three large actions appropriate to the reason
 
 The actions per reason:
@@ -1922,13 +1945,16 @@ twice. Both are disabled with the answers while a restore or a delete-everything
 runs.
 
 **Accept all leaves out every plain card over the check limit, by its amount**
-(`amount_sen` > RM500, the gate's own strict test, so RM500.00 exactly is
-batched), whatever reason it is stored with: the gate stores one reason and
-over threshold ranks lowest, so a row over RM500 that also fired rule review is
-stored as rule review (#223). Its swipe and its own Accept still take it. The
-label names what it left out: **Accept 8 · RM1,320.00 · 1 over RM500 left to
-check**, or **Accept 8 · 1 over RM500 left to check** with no sum; with none
-left out it is unchanged. The count and net are the batch's alone, as are the
+(`amount_sen` > the limit, the gate's own strict test, so RM500.00 exactly is
+batched under RM500), whatever reason it is stored with: the gate stores one
+reason and over threshold ranks lowest, so a row over the limit that also fired
+rule review is stored as rule review (#223). The limit is the one saved now
+(section 7.1), not the one a card arrived under: after a raise to RM1,000 an
+RM800 card held under RM500 is in the batch, and after a lower to RM200 an
+RM300 rule-review card is left out. Its swipe and its own Accept still take it.
+The label names what it left out: **Accept 8 · RM1,320.00 · 1 over RM500 left
+to check**, or **Accept 8 · 1 over RM1,000 left to check** with no sum; with
+none left out it is unchanged. The count and net are the batch's alone, as are the
 snackbar's **ACCEPTED N · RM<net>** and its Undo, which carry no note. The
 button is absent when no plain card is within the limit. This reverses #109's
 decision 1 for the batch only, which let Accept all take a card over the limit.
@@ -2177,7 +2203,8 @@ launching an activity from one needs the `PendingIntent` overload of
 - Rules you taught: review with sample text and match count, delete (5.8)
 - Import a parser pack, with validation and dry run (section 5.9)
 - Categories: add, rename, delete-if-unused
-- Review threshold amount
+- Check payments over: the check limit's six steps (section 7.1), under
+  "How things get sorted", as a check-mark sheet; a pick saves and closes it
 - Export
 - Capture health status
 - Delete all data
@@ -2528,8 +2555,9 @@ recovered, because Android will not replay the past.
 ### 11.3 Delete all data
 
 Deleting everything means the database file plus its `-wal` and `-shm`
-companions, the FTS shadow tables, the `DataStore` counters, and the
-Keystore alias — deleted and regenerated. Then `VACUUM`, because
+companions, the FTS shadow tables, the `DataStore` counters, the check limit
+(back to RM500, section 7.1), and the Keystore alias — deleted and
+regenerated. Then `VACUUM`, because
 `clearAllTables()` does not shrink the file and section 15.6 promises the
 user an honest storage figure.
 
@@ -2583,7 +2611,9 @@ app's attack surface to other apps.
   display, merchant raw, category, source app, excluded flag, note.
 - **JSON** for full fidelity: transactions plus raw captures plus learned
   rules plus categories plus section 6.4's merchant aliases and names, sufficient to rebuild the database — and read back
-  by the importer in section 11.2, which is what makes that claim true.
+  by the importer in section 11.2, which is what makes that claim true. It
+  carries no setting of this phone's: the check limit (section 7.1) stays
+  with the phone, and a restore keeps the one it has.
 
 Both are written through the Storage Access Framework.
 

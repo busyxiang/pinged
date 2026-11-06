@@ -722,7 +722,7 @@ private fun PickRowNotReadYet() {
  * TalkBack announces.
  */
 @Composable
-private fun PickRow(text: String, on: Boolean, onClick: () -> Unit) {
+internal fun PickRow(text: String, on: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()

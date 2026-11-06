@@ -13,6 +13,7 @@ import my.pinged.ledger.LedgerBusy
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
+import my.pinged.capture.CheckLimit
 import my.pinged.capture.Corrections
 import my.pinged.capture.Graph
 import my.pinged.capture.GuardedRunner
@@ -109,9 +110,10 @@ class CorrectionsViewModel internal constructor(
             // `unavailable` (spec 11.1), not "still checking".
             transaction { }
             val compared = Corrections.comparedVersion(context)
+            val checkLimitSen = CheckLimit.sen(context)
             // A re-read's pairing is one short transaction of its own too.
             val lookUp: TxnLookup = { read -> transaction { db -> read(db.txnDao()) } }
-            val found = Corrections.pending(compared, matcher, lookUp) { afterId ->
+            val found = Corrections.pending(compared, matcher, lookUp, checkLimitSen) { afterId ->
                 transaction { db -> Corrections.stalePage(db.rawCaptureDao(), matcher.packVersion, afterId) }
             }
             Pending(found, matcher.packVersion)

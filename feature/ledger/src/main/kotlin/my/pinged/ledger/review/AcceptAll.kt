@@ -1,6 +1,5 @@
 package my.pinged.ledger.review
 
-import my.pinged.capture.REVIEW_THRESHOLD_SEN
 import my.pinged.data.entity.PendingReason
 import my.pinged.parse.Direction
 import my.pinged.ui.RINGGIT
@@ -20,15 +19,19 @@ val ReviewCard.isSwipeable: Boolean
 /**
  * Whether Accept all takes [this] card: [isSwipeable], and not over the check
  * limit by its amount (#223). By the amount and not the stored reason, since
- * the gate stores one reason and over threshold ranks lowest: a row over
- * RM500 that also fired rule review is stored as rule review. `>` strictly,
- * the gate's own test, so RM500.00 exactly is batched.
+ * the gate stores one reason and over threshold ranks lowest: a row over the
+ * limit that also fired rule review is stored as rule review. `>` strictly,
+ * the gate's own test, so the limit exactly is batched.
+ *
+ * The limit is [ReviewCard.checkLimitSen], the one now (#362): after a raise
+ * this is how a card held under the old limit is released, by the user's
+ * Accept all, and after a lower a card under the old one is left to check.
  */
 val ReviewCard.isBatchable: Boolean
     get() = isSwipeable && !isLeftOut
 
 /** A plain card Accept all leaves to be checked: over the limit, and swipeable still. */
-private val ReviewCard.isLeftOut: Boolean get() = isSwipeable && txn.amountSen > REVIEW_THRESHOLD_SEN
+private val ReviewCard.isLeftOut: Boolean get() = isSwipeable && txn.amountSen > checkLimitSen
 
 /** Rule review, merchant missing and over threshold: the reasons a swipe may answer. */
 private val PLAIN_REASONS = setOf(
@@ -41,9 +44,10 @@ private val PLAIN_REASONS = setOf(
  * The Accept all button (§9.2): [count] batchable cards and, when every one is
  * in ringgit, their [netSen] -- payments less refunds. Null [netSen] when
  * any is not, since a sum across currencies is no amount at all. [leftOut]
- * is the plain cards over the check limit, which the batch does not take.
+ * is the plain cards over the check limit, which the batch does not take, and
+ * [limitSen] that limit; null when none is left out.
  */
-data class AcceptAll(val count: Int, val netSen: Long?, val leftOut: Int) {
+data class AcceptAll(val count: Int, val netSen: Long?, val leftOut: Int, val limitSen: Long? = null) {
     /** `Accept 14 · RM1,234.00 · 2 over RM500 left to check`, without the sum or the note when there is none. */
     val label: String get() = "Accept $count" + sum() + note()
 
@@ -52,7 +56,7 @@ data class AcceptAll(val count: Int, val netSen: Long?, val leftOut: Int) {
 
     private fun sum(): String = netSen?.let { " · " + ringgit(it) }.orEmpty()
 
-    private fun note(): String = if (leftOut > 0) " · $leftOut over ${limit(REVIEW_THRESHOLD_SEN)} left to check" else ""
+    private fun note(): String = if (leftOut > 0 && limitSen != null) " · $leftOut over ${limit(limitSen)} left to check" else ""
 
     companion object {
         /** Accept all over [cards]' batchable ones; null, and no button, when there are none. */
@@ -64,7 +68,8 @@ data class AcceptAll(val count: Int, val netSen: Long?, val leftOut: Int) {
             } else {
                 null
             }
-            return AcceptAll(batch.size, net, leftOut = cards.count { it.isLeftOut })
+            val leftOut = cards.filter { it.isLeftOut }
+            return AcceptAll(batch.size, net, leftOut = leftOut.size, limitSen = leftOut.firstOrNull()?.checkLimitSen)
         }
     }
 }

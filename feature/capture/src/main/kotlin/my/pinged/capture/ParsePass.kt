@@ -92,6 +92,12 @@ internal class ParsePass(
      * pass was built; a learned rule is read by id and does not depend on it.
      */
     private val categoryIds: Map<String, Long> = emptyMap(),
+    /**
+     * Spec 7.1's check limit, [CheckLimit.sen] as [ParseWorker] read it at the
+     * start of the run: the gate holds a payment over it. A limit changed while
+     * a run is under way reaches the run after it.
+     */
+    private val checkLimitSen: Long = ConfidenceGate.DEFAULT_THRESHOLD_SEN,
     /** Across every pass sharing [progress], not per pass. */
     private val maxRows: Int = MAX_ROWS_PER_RUN,
     private val isStopped: () -> Boolean = { false },
@@ -437,6 +443,7 @@ internal class ParsePass(
             merchantRaw = merchantRaw,
             amountSen = outcome.amountSen,
             duplicateSuspect = slotSuspectOf != null || layerTwoSuspect != null || unpaired,
+            thresholdSen = checkLimitSen,
         )
 
         // Learned, then dictionary, then Uncategorized: [Filer]'s order. The

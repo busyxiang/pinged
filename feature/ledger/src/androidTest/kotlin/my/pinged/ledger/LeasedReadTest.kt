@@ -101,6 +101,7 @@ class LeasedReadTest {
             }
             override suspend fun lastCheckAt(context: Context) = 0L
             override suspend fun lastExportAt(context: Context) = 0L
+            override suspend fun checkLimit(context: Context) = 50_000L
         }
 
         settings.refresh()

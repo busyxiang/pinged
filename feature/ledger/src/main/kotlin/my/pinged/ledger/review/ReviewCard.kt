@@ -1,6 +1,6 @@
 package my.pinged.ledger.review
 
-import my.pinged.capture.REVIEW_THRESHOLD_SEN
+import my.pinged.capture.CheckLimit
 import my.pinged.data.dao.Answered
 import my.pinged.data.dao.GatewayMerge
 import my.pinged.data.dao.ReviewRow
@@ -26,6 +26,10 @@ import my.pinged.ui.ringgit
  *   (`TxnDao.duplicatePair`); null for every other card, and for a duplicate
  *   whose pair cannot be found, which is then a plain card.
  * @property merge which row Merge dismisses; see [MergeWay].
+ * @property checkLimitSen the check limit when the card was read
+ *   (`CheckLimit.sen`), the same for every card of one read: what Accept all
+ *   leaves out by ([isBatchable]) and what [reason] names. The limit a row
+ *   arrived under is not stored (#362).
  */
 data class ReviewCard(
     val txn: Txn,
@@ -35,8 +39,9 @@ data class ReviewCard(
     val body: String? = null,
     val pair: Txn? = null,
     val merge: MergeWay = MergeWay.HELD,
+    val checkLimitSen: Long = CheckLimit.DEFAULT_SEN,
 ) {
-    constructor(row: ReviewRow, pair: Txn? = null, merge: MergeWay = MergeWay.HELD) : this(
+    constructor(row: ReviewRow, checkLimitSen: Long, pair: Txn? = null, merge: MergeWay = MergeWay.HELD) : this(
         txn = row.txn,
         merchant = row.displayName,
         category = row.categoryName,
@@ -44,7 +49,11 @@ data class ReviewCard(
         body = row.captureBigText?.takeIf { it.isNotEmpty() } ?: row.captureText,
         pair = pair,
         merge = merge,
+        checkLimitSen = checkLimitSen,
     )
+
+    /** Why the card is held, in words: [reasonSentence] for this card's amount and [checkLimitSen]. */
+    val reason: String get() = reasonSentence(txn.pendingReason, txn.amountSen, checkLimitSen)
 
     /**
      * Which answers the card offers; see [CardKind]. A duplicate with no
@@ -154,9 +163,15 @@ enum class ReviewAnswer(val label: String) {
  * advice, in `design/Inbox.dc.html`'s words. Capitals in the string, so what
  * TalkBack reads is what is drawn. The board draws no rule-review card; its
  * line is written in the same voice.
+ *
+ * Over the check limit names [limitSen], the limit now, only while
+ * [amountSen] is still over it, `>` as the gate tests. Under it the card was
+ * held by a limit since raised, which is not stored (#362), so the line says
+ * when rather than naming an amount that would not hold it.
  */
-fun reasonSentence(reason: PendingReason?): String = when (reason) {
-    PendingReason.OVER_THRESHOLD -> "OVER YOUR ${limit(REVIEW_THRESHOLD_SEN)} CHECK LIMIT"
+fun reasonSentence(reason: PendingReason?, amountSen: Long, limitSen: Long): String = when (reason) {
+    PendingReason.OVER_THRESHOLD ->
+        if (amountSen > limitSen) "OVER YOUR ${limit(limitSen)} CHECK LIMIT" else "OVER YOUR CHECK LIMIT WHEN IT ARRIVED"
     PendingReason.MERCHANT_MISSING -> "AMOUNT FOUND, NO NAME ATTACHED"
     PendingReason.RULE_REVIEW -> "THE RULE THAT READ IT ASKS YOU TO CHECK"
     PendingReason.TRANSFER_SUSPECT -> "LOOKS LIKE MOVING MONEY, NOT SPENDING IT"
@@ -164,5 +179,5 @@ fun reasonSentence(reason: PendingReason?): String = when (reason) {
     null -> "PINGED DID NOT RECORD WHY"
 }
 
-/** The threshold as the board prints it: `RM500`, sen only when it has any. */
+/** A check limit as the boards print it, on a card and in Settings: `RM500`, sen only when it has any. */
 internal fun limit(sen: Long): String = ringgit(sen).removeSuffix(".00")
