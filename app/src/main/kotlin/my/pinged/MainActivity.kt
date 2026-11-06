@@ -41,7 +41,6 @@ import my.pinged.capture.CaptureAlerts
 import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
 import my.pinged.charts.SourcesLineActions
-import my.pinged.data.NamedSource
 import my.pinged.ledger.breakdown.BreakdownScreen
 import my.pinged.ledger.breakdown.BreakdownViewModel
 import my.pinged.ledger.day.DayScreen
@@ -156,7 +155,7 @@ class MainActivity : ComponentActivity() {
                 val sourcesLine = remember(tabs) {
                     SourcesLineActions(
                         openSources = { tabs.push(Sources) },
-                        openUnread = { source -> tabs.push(Unread(source.pkg, source.name)) },
+                        openUnread = { source -> tabs.push(Unread(only = source)) },
                     )
                 }
                 val predictivePop = defaultPredictivePopTransitionSpec<NavKey>()
@@ -442,7 +441,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenSources = { tabs.push(Sources) },
                                         onOpenCorrections = { tabs.push(Corrections) },
                                         onOpenLearned = { tabs.push(Learned) },
-                                        onOpenUnread = { tabs.push(Unread()) },
+                                        onOpenUnread = { tabs.push(Unread(only = null)) },
                                         onOpenCategories = { tabs.push(Categories) },
                                         onOpenLicences = { tabs.push(Licences) },
                                         buildVersion = BuildConfig.VERSION_NAME,
@@ -470,14 +469,14 @@ class MainActivity : ComponentActivity() {
                                 entry<Unread> { key ->
                                     // Built from the key alone, as Teach's holder is.
                                     val unread: UnreadViewModel = viewModel {
-                                        UnreadViewModel(application, key.pkg?.let { NamedSource(it, key.name ?: it) })
+                                        UnreadViewModel(application, key.only)
                                     }
                                     UnreadScreen(
                                         viewModel = unread,
                                         onBack = tabs::pop,
                                         onTeach = { tabs.push(Teach(it.id)) },
                                         modifier = Modifier.fillMaxSize(),
-                                        onShowEveryApp = { tabs.replaceTop(Unread()) },
+                                        onShowEveryApp = { tabs.replaceTop(Unread(only = null)) },
                                     )
                                 }
                                 entry<Teach> { key ->
