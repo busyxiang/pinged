@@ -22,6 +22,7 @@ import my.pinged.data.entity.Arrival
 import my.pinged.ledger.settings.HostileApp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import my.pinged.data.entity.StandingAnswer
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,6 +45,9 @@ class RestoreTest {
         // A device that has been capturing: ImportJson alone would refuse this.
         val busy = freshDatabase(context)
         busy.rawCaptureDao().insertAll(List(5) { bulkCapture(it) })
+        busy.standingAnswerDao().answer(
+            StandingAnswer(matchedRuleId = "mae-card-bill-v1", sourcePackage = "com.maybank2u.life", merchantKey = "MAYBANK MASTER CARD", createdAt = 1L),
+        )
         busy.close()
 
         val report = Restore.replaceEverything(context, ByteArrayInputStream(bytes))
@@ -55,6 +59,11 @@ class RestoreTest {
                 "the restored ledger does not match the file",
                 seeded.captures.size,
                 db.rawCaptureDao().countAll(),
+            )
+            assertEquals(
+                "the standing answers are not the backup's alone (spec 7.3)",
+                listOf("mae-transferred-v1", "tng-reload-v0"),
+                db.standingAnswerDao().all().map { it.matchedRuleId },
             )
         }
     }

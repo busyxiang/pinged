@@ -15,6 +15,7 @@ import my.pinged.data.dao.Answered
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.PendingReason
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.LedgerBusy
 import my.pinged.read.Outcome
@@ -53,6 +54,10 @@ import my.pinged.ledger.settings.Transfers
  * An answer that wrote replaces whatever was on offer; one that wrote nothing
  * is not a later answer and leaves it. Undo is `TxnDao.unsettle`: guarded on
  * the state the answer wrote, all rows or none.
+ *
+ * **Leave out also offers Always** ([always], spec 7.3): stored, it is a
+ * standing answer for the card's rule, app and counterparty, and the offer
+ * becomes one whose Undo deletes only that answer.
  *
  * **A restore or a delete-everything withdraws the offer**, as it starts
  * and again when `Databases.rewrites` moves. The offer names rows by id, and
@@ -202,18 +207,60 @@ class ReviewInbox(
      * `matched_rule_id` by `Graph.suggestedExclusion`, since parsing never
      * stored it, and `TRANSFER` when that rule is gone. Guarded on the card
      * as every answer is (`TxnDao.leaveOut`).
+     *
+     * Its Undo offer carries Always ([always]) for a transfer card whose
+     * capture names its rule, unless a standing answer of that key is
+     * already stored: then the user has said always, and this card was held
+     * for something the answer does not cover, or arrived before it.
      */
     fun leaveOut(card: ReviewCard): Job = scope.launch {
         val wrote = writtenOn("The payment could not be left out", unavailable = emptyList()) { db, now ->
             val capture = card.txn.rawCaptureId?.let { db.rawCaptureDao().byId(it) }
             val exclusion = Graph.suggestedExclusion(capture?.sourcePackage, capture?.matchedRuleId)
             if (db.txnDao().leaveOut(card.txn.id, card.txn.pendingReason, exclusion, now) == 1) {
-                listOf(Answered(card.txn.id, card.txn.pendingReason, TxnState.COMMITTED, exclusion))
+                val ruleId = capture?.matchedRuleId
+                val always = if (card.kind == CardKind.TRANSFER && ruleId != null) {
+                    StandingAnswer(matchedRuleId = ruleId, sourcePackage = capture.sourcePackage, merchantKey = card.txn.merchantKey, createdAt = now)
+                        .takeIf { db.standingAnswerDao().idFor(it.matchedRuleId, it.sourcePackage, it.merchantKey) == null }
+                } else {
+                    null
+                }
+                listOf(
+                    Undoable(
+                        said = "LEFT OUT · " + amountOf(card),
+                        rows = listOf(Answered(card.txn.id, card.txn.pendingReason, TxnState.COMMITTED, exclusion)),
+                        always = always?.let { AlwaysOffer(it, said = "ALWAYS LEAVING OUT · " + amountOf(card)) },
+                    ),
+                )
             } else {
                 emptyList()
             }
         } ?: return@launch
-        answered(wrote.takeIf { it.isNotEmpty() }?.let { Undoable(said = "LEFT OUT · " + amountOf(card), rows = it) })
+        answered(wrote.firstOrNull())
+    }
+
+    /**
+     * Always (§7.3), on the Leave out on offer: store its standing answer,
+     * keep the Leave out, and offer in its place an Undo that deletes only
+     * the answer. Nothing while no Always is on offer; and the offer stands,
+     * to be tapped again, when the database will not open. When an answer of
+     * the key was stored meanwhile, this tap stored nothing to undo: Always
+     * is withdrawn, and the Leave out's own Undo stays on offer.
+     */
+    fun always(): Job = scope.launch {
+        val offered = _undoable.value ?: return@launch
+        val always = offered.always ?: return@launch
+        val stored = writtenOn("The answer could not be kept", unavailable = UNSTORED) { db, now ->
+            db.standingAnswerDao().answer(always.answer.copy(createdAt = now)) ?: ALREADY_STORED
+        } ?: return@launch
+        _undoable.compareAndSet(
+            offered,
+            when (stored) {
+                UNSTORED -> return@launch
+                ALREADY_STORED -> offered.copy(always = null)
+                else -> Undoable(said = always.said, rows = emptyList(), standing = stored)
+            },
+        )
     }
 
     /**
@@ -257,8 +304,12 @@ class ReviewInbox(
     fun undo(): Job = scope.launch {
         val offered = _undoable.value ?: return@launch
         _undoable.compareAndSet(offered, null)
-        written("The answer could not be undone", unavailable = false) { now ->
-            offered.merged?.let { unmergeGateway(it, now) } ?: unsettle(offered.rows, now)
+        writtenOn("The answer could not be undone", unavailable = false) { db, now ->
+            when {
+                offered.standing != null -> db.standingAnswerDao().delete(offered.standing) == 1
+                offered.merged != null -> db.txnDao().unmergeGateway(offered.merged, now)
+                else -> db.txnDao().unsettle(offered.rows, now)
+            }
         }
             ?: return@launch
     }
@@ -314,5 +365,13 @@ class ReviewInbox(
      */
     private fun answered(answer: Undoable?) {
         if (answer != null) _undoable.value = answer
+    }
+
+    private companion object {
+        /** [always]'s write when the database would not open: the offer stands. */
+        const val UNSTORED = -1L
+
+        /** [always]'s write when an answer of the key was already stored: nothing of its own to undo. */
+        const val ALREADY_STORED = 0L
     }
 }

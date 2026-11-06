@@ -234,6 +234,7 @@ class ReplacingNoticeTest {
             items = listOf(LearnedMerchant("MR DIY", "MR DIY", 4L, "Shopping", payments = 3)),
             messages = emptyList(),
             ignored = emptyList(),
+            leftOut = emptyList(),
         )
         assertReplaces("MR DIY") { replacing ->
             LearnedContent(state = held(Unit, taught, replacing).toState(), onBack = {}, onDelete = {})

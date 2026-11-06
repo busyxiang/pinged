@@ -134,4 +134,10 @@ class SalvageSentencesTest {
         val said = salvageSentences(report().copy(lostWhole = setOf("user_template_rule")))
         assertTrue(said.toString(), "The messages you taught Pinged to read could not be read, so teach them again after restoring." in said)
     }
+
+    /** Spec 7.3: standing answers lost to damage are said, as taught messages are. */
+    @Test fun standingAnswersThatCouldNotBeReadAreSaid() {
+        val said = salvageSentences(report().copy(lostWhole = setOf("standing_answer")))
+        assertTrue(said.toString(), "The transfers you said to always leave out could not be read, so answer Always again after restoring." in said)
+    }
 }

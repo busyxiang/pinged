@@ -5,6 +5,7 @@ import my.pinged.data.dao.Answered
 import my.pinged.data.dao.GatewayMerge
 import my.pinged.data.dao.ReviewRow
 import my.pinged.data.entity.PendingReason
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Direction
@@ -138,8 +139,26 @@ enum class MergeWay {
  * it wrote, which `TxnDao.unsettle` takes back together -- or, for a gateway
  * Merge, the two rows it wrote ([merged]), which `TxnDao.unmergeGateway`
  * takes back instead.
+ *
+ * @property always Leave out's second action on a transfer card (spec 7.3),
+ *   while it is on offer: the standing answer Always would store.
+ * @property standing the standing answer Always stored. Undo deletes it and
+ *   nothing else: the Leave out it followed stays.
  */
-data class Undoable(val said: String, val rows: List<Answered>, val merged: GatewayMerge? = null)
+data class Undoable(
+    val said: String,
+    val rows: List<Answered>,
+    val merged: GatewayMerge? = null,
+    val always: AlwaysOffer? = null,
+    val standing: Long? = null,
+)
+
+/**
+ * Always, on offer after a Leave out: the standing [answer] it stores, keyed
+ * on the card's rule, app and counterparty, and the line the snackbar reads
+ * once it has, `ALWAYS LEAVING OUT · RM100.00`.
+ */
+data class AlwaysOffer(val answer: StandingAnswer, val said: String)
 
 /** The snackbar's line for an answer that wrote [to] on [card]'s row: `ACCEPTED · RM650.00`. */
 internal fun said(to: TxnState, card: ReviewCard): String =

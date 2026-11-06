@@ -683,16 +683,18 @@ interface TxnDao {
     fun excludeByUser(id: Long, updatedAt: Long): Int
 
     /**
-     * Count as spending: undo [excludeByUser], both columns in one statement
-     * (`requireStorable` refuses either alone). Only a `USER` exclusion: a
-     * transfer, card payment or ATM withdrawal is the pack's, and taking that
-     * back is the inbox's Keep as expense. Committed only, as [excludeByUser]
-     * is: a row since rejected is in no list to count. Returns the rows written.
+     * Count as spending: clear any exclusion on a committed, captured row,
+     * both columns in one statement (`requireStorable` refuses either alone).
+     * Whatever excluded it -- [excludeByUser], the inbox's Leave out, or a
+     * standing answer (spec 7.3) -- since no row records which, and a
+     * transfer left out wrongly has no other way back once its Undo has gone.
+     * Committed only, as [excludeByUser] is: a row since rejected is in no
+     * list to count. Returns the rows written.
      */
     @Query(
         """
         UPDATE txn SET is_excluded = 0, exclusion_reason = NULL, updated_at = :updatedAt
-        WHERE id = :id AND state = 'COMMITTED' AND exclusion_reason = 'USER'
+        WHERE id = :id AND state = 'COMMITTED' AND is_excluded = 1 AND raw_capture_id IS NOT NULL
         """,
     )
     fun countAsSpending(id: Long, updatedAt: Long): Int

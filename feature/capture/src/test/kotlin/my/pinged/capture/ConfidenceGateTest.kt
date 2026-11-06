@@ -4,6 +4,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.PendingReasons
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.Confidence
+import my.pinged.parse.ExclusionReason
 import my.pinged.parse.Kind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -153,5 +154,60 @@ class ConfidenceGateTest {
     @Test
     fun everyReasonThisGateCanProduceIsRankedByCoreData() {
         assertTrue(PendingReasons.PRECEDENCE.containsAll(PendingReason.entries))
+    }
+
+    // ---- standing answers (spec 7.3) --------------------------------------
+
+    /** A transfer as the bundled pack's three rules read one: `confidence: REVIEW`, merchant or none. */
+    private fun transfer(
+        merchantRaw: String? = null,
+        amountSen: Long = 10_000L,
+        duplicateSuspect: Boolean = false,
+    ) = ConfidenceGate.reasons(
+        confidence = Confidence.REVIEW,
+        kind = Kind.TRANSFER_SUSPECT,
+        merchantRaw = merchantRaw,
+        amountSen = amountSen,
+        duplicateSuspect = duplicateSuspect,
+    )
+
+    /**
+     * `tng-reload-v1` fires rule review and missing merchant with every
+     * reload; `mae-card-bill-v1` fires rule review. The answer's key fixes
+     * both, so a match settles the row as Leave out would.
+     */
+    @Test
+    fun aStandingAnswerSettlesATransferWhoseOtherReasonsAreTheRulesOwn() {
+        assertEquals(
+            ConfidenceGate.Decision(TxnState.COMMITTED, null, ExclusionReason.TRANSFER),
+            ConfidenceGate.decide(transfer(merchantRaw = null), leftOutAs = ExclusionReason.TRANSFER),
+        )
+        assertEquals(
+            ConfidenceGate.Decision(TxnState.COMMITTED, null, ExclusionReason.CARD_PAYMENT),
+            ConfidenceGate.decide(transfer(merchantRaw = "Maybank Master Card"), leftOutAs = ExclusionReason.CARD_PAYMENT),
+        )
+    }
+
+    /** A duplicate or an amount over the limit is about this capture, which the user has not seen. */
+    @Test
+    fun aDuplicateOrAnAmountOverTheLimitIsHeldAsIfNoAnswerMatched() {
+        for (fired in listOf(transfer(duplicateSuspect = true), transfer(amountSen = 50_001L))) {
+            assertEquals(
+                "$fired was settled by a standing answer",
+                ConfidenceGate.decide(fired),
+                ConfidenceGate.decide(fired, leftOutAs = ExclusionReason.TRANSFER),
+            )
+            assertEquals(TxnState.PENDING, ConfidenceGate.decide(fired).state)
+        }
+    }
+
+    /** Only a transfer: an answer is never consulted for a row no rule read as a transfer. */
+    @Test
+    fun aStandingAnswerNeverSettlesARowThatIsNotATransfer() {
+        val fired = setOf(PendingReason.RULE_REVIEW)
+        assertEquals(
+            ConfidenceGate.Decision(TxnState.PENDING, PendingReason.RULE_REVIEW),
+            ConfidenceGate.decide(fired, leftOutAs = ExclusionReason.TRANSFER),
+        )
     }
 }

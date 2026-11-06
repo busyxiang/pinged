@@ -201,6 +201,109 @@ class LeaveOutTest {
         }
     }
 
+    // ---- Always (spec 7.3) ---------------------------------------------
+
+    @Test fun leaveOutOffersAlwaysForEachTransferRuleKeyedOnItsRuleAppAndCounterparty() = runBlocking {
+        val dao = context.freshLedger()
+        val reload = dao.insert(transfer(capturedBy(TNG, "tng-reload-v1", "r1"), at = NOON).copy(merchantRaw = null, merchantDisplay = null, merchantKey = null))
+        val bill = dao.insert(transfer(capturedBy(MAE, "mae-card-bill-v1", "r2"), at = NOON + 1).copy(merchantKey = "MAYBANK MASTER CARD"))
+        val sent = dao.insert(transfer(capturedBy(MAE, "mae-transferred-v1", "r3"), at = NOON + 2).copy(merchantKey = "RAY FOO"))
+        val inbox = inbox()
+
+        val offered = listOf(reload, bill, sent).map { id ->
+            answer(inbox, id, ReviewAnswer.LEAVE_OUT).join()
+            inbox.undoable.value?.always?.answer
+        }
+
+        assertEquals(
+            "Leave out did not offer Always keyed on the card's rule, app and merchant key",
+            listOf(
+                Triple("tng-reload-v1", TNG, null),
+                Triple("mae-card-bill-v1", MAE, "MAYBANK MASTER CARD"),
+                Triple("mae-transferred-v1", MAE, "RAY FOO"),
+            ),
+            offered.map { it?.let { a -> Triple(a.matchedRuleId, a.sourcePackage, a.merchantKey) } },
+        )
+    }
+
+    @Test fun alwaysIsNotOfferedAfterAnyOtherAnswer() = runBlocking {
+        val dao = context.freshLedger()
+        val kept = dao.insert(transfer(capturedBy(TNG, "tng-reload-v1", "r1"), at = NOON))
+        val rejected = dao.insert(transfer(capturedBy(TNG, "tng-reload-v1", "r2"), at = NOON + 1))
+        val plain = dao.insert(pending(PendingReason.RULE_REVIEW, at = NOON + 2))
+        val batched = dao.insert(pending(PendingReason.MERCHANT_MISSING, at = NOON + 3, amountSen = 5_000L))
+        val inbox = inbox()
+
+        answer(inbox, kept, ReviewAnswer.KEEP_AS_EXPENSE).join()
+        assertEquals("Keep as expense offered Always", null to true, inbox.undoable.value?.always to (inbox.undoable.value != null))
+        answer(inbox, rejected, ReviewAnswer.NOT_A_PAYMENT).join()
+        assertEquals("Not a payment offered Always", null to true, inbox.undoable.value?.always to (inbox.undoable.value != null))
+        answer(inbox, plain, ReviewAnswer.ACCEPT).join()
+        assertEquals("Accept offered Always", null to true, inbox.undoable.value?.always to (inbox.undoable.value != null))
+        assertEquals("precondition: one card left to batch", listOf(batched), inbox.cards!!.map { it.txn.id })
+        inbox.acceptAll().join()
+        assertEquals("Accept all offered Always", null to true, inbox.undoable.value?.always to (inbox.undoable.value != null))
+    }
+
+    @Test fun alwaysStoresTheAnswerKeepsTheLeaveOutAndItsUndoDeletesOnlyTheAnswer() = runBlocking {
+        val dao = context.freshLedger()
+        val id = dao.insert(transfer(capturedBy(MAE, "mae-transferred-v1", "r1"), at = NOON).copy(merchantKey = "RAY FOO"))
+        val inbox = inbox()
+        answer(inbox, id, ReviewAnswer.LEAVE_OUT).join()
+        val leftOut = dao.byId(id)!!
+
+        inbox.always().join()
+
+        val stored = Databases.standingAnswerDao(context).all()
+        assertEquals(
+            "Always did not store the card's key",
+            listOf(Triple("mae-transferred-v1", MAE, "RAY FOO")),
+            stored.map { Triple(it.matchedRuleId, it.sourcePackage, it.merchantKey) },
+        )
+        assertEquals("Always changed the row Leave out wrote", leftOut, dao.byId(id))
+        assertEquals("ALWAYS LEAVING OUT · RM100.00", inbox.undoable.value?.said)
+        assertEquals("The bar still offers Always once it is stored", null, inbox.undoable.value?.always)
+
+        inbox.undo().join()
+
+        assertEquals("Undo after Always left the standing answer", emptyList<Any>(), Databases.standingAnswerDao(context).all())
+        assertEquals("Undo after Always took back the Leave out", leftOut, dao.byId(id))
+    }
+
+    /** Once the user has said always, a card held for something the answer does not cover asks again. */
+    @Test fun alwaysIsNotOfferedWhenAnAnswerOfTheKeyIsStored() = runBlocking {
+        val dao = context.freshLedger()
+        val first = dao.insert(transfer(capturedBy(TNG, "tng-reload-v1", "r1"), at = NOON))
+        val second = dao.insert(transfer(capturedBy(TNG, "tng-reload-v1", "r2"), at = NOON + 1))
+        val inbox = inbox()
+        answer(inbox, first, ReviewAnswer.LEAVE_OUT).join()
+        inbox.always().join()
+
+        answer(inbox, second, ReviewAnswer.LEAVE_OUT).join()
+
+        assertEquals("precondition: the second Leave out wrote", "LEFT OUT · RM100.00", inbox.undoable.value?.said)
+        assertEquals("Always was offered for a key already answered", null, inbox.undoable.value?.always)
+    }
+
+    /** An answer of the key stored between the Leave out and the tap: Always goes, the Leave out's Undo stays. */
+    @Test fun alwaysOnAKeyAlreadyAnsweredLeavesTheLeaveOutsUndoOnOffer() = runBlocking {
+        val dao = context.freshLedger()
+        val id = dao.insert(transfer(capturedBy(TNG, "tng-reload-v1", "r1"), at = NOON))
+        val before = dao.byId(id)!!
+        val inbox = inbox()
+        answer(inbox, id, ReviewAnswer.LEAVE_OUT).join()
+        val offered = inbox.undoable.value!!.always!!.answer
+        Databases.standingAnswerDao(context).answer(offered)
+
+        inbox.always().join()
+
+        assertEquals("LEFT OUT · RM100.00", inbox.undoable.value?.said)
+        assertEquals("Always stayed on offer for a key already answered", null, inbox.undoable.value?.always)
+        inbox.undo().join()
+        assertEquals("The Leave out's Undo did not take it back", before, dao.byId(id)!!.copy(updatedAt = before.updatedAt))
+        assertEquals("Undo deleted the answer this tap did not store", 1, Databases.standingAnswerDao(context).countAll())
+    }
+
     // ---- fixtures ------------------------------------------------------
 
     private lateinit var viewModel: ReviewViewModel

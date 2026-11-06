@@ -2,6 +2,8 @@ package my.pinged.ledger.learned
 
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -16,7 +18,10 @@ import my.pinged.data.dao.RejectRuleRow
 import my.pinged.data.dao.TaughtRuleRow
 import my.pinged.data.entity.UserTemplateRule
 import my.pinged.parse.Direction
+import my.pinged.parse.ExclusionReason
+import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.ParseStatus
+import my.pinged.data.entity.StandingAnswer
 import my.pinged.ledger.refreshed
 import my.pinged.ledger.transfer.bulkCapture
 import my.pinged.ledger.corruptTheDatabase
@@ -25,6 +30,7 @@ import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -250,5 +256,55 @@ class LearnedMerchantsScreenTest {
         assertEquals(emptyList<TaughtRuleRow>(), model.read.state.value.toState().messages)
         assertEquals(0, taught.countAll())
         assertEquals(txns, Databases.txnDao(app).countAll())
+    }
+
+    // ---- spec 7.3's LEFT OUT tab ------------------------------------------------
+
+    /** Four chips do not fit CI's 320dp in one row: each is whole on the screen. */
+    @Test fun everyTabIsOnTheScreen() {
+        compose.setContent {
+            LearnedContent(LearnedState(loaded = true, items = List(1_234) { mrDiy.copy(identity = "K$it") }), onBack = {}, onDelete = {})
+        }
+        val screen = compose.onRoot().getBoundsInRoot()
+        for (tab in listOf("MERCHANTS 1,234", "MESSAGES 0", "IGNORED 0", "LEFT OUT 0")) {
+            val chip = compose.onNodeWithText(tab).assertIsDisplayed().getBoundsInRoot()
+            assertTrue("$tab runs off the screen: $chip beyond $screen", chip.right <= screen.right)
+        }
+    }
+
+    /**
+     * A standing answer whose rule the loaded pack no longer has is still
+     * listed, worded as a transfer, and deleting it changes no transaction.
+     */
+    @Test fun theHolderListsAnAnswerWhoseRuleIsGoneAndDeletesIt() = runBlocking {
+        app.discardTheDatabase()
+        Databases.captureSourceDao(app).insertIfNew(CaptureSource(pkg = MAE, label = "Maybank MAE", firstSeenAt = 1L))
+        val answers = Databases.standingAnswerDao(app)
+        answers.answer(StandingAnswer(matchedRuleId = "mae-card-bill-v0", sourcePackage = MAE, merchantKey = "MAYBANK MASTER CARD", createdAt = 1L))
+        answers.answer(StandingAnswer(matchedRuleId = "mae-card-bill-v1", sourcePackage = MAE, merchantKey = "MAYBANK MASTER CARD", createdAt = 2L))
+        val txns = Databases.txnDao(app).countAll()
+        val model = LearnedViewModel(app)
+        model.read.refreshed()
+
+        val listed = model.read.state.value.toState().leftOut
+        assertEquals(
+            "The pack's own rule and the one it no longer has",
+            listOf(
+                "mae-card-bill-v1" to ExclusionReason.CARD_PAYMENT,
+                "mae-card-bill-v0" to ExclusionReason.TRANSFER,
+            ),
+            listed.map { it.row.matchedRuleId to it.exclusion },
+        )
+        assertEquals("Maybank MAE · Transfers to MAYBANK MASTER CARD", leftOutLabel(listed.last()))
+
+        model.deleteLeftOut(listed.last()).join()
+
+        assertEquals(listOf("mae-card-bill-v1"), model.read.state.value.toState().leftOut.map { it.row.matchedRuleId })
+        assertEquals(1, answers.countAll())
+        assertEquals(txns, Databases.txnDao(app).countAll())
+    }
+
+    private companion object {
+        const val MAE = "com.maybank2u.life"
     }
 }
