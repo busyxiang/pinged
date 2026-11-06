@@ -69,7 +69,12 @@ class TeachViewModel internal constructor(
     /** A getter, for the reason `SourcesViewModel.context` gives. */
     private val context: Context get() = getApplication<Application>()
 
-    /** The capture taught on, with its source's label; null once it has left the unread list. */
+    /**
+     * The capture taught on, with its source's label; null once it has left
+     * the unread list. `TeachScreen` reads it again on resume and on
+     * `Databases.rewrites` through `rememberReadState`; taps made on a
+     * capture are dropped when a read finds another.
+     */
     internal val read: ScreenRead<Unit, UnreadCapture?> =
         ScreenRead.fixed(viewModelScope, runner, "The notification to teach cannot be read", replacement) { db -> captured(db) }
 

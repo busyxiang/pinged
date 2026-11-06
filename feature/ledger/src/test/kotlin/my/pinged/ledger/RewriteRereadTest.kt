@@ -18,6 +18,8 @@ import my.pinged.ledger.learned.LearnedScreen
 import my.pinged.ledger.learned.LearnedViewModel
 import my.pinged.ledger.review.ReviewScreen
 import my.pinged.ledger.review.ReviewViewModel
+import my.pinged.ledger.teach.TeachScreen
+import my.pinged.ledger.teach.TeachViewModel
 import my.pinged.ledger.unread.UnreadScreen
 import my.pinged.ledger.unread.UnreadViewModel
 import my.pinged.read.test.ScriptedRunner
@@ -133,6 +135,21 @@ class RewriteRereadTest {
         assertEquals("The chips did not read again, or read twice, when the ledger was replaced", shown + 1, reads(CHIPS))
     }
 
+    /**
+     * Teach (#376): a restored ledger may give its capture's id to another
+     * capture, and Save would teach on what is shown.
+     */
+    @Test fun teachReadsItsCaptureAgainWhenTheLedgerIsReplaced() {
+        val viewModel = TeachViewModel(app, captureId = 1L, runStageTwo = {}, runner)
+        compose.setContent { TeachScreen(viewModel, onBack = {}) }
+        compose.waitForIdle()
+        val shown = reads(TEACH)
+
+        replaceTheLedger()
+
+        assertEquals("Teach did not read its capture again, or read it twice, when the ledger was replaced", shown + 1, reads(TEACH))
+    }
+
     /** Poll for what happens off the compose clock, up to [SETTLE_MS], and leave the assertion to the caller. */
     private fun awaitUntil(done: () -> Boolean) {
         val deadline = System.currentTimeMillis() + SETTLE_MS
@@ -155,5 +172,6 @@ class RewriteRereadTest {
         const val CORRECTIONS = "Corrections cannot be read"
         const val INBOX = "The review inbox cannot be read"
         const val CHIPS = "The categories cannot be read"
+        const val TEACH = "The notification to teach cannot be read"
     }
 }

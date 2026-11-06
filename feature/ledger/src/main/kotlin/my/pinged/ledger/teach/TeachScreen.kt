@@ -48,6 +48,7 @@ import my.pinged.ledger.unread.sourceOf
 import my.pinged.ledger.withholding
 import my.pinged.parse.Direction
 import my.pinged.parse.TaughtTemplate
+import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
@@ -78,9 +79,14 @@ import my.pinged.ui.theme.dottedRule
  * **No pattern is ever shown or typed.** The preview names the parts the user
  * chose and says every other word must match exactly, which is the whole of
  * what the rule does.
+ *
+ * The capture is read again on each resume and on `Databases.rewrites`, as
+ * every screen's read is: a restore may give its id to another capture, and
+ * a delete takes it away.
  */
 @Composable
 fun TeachScreen(viewModel: TeachViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
+    viewModel.read.rememberReadState()
     val state by viewModel.state.collectAsState()
     // Saved: back to the list, which no longer shows what the rule reads.
     LaunchedEffect(state.saved) { if (state.saved) onBack() }
