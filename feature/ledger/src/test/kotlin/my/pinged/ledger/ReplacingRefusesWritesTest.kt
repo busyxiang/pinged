@@ -147,7 +147,7 @@ class ReplacingRefusesWritesTest {
         assertEquals(TeachState(loaded = true, replacing = true), state)
     }
 
-    private fun detail() = DetailViewModel(app, txnId = 1L, createdAt = 0L, runner, transfers)
+    private fun detail() = DetailViewModel(app, txnId = 1L, createdAt = 0L, runner, replacement)
 
     private fun categories() = CategoriesViewModel(app, runner, replacement)
 

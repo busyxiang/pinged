@@ -167,8 +167,7 @@ class ReplacingNoticeTest {
         assertReplaces(MERCHANT) { replacing ->
             DetailScreenContent(
                 read = DetailRead(row, ChooserRead()),
-                storageUnavailable = false,
-                replacing = replacing,
+                ledger = if (replacing) LedgerAccess.BeingReplaced else LedgerAccess.Readable,
                 onBack = {},
                 categories = FakeCategoryActions(),
                 merchants = FakeMerchantActions(),

@@ -31,6 +31,7 @@ import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.REMOVE_CONFIRM
 import my.pinged.ledger.ledgerTxn
 import my.pinged.parse.ExclusionReason
+import my.pinged.read.LedgerAccess
 import my.pinged.read.LedgerReplacement
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -110,7 +111,7 @@ class ReplacingDetailTest {
             InterceptPlatformTextInput({ _, _ -> awaitCancellation() }) {
                 DetailScreenContent(
                     DetailRead(row, chooser),
-                    storageUnavailable = false,
+                    ledger = busy?.let(LedgerAccess::Withholding) ?: LedgerAccess.Readable,
                     onBack = {},
                     categories = FakeCategoryActions(),
                     merchants = FakeMerchantActions(),
@@ -121,7 +122,6 @@ class ReplacingDetailTest {
                         remove = { written += "remove" },
                     ),
                     zone = ZoneOffset.UTC,
-                    busy = busy,
                 )
             }
         }

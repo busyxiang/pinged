@@ -9,6 +9,7 @@ import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.HERO_NOT_READ_YET
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.HeldBy
@@ -42,7 +43,7 @@ class DetailNotReadYetTest {
                 CompositionLocalProvider(LocalHeldBy provides heldBy) {
                     DetailScreenContent(
                         read = read.collectAsState().value,
-                        storageUnavailable = unavailable.collectAsState().value,
+                        ledger = if (unavailable.collectAsState().value) LedgerAccess.Unreadable else LedgerAccess.Readable,
                         onBack = {},
                         categories = FakeCategoryActions(),
                         merchants = FakeMerchantActions(),

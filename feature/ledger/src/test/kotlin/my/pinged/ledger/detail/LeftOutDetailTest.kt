@@ -18,6 +18,7 @@ import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.ledgerTxn
 import my.pinged.parse.ExclusionReason
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
@@ -52,7 +53,7 @@ class LeftOutDetailTest {
         compose.setContent {
             DetailScreenContent(
                 DetailRead(row, chooser),
-                storageUnavailable = false,
+                ledger = LedgerAccess.Readable,
                 onBack = {},
                 categories = FakeCategoryActions(),
                 merchants = FakeMerchantActions(),

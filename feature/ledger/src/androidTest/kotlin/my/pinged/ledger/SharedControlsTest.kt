@@ -29,6 +29,7 @@ import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.search.APPLY
 import my.pinged.ledger.search.AmountSheet
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.Paper
@@ -109,7 +110,7 @@ class SharedControlsTest {
             PingedTheme {
                 DetailScreenContent(
                     DetailRead(row, chooser),
-                    storageUnavailable = false,
+                    ledger = LedgerAccess.Readable,
                     onBack = {},
                     categories = FakeCategoryActions(),
                     merchants = FakeMerchantActions(),

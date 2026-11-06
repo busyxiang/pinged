@@ -25,6 +25,7 @@ import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.home.HeroSerif
 import my.pinged.ledger.review.CARD_NOT_READ_YET
 import my.pinged.ledger.review.ReviewInboxScreenContent
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.HeldBy
@@ -122,7 +123,7 @@ class NotReadYetBoardsTest {
         DayScreenContent(date = LocalDate.of(2026, 9, 25), read = null, storageUnavailable = false, onBack = {}, categories = FakeCategoryActions(), merchants = FakeMerchantActions())
     }
 
-    private fun detail() = show { DetailScreenContent(read = null, storageUnavailable = false, onBack = {}, categories = FakeCategoryActions(), merchants = FakeMerchantActions()) }
+    private fun detail() = show { DetailScreenContent(read = null, ledger = LedgerAccess.Readable, onBack = {}, categories = FakeCategoryActions(), merchants = FakeMerchantActions()) }
 
     private fun editPayment() = show {
         ManualEntryScreenContent(

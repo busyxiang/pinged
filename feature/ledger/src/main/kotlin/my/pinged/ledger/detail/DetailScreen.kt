@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,8 +50,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.data.LocalDate
+import my.pinged.ledger.notice
+import my.pinged.ledger.refused
+import my.pinged.ledger.withholding
 import my.pinged.parse.TaughtTemplate
-import my.pinged.read.LedgerReplacement
 import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.data.LocalDates
@@ -77,8 +78,6 @@ import my.pinged.ui.money
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.DashLeader
@@ -130,12 +129,9 @@ fun DetailScreen(
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
-    val busy by viewModel.busy.collectAsState()
     DetailScreenContent(
         read = read.answer,
-        storageUnavailable = read.ledger == LedgerAccess.Unreadable,
-        replacing = read.ledger == LedgerAccess.BeingReplaced,
-        busy = busy,
+        ledger = read.ledger,
         onBack = onBack,
         categories = viewModel.rows,
         merchants = viewModel.rows,
@@ -169,7 +165,7 @@ internal class DetailActions(
 /**
  * [DetailScreen] without its holder, so a test can draw any state.
  *
- * While [busy] runs a ledger replacement the row says so at its top, and its
+ * While [ledger] withholds for a ledger replacement the row says so at its top, and its
  * own writes are off (#331): Save note, Not spending, Count as spending and
  * Delete, and the confirm of a Not a payment sheet already open. Change
  * category and the pencil still open their sheets, which say so and turn
@@ -178,17 +174,16 @@ internal class DetailActions(
 @Composable
 internal fun DetailScreenContent(
     read: DetailRead?,
-    storageUnavailable: Boolean,
+    /** What the screen may do with the ledger: a refusal draws its notice in place of anything read (#328, #376). */
+    ledger: LedgerAccess,
     onBack: () -> Unit,
     categories: CategoryActions,
     merchants: MerchantActions,
     modifier: Modifier = Modifier,
     actions: DetailActions = DetailActions.None,
     zone: ZoneId = ZoneId.systemDefault(),
-    /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
-    replacing: Boolean = false,
-    busy: LedgerReplacement? = null,
 ) {
+    val busy = ledger.withholding
     var categorizing by rememberSaveable { mutableStateOf(false) }
     var removing by rememberSaveable { mutableStateOf(false) }
     val row = read?.row
@@ -200,8 +195,7 @@ internal fun DetailScreenContent(
         when {
             // First: a row drawn under a ledger that cannot be read would be a
             // claim about money no read supports.
-            replacing -> Notice(REPLACING_YOUR_DATA, Stamp)
-            storageUnavailable -> Notice(CANNOT_READ_YOUR_DATA, Stamp)
+            ledger.refused -> Notice(ledger.notice.orEmpty(), Stamp)
             read == null -> NotReadYet()
             row == null -> Notice(GONE, Muted)
             else -> {
