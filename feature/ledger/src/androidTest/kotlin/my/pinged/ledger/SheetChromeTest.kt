@@ -1,6 +1,5 @@
 package my.pinged.ledger
 
-import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -14,8 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -31,7 +28,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.ALWAYS_SWITCH_TAG
@@ -251,11 +247,16 @@ class SheetChromeTest {
      * Not `captureToImage`: measured on emulator-5554, every node inside the
      * sheet captured the activity's window instead, a flat #FAFAFA, because
      * the sheet's dialog is not one that capture can find.
+     *
+     * Settled, not one capture: the dialog's window reaches the display after
+     * `waitForIdle` returns, and a capture before it reads bare [Paper] with
+     * no scrim and no sheet. With qemu starved on the host, one capture did
+     * in 5 class runs of 6 (docs/agents/device-tests.md, "A screenshot of a
+     * sheet").
      */
     private fun screen(): PixelMap {
         compose.waitForIdle()
-        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-        return shot.copy(Bitmap.Config.ARGB_8888, false).asImageBitmap().toPixelMap()
+        return ArtboardProbe.settledScreen()
     }
 
     /** [node]'s pixels on [screen], as an offset and a size. */

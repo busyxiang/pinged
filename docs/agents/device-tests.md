@@ -25,6 +25,9 @@ the way to make it fail on purpose.
   [A holder that reads on arrival](#a-holder-that-reads-on-arrival).
 - `System.nanoTime()` around a step, from one run, held to a bound.
   [A duration on a busy host](#a-duration-on-a-busy-host).
+- One `uiAutomation.takeScreenshot()` straight after `waitForIdle()`,
+  read for a sheet's pixels. [A screenshot of a
+  sheet](#a-screenshot-of-a-sheet).
 - A seeded `RawCapture` at `UNMATCHED` with no `packVersion`, read back
   from the unread list. [A capture stage two may
   requeue](#a-capture-stage-two-may-requeue).
@@ -295,3 +298,33 @@ it does. `SourcesLineTapTest`'s first version tapped `CANNOT` one line under
 the whole-text click removed as with it, so it could not fail. It now draws
 the line 120dp wide and asserts the word it taps is two lines below every
 link before it taps.
+
+## A screenshot of a sheet
+
+A sheet is a dialog, a window of its own, and `waitForIdle()` returns once
+compose is done, not once that window's frame is on the display.
+`uiAutomation.takeScreenshot()` reads the display. So a test that takes one
+capture can read the screen before the sheet arrives: bare Paper, with no
+scrim and no sheet. `SheetChromeTest.theChoosersTopEdgeIsDashedInInk` failed
+1 to 2 full `:feature:ledger` runs in 3 on 2026-11-06, while several
+sessions shared the host, and passed alone. Three more full runs on a
+quieter host all passed.
+
+Starving the host ([A duration on a busy host](#a-duration-on-a-busy-host))
+reproduced it in the class alone: "top row, 52px down, is 0% Ink and 100%
+Paper", the screenshot bare Paper, though `dumpsys window` straight after
+listed the dialog's window on screen. One capture failed 5 class runs of 6,
+at the chooser's and the receipt sheet's edges, and
+`SharedControlsTest.theChoosersDisabledSaveIsAnOutline` failed 4 of 4 with
+Save's bounds 100% Paper. Capturing in a loop after `waitForIdle()` showed
+the dialog arriving 22 to 77ms later. No failing frame showed a window an
+earlier test had left.
+
+A test that reads a sheet off the screen uses
+`ArtboardProbe.settledScreen()`, which captures until two captures 100ms
+apart agree. The 100ms has to be longer than that lag, or two bare screens
+agree. Starved, all 14 `SheetChromeTest` tests passed 4 runs of 4 with it.
+Captures for 1s after each of those 48 settles changed once, by a 13x12px
+status-bar icon. `captureToImage` is no fix: it cannot find a sheet's dialog,
+and reads the activity's window instead.
+

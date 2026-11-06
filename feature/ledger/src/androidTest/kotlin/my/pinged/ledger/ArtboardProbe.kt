@@ -46,6 +46,11 @@ internal object ArtboardProbe {
     /**
      * The screen once two captures a beat apart agree: `waitForIdle` returns
      * when composition is done, not when a sheet has finished coming up.
+     *
+     * The beat is longer than a sheet's dialog takes to reach the display
+     * after `waitForIdle`: 22 to 77ms with qemu starved on the host, against
+     * 100ms. A beat shorter than that lag could find two bare screens
+     * agreeing.
      */
     fun settledScreen(): PixelMap {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
