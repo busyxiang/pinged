@@ -97,7 +97,7 @@ class ReplacingRefusesWritesTest {
 
     @Test fun neverATransactionIsRefusedDuringARestore() {
         refuses("The notification could not be marked as never a transaction") {
-            UnreadViewModel(app, runner, transfers).let { it.read to { it.neverATransaction(UnreadCapture(1L, "p", 0L, "t", "x", null, null)) } }
+            UnreadViewModel(app, runner, replacement).let { it.read to { it.neverATransaction(UnreadCapture(1L, "p", 0L, "t", "x", null, null)) } }
         }
     }
 

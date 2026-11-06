@@ -6,14 +6,13 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
-import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
+import my.pinged.ledger.refused
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.NamedSource
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.read.LedgerReplacement
 import my.pinged.read.LedgerAccess
+import my.pinged.read.LedgerReplacements
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
@@ -25,10 +24,8 @@ data class UnreadState(
     val items: List<UnreadCapture> = emptyList(),
     /** Whether a page past [items] may hold more; false once one came back short. */
     val more: Boolean = false,
-    /** Spec 11.1: the database could not be opened, which is not "nothing unread". */
-    val storageUnavailable: Boolean = false,
-    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
-    val replacing: Boolean = false,
+    /** What the screen may do with the ledger: draw the cards, withhold their writes, or say why it cannot (#376). */
+    val ledger: LedgerAccess = LedgerAccess.Readable,
 )
 
 /** What one read of [UnreadViewModel.read] found: the cards, and whether a page past them may hold more. */
@@ -39,10 +36,9 @@ internal data class UnreadPage(val items: List<UnreadCapture>, val more: Boolean
  * whatever the last read held, as `LearnedViewModel`'s does.
  */
 internal fun ReadState<Int, UnreadPage>.toState(): UnreadState {
-    if (ledger == LedgerAccess.BeingReplaced) return UnreadState(loaded = true, replacing = true)
-    if (ledger == LedgerAccess.Unreadable) return UnreadState(loaded = true, storageUnavailable = true)
-    val page = answer ?: return UnreadState()
-    return UnreadState(loaded = true, items = page.items, more = page.more)
+    if (ledger.refused) return UnreadState(loaded = true, ledger = ledger)
+    val page = answer ?: return UnreadState(ledger = ledger)
+    return UnreadState(loaded = true, items = page.items, more = page.more, ledger = ledger)
 }
 
 /**
@@ -64,15 +60,10 @@ internal fun ReadState<Int, UnreadPage>.toState(): UnreadState {
 class UnreadViewModel internal constructor(
     app: Application,
     runner: ReadRunner,
-    transfers: StateFlow<TransferState> = Transfers.state,
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
     val source: NamedSource? = null,
 ) : AndroidViewModel(app) {
     constructor(app: Application, source: NamedSource? = null) : this(app, GuardedRunner(app), source = source)
-
-    private val gate = LedgerBusy(viewModelScope, transfers)
-
-    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * The list from its top, as long as the question says, newest first.
@@ -80,7 +71,7 @@ class UnreadViewModel internal constructor(
      * `rememberReadState`.
      */
     internal val read: ScreenRead<Int, UnreadPage> =
-        ScreenRead(viewModelScope, runner, "The notifications Pinged could not read cannot be read", initial = PAGE) { db, limit ->
+        ScreenRead(viewModelScope, runner, "The notifications Pinged could not read cannot be read", initial = PAGE, replacement) { db, limit ->
             val items = db.userRejectRuleDao().unreadPage(Long.MAX_VALUE, Long.MAX_VALUE, limit, source?.pkg)
             UnreadPage(items, more = items.size == limit)
         }
@@ -101,15 +92,12 @@ class UnreadViewModel internal constructor(
     /**
      * Spec 5.7: hides [capture] and every unread capture of its shape from its
      * app. A refused write leaves the list as it was, and the read after it
-     * draws that. Nothing is written while the ledger is being replaced ([busy]).
+     * draws that. [read] refuses it while the ledger is being replaced (#376).
      */
-    fun neverATransaction(capture: UnreadCapture): Job = gate.unlessReplacing {
-        viewModelScope.launch {
-            read.write("The notification could not be marked as never a transaction") { db ->
-                db.userRejectRuleDao().neverATransaction(capture.id, now = System.currentTimeMillis())
-            }.await()
+    fun neverATransaction(capture: UnreadCapture): Job =
+        read.write("The notification could not be marked as never a transaction") { db ->
+            db.userRejectRuleDao().neverATransaction(capture.id, now = System.currentTimeMillis())
         }
-    }
 
     private companion object {
         /** Cards per read. A page is a few screens of cards, each a whole notification. */

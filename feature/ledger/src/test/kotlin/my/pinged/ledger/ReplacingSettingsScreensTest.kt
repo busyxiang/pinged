@@ -176,13 +176,16 @@ class ReplacingSettingsScreensTest {
     @Test fun unreadMarksNothingNeverATransactionAndOpensNoTeach() {
         compose.setContent {
             UnreadContent(
-                UnreadState(loaded = true, items = listOf(UnreadCapture(1L, "p", 0L, "t", "x", null, null))),
+                UnreadState(
+                    loaded = true,
+                    items = listOf(UnreadCapture(1L, "p", 0L, "t", "x", null, null)),
+                    ledger = LedgerAccess.Withholding(LedgerReplacement.RESTORE),
+                ),
                 onBack = {},
                 onNeverATransaction = { tapped += "never" },
                 onCopy = {},
                 onEnd = {},
                 onTeach = { tapped += "teach" },
-                busy = LedgerReplacement.RESTORE,
             )
         }
 
@@ -225,7 +228,7 @@ class ReplacingSettingsScreensTest {
                 1 -> LearnedContent(LearnedState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {})
                 2 -> SourcesScreenContent(SourcesState(loaded = true, ledger = LedgerAccess.BeingReplaced), { _, _ -> }, {})
                 3 -> CorrectionsContent(CorrectionsState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {}, {})
-                4 -> UnreadContent(UnreadState(loaded = true, replacing = true), {}, {}, {}, {}, busy = LedgerReplacement.RESTORE)
+                4 -> UnreadContent(UnreadState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {}, {}, {})
                 else -> TeachContent(TeachState(loaded = true, replacing = true), {}, {}, {}, {}, {}, busy = LedgerReplacement.RESTORE)
             }
         }
