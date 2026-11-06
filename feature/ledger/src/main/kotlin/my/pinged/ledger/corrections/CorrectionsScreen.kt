@@ -16,8 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,16 +29,15 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.BackChevron
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ledger.home.words
+import my.pinged.ledger.notice
+import my.pinged.ledger.withholding
 import my.pinged.read.rememberReadState
 import my.pinged.ui.money
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.Body
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
@@ -63,14 +60,13 @@ import my.pinged.ui.theme.dottedRule
 fun CorrectionsScreen(viewModel: CorrectionsViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
-    val busy by viewModel.busy.collectAsState()
-    CorrectionsContent(read.toState(), onBack, viewModel::accept, viewModel::decline, modifier, busy)
+    CorrectionsContent(read.toState(), onBack, viewModel::accept, viewModel::decline, modifier)
 }
 
 /**
  * [CorrectionsScreen] without its holder, so a test can draw any state. While
- * [busy] runs a ledger replacement the list says so at its top and no card
- * can be answered (#331).
+ * [state] withholds for a ledger replacement the list says so at its top and
+ * no card can be answered (#331).
  */
 @Composable
 internal fun CorrectionsContent(
@@ -79,8 +75,8 @@ internal fun CorrectionsContent(
     onAccept: (Corrections.Correction) -> Unit,
     onDecline: (Corrections.Correction) -> Unit,
     modifier: Modifier = Modifier,
-    busy: Operation? = null,
 ) {
+    val busy = state.ledger.withholding
     if (!state.loaded) {
         Column(modifier.fillMaxSize().background(Paper)) {
             Header(onBack)
@@ -91,11 +87,9 @@ internal fun CorrectionsContent(
     }
     LazyColumn(modifier.fillMaxSize().background(Paper)) {
         item { Header(onBack) }
-        if (!state.storageUnavailable && !state.replacing && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
+        if (busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
         item {
-            val notice = when {
-                state.replacing -> REPLACING_YOUR_DATA
-                state.storageUnavailable -> CANNOT_READ_YOUR_DATA
+            val notice = state.ledger.notice ?: when {
                 state.checking -> "STILL CHECKING YOUR HISTORY AGAINST PACK ${state.packVersion}"
                 state.items.isEmpty() -> NOTHING_TO_REVIEW
                 else -> null

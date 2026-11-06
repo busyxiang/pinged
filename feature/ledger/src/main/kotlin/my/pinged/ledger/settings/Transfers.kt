@@ -50,6 +50,8 @@ import my.pinged.ledger.transfer.RestoreLedgerLostException
 import my.pinged.ledger.transfer.SalvageJson
 import my.pinged.ledger.transfer.TransferStore
 import my.pinged.ledger.transfer.forgetWipedLedger
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerReplacements
 
 /**
  * What [Transfers] has running, the last thing it finished, the last lost
@@ -84,6 +86,14 @@ data class TransferState(
      */
     val replacingLedger: Operation?
         get() = running?.operation?.takeIf { it == Operation.RESTORE || it == Operation.DELETE }
+
+    /** [replacingLedger] as every screen's read is told it: [LedgerReplacements.current]. */
+    val replacement: LedgerReplacement?
+        get() = when (replacingLedger) {
+            Operation.RESTORE -> LedgerReplacement.RESTORE
+            Operation.DELETE -> LedgerReplacement.DELETE
+            else -> null
+        }
 }
 
 /**
@@ -181,6 +191,21 @@ object Transfers {
     private val _state = MutableStateFlow(TransferState())
     val state: StateFlow<TransferState> = _state.asStateFlow()
 
+    /**
+     * Every change to [state], and the claim it implies to every screen's read:
+     * [LedgerReplacements.current] follows [TransferState.replacingLedger], so
+     * it is up from the request that claims a restore or a delete to the
+     * update that ends it (#376). Under one lock, because the claim is set on
+     * the requester's thread and cleared on the operation's: two updates
+     * racing could otherwise publish the older claim last.
+     */
+    private fun publish(transform: (TransferState) -> TransferState) {
+        synchronized(_state) {
+            _state.update(transform)
+            LedgerReplacements.publish(_state.value.replacement)
+        }
+    }
+
     /** What a request comes back with. */
     sealed interface Answer {
         data class Settled(val outcome: Outcome) : Answer
@@ -203,7 +228,7 @@ object Transfers {
      * [serial] -- a newer one the screen has not drawn stays.
      */
     fun acknowledge(serial: Long) {
-        _state.update {
+        publish {
             it.copy(
                 outcome = it.outcome?.takeUnless { outcome -> outcome.serial == serial },
                 loss = it.loss?.takeUnless { loss -> loss.serial == serial },
@@ -214,7 +239,7 @@ object Transfers {
     /** Tests only: one process runs every test class, and an outcome would carry over. */
     @VisibleForTesting
     internal fun forgetOutcome() {
-        _state.update { it.copy(outcome = null, loss = null, lastWipe = null) }
+        publish { it.copy(outcome = null, loss = null, lastWipe = null) }
     }
 
     /**
@@ -707,7 +732,7 @@ object Transfers {
             return refused
         }
         val progress: (Int) -> Unit = { rows ->
-            _state.update {
+            publish {
                 if (claimed.get() === claim) it.copy(running = TransferJob.Running(operation, rows)) else it
             }
         }
@@ -759,7 +784,7 @@ object Transfers {
                 // Published before the claim is let go, so no request can
                 // claim and draw itself running in between only to be
                 // overwritten here.
-                _state.update {
+                publish {
                     TransferState(
                         running = null,
                         outcome = outcome,
@@ -773,14 +798,14 @@ object Transfers {
         }
 
         claim.work = work
-        _state.update { it.copy(running = TransferJob.Running(operation, 0)) }
+        publish { it.copy(running = TransferJob.Running(operation, 0)) }
 
         val answer = CompletableDeferred<Answer>()
         val link = Job(requester)
         link.invokeOnCompletion { cause -> if (cause != null) work.cancel(CancellationException("Its screen went away")) }
         work.invokeOnCompletion {
             val outcome = settled
-            if (claimed.compareAndSet(claim, null)) _state.update { it.copy(running = null) }
+            if (claimed.compareAndSet(claim, null)) publish { it.copy(running = null) }
             if (outcome == null) Log.i(TAG, "$operation abandoned")
             val finish: () -> Unit = {
                 answer.complete(outcome?.let(Answer::Settled) ?: Answer.Abandoned)

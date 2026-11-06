@@ -96,6 +96,7 @@ import my.pinged.ledger.entry.ADD_PAYMENT
 import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.review.awaitingReviewLabel
 import my.pinged.ledger.settings.grouped
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
@@ -217,8 +218,8 @@ fun LedgerScreen(
     LedgerScreenContent(
         items = items,
         read = state.answer ?: LedgerRead(),
-        storageUnavailable = state.unavailable,
-        replacing = state.replacing,
+        storageUnavailable = state.ledger == LedgerAccess.Unreadable,
+        replacing = state.ledger == LedgerAccess.BeingReplaced,
         categories = viewModel.rows,
         merchants = viewModel.rows,
         onOpenSettings = onOpenSettings,

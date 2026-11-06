@@ -59,16 +59,17 @@ import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
 import my.pinged.ledger.home.CategoryPicker
 import my.pinged.ledger.home.ChooserSubject
-import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.notice
+import my.pinged.ledger.refused
+import my.pinged.ledger.withholding
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.dayMonthYear
 import my.pinged.ui.money
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.DashLeader
@@ -108,13 +109,10 @@ import java.util.Locale
 fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modifier = Modifier, focus: Long? = null) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.inbox.read.rememberReadState()
-    val busy by viewModel.inbox.busy.collectAsState()
     val undoable by viewModel.inbox.undoable.collectAsState()
     ReviewInboxScreenContent(
         cards = read.answer,
-        storageUnavailable = read.unavailable,
-        replacing = read.replacing,
-        busy = busy,
+        ledger = read.ledger,
         onBack = onBack,
         onAnswer = { card, answer -> viewModel.answer(card, answer) },
         undoable = undoable,
@@ -133,8 +131,9 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
  *
  * [cards] null is the first read still in flight; empty is an inbox with
  * nothing in it, which stays open with a line saying so rather than closing
- * under the user. [busy] disables every answer, with one line naming the
- * operation, and Undo with them.
+ * under the user. [ledger] withholding for a replacement disables every
+ * answer, with one line naming the operation, and Undo with them; a refusal
+ * draws its notice in place of the cards (#328).
  *
  * [undoable] is the last answer, drawn as a bar pinned to the bottom with
  * [onUndo] on it. It stays until the next answer replaces it, it is used, or
@@ -159,8 +158,7 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
 @Composable
 fun ReviewInboxScreenContent(
     cards: List<ReviewCard>?,
-    storageUnavailable: Boolean,
-    busy: Operation?,
+    ledger: LedgerAccess,
     onBack: () -> Unit,
     onAnswer: (ReviewCard, ReviewAnswer) -> Unit,
     modifier: Modifier = Modifier,
@@ -171,9 +169,8 @@ fun ReviewInboxScreenContent(
     onAcceptAll: () -> Unit = {},
     choices: suspend () -> List<Category>? = { null },
     onFile: (ReviewCard, Long) -> Unit = { _, _ -> },
-    /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
-    replacing: Boolean = false,
 ) {
+    val busy = ledger.withholding
     val acceptAll = cards?.let(AcceptAll::of)
     // The card whose sheet is open, by its row's id, and what the sheet offers
     // once read. The id survives a rotation; the categories are read again.
@@ -191,8 +188,8 @@ fun ReviewInboxScreenContent(
     }
     val list = rememberLazyListState()
     var focused by rememberSaveable(focus) { mutableStateOf(focus == null) }
-    LaunchedEffect(focus, cards, storageUnavailable, replacing) {
-        if (focused || cards == null || storageUnavailable || replacing) return@LaunchedEffect
+    LaunchedEffect(focus, cards, ledger.refused) {
+        if (focused || cards == null || ledger.refused) return@LaunchedEffect
         focused = true
         val at = cards.indexOfFirst { it.txn.id == focus }
         // Items above the cards: the header, which holds Accept all, and the busy line.
@@ -201,7 +198,7 @@ fun ReviewInboxScreenContent(
     // The board's two grounds: the header on Paper, the list beneath it on Card.
     Box(modifier.fillMaxSize().background(Card)) {
         Cards(
-            cards, storageUnavailable, replacing, busy, onBack, onAnswer, list,
+            cards, ledger, onBack, onAnswer, list,
             bottom = if (undoable != null) UNDO_BAR_ROOM else 0.dp,
             acceptAll = acceptAll,
             onAcceptAll = onAcceptAll,
@@ -238,9 +235,7 @@ fun ReviewInboxScreenContent(
 @Composable
 private fun Cards(
     cards: List<ReviewCard>?,
-    storageUnavailable: Boolean,
-    replacing: Boolean,
-    busy: Operation?,
+    ledger: LedgerAccess,
     onBack: () -> Unit,
     onAnswer: (ReviewCard, ReviewAnswer) -> Unit,
     list: LazyListState,
@@ -250,7 +245,8 @@ private fun Cards(
     onChooseCategory: (ReviewCard) -> Unit,
 ) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = bottom + CARD_GAP)) {
-        val refused = storageUnavailable || replacing
+        val refused = ledger.refused
+        val busy = ledger.withholding
         item {
             val offer = acceptAll.takeIf { !refused && !cards.isNullOrEmpty() }
             Header(cards?.size, onBack, offer, enabled = busy == null, onAcceptAll, reading = cards == null && !refused)
@@ -260,8 +256,7 @@ private fun Cards(
         when {
             // First, for the reason `DayScreenContent` gives: stale cards
             // under a ledger that cannot be read would be answers to nothing.
-            replacing -> item { Notice(REPLACING_YOUR_DATA, Stamp) }
-            storageUnavailable -> item { Notice(CANNOT_READ_YOUR_DATA, Stamp) }
+            refused -> item { Notice(ledger.notice.orEmpty(), Stamp) }
             cards == null -> item { NotReadYet() }
             cards.isEmpty() -> item { Notice(NOTHING_AWAITING_REVIEW, Muted) }
             else -> {

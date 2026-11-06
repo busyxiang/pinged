@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -47,8 +46,10 @@ import my.pinged.data.dao.TaughtRuleRow
 import my.pinged.ledger.BackChevron
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.SETTINGS_BACK
+import my.pinged.ledger.notice
+import my.pinged.ledger.refused
+import my.pinged.ledger.withholding
 import my.pinged.parse.Direction
 import my.pinged.parse.ExclusionReason
 import my.pinged.read.rememberReadState
@@ -56,8 +57,6 @@ import my.pinged.ui.CALENDAR
 import my.pinged.ledger.settings.grouped
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Separator
@@ -87,7 +86,6 @@ import my.pinged.ui.theme.dottedRule
 fun LearnedScreen(viewModel: LearnedViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
-    val busy by viewModel.busy.collectAsState()
     LearnedContent(
         read.toState(),
         onBack,
@@ -96,7 +94,6 @@ fun LearnedScreen(viewModel: LearnedViewModel, onBack: () -> Unit, modifier: Mod
         onDeleteIgnored = viewModel::deleteIgnored,
         onDeleteMessage = viewModel::deleteMessage,
         onDeleteLeftOut = viewModel::deleteLeftOut,
-        busy = busy,
     )
 }
 
@@ -113,8 +110,8 @@ internal enum class TaughtTab(val label: String, val nothing: String, val countI
 
 /**
  * [LearnedScreen] without its holder, so a test can draw any state. While
- * [busy] runs a ledger replacement the list says so at its top and every
- * delete is off (#331).
+ * [state] withholds for a ledger replacement the list says so at its top and
+ * every delete is off (#331).
  */
 @Composable
 internal fun LearnedContent(
@@ -125,10 +122,10 @@ internal fun LearnedContent(
     onDeleteIgnored: (RejectRuleRow) -> Unit = {},
     initialTab: TaughtTab = TaughtTab.MERCHANTS,
     onDeleteMessage: (TaughtRuleRow) -> Unit = {},
-    busy: Operation? = null,
     onDeleteLeftOut: (LeftOut) -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
+    val busy = state.ledger.withholding
     val writable = busy == null
     if (!state.loaded) {
         Column(modifier.fillMaxSize().background(Paper)) {
@@ -143,15 +140,13 @@ internal fun LearnedContent(
         item {
             Tabs(
                 selected = tab,
-                count = { if (state.storageUnavailable || state.replacing) null else grouped(it.countIn(state)) },
+                count = { if (state.ledger.refused) null else grouped(it.countIn(state)) },
                 onSelect = { tab = it },
             )
         }
-        if (!state.storageUnavailable && !state.replacing && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
+        if (busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
         item {
-            val notice = when {
-                state.replacing -> REPLACING_YOUR_DATA
-                state.storageUnavailable -> CANNOT_READ_YOUR_DATA
+            val notice = state.ledger.notice ?: when {
                 tab.countIn(state) == 0 -> tab.nothing
                 else -> null
             }

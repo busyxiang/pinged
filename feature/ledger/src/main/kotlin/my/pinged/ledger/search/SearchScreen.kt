@@ -80,6 +80,7 @@ import my.pinged.ledger.settings.Transfers
 import my.pinged.ledger.settings.grouped
 import my.pinged.parse.Amount
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.RINGGIT
@@ -160,8 +161,8 @@ fun SearchScreen(
         // A read for other words or filters is in flight, or the words typed
         // are still inside the debounce and have not been asked yet.
         rereading = read.rereading || query != asked.text,
-        storageUnavailable = read.unavailable,
-        replacing = read.replacing,
+        storageUnavailable = read.ledger == LedgerAccess.Unreadable,
+        replacing = read.ledger == LedgerAccess.BeingReplaced,
         onBack = onBack,
         onOpenSheet = { sheet = it },
         onOpenEntry = onOpenEntry,
@@ -220,8 +221,8 @@ fun SearchScreen(
                 title = "App",
                 any = ANY_APP,
                 options = apps.answer?.map { it to appName(it) },
-                unavailable = apps.unavailable,
-                replacing = apps.replacing,
+                unavailable = apps.ledger == LedgerAccess.Unreadable,
+                replacing = apps.ledger == LedgerAccess.BeingReplaced,
                 selected = choice.app,
                 onPick = { close(); viewModel.setApp(it) },
                 onDismiss = close,

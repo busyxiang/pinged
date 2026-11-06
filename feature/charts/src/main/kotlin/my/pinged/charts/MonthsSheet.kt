@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import my.pinged.charts.model.MonthsItem
 import my.pinged.charts.model.monthsSheet
 import my.pinged.read.ReadState
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.REPLACING_YOUR_DATA
@@ -63,8 +64,8 @@ internal fun MonthsSheetHost(viewModel: ChartsViewModel, onPick: (YearMonth) -> 
  * are no months to draw and the sheet says so itself.
  */
 fun monthsReading(state: ReadState<*, *>): MonthsReading = when {
-    state.replacing -> MonthsReading.Replacing
-    state.unavailable -> MonthsReading.Unreadable
+    state.ledger == LedgerAccess.BeingReplaced -> MonthsReading.Replacing
+    state.ledger == LedgerAccess.Unreadable -> MonthsReading.Unreadable
     state.rereading -> MonthsReading.InFlight
     else -> MonthsReading.Landed
 }

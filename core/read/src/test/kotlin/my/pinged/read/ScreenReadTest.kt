@@ -5,6 +5,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import my.pinged.read.test.ScriptedRunner
 import org.junit.After
@@ -32,8 +34,11 @@ class ScreenReadTest {
     /** Each body's question, in the order the bodies ran. */
     private val ran = ArrayList<Int>()
 
+    /** The ledger replacement claimed, as `LedgerReplacements.current` is in production. */
+    private val claim = MutableStateFlow<LedgerReplacement?>(null)
+
     /** Questions are numbers; an answer names its question and the order its body ran in. */
-    private val read = ScreenRead<Int, String>(scope, runner, "The test cannot be read", initial = 1) { _, question ->
+    private val read = ScreenRead<Int, String>(scope, runner, "The test cannot be read", initial = 1, replacement = claim) { _, question ->
         ran += question
         "q$question#${ran.size}"
     }
@@ -54,7 +59,7 @@ class ScreenReadTest {
         runner.calls.single().release()
         assertEquals(Answered(1, "q1#1"), state.answered)
         assertFalse(state.rereading)
-        assertFalse(state.unavailable)
+        assertEquals(LedgerAccess.Readable, state.ledger)
     }
 
     @Test fun aLaterReadCannotLandBeforeAnEarlierOneAndSoNeverUnderIt() {
@@ -139,62 +144,56 @@ class ScreenReadTest {
 
         runner.refusing = true
         read.refresh()
-        assertTrue("A refused read did not raise unavailable", state.unavailable)
+        assertEquals("A refused read was not unreadable", LedgerAccess.Unreadable, state.ledger)
         assertEquals("A refused read dropped the last answer", "q1#1", state.answer)
         assertFalse("A refused read is not in flight", state.rereading)
 
         runner.refusing = false
         read.refresh()
-        assertFalse("A successful read did not clear unavailable", state.unavailable)
+        assertEquals("A successful read did not clear unreadable", LedgerAccess.Readable, state.ledger)
         assertEquals("q1#2", state.answer)
     }
 
-    /** A ledger replacement's refusal is its own result: never [ReadState.unavailable], and never both. */
-    @Test fun aReadRefusedByAReplacementIsReplacingNotUnavailableAndTheNextOutcomeDecidesBetweenThem() {
+    /** A ledger replacement's refusal is its own result: never [LedgerAccess.Unreadable], and the next outcome decides between them. */
+    @Test fun aReadRefusedByAReplacementIsBeingReplacedNotUnreadableAndTheNextOutcomeDecidesBetweenThem() {
         read.refresh()
 
         runner.replacing = true
         read.refresh()
-        assertTrue("A read refused by a replacement did not raise replacing", state.replacing)
-        assertFalse("A read refused by a replacement was called unavailable", state.unavailable)
+        assertEquals("A read refused by a replacement was not being replaced", LedgerAccess.BeingReplaced, state.ledger)
         assertEquals("A read refused by a replacement dropped the last answer", "q1#1", state.answer)
 
         runner.replacing = false
         runner.refusing = true
         read.refresh()
-        assertTrue("A refusal after a replacement did not raise unavailable", state.unavailable)
-        assertFalse("A refusal after a replacement left replacing up", state.replacing)
+        assertEquals("A refusal after a replacement was not unreadable", LedgerAccess.Unreadable, state.ledger)
 
         runner.refusing = false
         runner.replacing = true
         read.refresh()
-        assertTrue("A replacement after a refusal did not raise replacing", state.replacing)
-        assertFalse("A replacement after a refusal left unavailable up", state.unavailable)
+        assertEquals("A replacement after a refusal was not being replaced", LedgerAccess.BeingReplaced, state.ledger)
 
         runner.replacing = false
         read.refresh()
-        assertFalse("A successful read did not clear replacing", state.replacing)
-        assertFalse(state.unavailable)
+        assertEquals("A successful read did not clear being replaced", LedgerAccess.Readable, state.ledger)
         assertEquals("The successful read's answer is not the one held", "q1#2", state.answer)
     }
 
-    @Test fun aWriteRefusedByAReplacementIsReplacingAndItsReadBackDecidesWhatStays() {
+    @Test fun aWriteRefusedByAReplacementIsBeingReplacedAndItsReadBackDecidesWhatStays() {
         runner.holding = true
         read.refresh()
         runner.calls[0].release()
 
         val written = read.write("The test cannot be written") { }
         runner.calls[1].replace()
-        assertTrue("A write refused by a replacement did not raise replacing", state.replacing)
-        assertFalse("A write refused by a replacement was called unavailable", state.unavailable)
+        assertEquals("A write refused by a replacement was not being replaced", LedgerAccess.BeingReplaced, state.ledger)
 
         runner.calls[2].replace()
         assertEquals(Outcome.Replacing, runBlocking { written.await() })
-        assertTrue(state.replacing)
-        assertFalse(state.unavailable)
+        assertEquals(LedgerAccess.BeingReplaced, state.ledger)
     }
 
-    @Test fun aStepRefusedByAReplacementEndsAStagedReadAsReplacing() {
+    @Test fun aStepRefusedByAReplacementEndsAStagedReadAsBeingReplaced() {
         val staged = ScreenRead.fixedStaged(scope, runner, "The test cannot be read", Dispatchers.Unconfined) {
             transaction { }
             "never"
@@ -203,8 +202,7 @@ class ScreenReadTest {
 
         staged.refresh()
 
-        assertTrue("A step refused by a replacement did not raise replacing", staged.state.value.replacing)
-        assertFalse("A step refused by a replacement was called unavailable", staged.state.value.unavailable)
+        assertEquals("A step refused by a replacement was not being replaced", LedgerAccess.BeingReplaced, staged.state.value.ledger)
     }
 
     @Test fun aRefusedReadOfANewQuestionIsNotRereadingAndKeepsTheOldQuestionsAnswer() {
@@ -213,7 +211,7 @@ class ScreenReadTest {
         runner.refusing = true
         read.ask(2)
 
-        assertTrue(state.unavailable)
+        assertEquals(LedgerAccess.Unreadable, state.ledger)
         assertFalse("A refused read is no longer in flight", state.rereading)
         assertEquals("The answer held is the old question's", Answered(1, "q1#1"), state.answered)
     }
@@ -267,14 +265,14 @@ class ScreenReadTest {
         val written = read.write("The test cannot be written") { }
         runner.calls[1].refuse()
 
-        assertTrue("A refused write did not raise unavailable", state.unavailable)
+        assertEquals("A refused write was not unreadable", LedgerAccess.Unreadable, state.ledger)
         assertEquals("A refused write dropped the last answer", "q1#1", state.answer)
         assertEquals("A refused write was not read back", 3, runner.calls.size)
         assertFalse(written.isCompleted)
 
         runner.calls[2].release()
         assertEquals(Outcome.Refused, runBlocking { written.await() })
-        assertFalse("A successful read-back did not clear unavailable", state.unavailable)
+        assertEquals("A successful read-back did not clear unreadable", LedgerAccess.Readable, state.ledger)
     }
 
     /** A sheet closed: nothing is read for it, and what was on its way publishes nothing. */
@@ -347,14 +345,140 @@ class ScreenReadTest {
 
         staged.refresh()
 
-        assertTrue("A refused step did not raise unavailable", staged.state.value.unavailable)
+        assertEquals("A refused step was not unreadable", LedgerAccess.Unreadable, staged.state.value.ledger)
         assertEquals("A step ran after the one that was refused", emptyList<String>(), steps)
         assertEquals("The read asked the runner again after a refusal", 1, runner.calls.size)
         assertNull("A refused read published an answer", staged.state.value.answered)
 
         runner.refusing = false
         staged.refresh()
-        assertFalse("The next read that landed did not clear unavailable", staged.state.value.unavailable)
+        assertEquals("The next read that landed did not clear unreadable", LedgerAccess.Readable, staged.state.value.ledger)
         assertEquals(Answered(Unit, "never"), staged.state.value.answered)
+    }
+
+    /**
+     * The claim (#376): a write asked for while a restore or a delete is
+     * claimed would land in the ledger about to be replaced, before its gate
+     * is up. Refused before the runner, it raises nothing either: the user
+     * started the operation, and the screen already says so.
+     */
+    @Test fun aWriteDuringTheClaimReachesNoRunnerEmitsNothingCompletesReplacingAndIsNotReadBack() {
+        read.refresh()
+        claim.value = LedgerReplacement.RESTORE
+        val seen = ArrayList<ReadState<Int, String>>()
+        scope.launch { read.state.collect { seen += it } }
+        val calls = runner.calls.size
+        var ran = false
+
+        val written = read.write("The test cannot be written") { ran = true }
+
+        assertEquals(Outcome.Replacing, runBlocking { written.await() })
+        assertFalse("The write's body ran during the claim", ran)
+        assertEquals("The write asked the runner for something during the claim, a read-back among it", calls, runner.calls.size)
+        assertEquals("A write refused by the claim emitted state", 1, seen.size)
+    }
+
+    @Test fun aClaimThatLandsBetweenAskingForAWriteAndItsTurnStillRefusesIt() {
+        runner.holding = true
+        read.refresh()
+        val written = read.write("The test cannot be written") { }
+
+        claim.value = LedgerReplacement.DELETE
+        runner.calls[0].release()
+
+        assertEquals("The write waiting its turn reached the runner once the claim was up", 1, runner.calls.size)
+        assertEquals(Outcome.Replacing, runBlocking { written.await() })
+    }
+
+    @Test fun aLookupRunsInTheTurnAndReadsNothingBack() {
+        runner.holding = true
+        read.refresh()
+        val found = read.lookup("The test cannot be looked up") { 7 }
+        assertEquals("The lookup ran before the read asked before it ended", 1, runner.calls.size)
+
+        runner.calls[0].release()
+        runner.calls[1].release()
+
+        assertEquals(Outcome.Done(7), runBlocking { found.await() })
+        assertFalse("A lookup is a read, not a write", runner.calls[1].write)
+        assertEquals("A lookup was read back", 2, runner.calls.size)
+    }
+
+    /** Its caller is told; the screen's answer, which was not what was refused, stands. */
+    @Test fun aLookupTheRunnerRefusesPublishesNothing() {
+        read.refresh()
+        runner.refusing = true
+
+        val found = read.lookup("The test cannot be looked up") { 7 }
+
+        assertEquals(Outcome.Refused, runBlocking { found.await() })
+        assertEquals("A refused lookup was published as the screen's own refusal", LedgerAccess.Readable, state.ledger)
+    }
+
+    /** What a lookup returns feeds a write, so it is refused as a write is. */
+    @Test fun aLookupDuringTheClaimReachesNoRunnerAndCompletesReplacing() {
+        read.refresh()
+        claim.value = LedgerReplacement.RESTORE
+        val calls = runner.calls.size
+
+        val found = read.lookup("The test cannot be looked up") { 7 }
+
+        assertEquals(Outcome.Replacing, runBlocking { found.await() })
+        assertEquals("The lookup asked the runner during the claim", calls, runner.calls.size)
+    }
+
+    @Test fun aReadDuringTheClaimLandsAsWithholding() {
+        claim.value = LedgerReplacement.DELETE
+
+        read.refresh()
+
+        assertEquals("A read during the claim was refused", "q1#1", state.answer)
+        assertEquals(LedgerAccess.Withholding(LedgerReplacement.DELETE), state.ledger)
+    }
+
+    @Test fun theClaimIsPublishedAsItIsRaisedAndAsItClears() {
+        read.refresh()
+
+        claim.value = LedgerReplacement.RESTORE
+        assertEquals("The claim did not reach the screen until it read again", LedgerAccess.Withholding(LedgerReplacement.RESTORE), state.ledger)
+
+        claim.value = null
+        assertEquals("The claim's end did not reach the screen until it read again", LedgerAccess.Readable, state.ledger)
+    }
+
+    @Test fun unreadableTakesPriorityOverWithholding() {
+        claim.value = LedgerReplacement.RESTORE
+        runner.refusing = true
+
+        read.refresh()
+
+        assertEquals("A screen that cannot read said it was withholding", LedgerAccess.Unreadable, state.ledger)
+    }
+
+    @Test fun beingReplacedLastsPastTheClaimsEndUntilAReadLands() {
+        claim.value = LedgerReplacement.DELETE
+        runner.replacing = true
+        read.refresh()
+        assertEquals("A read the gate turned away was withholding, with nothing of the answer to hold", LedgerAccess.BeingReplaced, state.ledger)
+
+        claim.value = null
+        assertEquals("Being replaced ended with the claim, before any read said the ledger was back", LedgerAccess.BeingReplaced, state.ledger)
+
+        runner.replacing = false
+        read.refresh()
+        assertEquals(LedgerAccess.Readable, state.ledger)
+    }
+
+    @Test fun aWriteAskedAfterTheClaimClearsRuns() {
+        read.refresh()
+        claim.value = LedgerReplacement.RESTORE
+        read.write("The test cannot be written") { }
+        claim.value = null
+        var ran = false
+
+        val written = read.write("The test cannot be written") { ran = true; 3 }
+
+        assertEquals(Outcome.Done(3), runBlocking { written.await() })
+        assertTrue("The write asked after the claim cleared did not run", ran)
     }
 }

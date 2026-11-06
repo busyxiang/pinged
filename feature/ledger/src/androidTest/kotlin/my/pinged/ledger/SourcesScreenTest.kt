@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import my.pinged.ledger.sources.SourcesScreenContent
 import my.pinged.ledger.sources.SourcesState
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.Stamp
@@ -116,7 +117,7 @@ class SourcesScreenTest {
         compose.setContent {
             PingedTheme {
                 SourcesScreenContent(
-                    state = SourcesState(loaded = true, storageUnavailable = true),
+                    state = SourcesState(loaded = true, ledger = LedgerAccess.Unreadable),
                     onToggle = { _, _ -> },
                     onBack = {},
                 )

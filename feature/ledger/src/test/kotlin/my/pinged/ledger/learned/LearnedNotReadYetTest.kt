@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.MutableStateFlow
 import my.pinged.ledger.ROW_NOT_READ_YET
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.NOT_READ_YET
@@ -47,7 +48,7 @@ class LearnedNotReadYetTest {
         draw()
         held.at(48)
 
-        state.value = LearnedState(loaded = true, storageUnavailable = true)
+        state.value = LearnedState(loaded = true, ledger = LedgerAccess.Unreadable)
         held.at(READING_DELAY_MILLIS - 40)
 
         assertEquals("An unreadable list found at 48ms waited for the delay", 1, held.count(CANNOT_READ_YOUR_DATA))

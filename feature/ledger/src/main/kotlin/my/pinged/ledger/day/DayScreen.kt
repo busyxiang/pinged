@@ -54,6 +54,7 @@ import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.RowNotReadYet
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.ReadingStatus
@@ -109,8 +110,8 @@ fun DayScreen(
     DayScreenContent(
         date = viewModel.date,
         read = read.answer,
-        storageUnavailable = read.unavailable,
-        replacing = read.replacing,
+        storageUnavailable = read.ledger == LedgerAccess.Unreadable,
+        replacing = read.ledger == LedgerAccess.BeingReplaced,
         onBack = onBack,
         onOpenReview = onOpenReview,
         onOpenEntry = onOpenEntry,

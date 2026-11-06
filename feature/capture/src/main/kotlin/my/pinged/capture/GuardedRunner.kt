@@ -4,6 +4,7 @@ import android.content.Context
 import my.pinged.data.DatabaseAccess
 import my.pinged.data.PingedDatabase
 import my.pinged.read.Outcome
+import my.pinged.read.RawRunnerAccess
 import my.pinged.read.ReadRunner
 
 /**
@@ -21,8 +22,18 @@ import my.pinged.read.ReadRunner
  * Anything else -- `SQLiteFullException` among it -- escapes to the caller.
  * A delete's or a restore's gate answers [Outcome.Replacing], every other
  * refusal [Outcome.Refused] (#328).
+ *
+ * [context] is asked for at each call, as `CaptureStorage.guarded`'s callers
+ * ask: `EntryGateRaceTest` starts a delete from inside it, at the moment a
+ * save enters its guard.
+ *
+ * **Its overrides carry [RawRunnerAccess] rather than opting out of it**: an
+ * override that only opted in would drop the requirement, and a view model
+ * holding a `GuardedRunner` as itself could call `read` with no opt-in to
+ * see. Measured: such a call in `DayViewModel` compiled until they did.
  */
-class GuardedRunner(private val context: Context) : ReadRunner {
+class GuardedRunner(private val context: () -> Context) : ReadRunner {
+    constructor(context: Context) : this({ context })
 
     /**
      * [DatabaseAccess.read], so every statement of [body] reads one snapshot,
@@ -30,8 +41,9 @@ class GuardedRunner(private val context: Context) : ReadRunner {
      * a capture waits for it: [body] is a short, bounded read, whose duration
      * its caller measures.
      */
+    @RawRunnerAccess
     override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> =
-        CaptureStorage.guardedRead<Outcome<T>>(context, what, unavailable = { Outcome.Refused }, replacing = { Outcome.Replacing }) { db ->
+        CaptureStorage.guardedRead<Outcome<T>>(context(), what, unavailable = { Outcome.Refused }, replacing = { Outcome.Replacing }) { db ->
             Outcome.Done(body(db))
         }
 
@@ -40,8 +52,9 @@ class GuardedRunner(private val context: Context) : ReadRunner {
      * transaction of its own unless [oneTransaction]. The policy may run it
      * again on a new connection, so it must be safe to run twice.
      */
+    @RawRunnerAccess
     override suspend fun <T> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> T): Outcome<T> =
-        CaptureStorage.guardedWrite<Outcome<T>>(context, what, unavailable = { Outcome.Refused }, replacing = { Outcome.Replacing }, oneTransaction = oneTransaction) { db ->
+        CaptureStorage.guardedWrite<Outcome<T>>(context(), what, unavailable = { Outcome.Refused }, replacing = { Outcome.Replacing }, oneTransaction = oneTransaction) { db ->
             Outcome.Done(body(db))
         }
 }

@@ -237,7 +237,7 @@ with the hold is not clean.
 ## A holder that reads on arrival
 
 A holder built with a read in its `init` (`ManualEntries` ranks the chips
-when `busy` first emits) has a read in flight that the test did not ask for.
+there) has a read in flight that the test did not ask for.
 It reads before the test's next write and publishes from its own thread, so
 it can land after the read the test then waits on, and put the old answer
 back. `CategoryRankingTest.aManualEntryCountsLikeACapture` failed on CI with
@@ -249,9 +249,10 @@ A test that builds such a holder waits for the arrival read's answer
 To find the window instead of waiting for CI to hit it, make the arrival read
 publish late: spin it until the later read has published, then publish. With
 the later read held 300ms, the old test failed every time at the CI assertion;
-with the wait it passed under the same hold. The holder itself still lets a
-stale read overwrite a newer one; no screen reaches that, because a save
-happens seconds after the screen opens.
+with the wait it passed under the same hold. The chips are a `ScreenRead`
+now, whose turn lands reads in the order they were asked, so that holder
+can no longer publish a stale read over a newer one (#376); a holder that
+reads outside a `ScreenRead` still can.
 
 ## A duration on a busy host
 

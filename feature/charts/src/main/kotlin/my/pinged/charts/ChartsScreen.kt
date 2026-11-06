@@ -32,6 +32,7 @@ import my.pinged.charts.model.Hero
 import my.pinged.charts.model.chartsState
 import my.pinged.data.SourcesLine
 import my.pinged.read.rememberReadState
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.monthName
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
@@ -95,8 +96,9 @@ fun ChartsScreen(
     ChartsScreenContent(
         month = month,
         state = chartsState(read.answer),
-        unavailable = read.unavailable,
-        replacing = read.replacing,
+        // Read-only: a replacement's claim draws as readable (#376).
+        unavailable = read.ledger == LedgerAccess.Unreadable,
+        replacing = read.ledger == LedgerAccess.BeingReplaced,
         // A month picked whose read has not landed.
         rereading = read.rereading,
         modifier = modifier,

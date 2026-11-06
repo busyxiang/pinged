@@ -5,8 +5,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import my.pinged.capture.Graph
 import my.pinged.data.DatabaseUnavailableException
@@ -19,15 +22,15 @@ import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
-import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
+import my.pinged.ledger.refused
+import my.pinged.ledger.withholding
 import my.pinged.parse.Filer
 import my.pinged.parse.LearnedRules.Snapshot
 import my.pinged.parse.SameShop
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
+import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
 import java.time.YearMonth
 
@@ -48,8 +51,8 @@ import java.time.YearMonth
  * turns a database that cannot be opened into a refusal: `Databases` throws
  * from the *open* in §11.1's state, [scope] is a `viewModelScope` nothing in
  * which catches, and an unguarded write would be a process kill on a tap.
- * `MainThreadRefreshTest` records the mechanism. A refusal raises the screen's
- * own `unavailable`, or `replacing` under a ledger replacement, through [screen].
+ * `MainThreadRefreshTest` records the mechanism. A refusal is published as the
+ * screen's own `ledger`, through [screen].
  *
  * **The guard covers the open, not the statement.** A statement that fails
  * afterwards -- `SQLiteFullException` on a full disk -- is outside
@@ -63,25 +66,23 @@ import java.time.YearMonth
  * `*ScreenContent` only the halves that screen offers: [CategoryActions] and
  * [MerchantActions] (#307).
  *
- * **During a ledger replacement nothing is written** ([busy], #331), from the
- * claim, as the review inbox refuses an answer: a restore checks its file
- * before it raises the gate, and a category saved in that window would be
- * wiped after the user saw it saved. A write asked for then is dropped
- * without touching [runner], so the screen is not raised `unavailable`.
- * The chooser and the sheet disable their writes on the same flow, so a
- * drop is only reachable by a tap racing the claim. [transfers] is a
- * parameter for the reason `ReviewInbox` gives.
+ * **During a ledger replacement nothing is written** (#331), from the claim:
+ * a restore checks its file before it raises the gate, and a category saved
+ * in that window would be wiped after the user saw it saved. Every write here
+ * is [screen]'s, whose read refuses it then without asking the runner (#376),
+ * so the screen is not told the ledger is unreadable either. The chooser and
+ * the sheet disable their writes on [busy], so a refusal is only reachable by
+ * a tap racing the claim.
  */
 class RowActions(
     private val scope: CoroutineScope,
     private val runner: ReadRunner,
     private val screen: RowScreen,
-    transfers: StateFlow<TransferState> = Transfers.state,
 ) : CategoryActions, MerchantActions {
-    private val gate = LedgerBusy(scope, transfers)
-
-    /** The ledger replacement running, while one is; see the class KDoc. */
-    override val busy: StateFlow<Operation?> = gate.busy
+    /** The ledger replacement the screen withholds its writes for, while it does; see the class KDoc. */
+    override val busy: StateFlow<LedgerReplacement?> = screen.state
+        .map { it.ledger.withholding }
+        .stateIn(scope, SharingStarted.Eagerly, screen.state.value.ledger.withholding)
 
     /**
      * Spec 6.4's merchant sheet's read: its question is the opening, or null
@@ -162,7 +163,7 @@ class RowActions(
      * actually in the database rather than reporting a failure about a row
      * the user can no longer see.
      */
-    override fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job = gate.unlessReplacing {
+    override fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job =
         // The check and the write in one transaction, so a delete from
         // Settings cannot land between them: deleted since the chooser
         // drew it, there is nothing to file under, and the re-read
@@ -180,7 +181,6 @@ class RowActions(
             val taught = teach && db.merchantIdentityDao().teachAndFix(txnId, categoryId, at).taught
             if (!taught) db.txnDao().setCategory(txnId, categoryId, at)
         }
-    }
 
     /**
      * Spec 4's "add", from the chooser's New category tile (#155): the new
@@ -191,7 +191,6 @@ class RowActions(
      * for a replacement, which asks nothing of the ledger.
      */
     override suspend fun addCategory(name: String, iconKey: String): Long? {
-        if (gate.replacing) return null
         val written = screen.write("The category could not be added") { db ->
             try {
                 db.categoryDao().add(name, iconKey)
@@ -205,11 +204,12 @@ class RowActions(
     /**
      * What teaching [categoryId] on the row [txnId] would also fix (#49), for the
      * chooser's count line, or null when the ledger could not be read: not a
-     * count of 0, which the chooser would draw as a fact (#237). The save
-     * re-checks inside its own transaction either way.
+     * count of 0, which the chooser would draw as a fact (#237), nor while
+     * the ledger is being replaced, when the count feeds a save that would be
+     * refused. The save re-checks inside its own transaction either way.
      */
     override suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? =
-        (runner.read("The past payments could not be counted") { db -> db.merchantIdentityDao().retroPreview(txnId, categoryId) } as? Outcome.Done)
+        (screen.lookup("The past payments could not be counted") { db -> db.merchantIdentityDao().retroPreview(txnId, categoryId) }.await() as? Outcome.Done)
             ?.value
 
     /**
@@ -236,7 +236,7 @@ class RowActions(
             // Only an answer to the opening still asked for says it is gone: a
             // read dropped for another question left its refusal or answer behind.
             if (merchant.question.value == opening) {
-                val refused = state.unavailable || state.replacing
+                val refused = state.ledger.refused
                 val gone = refused || state.answered?.let { it.question == opening && it.answer == null } == true
                 if (gone) merchant.setQuestion(null)
                 if (refused) screen.refused()
@@ -279,12 +279,13 @@ class RowActions(
         write: (MerchantIdentityDao, MerchantSheetState) -> Unit,
     ): Job {
         // Nothing to write against before the read: the sheet offers no write
-        // until then. A replacement leaves the sheet open, its writes disabled.
+        // until then. The write is [screen]'s to refuse during a replacement;
+        // [busy] only decides that the sheet stays open meanwhile, its writes
+        // disabled, rather than closing on nothing written.
         val sheet = _merchantSheet.value?.read ?: return Job().apply { complete() }
-        return gate.unlessReplacing {
-            closeMerchant()
-            screen.write(what) { db -> write(db.merchantIdentityDao(), sheet) }
-        }
+        // The read's own state, not [busy], a collector's copy a dispatch behind it.
+        if (screen.state.value.ledger.withholding == null) closeMerchant()
+        return screen.write(what) { db -> write(db.merchantIdentityDao(), sheet) }
     }
 }
 
@@ -294,7 +295,7 @@ class RowActions(
  */
 interface CategoryActions {
     /** The ledger replacement running, while one is: the chooser disables its Save and says so. */
-    val busy: StateFlow<Operation?>
+    val busy: StateFlow<LedgerReplacement?>
 
     /** File one transaction under [categoryId], teaching its merchant when [teach]; see [RowActions.assignCategory]. */
     fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job
@@ -308,10 +309,17 @@ interface CategoryActions {
 
 /**
  * What a screen hands [RowActions] of its own read (#296): the write that is
- * followed by a re-read of it, and the way to ask it to look again.
- * `ScreenRead.rowScreen` is the one implementation a joined screen uses.
+ * followed by a re-read of it, a lookup, what it has published, and the way to
+ * ask it to look again. `ScreenRead.rowScreen` is the one implementation a
+ * joined screen uses.
  */
 interface RowScreen {
+    /** What the screen's read has published; [RowActions] reads its `ledger`. */
+    val state: StateFlow<ReadState<*, *>>
+
+    /** A one-off read in the screen's turn, refused during a replacement's claim. See `ScreenRead.lookup`. */
+    fun <R> lookup(what: String, body: (PingedDatabase) -> R): Deferred<Outcome<R>>
+
     /**
      * Run [body] as a guarded write and read the screen again in the same
      * turn; completes after that re-read. See `ScreenRead.write`.
@@ -324,6 +332,10 @@ interface RowScreen {
 
 /** [this] as what [RowActions] writes through: its writes read it back, and a refusal makes it read again. */
 fun ScreenRead<*, *>.rowScreen(): RowScreen = object : RowScreen {
+    override val state: StateFlow<ReadState<*, *>> = this@rowScreen.state
+
+    override fun <R> lookup(what: String, body: (PingedDatabase) -> R) = this@rowScreen.lookup(what, body)
+
     override fun <R> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> R) =
         this@rowScreen.write(what, oneTransaction, body)
 

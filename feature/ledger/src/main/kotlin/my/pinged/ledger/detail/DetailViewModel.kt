@@ -7,16 +7,14 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
-import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.DetailRow
 import my.pinged.data.dao.TxnDao
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerReplacements
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
@@ -40,25 +38,20 @@ class DetailViewModel internal constructor(
     val txnId: Long,
     val createdAt: Long,
     runner: ReadRunner,
-    transfers: StateFlow<TransferState>,
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
 ) : AndroidViewModel(app) {
     constructor(app: Application, txnId: Long, createdAt: Long) :
-        this(app, txnId, createdAt, GuardedRunner(app), Transfers.state)
+        this(app, txnId, createdAt, GuardedRunner(app))
 
     /** A getter, not a field, for the reason `SourcesViewModel` records. */
     private val context: Context get() = getApplication<Application>()
-
-    private val gate = LedgerBusy(viewModelScope, transfers)
-
-    /** The ledger replacement running, while one is: the screen disables its own writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
 
     /**
      * The row and the chooser's half, in one transaction so the chooser marks
      * what the row carries, and published in one piece. `DetailScreen` reads
      * it again on resume and on `Databases.rewrites` through `rememberReadState`.
      */
-    internal val read: ScreenRead<Unit, DetailRead> = ScreenRead.fixed(viewModelScope, runner, "The payment cannot be read") { db ->
+    internal val read: ScreenRead<Unit, DetailRead> = ScreenRead.fixed(viewModelScope, runner, "The payment cannot be read", replacement) { db ->
         val row = db.txnDao().detail(txnId)?.takeIf { it.row.txn.createdAt == createdAt }
         DetailRead(row = row, chooser = rows.readChooser(db))
     }
@@ -68,7 +61,6 @@ class DetailViewModel internal constructor(
         scope = viewModelScope,
         runner = runner,
         screen = read.rowScreen(),
-        transfers = transfers,
     )
 
     /** `TxnDao.setCapturedNote`. */
@@ -95,14 +87,12 @@ class DetailViewModel internal constructor(
      * One statement as [read]'s write, which reads the row again in its turn,
      * then [after] with whether the statement wrote a row. A 0 from it means
      * the row moved underneath, and the re-read is the honest answer to that;
-     * a write refused is not a row written. Nothing is asked of the ledger
-     * while it is being replaced ([busy], #331), so [after] is not called.
+     * a write refused is not a row written, nor is one [read] refuses while
+     * the ledger is being replaced (#331, #376).
      */
-    private fun write(what: String, after: (Boolean) -> Unit = {}, statement: (TxnDao) -> Int): Job = gate.unlessReplacing {
-        viewModelScope.launch {
-            val outcome = read.write(what) { db -> statement(db.txnDao()) }.await()
-            after((outcome as? Outcome.Done)?.value == 1)
-        }
+    private fun write(what: String, after: (Boolean) -> Unit = {}, statement: (TxnDao) -> Int): Job = viewModelScope.launch {
+        val outcome = read.write(what) { db -> statement(db.txnDao()) }.await()
+        after((outcome as? Outcome.Done)?.value == 1)
     }
 
     private fun now(): Long = System.currentTimeMillis()

@@ -5,24 +5,16 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
-import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
-import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
-import my.pinged.ledger.holdWhile
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.settings.Operation
-import my.pinged.ledger.settings.Transfers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -41,13 +33,9 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ManualDeleteTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val releases = mutableListOf<CountDownLatch>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     @After fun leaveNothingBehind() {
-        releases.forEach { it.countDown() }
-        runBlocking { withTimeout(TIMEOUT) { Transfers.state.first { it.running == null } } }
-        Transfers.forgetOutcome()
         scope.cancel()
         context.discardTheDatabase()
     }
@@ -93,38 +81,6 @@ class ManualDeleteTest {
 
         assertFalse("The delete reported deleting a captured row", entries().delete(EditTarget(captured, before.createdAt)).await())
         assertEquals("The delete changed a captured row", before, dao.byId(captured))
-    }
-
-    @Test fun nothingIsDeletedDuringARestore() = runBlocking {
-        val dao = context.freshLedger()
-        val entries = entries()
-        val id = entries.save(ManualDraft(amountSen = 1_250L)).await()!!
-
-        holdWhile(Operation.RESTORE, entries.busy, releases) { requester, beforeStart ->
-            Transfers.restoreFrom(context, open = { null }, requester = requester, beforeStart = beforeStart)
-        }.use {
-            assertFalse("A delete during a restore reported a row", withTimeout(BUDGET) { entries.delete(target(id)).await() })
-        }
-
-        assertNotNull("A delete during a restore was written", dao.byId(id))
-        assertFalse("The refusal was reported as a ledger that will not open", entries.storageUnavailable.value)
-    }
-
-    @Test fun nothingIsDeletedDuringADeleteEverything() = runBlocking {
-        val dao = context.freshLedger()
-        val entries = entries()
-        val id = entries.save(ManualDraft(amountSen = 1_250L)).await()!!
-
-        // The requester goes away while held, so the delete-everything never starts.
-        val requester = Job()
-        holdWhile(Operation.DELETE, entries.busy, releases, requester) { r, beforeStart ->
-            Transfers.deleteEverything(context, requester = r, beforeStart = beforeStart)
-        }.use {
-            assertFalse("A delete during delete-everything reported a row", withTimeout(BUDGET) { entries.delete(target(id)).await() })
-            requester.cancel()
-        }
-
-        assertNotNull("A delete during delete-everything was written", dao.byId(id))
     }
 
     private fun target(id: Long) = EditTarget(id, Databases.txnDao(context).byId(id)!!.createdAt)

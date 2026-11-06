@@ -27,6 +27,7 @@ import my.pinged.ledger.transfer.bulkCapture
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.ledgerTxn
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -75,7 +76,7 @@ class LearnedMerchantsScreenTest {
 
     @Test fun anUnreadableDatabaseIsNotAnEmptyList() {
         compose.setContent {
-            LearnedContent(LearnedState(loaded = true, storageUnavailable = true), onBack = {}, onDelete = {})
+            LearnedContent(LearnedState(loaded = true, ledger = LedgerAccess.Unreadable), onBack = {}, onDelete = {})
         }
         compose.onNodeWithText(CANNOT_READ_YOUR_DATA).assertIsDisplayed()
         compose.onNodeWithText(NOTHING_TAUGHT).assertDoesNotExist()
@@ -135,7 +136,7 @@ class LearnedMerchantsScreenTest {
 
         model.read.refreshed()
 
-        assertEquals(true, model.read.state.value.toState().storageUnavailable)
+        assertEquals(LedgerAccess.Unreadable, model.read.state.value.toState().ledger)
     }
 
     // ---- spec 5.7's IGNORED tab -------------------------------------------------

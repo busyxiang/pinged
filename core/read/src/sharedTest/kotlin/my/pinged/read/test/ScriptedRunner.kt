@@ -5,6 +5,7 @@ import androidx.room.Room
 import kotlinx.coroutines.CompletableDeferred
 import my.pinged.data.PingedDatabase
 import my.pinged.read.Outcome
+import my.pinged.read.RawRunnerAccess
 import my.pinged.read.ReadRunner
 
 /**
@@ -23,6 +24,7 @@ import my.pinged.read.ReadRunner
  * Compiled into the JVM tests of `:core:read` and of every module that joins
  * it, as a source directory.
  */
+@OptIn(RawRunnerAccess::class)
 internal class ScriptedRunner(context: Context) : ReadRunner {
     private val database: PingedDatabase =
         Room.inMemoryDatabaseBuilder(context, PingedDatabase::class.java).allowMainThreadQueries().build()

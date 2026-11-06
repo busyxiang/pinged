@@ -5,6 +5,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.MutableStateFlow
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.HeldBy
@@ -39,8 +40,7 @@ class InboxNotReadYetTest {
                 CompositionLocalProvider(LocalHeldBy provides heldBy) {
                     ReviewInboxScreenContent(
                         cards = cards.collectAsState().value,
-                        storageUnavailable = unavailable.collectAsState().value,
-                        busy = null,
+                        ledger = if (unavailable.collectAsState().value) LedgerAccess.Unreadable else LedgerAccess.Readable,
                         onBack = {},
                         onAnswer = { _, _ -> },
                     )

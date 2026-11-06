@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import my.pinged.data.LocalDates
 import my.pinged.data.entity.Category
 import my.pinged.ledger.ledgerTxn
+import my.pinged.read.LedgerAccess
 import my.pinged.read.ScreenRead
 import my.pinged.read.test.ScriptedRunner
 import org.junit.After
@@ -168,7 +169,7 @@ class RowActionsReadTest {
 
         assertNull("A sheet whose read was refused stayed open", rows.merchantSheet.value)
         assertTrue("The screen's own read was not asked to look again", runner.calls.drop(seeded).any { it.what == "The test cannot be read" })
-        assertTrue("The screen did not learn the ledger cannot be read", screen.state.value.unavailable)
+        assertTrue("The screen did not learn the ledger cannot be read", screen.state.value.ledger == LedgerAccess.Unreadable)
     }
 
     /** #328, decision 4: as a refusal does, and the screen then says a replacement, not CANNOT READ YOUR DATA. */
@@ -180,8 +181,8 @@ class RowActionsReadTest {
 
         assertNull("A sheet whose read a replacement refused stayed open", rows.merchantSheet.value)
         assertTrue("The screen's own read was not asked to look again", runner.calls.drop(seeded).any { it.what == "The test cannot be read" })
-        assertTrue("The screen did not learn the ledger is being replaced", screen.state.value.replacing)
-        assertFalse("The screen was told the ledger cannot be read", screen.state.value.unavailable)
+        assertTrue("The screen did not learn the ledger is being replaced", screen.state.value.ledger == LedgerAccess.BeingReplaced)
+        assertFalse("The screen was told the ledger cannot be read", screen.state.value.ledger == LedgerAccess.Unreadable)
     }
 
     @Test fun aReadSheetIsDrawnWithItsRead() {

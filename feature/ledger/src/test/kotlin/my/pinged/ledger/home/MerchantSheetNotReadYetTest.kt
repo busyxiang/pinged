@@ -18,6 +18,7 @@ import my.pinged.data.dao.MerchantChoice
 import my.pinged.data.dao.MerchantTotal
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
+import my.pinged.read.ReadState
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.HeldBy
 import my.pinged.ui.theme.LocalHeldBy
@@ -166,6 +167,8 @@ class MerchantSheetNotReadYetTest {
             override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> = ran()
             override suspend fun <T> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> T): Outcome<T> = ran()
         }, screen = object : RowScreen {
+            override val state = MutableStateFlow(ReadState<Unit, Unit>(answered = null, rereading = false))
+            override fun <R> lookup(what: String, body: (PingedDatabase) -> R): Deferred<Outcome<R>> = ran()
             override fun <R> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> R): Deferred<Outcome<R>> = ran()
             override fun refused() = ran()
         })

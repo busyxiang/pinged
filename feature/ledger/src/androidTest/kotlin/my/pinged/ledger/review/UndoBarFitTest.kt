@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
 import my.pinged.data.entity.StandingAnswer
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -48,8 +49,7 @@ class UndoBarFitTest {
                 Box(Modifier.requiredSize(DpSize(320.dp, 640.dp))) {
                     ReviewInboxScreenContent(
                         cards = emptyList(),
-                        storageUnavailable = false,
-                        busy = null,
+                        ledger = LedgerAccess.Readable,
                         onBack = {},
                         onAnswer = { _, _ -> },
                         undoable = undoable,

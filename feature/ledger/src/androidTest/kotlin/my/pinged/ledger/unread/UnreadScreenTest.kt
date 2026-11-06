@@ -24,6 +24,7 @@ import my.pinged.ledger.ArtboardProbe
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.transfer.bulkCapture
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Stamp
@@ -131,7 +132,7 @@ class UnreadScreenTest {
     }
 
     @Test fun anUnreadableDatabaseIsNotAnEmptyList() {
-        draw(UnreadState(loaded = true, storageUnavailable = true))
+        draw(UnreadState(loaded = true, ledger = LedgerAccess.Unreadable))
         compose.onNodeWithText(CANNOT_READ_YOUR_DATA).assertIsDisplayed()
         compose.onNodeWithText(NOTHING_UNREAD).assertDoesNotExist()
     }
@@ -192,7 +193,7 @@ class UnreadScreenTest {
         app.corruptTheDatabase()
         val model = UnreadViewModel(app)
         model.read.refreshed()
-        assertEquals(true, model.read.state.value.toState().storageUnavailable)
+        assertEquals(LedgerAccess.Unreadable, model.read.state.value.toState().ledger)
     }
 
     private companion object {

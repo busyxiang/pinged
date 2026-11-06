@@ -27,8 +27,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,15 +52,14 @@ import my.pinged.data.NamedSource
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
-import my.pinged.ledger.settings.Operation
+import my.pinged.ledger.notice
+import my.pinged.ledger.withholding
 import my.pinged.parse.FixtureText
 import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.ButtonLabel
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
@@ -109,7 +106,6 @@ fun UnreadScreen(
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
-    val busy by viewModel.busy.collectAsState()
     val context = LocalContext.current
     UnreadContent(
         state = read.toState(),
@@ -119,7 +115,6 @@ fun UnreadScreen(
         onCopy = { copyAsFixture(context, it) },
         onEnd = { viewModel.loadMore() },
         modifier = modifier,
-        busy = busy,
         source = viewModel.source,
         onShowEveryApp = onShowEveryApp,
     )
@@ -128,7 +123,7 @@ fun UnreadScreen(
 /**
  * [UnreadScreen] without its holder, so a test can draw any state. [source]
  * is the app the list is filtered to (#368), null for every app's. While
- * [busy] runs a ledger replacement the list says so under its header, and
+ * [state] withholds for a ledger replacement the list says so under its header, and
  * Never a transaction and Teach Pinged this are off (#331): Teach is a
  * screen whose one end is a write the replacement refuses, about a capture
  * the replacement may take away.
@@ -143,10 +138,10 @@ internal fun UnreadContent(
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault(),
     onTeach: (UnreadCapture) -> Unit = {},
-    busy: Operation? = null,
     source: NamedSource? = null,
     onShowEveryApp: () -> Unit = {},
 ) {
+    val busy = state.ledger.withholding
     if (!state.loaded) {
         Column(modifier.fillMaxSize().background(Card)) {
             Header(onBack, source, onShowEveryApp)
@@ -160,10 +155,8 @@ internal fun UnreadContent(
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         item { Header(onBack, source, onShowEveryApp) }
-        if (!state.storageUnavailable && !state.replacing && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp)) }
-        val notice = when {
-            state.replacing -> REPLACING_YOUR_DATA
-            state.storageUnavailable -> CANNOT_READ_YOUR_DATA
+        if (busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp)) }
+        val notice = state.ledger.notice ?: when {
             state.items.isEmpty() -> source?.let(::nothingUnreadFrom) ?: NOTHING_UNREAD
             else -> null
         }

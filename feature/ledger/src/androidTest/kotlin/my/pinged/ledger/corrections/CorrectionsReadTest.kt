@@ -10,6 +10,7 @@ import my.pinged.data.Databases
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.refreshed
+import my.pinged.read.LedgerAccess
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -49,6 +50,6 @@ class CorrectionsReadTest {
 
         model.read.refreshed()
 
-        assertEquals(true, model.read.state.value.toState().storageUnavailable)
+        assertEquals(LedgerAccess.Unreadable, model.read.state.value.toState().ledger)
     }
 }

@@ -53,7 +53,7 @@ object CaptureStorage {
      * **[replacing]** is what a gate's refusal ([Access.Why.Gate]) answers, in
      * place of [unavailable]: a screen says a ledger replacement is running
      * rather than that the ledger cannot be read (#328). It defaults to
-     * [unavailable], which capture and `LedgerWrites` keep.
+     * [unavailable], which capture keeps.
      */
     suspend fun <T> guarded(
         context: Context,
