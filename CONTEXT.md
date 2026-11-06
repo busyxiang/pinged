@@ -142,6 +142,18 @@ _Avoid_: reject, dismiss, ignore rule
 A rule the user made by tapping a message's amount and merchant on the Teach screen. It reads only messages of exactly that shape from that app, and only once every rule Pinged shipped with has failed. Its first three transactions wait for review. Settings lists each under MESSAGES, and deleting one leaves the transactions it wrote.
 _Avoid_: user template, custom rule, user regex
 
+**Read source**:
+An app the user switched on in Capture sources that at least one rule reads, shipped or taught. One taught message is enough: "read" says some rule reads the app, not that every notification it posts is read.
+_Avoid_: covered app, supported app, unread source
+
+**Unreadable source**:
+An app the user switched on that no rule reads yet. Its notifications all become unread captures, so none reaches a total until the user teaches one of its messages.
+_Avoid_: unsupported app, unread source
+
+**Sources line**:
+The line under a month's total naming the apps that total comes from: today's read sources, any app with a counted transaction that month, and "by hand" when the month has a manual entry. It names unreadable sources as such. It is a claim about apps, never about days, which is the capture record's.
+_Avoid_: coverage, coverage line, source list
+
 
 ### Charts
 
