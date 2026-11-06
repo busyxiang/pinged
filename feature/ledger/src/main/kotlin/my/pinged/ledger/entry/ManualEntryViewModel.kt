@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import my.pinged.data.entity.Category
 import my.pinged.ledger.settings.Operation
 import my.pinged.parse.Amount
+import my.pinged.parse.Direction
 
 /**
  * Everything the entry screen draws: the draft, and why Save may be off.
@@ -297,6 +298,11 @@ class ManualEntryViewModel internal constructor(
         draft.update { it.copy(merchant = text) }
     }
 
+    /** Paid or Received (#355): [Direction.EXPENSE] or [Direction.REFUND]. */
+    fun direction(direction: Direction) {
+        draft.update { it.copy(direction = direction) }
+    }
+
     /** The note field's text, as typed; see [ManualDraft.note]. */
     fun note(text: String) {
         draft.update { it.copy(note = text) }
@@ -326,7 +332,7 @@ class ManualEntryViewModel internal constructor(
         if (!progress.compareAndSet(Progress.EDITING, Progress.SAVING)) return@launch
         val asked = draft.value
         val stored = loaded.value
-        val moved = stored == null || asked.amountSen != stored.amountSen || asked.day != stored.day
+        val moved = stored == null || asked.amountSen != stored.amountSen || asked.day != stored.day || asked.direction != stored.direction
         val nearby = if (moved) entries.nearbyCapture(asked, editing?.id).await() else null
         if (nearby != null) {
             warned.value = Warned(asked, nearby)

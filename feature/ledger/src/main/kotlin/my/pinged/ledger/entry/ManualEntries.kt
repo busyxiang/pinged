@@ -197,7 +197,8 @@ class ManualEntries(
      * chosen before a restore or a delete-everything replaced the categories,
      * which `txn`'s foreign key would otherwise throw on.
      *
-     * What is written (spec 9.4, #99): `EXPENSE`, `HIGH`, `COMMITTED`, no
+     * What is written (spec 9.4, #99): the draft's [ManualDraft.direction]
+     * (`EXPENSE`, or `REFUND` for money received, #355), `HIGH`, `COMMITTED`, no
      * pending reason, not excluded. Filed under the draft's [CategoryChoice]
      * (#100): a chip the user tapped is a one-off, `user_edited = 1`, which
      * no rule moves again; a pre-selection left alone is rule-filed,
@@ -230,7 +231,7 @@ class ManualEntries(
                 Txn(
                     rawCaptureId = null,
                     amountSen = draft.amountSen,
-                    direction = Direction.EXPENSE,
+                    direction = draft.direction,
                     occurredAt = EntryDate.occurredAt(draft.day, now, zone),
                     merchantRaw = merchant.raw,
                     merchantDisplay = merchant.display,
@@ -277,6 +278,7 @@ class ManualEntries(
                         merchant = it.merchantRaw.orEmpty(),
                         note = it.note.orEmpty(),
                         category = shownChoice(it, db.categoryDao().requireUncategorizedId()),
+                        direction = it.direction,
                     ),
                 )
             } ?: Loaded.Gone
@@ -297,6 +299,8 @@ class ManualEntries(
      *   dates; an unchanged day keeps its `occurred_at` ([editedAt]);
      * - the three merchant columns, built as [save] builds them;
      * - the note;
+     * - the direction (#355), a column of its own: totals follow it, and
+     *   no other column moves with it;
      * - the category, by [refiled]: a merchant whose key changed on a
      *   rule-filed row is filed again by [ruleFiling], or Uncategorized; a
      *   one-off keeps its category; a chip tapped in this edit is a one-off.
@@ -322,6 +326,7 @@ class ManualEntries(
                 occurredAt = editedAt(stored, draft, now, zone).takeIf { it != stored.occurredAt },
                 merchant = columns.takeIf { it != ManualEdit.Merchant(stored.merchantRaw, stored.merchantDisplay, stored.merchantKey) },
                 note = ManualEdit.Note(note).takeIf { note != stored.note },
+                direction = draft.direction.takeIf { it != stored.direction },
                 filing = refiled(stored, draft.category, merchant.key != stored.merchantKey, uncategorized) {
                     merchant.key?.let { ruleFiling(db, it) } ?: uncategorized
                 }?.takeIf { it != ManualEdit.Filing(stored.categoryId, stored.userEdited) },
@@ -373,6 +378,9 @@ class ManualEntries(
      * asked: a draft [save] would refuse, a restore or delete running, or a
      * ledger that will not open, where [save] then refuses as well.
      *
+     * Only a capture of the draft's own [ManualDraft.direction] matches (#355):
+     * money received meets a captured `REFUND`, a payment a captured `EXPENSE`.
+     *
      * Near is layer 2's window around the moment [save] would date the
      * draft, or the whole of its day when [ManualDraft.backdated], whose time
      * of day is made up (`TxnDao.nearbyCapture`). [editing] is the entry
@@ -388,7 +396,7 @@ class ManualEntries(
             val edited = editing?.let(dao::byId)
             val at = edited?.let { editedAt(it, draft, now, zone) } ?: EntryDate.occurredAt(draft.day, now, zone)
             dao
-                .nearbyCapture(editing, draft.amountSen, at, wholeDay = draft.backdated)
+                .nearbyCapture(editing, draft.amountSen, at, wholeDay = draft.backdated, direction = draft.direction)
                 ?.let(NearbyCapture::of)
                 .also { writes.opened() }
         }
@@ -483,6 +491,8 @@ data class ManualDraft(
     val note: String = "",
     /** The chip selected; null saves as Uncategorized. */
     val category: CategoryChoice? = null,
+    /** `EXPENSE` for Paid, `REFUND` for Received (#355); the only two a manual entry holds. */
+    val direction: Direction = Direction.EXPENSE,
 ) {
     /**
      * The draft once the pre-selection lookup for [forMerchant] answered

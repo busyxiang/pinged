@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -60,6 +61,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.LocalDate
@@ -74,11 +76,14 @@ import my.pinged.ledger.home.ChooserSubject
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.UnderlinedField
 import my.pinged.ledger.home.categoryIcon
+import my.pinged.ledger.review.COUNTS_AGAINST
+import my.pinged.parse.Direction
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.money
 import my.pinged.ui.ringgit
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
+import my.pinged.ui.theme.Card
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.ButtonLabel
@@ -124,6 +129,7 @@ fun ManualEntryScreen(
         onCategory = viewModel::tapCategory,
         onChooseCategory = viewModel::chooseCategory,
         onDay = viewModel::day,
+        onDirection = viewModel::direction,
         onMerchant = viewModel::merchant,
         onNote = viewModel::note,
         onSave = viewModel::save,
@@ -155,6 +161,7 @@ internal fun ManualEntryScreenContent(
     onSaved: () -> Unit,
     modifier: Modifier = Modifier,
     onDay: (LocalDate) -> Unit = {},
+    onDirection: (Direction) -> Unit = {},
     onCategory: (categoryId: Long) -> Unit = {},
     onChooseCategory: (categoryId: Long) -> Unit = {},
     onAddAnyway: () -> Unit = {},
@@ -175,7 +182,8 @@ internal fun ManualEntryScreenContent(
             .background(Paper)
             .verticalScroll(rememberScrollState()),
     ) {
-        Header(if (state.editing != null) EDIT_PAYMENT else ADD_PAYMENT, onBack)
+        val title = entryTitle(state.editing != null, state.draft.direction)
+        Header(title, onBack)
         if (state.reading) {
             // Not the fields: they would draw the empty default draft as the
             // payment, and a field typed into now is overwritten by the read.
@@ -183,15 +191,23 @@ internal fun ManualEntryScreenContent(
             // the line below says so instead.
             if (!state.storageUnavailable) NotReadYet()
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AmountField(
-                    sen = state.draft.amountSen,
-                    onAmount = onAmount,
-                    focusOnArrival = state.editing == null,
-                    modifier = Modifier.weight(1f),
-                )
+            // Kind and date on one row above the figure (#355), which then
+            // has the whole width: beside it, the two controls left it
+            // under 100dp at CI's 320dp.
+            Row(
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DirectionControl(state.draft.direction, onDirection)
                 DateChip(day = state.draft.day, today = state.today, onDay = onDay)
             }
+            AmountField(
+                sen = state.draft.amountSen,
+                onAmount = onAmount,
+                focusOnArrival = state.editing == null,
+                modifier = Modifier.fillMaxWidth(),
+            )
             CategoryChips(
                 state.categories,
                 selected = state.draft.category?.categoryId,
@@ -201,6 +217,7 @@ internal fun ManualEntryScreenContent(
                 ),
                 onTap = onCategory,
                 onChoose = onChooseCategory,
+                label = COUNTS_AGAINST.takeIf { state.draft.direction == Direction.REFUND },
             )
             OptionalLine(MERCHANT, state.draft.merchant, onMerchant, MERCHANT_FIELD, KeyboardCapitalization.Words)
             OptionalLine(NOTE, state.draft.note, onNote, NOTE_FIELD, KeyboardCapitalization.Sentences)
@@ -398,7 +415,7 @@ private fun AmountField(sen: Long, onAmount: (Long) -> Unit, focusOnArrival: Boo
         cursorBrush = SolidColor(Color.Transparent),
         onTextLayout = { drawn = it },
         modifier = modifier
-            .padding(start = 20.dp, end = 8.dp, top = 24.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 12.dp)
             .focusRequester(focus)
             .onFocusChanged { focused = it.isFocused }
             .drawWithContent {
@@ -462,12 +479,17 @@ private fun CategoryChips(
     subject: ChooserSubject,
     onTap: (Long) -> Unit,
     onChoose: (Long) -> Unit,
+    label: String? = null,
 ) {
     var choosing by rememberSaveable { mutableStateOf(false) }
+    // Under Received (#355): the review inbox card's wording, over the chips.
+    if (label != null) {
+        Text(label, style = MonoLabel, color = Muted, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp))
+    }
     FlowRow(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 16.dp),
+            .padding(start = 20.dp, end = 20.dp, top = if (label != null) 8.dp else 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -549,7 +571,7 @@ private fun CategoryChip(category: Category, chosen: Boolean, onTap: () -> Unit)
 }
 
 /**
- * The date chip beside the amount (#103): `Today`, or the past day the entry
+ * The date chip opposite the Paid/Received control, above the amount (#103): `Today`, or the past day the entry
  * is moved to, and a tap opens [EntryDatePicker]. Picking a day closes it.
  * The artboard has no date chip; it is outlined in [Border] like the
  * category chips, since `Rule` is the dotted rules' colour.
@@ -559,7 +581,6 @@ private fun DateChip(day: LocalDate?, today: LocalDate, onDay: (LocalDate) -> Un
     var picking by rememberSaveable { mutableStateOf(false) }
     Box(
         Modifier
-            .padding(end = 20.dp, top = 24.dp)
             .clip(RoundedCornerShape(2.dp))
             .clickable(role = Role.Button) { picking = true }
             .heightIn(min = 44.dp)
@@ -580,6 +601,46 @@ private fun DateChip(day: LocalDate?, today: LocalDate, onDay: (LocalDate) -> Un
             },
             onDismiss = { picking = false },
         )
+    }
+}
+
+/** [DirectionControl]'s segments, in order: direction, label, test tag. */
+private val SEGMENTS = listOf(
+    Triple(Direction.EXPENSE, PAID, PAID_SEGMENT),
+    Triple(Direction.REFUND, RECEIVED, RECEIVED_SEGMENT),
+)
+
+/**
+ * Paid or Received (#355), a two-segment control on the row above the
+ * amount, opposite the date chip. Paid is the default, so the common path
+ * takes no tap on it. Each segment is a 44dp-high selectable of its own.
+ */
+@Composable
+private fun DirectionControl(direction: Direction, onDirection: (Direction) -> Unit) {
+    // Each segment draws its own hairline and the pair overlap by 1dp, with
+    // the selected one on top: a border on the row would be drawn over the
+    // selected segment's Ink edge, leaving only its inner side dark.
+    Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy((-1).dp)) {
+        for ((value, label, tag) in SEGMENTS) {
+            val on = direction == value
+            val shape = RoundedCornerShape(2.dp)
+            Box(
+                Modifier
+                    .zIndex(if (on) 1f else 0f)
+                    .clip(shape)
+                    // Selected is the day header's Card tint inside an Ink
+                    // hairline, not a fill: Save stays the one filled element.
+                    .then(if (on) Modifier.background(Card) else Modifier)
+                    .border(1.dp, if (on) Ink else Border, shape)
+                    .selectable(selected = on, role = Role.RadioButton) { onDirection(value) }
+                    .heightIn(min = 44.dp)
+                    .padding(horizontal = 10.dp)
+                    .testTag(tag),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, style = MonoLabel, color = if (on) Ink else Muted)
+            }
+        }
     }
 }
 
@@ -665,6 +726,30 @@ private val ChipLabel = TextStyle(fontFamily = Body, fontSize = 13.sp, lineHeigh
 
 /** The entry point's name: the Spending tab's + button and this screen's title (spec 9.4). */
 const val ADD_PAYMENT = "Add payment"
+
+/** The direction control's default segment (#355). */
+const val PAID = "Paid"
+
+/** The direction control's other segment: money that came back (#355). */
+const val RECEIVED = "Received"
+
+/** The title under Received (#355). */
+const val ADD_MONEY_RECEIVED = "Add money received"
+
+/** Edit mode's title under Received (#355). */
+const val EDIT_MONEY_RECEIVED = "Edit money received"
+
+/** The screen's title: by edit mode, and by [direction], which says what is being recorded (#355). */
+internal fun entryTitle(editing: Boolean, direction: Direction): String = when {
+    direction == Direction.REFUND -> if (editing) EDIT_MONEY_RECEIVED else ADD_MONEY_RECEIVED
+    else -> if (editing) EDIT_PAYMENT else ADD_PAYMENT
+}
+
+/** What a test finds the Paid segment by. */
+internal const val PAID_SEGMENT = "manual-entry-paid"
+
+/** What a test finds the Received segment by. */
+internal const val RECEIVED_SEGMENT = "manual-entry-received"
 
 /** This screen's title in edit mode (#105): a correction, not an addition. */
 const val EDIT_PAYMENT = "Edit payment"
