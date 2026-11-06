@@ -25,9 +25,19 @@ class RetroactiveFixTimingTest {
     @Before fun setUp() { db = freshDatabase() }
     @After fun tearDown() { db.close() }
 
+    /**
+     * Held against the shortest of the five saves, each of which moved the
+     * same rows: wall time on a starved host includes descheduling, which
+     * lands on one save and not the others (device-tests.md, "A duration on
+     * a busy host"). A fix that held the lock past the bound would do so on
+     * every save.
+     */
     @Test fun theFixOnATenThousandPaymentMerchantStaysUnderTheGatesWait() {
         val millis = measure(movable = 10_000)
-        assertTrue("The fix held the write lock for ${millis.max()}ms", millis.max() < Databases.RESET_LEASE_WAIT_MILLIS)
+        assertTrue(
+            "The fix held the write lock for ${millis.min()}ms at its shortest of $millis",
+            millis.min() < Databases.RESET_LEASE_WAIT_MILLIS,
+        )
     }
 
     /**

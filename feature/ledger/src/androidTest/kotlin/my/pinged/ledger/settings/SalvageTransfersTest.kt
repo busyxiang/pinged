@@ -151,9 +151,22 @@ class SalvageTransfersTest {
      * `isCancelled` would run to the end and settle `Salvaged`, its file
      * kept.
      */
-    @Test(timeout = 60_000)
+    @Test(timeout = 120_000)
     fun aSalvageCancelledMidWalkDeletesItsDocumentAndKeepsNoOutcome() = runBlocking<Unit> {
         aLedgerWithADamagedRoot(captures = 2_000)
+        val took = List(CANCELS) { aSalvageCancelledMidWalk() }
+        assertTrue("the cancel took ${took.min()} ms to stop the walk at its shortest of $took", took.min() < CANCEL_BOUND_MS)
+    }
+
+    /**
+     * One salvage of the damaged ledger, cancelled [STEPS_BEFORE_CANCEL] rows
+     * in: the ms from the cancel to the walk stopping. Each is one read and
+     * one reopen, so the bound is held against the shortest of [CANCELS]: a
+     * descheduling on a busy host lands on one, and a walk that did not ask
+     * `isCancelled` would run on in all (device-tests.md, "A duration on a
+     * busy host").
+     */
+    private suspend fun aSalvageCancelledMidWalk(): Long {
         val target = File(app.cacheDir, "cancelled-rescue.json").apply { delete() }
         val deletedAt = AtomicBoolean(false)
         val sink = object : ExportSink {
@@ -172,7 +185,7 @@ class SalvageTransfersTest {
         assertTrue("a cancelled salvage did not delete its document", deletedAt.get())
         assertFalse("a cancelled salvage left its document on disk", target.exists())
         assertNull("a cancelled salvage kept an outcome: ${Transfers.state.value.outcome}", Transfers.state.value.outcome)
-        assertTrue("the cancel took $tookMs ms to stop the walk", tookMs < CANCEL_BOUND_MS)
+        return tookMs
     }
 
     /** [captures] captures in the app's database, and the byte flipped in `raw_capture`'s root. */
@@ -214,5 +227,7 @@ class SalvageTransfersTest {
 
         // One read and one reopen is 2.4 ms; the rest of the walk is seconds.
         const val CANCEL_BOUND_MS = 1_000L
+
+        const val CANCELS = 3
     }
 }

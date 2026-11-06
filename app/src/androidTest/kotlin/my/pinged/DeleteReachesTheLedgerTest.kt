@@ -69,13 +69,13 @@ class DeleteReachesTheLedgerTest {
             assertTrue(
                 "The keyboard never opened over the sheet, so there is no " +
                     "settled layout to tap Delete in",
-                waitFor { keyboardShown() },
+                compose.waitFor { keyboardShown() },
             )
             compose.onNodeWithText("Delete").performScrollTo().performClick()
             assertTrue(
                 "The confirmed delete never emptied the database, so nothing " +
                     "below is about the ledger",
-                waitFor { runCatching { Databases.txnDao(context).countAll() }.getOrNull() == 0 },
+                compose.waitFor { runCatching { Databases.txnDao(context).countAll() }.getOrNull() == 0 },
             )
 
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
@@ -136,15 +136,6 @@ class DeleteReachesTheLedgerTest {
         }
         compose.waitForIdle()
         return shown
-    }
-
-    private fun waitFor(condition: () -> Boolean): Boolean {
-        val deadline = System.currentTimeMillis() + TIMEOUT
-        while (System.currentTimeMillis() < deadline) {
-            if (condition()) return true
-            Thread.sleep(100)
-        }
-        return condition()
     }
 
     private fun ComposeTestRule.waitFor(condition: () -> Boolean): Boolean =

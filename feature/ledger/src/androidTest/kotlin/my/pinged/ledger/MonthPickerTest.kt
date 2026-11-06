@@ -54,6 +54,7 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlin.math.abs
 
@@ -117,13 +118,24 @@ class MonthPickerTest {
         )
     }
 
-    /** The resume's re-read is the picked month's, or a trip away undoes the pick. */
+    /**
+     * The resume's re-read is the picked month's, or a trip away undoes the
+     * pick. That re-read runs off the compose clock, so `waitForIdle` can
+     * return before it lands, and a wrong one would land after the
+     * assertion: the test waits for a summary read to start after the
+     * resume and then for none to be in flight.
+     */
     @Test fun aPickSurvivesAResume() {
         pick(lastMonth)
         compose.boundedWaitUntil(TIMEOUT) { compose.onAllNodesWithTextSafely("RM12.34") > 0 }
 
+        val reads = AtomicInteger()
+        viewModel.beforeSummary = { reads.incrementAndGet() }
         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.boundedWaitUntil(TIMEOUT, "the resume's re-read of the summary") {
+            reads.get() > 0 && !viewModel.read.state.value.rereading
+        }
         compose.waitForIdle()
 
         assertEquals(

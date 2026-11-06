@@ -78,7 +78,7 @@ class AddPaymentShortcutTest {
 
     @Test fun theShortcutFromChartsOpensTheEntryOnSpendingAndBackShowsTheLedger() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            assertTrue("The app never drew its tab bar", compose.waitFor { compose.countOf(CHARTS) == 1 })
+            compose.awaitTheTabBar()
             compose.onNodeWithText(CHARTS).performClick()
             assertTrue(
                 "Charts never showed",

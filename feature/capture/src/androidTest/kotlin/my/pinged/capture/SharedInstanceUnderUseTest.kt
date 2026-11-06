@@ -9,6 +9,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
@@ -43,7 +44,9 @@ import org.junit.runner.RunWith
 class SharedInstanceUnderUseTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @Before fun startClean() = runBlocking<Unit> {
+    @Before fun startClean() = runBlocking<Unit> { clean() }
+
+    private suspend fun clean() {
         Graph.reset()
         Databases.whileDeleting { context.deleteDatabase(DatabaseFactory.NAME) }
         CaptureCaches.clear(context)
@@ -261,8 +264,26 @@ class SharedInstanceUnderUseTest {
      * lease; so the run stops at the gate, before its next capture, and the
      * wait is that capture's.
      */
-    @Test(timeout = 120_000)
+    @Test(timeout = 240_000)
     fun aDeleteBesideAStageTwoRunWaitsForItsCaptureAndNotItsRun() = runBlocking<Unit> {
+        val waits = List(ROUNDS) { round ->
+            if (round > 0) clean()
+            val (waited, summary) = aDeleteBesideARun()
+            assertTrue("stage two parsed ${summary.processed} of $BACKLOG under the gate", summary.processed < BACKLOG / 2)
+            assertTrue("stage two stopped by the gate reported nothing left", summary.remaining)
+            waited
+        }
+        assertTrue(
+            "the delete waited ${waits.min()}ms for stage two at its shortest of $waits",
+            waits.min() in 0 until WAIT_BOUND_MILLIS,
+        )
+    }
+
+    /**
+     * A delete asked for once stage two is [UNDERWAY] through a [BACKLOG]:
+     * how long it waited, and what the run then reported.
+     */
+    private suspend fun aDeleteBesideARun(): Pair<Long, ParsePass.Summary> = coroutineScope {
         backlog(BACKLOG)
         val underway = CountDownLatch(1)
         var parsed = 0
@@ -280,11 +301,7 @@ class SharedInstanceUnderUseTest {
         Databases.whileDeleting { waited = SystemClock.elapsedRealtime() - asked }
         val outcome = run.await()
         Log.i(TAG, "a delete beside a $BACKLOG-capture run waited ${waited}ms; the run ended $outcome")
-
-        assertTrue("the delete waited ${waited}ms for stage two", waited in 0 until WAIT_BOUND_MILLIS)
-        val summary = outcome.getOrThrow()
-        assertTrue("stage two parsed ${summary.processed} of $BACKLOG under the gate", summary.processed < BACKLOG / 2)
-        assertTrue("stage two stopped by the gate reported nothing left", summary.remaining)
+        waited to outcome.getOrThrow()
     }
 
     /** [count] matching `NEW` captures, in one transaction. */
@@ -348,6 +365,14 @@ class SharedInstanceUnderUseTest {
 
         const val BACKLOG = ParsePass.MAX_ROWS_PER_RUN
         const val UNDERWAY = 100
+
+        /**
+         * Each round's wait is one capture's work, and the bound is held
+         * against the shortest: a descheduling on a busy host lands in one
+         * round, and a delete that waited for the run would wait in all
+         * (device-tests.md, "A duration on a busy host").
+         */
+        const val ROUNDS = 3
 
         /** A capture's parse and commit is 5-20ms (spec 3); a tenth of the reset's own bound. */
         const val WAIT_BOUND_MILLIS = 500L

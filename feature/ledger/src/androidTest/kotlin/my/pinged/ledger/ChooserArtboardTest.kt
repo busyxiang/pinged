@@ -1,6 +1,5 @@
 package my.pinged.ledger
 
-import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -9,8 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -26,7 +23,6 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.Seed
 import my.pinged.data.dao.RetroPreview
 import my.pinged.data.entity.Category
@@ -186,25 +182,7 @@ class ChooserArtboardTest {
             }
         }
         compose.waitForIdle()
-        return settledScreen()
-    }
-
-    /**
-     * The screen once two captures a beat apart agree. `waitForIdle` returns
-     * when composition is done, not when the frame reaches the display: the
-     * class's first test read pure Paper across a tile edge the semantics
-     * tree placed correctly, the sheet still on its way up.
-     */
-    private fun settledScreen(): PixelMap {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        var last = automation.takeScreenshot()
-        repeat(20) {
-            Thread.sleep(100)
-            val next = automation.takeScreenshot()
-            if (next.sameAs(last)) return next.copy(Bitmap.Config.ARGB_8888, false).asImageBitmap().toPixelMap()
-            last = next
-        }
-        error("The screen did not settle in 2s")
+        return ArtboardProbe.settledScreen()
     }
 
     @Composable private fun Behind() = Box(Modifier.fillMaxSize().background(Paper))

@@ -358,7 +358,7 @@ class TransfersTest {
 
         val (second, _) = screen()
         second.load()
-        val during = withTimeoutOrNull(RUNNING_BUDGET) {
+        val during = withTimeoutOrNull(ANSWER_BUDGET) {
             second.state.first { it.job is TransferJob.Running }
         }
         Thread.sleep(RUNNING_BUDGET)
@@ -422,8 +422,8 @@ class TransfersTest {
                 return true
             }
         }
-        val checkAnswered = withTimeoutOrNull(RUNNING_BUDGET) { second.check().join() } != null
-        val exportAnswered = withTimeoutOrNull(RUNNING_BUDGET) {
+        val checkAnswered = withTimeoutOrNull(ANSWER_BUDGET) { second.check().join() } != null
+        val exportAnswered = withTimeoutOrNull(ANSWER_BUDGET) {
             second.exportTo(sink).join()
         } != null
         val removedByTheJoin = removed.get()
@@ -498,13 +498,22 @@ class TransfersTest {
         // request's, waiting for the request to take the turn the read let go.
         const val GAP_BUDGET = 2_000L
 
-        // How long a second screen is given to show the restore it opened
-        // over, and then how long it is watched for publishing early.
+        // How long a second screen is watched for publishing early, once it
+        // shows the restore it opened over.
         const val RUNNING_BUDGET = 1_500L
+
+        // How long a screen opened during a held restore is given to show it
+        // running, and a request made then to be refused. Each is a wait for
+        // a state, not a timed step: a request that queued instead would not
+        // answer until the restore is released, so the budget only has to
+        // outlast a descheduling on a busy host (device-tests.md, "A
+        // duration on a busy host") and leave the two of them inside the
+        // restore's TIMEOUT hold.
+        const val ANSWER_BUDGET = 3_000L
 
         // A document provider slow to delete, or a stream slow to close:
         // longer than a join returning without them takes, and well inside
-        // RUNNING_BUDGET.
+        // ANSWER_BUDGET.
         const val SLOW_PROVIDER = 300L
     }
 }

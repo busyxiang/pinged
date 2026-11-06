@@ -182,8 +182,15 @@ class ReviewWaysInTest {
             compose.awaitTheTabBar()
             compose.onNodeWithText("CHARTS").performClick()
             assertTrue("Charts never drew", compose.waitFor { compose.countOf("RM650.00") > 0 })
-            // Past the read Charts waited on, and the tab's own is no slower.
-            compose.waitForIdle()
+            // The tab's count is its own read, off the compose clock, and
+            // not known until it lands: drawn meanwhile as a dash that
+            // badges() counts. Charts' read having landed says nothing of it.
+            assertTrue(
+                "The Spending tab's count was never read",
+                compose.waitFor {
+                    compose.onAllNodesWithContentDescription(spendingBadgeDescription(null)).fetchSemanticsNodes().isEmpty()
+                },
+            )
             assertEquals("The Spending tab carries a count with nothing awaiting review", 0, compose.badges())
         }
     }
