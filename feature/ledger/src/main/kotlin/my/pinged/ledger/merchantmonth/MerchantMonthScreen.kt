@@ -12,11 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
@@ -24,13 +20,11 @@ import my.pinged.ledger.BackChevron
 import my.pinged.ledger.MonthHeader
 import my.pinged.ledger.MonthHeaderNotReadYet
 import my.pinged.ledger.RowNotReadYet
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.MerchantActions
-import my.pinged.ledger.home.MerchantSheet
-import my.pinged.ledger.home.RowCategoryChooser
-import my.pinged.ledger.home.chooserChoices
+import my.pinged.ledger.home.RowOpenings
+import my.pinged.ledger.home.rememberRowHost
 import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -57,19 +51,16 @@ import java.time.YearMonth
  * re-reads as the one it joined, and a month with nothing counted left is a
  * zero header.
  *
- * [onOpenReview] is the review inbox, from the kept-out line's *M awaiting
- * review* with the first held row of this merchant and month, or from a
- * row's badge with its own. [onOpenEntry] and [onOpenDetail] are a row's
- * body, as on Day.
+ * [openings] is where a row's body leads, as on Day, and the review inbox,
+ * from the kept-out line's *M awaiting review* with the first row of this
+ * merchant and month awaiting review, or from a row's badge with its own.
  */
 @Composable
 fun MerchantMonthScreen(
     viewModel: MerchantMonthViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenReview: (focus: Long?) -> Unit = {},
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings = RowOpenings.None,
 ) {
     val read = viewModel.read.rememberReadState()
     MerchantMonthScreenContent(
@@ -81,9 +72,7 @@ fun MerchantMonthScreen(
         categories = viewModel.rows,
         merchants = viewModel.rows,
         modifier = modifier,
-        onOpenReview = onOpenReview,
-        onOpenEntry = onOpenEntry,
-        onOpenDetail = onOpenDetail,
+        openings = openings,
     )
 }
 
@@ -97,18 +86,17 @@ internal fun MerchantMonthScreenContent(
     categories: CategoryActions,
     merchants: MerchantActions,
     modifier: Modifier = Modifier,
-    onOpenReview: (focus: Long?) -> Unit = {},
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings = RowOpenings.None,
     today: LocalDate = LocalDate.now(),
     /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
     replacing: Boolean = false,
 ) {
-    // Hoisted out of the list for the reason `LedgerScreenContent` gives.
-    var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
-    val chooser = read?.chooser
-    val choices = remember(chooser) { chooser?.let(::chooserChoices).orEmpty() }
-    val categoriesById = remember(chooser) { chooser?.categories.orEmpty().associateBy { it.id } }
+    val host = rememberRowHost(
+        chooser = read?.chooser,
+        findRow = { id -> read?.rows?.firstOrNull { it.txn.id == id } },
+        categories = categories,
+        merchants = merchants,
+    )
     val view = remember(read) { read?.let(::merchantMonth) }
     val refused = storageUnavailable || replacing
 
@@ -128,21 +116,19 @@ internal fun MerchantMonthScreenContent(
                 replacing -> item { Notice(REPLACING_YOUR_DATA) }
                 storageUnavailable || read == null || view == null -> item { Notice(CANNOT_READ_YOUR_DATA) }
                 else -> {
-                    item { MonthHeader(view.name, iconKey = null, view.figures) { onOpenReview(read.firstHeld) } }
+                    item { MonthHeader(view.name, iconKey = null, view.figures) { openings.openReview(read.firstHeld) } }
                     item { TornEdge(Modifier.background(Paper).padding(top = 20.dp)) }
                     item { Spacer(Modifier.height(14.dp)) }
                     items(read.rows, key = { "txn-" + it.txn.id }) { row ->
                         Box {
                             LedgerRow(
                                 row = row,
-                                categoriesById = categoriesById,
+                                categoriesById = host.categoriesById,
                                 uncategorizedId = read.chooser.uncategorizedId,
-                                canCategorize = choices.isNotEmpty(),
-                                onCategorize = { categorizing = it },
+                                canCategorize = host.canCategorize,
+                                onCategorize = host::categorize,
                                 onOpenMerchant = { merchants.openMerchant(it) },
-                                onOpenReview = onOpenReview,
-                                onOpenEntry = onOpenEntry,
-                                onOpenDetail = onOpenDetail,
+                                openings = openings,
                                 greyed = view.figures.greyed,
                             )
                         }
@@ -153,18 +139,7 @@ internal fun MerchantMonthScreenContent(
         }
     }
 
-    // Found among the rows read, for the reason `LedgerScreenContent` gives.
-    val chosen = categorizing
-    val chosenRow = chosen?.let { id -> read?.rows?.firstOrNull { it.txn.id == id } }
-    if (chosen != null && chosenRow != null && chooser != null && choices.isNotEmpty()) {
-        RowCategoryChooser(
-            row = chosenRow,
-            chooser = chooser,
-            actions = categories,
-            onClose = { categorizing = null },
-        )
-    }
-    MerchantSheet(merchants)
+    host.Sheets()
 }
 
 @Composable

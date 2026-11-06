@@ -33,7 +33,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.data.LocalDate
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
@@ -70,11 +69,8 @@ import my.pinged.ui.theme.dashedOutline
  * equals no row's `category_id`, which is the honest answer there: nothing
  * knows which rows are uncategorized, so no row is claimed to be.
  *
- * [onOpenEntry] is spec 9.4's edit screen (#105), offered on a manual
- * entry's body. [onOpenDetail] is a captured row's detail screen (#153),
- * offered on its body whatever its state: what Pinged read is worth seeing on
- * a held row too, and the screen offers only the answers the row can take.
- * Either is null where the screen routes nowhere.
+ * [openings] is where the row's body and its awaiting-review badge lead; which screen
+ * the body opens is [RowOpenings.open]'s to decide.
  *
  * [greyed] draws the amount in the untrusted grey (#73), for a screen whose
  * every figure greys in a month with a day not captured: Breakdown's (#342).
@@ -87,18 +83,15 @@ internal fun LedgerRow(
     canCategorize: Boolean,
     onCategorize: (txnId: Long) -> Unit,
     onOpenMerchant: (MerchantOpening) -> Unit,
-    onOpenReview: (txnId: Long) -> Unit,
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings,
     greyed: Boolean = false,
 ) {
     val txn = row.txn
-    val manual = txn.rawCaptureId == null
     TxnRow(
         txn = txn,
         name = row.displayName,
-        onOpen = (if (manual) onOpenEntry else onOpenDetail)?.let { open -> { open(EditTarget(txn.id, txn.createdAt)) } },
-        openLabel = if (manual) EDIT_ENTRY else OPEN_DETAIL,
+        onOpen = { openings.open(row) },
+        openLabel = openings.label(row),
         onOpenMerchant = txn.merchantKey?.let { key -> { onOpenMerchant(MerchantOpening(key, row.displayName ?: key, txn.localDate)) } },
         category = categoriesById[txn.categoryId],
         uncategorized = txn.categoryId == uncategorizedId,
@@ -107,7 +100,7 @@ internal fun LedgerRow(
         } else {
             null
         },
-        onOpenReview = { onOpenReview(txn.id) },
+        onOpenReview = { openings.openReview(txn.id) },
         greyed = greyed,
     )
 }
@@ -221,7 +214,7 @@ internal fun RowCategoryChooser(
 private fun TxnRow(
     txn: Txn,
     name: String?,
-    onOpen: (() -> Unit)?,
+    onOpen: () -> Unit,
     openLabel: String,
     onOpenMerchant: (() -> Unit)?,
     category: Category?,
@@ -352,9 +345,7 @@ internal const val OPEN_DETAIL = "Show what Pinged read"
  *
  * The sheet is a long press, not a tap, so that it cannot be mistaken for
  * the uncategorized chip inside the same row. Both go through one
- * `pointerInput` rather than `combinedClickable`, which would make every
- * row a tap target, one on a screen that routes the tap nowhere included.
- * The chip, the small print and the badge are clickables of their own: they
+ * `pointerInput`, the long press only on a row with a merchant. The chip, the small print and the badge are clickables of their own: they
  * consume their tap, so it never reaches [onOpen]. The semantics actions are
  * what a screen reader offers instead, since a long press is a gesture
  * TalkBack does not pass through as one.
@@ -374,16 +365,15 @@ internal const val OPEN_DETAIL = "Show what Pinged read"
  * taps the name and reaches the row. Grown to 44dp in layout instead, a
  * categorised row measured 85dp against 57dp.
  */
-private fun Modifier.rowGestures(onOpen: (() -> Unit)?, openLabel: String, onOpenMerchant: (() -> Unit)?): Modifier =
-    if (onOpen == null && onOpenMerchant == null) this else this
-        .pointerInput(onOpen, onOpenMerchant) {
-            detectTapGestures(
-                onTap = onOpen?.let { open -> { open() } },
-                onLongPress = onOpenMerchant?.let { open -> { open() } },
-            )
-        }
+private fun Modifier.rowGestures(onOpen: () -> Unit, openLabel: String, onOpenMerchant: (() -> Unit)?): Modifier =
+    pointerInput(onOpen, onOpenMerchant) {
+        detectTapGestures(
+            onTap = { onOpen() },
+            onLongPress = onOpenMerchant?.let { open -> { open() } },
+        )
+    }
         .semantics {
-            if (onOpen != null) onClick(label = openLabel) { onOpen(); true }
+            onClick(label = openLabel) { onOpen(); true }
             if (onOpenMerchant != null) onLongClick(label = EDIT_MERCHANT) { onOpenMerchant(); true }
         }
 

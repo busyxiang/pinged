@@ -26,10 +26,16 @@ import my.pinged.ledger.MERCHANT
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.FakeMerchantActions
+import my.pinged.ledger.home.RecordingOpenings
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.PingedTheme
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performTouchInput
+import my.pinged.ledger.SOURCE_LABEL
+import my.pinged.ledger.home.NAME_HEADING
+import my.pinged.ledger.home.PICKER_HEADING
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -69,7 +75,8 @@ class BreakdownScreenContentTest {
     )
 
     private val toggled = mutableListOf<LineKey>()
-    private val reviewed = mutableListOf<Long?>()
+    private val recording = RecordingOpenings()
+    private val reviewed get() = recording.reviewed
     private var gone = 0
 
     private fun draw(read: BreakdownRead, expanded: Set<LineKey> = emptySet()) {
@@ -84,8 +91,8 @@ class BreakdownScreenContentTest {
                     onGone = { gone++ },
                     onToggle = { toggled += it },
                     categories = FakeCategoryActions(),
-                    merchants = FakeMerchantActions(),
-                    onOpenReview = { reviewed += it },
+                    merchants = FakeMerchantActions(publishesSheet = true),
+                    openings = recording.openings,
                 )
             }
         }
@@ -161,6 +168,32 @@ class BreakdownScreenContentTest {
 
         assertEquals(Ink, colour(compose.onNodeWithText("3 TRANSACTIONS")))
         assertEquals(Ink, colour(compose.onNodeWithText("71.40", useUnmergedTree = true)))
+    }
+
+    // ---- a row: its chooser, its merchant sheet, its own screen (#377) ----
+
+    @Test fun aRowsCategoryLineOpensTheChooserOverTheScreen() {
+        draw(read(rows = mapOf(warung to listOf(row(11L, 3_700L)))), expanded = setOf(warung))
+
+        compose.onNodeWithText("Food & Drinks · $SOURCE_LABEL").performScrollTo().performClick()
+
+        compose.onNodeWithText(PICKER_HEADING).assertExists()
+    }
+
+    @Test fun aLongPressOnARowOpensItsMerchantSheetOverTheScreen() {
+        draw(read(rows = mapOf(warung to listOf(row(11L, 3_700L)))), expanded = setOf(warung))
+
+        compose.onNode(hasText("37.00") and hasAnyAncestor(hasTestTag(EXPANSION))).performScrollTo().performTouchInput { longClick() }
+
+        compose.onNodeWithText(NAME_HEADING).assertExists()
+    }
+
+    @Test fun aTapOnARowOpensItThroughTheOpenings() {
+        draw(read(rows = mapOf(warung to listOf(row(11L, 3_700L)))), expanded = setOf(warung))
+
+        compose.onNode(hasText("37.00") and hasAnyAncestor(hasTestTag(EXPANSION))).performScrollTo().performClick()
+
+        assertEquals("The row's tap did not reach the openings", listOf(11L), recording.opened)
     }
 
     private fun line(name: String) = compose.onNode(hasText(name) and hasClickAction()).performScrollTo()

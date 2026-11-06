@@ -20,11 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,15 +38,13 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.MerchantActions
-import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.OPEN_REVIEW
-import my.pinged.ledger.home.RowCategoryChooser
-import my.pinged.ledger.home.chooserChoices
+import my.pinged.ledger.home.RowOpenings
+import my.pinged.ledger.home.rememberRowHost
 import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.RowNotReadYet
 import my.pinged.read.LedgerAccess
@@ -88,21 +81,17 @@ import java.time.format.TextStyle as JavaTextStyle
  * Re-read on each foreground and when a delete or restore rewrites the ledger,
  * as the Ledger's aggregates are.
  *
- * [onOpenReview] is the review inbox (§9.2), from a row's badge with that
- * row's id or from the heading's *M awaiting review* with the day's first
- * held row's; `:app` routes it, as it does Charts' `onDayClick`.
- * [onOpenEntry] is a manual entry's edit screen (#105), from its row's body,
- * and [onOpenDetail] a captured row's detail screen (#153). [onStep] opens
- * the day before or after (#228); null draws no steps.
+ * [openings] is where a row's body leads, and its review inbox (§9.2) from
+ * a row's badge with that row's id or from the heading's *M awaiting review*
+ * with the day's first row awaiting review. [onStep] opens the day before or after
+ * (#228); null draws no steps.
  */
 @Composable
 fun DayScreen(
     viewModel: DayViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenReview: (focus: Long?) -> Unit = {},
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings = RowOpenings.None,
     onStep: ((LocalDate) -> Unit)? = null,
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
@@ -113,9 +102,7 @@ fun DayScreen(
         storageUnavailable = read.ledger == LedgerAccess.Unreadable,
         replacing = read.ledger == LedgerAccess.BeingReplaced,
         onBack = onBack,
-        onOpenReview = onOpenReview,
-        onOpenEntry = onOpenEntry,
-        onOpenDetail = onOpenDetail,
+        openings = openings,
         onStep = onStep,
         categories = viewModel.rows,
         merchants = viewModel.rows,
@@ -133,19 +120,18 @@ internal fun DayScreenContent(
     categories: CategoryActions,
     merchants: MerchantActions,
     modifier: Modifier = Modifier,
-    onOpenReview: (focus: Long?) -> Unit = {},
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings = RowOpenings.None,
     onStep: ((LocalDate) -> Unit)? = null,
     today: LocalDate = LocalDate.now(),
     /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
     replacing: Boolean = false,
 ) {
-    // Hoisted out of the list for the reason `LedgerScreenContent` gives.
-    var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
-    val chooser = read?.chooser
-    val choices = remember(chooser) { chooser?.let(::chooserChoices).orEmpty() }
-    val categoriesById = remember(chooser) { chooser?.categories.orEmpty().associateBy { it.id } }
+    val host = rememberRowHost(
+        chooser = read?.chooser,
+        findRow = { id -> read?.rows?.firstOrNull { it.txn.id == id } },
+        categories = categories,
+        merchants = merchants,
+    )
 
     // Card under a read day, its summary items laying Paper over it, so the
     // board's Card runs from the torn edge to the foot however few rows. A
@@ -172,21 +158,19 @@ internal fun DayScreenContent(
                 // the inbox's newest-first order too, so the inbox opens on
                 // the first of this day's cards.
                 val firstHeld = read.rows.firstOrNull { it.txn.state == TxnState.PENDING }?.txn?.id
-                item { Heading(read.heading) { onOpenReview(firstHeld) } }
+                item { Heading(read.heading) { openings.openReview(firstHeld) } }
                 item { TornEdge(Modifier.background(Paper).padding(top = 20.dp).testTag(DAY_TORN_EDGE)) }
                 item { Spacer(Modifier.height(14.dp)) }
                 items(read.rows, key = { "txn-" + it.txn.id }) { row ->
                     Box {
                         LedgerRow(
                             row = row,
-                            categoriesById = categoriesById,
+                            categoriesById = host.categoriesById,
                             uncategorizedId = read.chooser.uncategorizedId,
-                            canCategorize = choices.isNotEmpty(),
-                            onCategorize = { categorizing = it },
+                            canCategorize = host.canCategorize,
+                            onCategorize = host::categorize,
                             onOpenMerchant = { merchants.openMerchant(it) },
-                            onOpenReview = onOpenReview,
-                            onOpenEntry = onOpenEntry,
-                            onOpenDetail = onOpenDetail,
+                            openings = openings,
                         )
                     }
                 }
@@ -194,19 +178,7 @@ internal fun DayScreenContent(
         }
     }
 
-    // Found among the rows read rather than saved with the id, for the reason
-    // `LedgerScreenContent` gives; a row not read draws no sheet.
-    val chosen = categorizing
-    val chosenRow = chosen?.let { id -> read?.rows?.firstOrNull { it.txn.id == id } }
-    if (chosen != null && chosenRow != null && chooser != null && choices.isNotEmpty()) {
-        RowCategoryChooser(
-            row = chosenRow,
-            chooser = chooser,
-            actions = categories,
-            onClose = { categorizing = null },
-        )
-    }
-    MerchantSheet(merchants)
+    host.Sheets()
 }
 
 /**

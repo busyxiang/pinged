@@ -36,8 +36,8 @@ import my.pinged.data.entity.Category
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.CATEGORY_CHIP
-import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.FakeCategoryActions
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.LedgerRead
@@ -1019,42 +1019,6 @@ class LedgerScreenTest {
     }
 
     /**
-     * The wiring, isolated: which row and which category the chip reports.
-     *
-     * [assigningACategoryFromTheChipMovesTheRowAndTheSummary] cannot see this
-     * -- one row and one chosen category agree with a screen that hardcoded
-     * either. The row id here is a fixture value the screen has no other way
-     * to know.
-     */
-    @Test fun choosingFromThePickerReportsTheRowItWasOpenedFromAndTheCategoryChosen() {
-        val row = LedgerItem.Row(
-            ledgerTxn(amountSen = 1_234L, localDate = SEP_7, categoryId = UNCATEGORIZED_ID, id = 77L),
-        )
-        val chooser = FakeCategoryActions()
-        content(
-            items = listOf(LedgerItem.DayHeader(SEP_7, row.txn.id), row),
-            refresh = LoadState.NotLoading(true),
-            categories = TWO_CATEGORIES,
-            uncategorizedId = UNCATEGORIZED_ID,
-            chooser = chooser,
-        )
-        compose.waitForText("12.34", "The row was never drawn")
-
-        compose.onNodeWithText(CATEGORY_CHIP).performClick()
-        compose.waitForText("Groceries", "The chip did not open the picker")
-        compose.onNodeWithText("Groceries").performClick()
-        compose.onNodeWithText(SAVE_LABEL).performClick()
-
-        assertEquals(
-            "The chip reported the wrong row, the wrong category, or fired " +
-                "more than once -- and a chip that assigns the category of a " +
-                "row the user did not tap is worse than one that does nothing",
-            listOf(77L to 42L),
-            chooser.assigned.map { (txnId, categoryId) -> txnId to categoryId },
-        )
-    }
-
-    /**
      * No `Uncategorized` row in `category`, so no chip.
      *
      * The seed puts the row there and only an import can take it away. The
@@ -1084,88 +1048,6 @@ class LedgerScreenTest {
     }
 
     /**
-     * `Uncategorized` is not one of the things the sheet offers.
-     *
-     * The chip is drawn on an uncategorized row and nowhere else, so tapping
-     * `Uncategorized` in the sheet it opens is the natural "never mind" -- and
-     * it is not a no-op. `setCategory` writes `user_edited = 1`, and §5.5
-     * excludes an edited transaction from the re-parse comparison entirely, so
-     * that one tap opts the row out of every future pack fix while nothing on
-     * screen changes.
-     *
-     * The category is in [categories] here under the id the screen is told is
-     * the uncategorized one, so the only thing that can keep it off the sheet
-     * is the filter.
-     */
-    @Test fun thePickerDoesNotOfferTheCategoryTheRowIsAlreadyIn() {
-        val row = LedgerItem.Row(
-            ledgerTxn(amountSen = 1_234L, localDate = SEP_7, categoryId = UNCATEGORIZED_ID, id = 77L),
-        )
-        content(
-            items = listOf(LedgerItem.DayHeader(SEP_7, row.txn.id), row),
-            refresh = LoadState.NotLoading(true),
-            categories = TWO_CATEGORIES + SEEDED_UNCATEGORIZED,
-            uncategorizedId = UNCATEGORIZED_ID,
-        )
-        compose.waitForText("12.34", "The row was never drawn")
-
-        compose.onNodeWithText(CATEGORY_CHIP).performClick()
-        compose.waitForText(PICKER_HEADING, "The chip did not open the picker")
-        compose.waitForText(
-            "Groceries",
-            "The picker opened and drew none of the categories it was handed",
-        )
-
-        assertEquals(
-            "The picker offers Uncategorized on a row that is already in it. " +
-                "Choosing it writes user_edited = 1, and §5.5 excludes an " +
-                "edited row from the re-parse comparison for good -- so the " +
-                "tap that looks like backing out is the one that opts the " +
-                "transaction out of every future pack fix",
-            0,
-            compose.onAllNodesWithTextSafely(UNCATEGORIZED),
-        )
-    }
-
-    /**
-     * Nothing left to offer, so no chip.
-     *
-     * The guard on the filter above. With `Uncategorized` the only category in
-     * the table the picker has no row to draw, so a chip here would take the
-     * tap and open nothing. Gated at the chip and not only at the sheet, so
-     * the tap has nowhere to go rather than nowhere to land.
-     *
-     * Only an import can produce this table -- §4's editor is out and
-     * `deleteIfUnused` refuses a protected category -- which is the same
-     * reachability as [aChipIsNotDrawnWhileTheUncategorizedIdIsUnknown]'s
-     * missing seed row, and the reason both degrade the same way. The sheet
-     * keeps its own gate for the restore path, where `categorizing` comes back
-     * from `rememberSaveable` before the first refresh has delivered a
-     * category; nothing driving `LedgerScreenContent` can reach that.
-     */
-    @Test fun noChipIsDrawnWhenTheOnlyCategoryIsTheOneTheRowIsIn() {
-        val row = LedgerItem.Row(
-            ledgerTxn(amountSen = 1_234L, localDate = SEP_7, categoryId = UNCATEGORIZED_ID, id = 77L),
-        )
-        content(
-            items = listOf(LedgerItem.DayHeader(SEP_7, row.txn.id), row),
-            refresh = LoadState.NotLoading(true),
-            categories = listOf(SEEDED_UNCATEGORIZED),
-            uncategorizedId = UNCATEGORIZED_ID,
-        )
-        compose.waitForText("12.34", "The row was never drawn")
-
-        assertEquals(
-            "A chip is drawn on a row whose category is the only one there " +
-                "is. The picker drops the row's own category, so the sheet " +
-                "it would open has nothing in it -- and the tap sets " +
-                "`categorizing` and shows the user nothing at all",
-            0,
-            compose.onAllNodesWithTextSafely(CATEGORY_CHIP),
-        )
-    }
-
-    /**
      * A row nothing can be assigned to still reads as the uncategorized row it
      * is.
      *
@@ -1176,8 +1058,8 @@ class LedgerScreenTest {
      * nothing left to offer draws the row as though it were filed, and
      * `Uncategorized` is precisely where it is not filed.
      *
-     * The fixture is [noChipIsDrawnWhenTheOnlyCategoryIsTheOneTheRowIsIn]'s,
-     * and this is the other half of it: that one says the chip is withheld,
+     * The fixture is the one `RowHostTest.noChipIsOfferedWhenTheRowsOwnCategoryIsTheOnlyOne`
+     * draws, and this is the other half of it: that one says the chip is withheld,
      * this one says withholding it does not re-label the row. The same flag
      * feeds `rowMark`, whose glyph is decorative and so has nothing on screen
      * to assert on -- `RowMarkRuleTest` covers the rule, and this covers what
@@ -1600,7 +1482,13 @@ class LedgerScreenTest {
     private fun screen(onOpenReview: (focus: Long?) -> Unit = {}) {
         val viewModel = ledgerViewModel()
         compose.setContent {
-            PingedTheme { LedgerScreen(viewModel = viewModel, onOpenSettings = {}, onOpenReview = onOpenReview) }
+            PingedTheme {
+                LedgerScreen(
+                    viewModel = viewModel,
+                    onOpenSettings = {},
+                    openings = RowOpenings(openEntry = {}, openDetail = {}, openReview = onOpenReview),
+                )
+            }
         }
     }
 
@@ -1665,7 +1553,6 @@ class LedgerScreenTest {
         storageUnavailable: Boolean = false,
         categories: List<Category> = emptyList(),
         uncategorizedId: Long? = null,
-        chooser: CategoryActions = FakeCategoryActions(),
         onOpenSettings: () -> Unit = {},
         heard: String? = null,
         picked: YearMonth? = null,
@@ -1694,7 +1581,7 @@ class LedgerScreenTest {
                     items = flow.collectAsLazyPagingItems(),
                     read = read,
                     storageUnavailable = storageUnavailable,
-                    categories = chooser,
+                    categories = FakeCategoryActions(),
                     merchants = FakeMerchantActions(),
                     onOpenSettings = onOpenSettings,
                     heard = heard,

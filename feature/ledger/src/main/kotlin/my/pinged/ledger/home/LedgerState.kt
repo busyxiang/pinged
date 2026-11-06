@@ -195,7 +195,7 @@ data class LedgerRead(
      */
     val awaitingReviewInMonth: Int = 0,
 ) {
-    /** The chooser's half of this read, for `RowCategoryChooser`. */
+    /** The chooser's half of this read, for the screen's `RowHost`. */
     val chooser: ChooserRead
         get() = ChooserRead(categories, uncategorizedId, filer)
 }

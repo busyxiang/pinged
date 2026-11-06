@@ -62,6 +62,7 @@ import my.pinged.ledger.AppViewModelFactory
 import my.pinged.ledger.home.BackupReminder
 import my.pinged.ledger.home.LedgerScreen
 import my.pinged.ledger.home.LedgerViewModel
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.onboarding.OnboardingScreen
 import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
@@ -156,6 +157,15 @@ class MainActivity : ComponentActivity() {
                     SourcesLineActions(
                         openSources = { tabs.push(Sources) },
                         openUnread = { source -> tabs.push(Unread(only = source)) },
+                    )
+                }
+                // Where a ledger row leads, on every screen that lists rows:
+                // onto the current tab's stack, so Back returns to the list.
+                val openings = remember(tabs) {
+                    RowOpenings(
+                        openEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
+                        openDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                        openReview = { focus -> tabs.push(Review(focus)) },
                     )
                 }
                 val predictivePop = defaultPredictivePopTransitionSpec<NavKey>()
@@ -263,12 +273,10 @@ class MainActivity : ComponentActivity() {
                                         // allow-list is a row inside settings
                                         // (spec 9.5).
                                         onOpenSettings = tabs::showSettings,
-                                        // The pinned row passes null, a row's
-                                        // badge its own id.
-                                        onOpenReview = { focus -> tabs.push(Review(focus)) },
+                                        // The pinned row opens the review inbox
+                                        // with no focus, a row's badge on its own id.
+                                        openings = openings,
                                         onAddPayment = { tabs.push(ManualEntry()) },
-                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
-                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                         onOpenSearch = { tabs.push(Search()) },
                                         onOpenToSort = { month, id -> tabs.push(Search(month.toString(), id)) },
                                         sourcesLine = sourcesLine,
@@ -302,8 +310,7 @@ class MainActivity : ComponentActivity() {
                                         // The same expression NavDisplay's onBack
                                         // is given; see `pop`.
                                         onBack = tabs::pop,
-                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
-                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                        openings = openings,
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
@@ -370,9 +377,7 @@ class MainActivity : ComponentActivity() {
                                         // is given; see `pop`.
                                         onBack = tabs::pop,
                                         modifier = Modifier.fillMaxSize(),
-                                        onOpenReview = { focus -> tabs.push(Review(focus)) },
-                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
-                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                        openings = openings,
                                     )
                                 }
                                 entry<Breakdown> { key ->
@@ -390,9 +395,7 @@ class MainActivity : ComponentActivity() {
                                         // A category deleted or merged since: back to Charts.
                                         onGone = tabs::pop,
                                         modifier = Modifier.fillMaxSize(),
-                                        onOpenReview = { focus -> tabs.push(Review(focus)) },
-                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
-                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                        openings = openings,
                                     )
                                 }
                                 entry<Day> { key ->
@@ -407,11 +410,7 @@ class MainActivity : ComponentActivity() {
                                         // is given; see `pop`.
                                         onBack = tabs::pop,
                                         modifier = Modifier.fillMaxSize(),
-                                        onOpenReview = { focus -> tabs.push(Review(focus)) },
-                                        // Onto the current stack, Charts', as
-                                        // Review is: back returns to this day.
-                                        onOpenEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
-                                        onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
+                                        openings = openings,
                                         // In place of this day, so Back from
                                         // any day stepped to is Charts.
                                         onStep = { date -> tabs.replaceTop(Day(date.toString())) },

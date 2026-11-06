@@ -35,9 +35,11 @@ internal class FakeCategoryActions(
 /**
  * The merchant sheet's half for a screen test: [sheet] stays drawn whatever
  * is tapped, each call is recorded, and the ledger is being replaced while
- * [busy] holds an operation.
+ * [busy] holds an operation. With [publishesSheet], an opening also publishes a sheet
+ * read for it, named as the row named it, so a test can see that the screen
+ * draws the sheet it asked for.
  */
-internal class FakeMerchantActions(sheet: OpenMerchantSheet? = null) : MerchantActions {
+internal class FakeMerchantActions(sheet: OpenMerchantSheet? = null, private val publishesSheet: Boolean = false) : MerchantActions {
     override val merchantSheet = MutableStateFlow(sheet)
 
     override val busy = MutableStateFlow<LedgerReplacement?>(null)
@@ -51,6 +53,22 @@ internal class FakeMerchantActions(sheet: OpenMerchantSheet? = null) : MerchantA
 
     override fun openMerchant(opening: MerchantOpening): Job {
         opened += opening
+        if (publishesSheet) {
+            merchantSheet.value = OpenMerchantSheet(
+                opening,
+                MerchantSheetState(
+                    ownKey = opening.ownKey,
+                    identityKey = opening.ownKey,
+                    name = opening.name,
+                    derivedName = opening.name,
+                    txnCount = 1,
+                    mergedInto = null,
+                    members = emptyList(),
+                    others = emptyList(),
+                    suggested = emptySet(),
+                ),
+            )
+        }
         return done()
     }
 
@@ -72,4 +90,15 @@ internal class FakeMerchantActions(sheet: OpenMerchantSheet? = null) : MerchantA
         separated += key
         return done()
     }
+}
+
+/**
+ * Where a screen's rows lead, for a screen test: each row opened, by id,
+ * whichever screen [RowOpenings.open] chose for it -- `RowOpeningsTest` is
+ * where that choice is asserted -- and each review asked for.
+ */
+internal class RecordingOpenings {
+    val opened = mutableListOf<Long>()
+    val reviewed = mutableListOf<Long?>()
+    val openings = RowOpenings(openEntry = { opened += it.id }, openDetail = { opened += it.id }, openReview = { reviewed += it })
 }

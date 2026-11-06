@@ -32,6 +32,7 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.CATEGORY_CHIP
 import my.pinged.ledger.home.LedgerRow
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.home.awaitingReviewBadge
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.Separator
@@ -112,8 +113,7 @@ class RowTouchTargetTest {
                                 canCategorize = canCategorize,
                                 onCategorize = { categorized++ },
                                 onOpenMerchant = {},
-                                onOpenReview = { reviewed++ },
-                                onOpenDetail = { opened++ },
+                                openings = RowOpenings(openEntry = {}, openDetail = { opened++ }, openReview = { reviewed++ }),
                             )
                         }
                     }

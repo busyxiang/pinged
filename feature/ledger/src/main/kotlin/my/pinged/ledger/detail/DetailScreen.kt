@@ -65,12 +65,10 @@ import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.HeroSerif
 import my.pinged.ledger.home.MerchantActions
-import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.MerchantOpening
 import my.pinged.ledger.home.RemoveSheet
-import my.pinged.ledger.home.RowCategoryChooser
+import my.pinged.ledger.home.rememberRowHost
 import my.pinged.ledger.home.UnderlinedField
-import my.pinged.ledger.home.chooserChoices
 import my.pinged.ledger.home.notSpendingBadge
 import my.pinged.parse.Direction
 import my.pinged.ui.CALENDAR
@@ -184,11 +182,16 @@ internal fun DetailScreenContent(
     zone: ZoneId = ZoneId.systemDefault(),
 ) {
     val busy = ledger.withholding
-    var categorizing by rememberSaveable { mutableStateOf(false) }
     var removing by rememberSaveable { mutableStateOf(false) }
     val row = read?.row
-    val chooser = read?.chooser
-    val choices = remember(chooser) { chooser?.let(::chooserChoices).orEmpty() }
+    val host = rememberRowHost(
+        chooser = read?.chooser,
+        findRow = { id -> row?.row?.takeIf { it.txn.id == id } },
+        categories = categories,
+        merchants = merchants,
+        // Detail offers no New category tile; whether it should is undecided (#307).
+        offerNewCategory = false,
+    )
 
     Column(modifier.fillMaxSize().background(Paper).verticalScroll(rememberScrollState())) {
         Header(onBack)
@@ -203,8 +206,8 @@ internal fun DetailScreenContent(
                 DetailBody(
                     row = row,
                     zone = zone,
-                    canCategorize = choices.isNotEmpty() && !row.row.txn.isExcluded,
-                    onCategorize = { categorizing = true },
+                    canCategorize = host.canCategorize && !row.row.txn.isExcluded,
+                    onCategorize = { host.categorize(row.row.txn.id) },
                     onRemove = { removing = true },
                     actions = actions,
                     merchants = merchants,
@@ -214,16 +217,6 @@ internal fun DetailScreenContent(
         }
     }
 
-    if (categorizing && row != null && chooser != null && choices.isNotEmpty()) {
-        RowCategoryChooser(
-            row = row.row,
-            chooser = chooser,
-            actions = categories,
-            onClose = { categorizing = false },
-            // Detail offers no New category tile; whether it should is undecided (#307).
-            addCategory = null,
-        )
-    }
     if (removing && row != null) {
         RemoveSheet(
             row = row.row,
@@ -235,7 +228,7 @@ internal fun DetailScreenContent(
             enabled = busy == null,
         )
     }
-    MerchantSheet(merchants)
+    host.Sheets()
 }
 
 /** The chevron, and the artboard's eyebrow at the right. */

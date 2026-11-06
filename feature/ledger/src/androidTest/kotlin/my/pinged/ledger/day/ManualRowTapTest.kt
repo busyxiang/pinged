@@ -20,6 +20,7 @@ import my.pinged.ledger.freshLedger
 import my.pinged.ledger.home.CATEGORY_CHIP
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.PICKER_HEADING
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.test.boundedWaitUntil
 import my.pinged.ui.theme.PingedTheme
@@ -107,7 +108,7 @@ class ManualRowTapTest {
             LaunchedEffect(viewModel) {
                 viewModel.read.state.collect { if (Looper.myLooper() != Looper.getMainLooper()) offMain.incrementAndGet() }
             }
-            PingedTheme { DayScreen(viewModel, onBack = {}, onOpenEntry = { opened += it.id }) }
+            PingedTheme { DayScreen(viewModel, onBack = {}, openings = RowOpenings(openEntry = { opened += it.id }, openDetail = {}, openReview = {})) }
         }
     }
 

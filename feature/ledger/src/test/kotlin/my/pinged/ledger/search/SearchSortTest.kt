@@ -16,6 +16,7 @@ import my.pinged.ledger.home.CATEGORY_CHIP as ROW_CATEGORY_CHIP
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.PICKER_HEADING
+import my.pinged.ledger.home.RecordingOpenings
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
@@ -41,7 +42,8 @@ class SearchSortTest {
     private val filed = ledgerTxn(650L, categoryId = groceries.id, id = 3L)
 
     private val categories = FakeCategoryActions()
-    private val opened = mutableListOf<Long>()
+    private val recording = RecordingOpenings()
+    private val opened get() = recording.opened
 
     private fun draw() = compose.setContent {
         PingedTheme {
@@ -59,7 +61,7 @@ class SearchSortTest {
                 storageUnavailable = false,
                 onBack = {},
                 onOpenSheet = {},
-                onOpenDetail = { opened += it.id },
+                openings = recording.openings,
                 categories = categories,
             )
         }

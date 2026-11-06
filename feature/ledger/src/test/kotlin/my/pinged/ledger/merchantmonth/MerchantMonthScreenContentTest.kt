@@ -24,6 +24,7 @@ import my.pinged.ledger.MERCHANT
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.FakeMerchantActions
+import my.pinged.ledger.home.RecordingOpenings
 import my.pinged.ledger.home.HERO_NOT_READ_YET
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ledger.ledgerTxn
@@ -33,6 +34,12 @@ import my.pinged.ui.theme.Muted
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.READING
 import my.pinged.ui.theme.READING_DELAY_MILLIS
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import my.pinged.ledger.SOURCE_LABEL
+import my.pinged.ledger.home.NAME_HEADING
+import my.pinged.ledger.home.PICKER_HEADING
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -71,7 +78,8 @@ class MerchantMonthScreenContentTest {
         chooser = ChooserRead(categories = listOf(food, groceries)),
     )
 
-    private val reviewed = mutableListOf<Long?>()
+    private val recording = RecordingOpenings()
+    private val reviewed get() = recording.reviewed
 
     private fun draw(read: MerchantMonthRead?) {
         compose.setContent {
@@ -82,8 +90,8 @@ class MerchantMonthScreenContentTest {
                     storageUnavailable = false,
                     onBack = {},
                     categories = FakeCategoryActions(),
-                    merchants = FakeMerchantActions(),
-                    onOpenReview = { reviewed += it },
+                    merchants = FakeMerchantActions(publishesSheet = true),
+                    openings = recording.openings,
                 )
             }
         }
@@ -123,6 +131,32 @@ class MerchantMonthScreenContentTest {
 
         assertEquals(Ink, colour("2 TRANSACTIONS"))
         assertEquals(Ink, colour("37.00"))
+    }
+
+    // ---- a row: its chooser, its merchant sheet, its own screen (#377) ----
+
+    @Test fun aRowsCategoryLineOpensTheChooserOverTheScreen() {
+        draw(read())
+
+        compose.onNodeWithText("Food & Drinks · $SOURCE_LABEL").performScrollTo().performClick()
+
+        compose.onNodeWithText(PICKER_HEADING).assertExists()
+    }
+
+    @Test fun aLongPressOnARowOpensItsMerchantSheetOverTheScreen() {
+        draw(read())
+
+        compose.onNodeWithText("37.00").performScrollTo().performTouchInput { longClick() }
+
+        compose.onNodeWithText(NAME_HEADING).assertExists()
+    }
+
+    @Test fun aTapOnARowOpensItThroughTheOpenings() {
+        draw(read())
+
+        compose.onNodeWithText("37.00").performScrollTo().performClick()
+
+        assertEquals("The row's tap did not reach the openings", listOf(12L), recording.opened)
     }
 
     @Test fun aReadInFlightDrawsTheDashAndNoFigure() {

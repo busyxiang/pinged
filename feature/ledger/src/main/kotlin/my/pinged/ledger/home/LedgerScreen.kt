@@ -93,7 +93,6 @@ import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.entity.Category
 import my.pinged.ledger.RowNotReadYet
 import my.pinged.ledger.entry.ADD_PAYMENT
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.review.awaitingReviewLabel
 import my.pinged.ledger.settings.grouped
 import my.pinged.read.LedgerAccess
@@ -165,10 +164,9 @@ fun LedgerScreen(
     viewModel: LedgerViewModel,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenReview: (focus: Long?) -> Unit = {},
+    /** Where a row, its awaiting-review badge and the pinned `N AWAITING REVIEW` row lead. */
+    openings: RowOpenings = RowOpenings.None,
     onAddPayment: (() -> Unit)? = null,
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
     /**
      * `N TO SORT` (#273): Search over [month] filtered to [uncategorizedId];
@@ -223,10 +221,8 @@ fun LedgerScreen(
         categories = viewModel.rows,
         merchants = viewModel.rows,
         onOpenSettings = onOpenSettings,
-        onOpenReview = onOpenReview,
+        openings = openings,
         onAddPayment = onAddPayment,
-        onOpenEntry = onOpenEntry,
-        onOpenDetail = onOpenDetail,
         onOpenSearch = onOpenSearch,
         onOpenToSort = onOpenToSort,
         sourcesLine = sourcesLine,
@@ -279,10 +275,8 @@ internal fun LedgerScreenContent(
     merchants: MerchantActions,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenReview: (focus: Long?) -> Unit = {},
+    openings: RowOpenings = RowOpenings.None,
     onAddPayment: (() -> Unit)? = null,
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
     onOpenToSort: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
     sourcesLine: SourcesLineActions? = null,
@@ -324,17 +318,15 @@ internal fun LedgerScreenContent(
         }
     }
 
-    // Which row is being categorized, hoisted to here rather than held in the
-    // row: a `ModalBottomSheet` emitted from inside the `LazyColumn` scrolls
-    // out of the viewport and is disposed with the item that owns it.
-    var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
-
-    // Keyed on the list, because a `LazyColumn` recomposes as it scrolls and
-    // rebuilding a sixteen-entry map per frame is work for nothing.
-    val categoriesById = remember(read.categories) { read.categories.associateBy { it.id } }
-
-    val chooser = remember(read) { read.chooser }
-    val choices = remember(chooser.categories, chooser.uncategorizedId) { chooserChoices(chooser) }
+    // The chooser's row is found among the rows Paging has loaded.
+    val host = rememberRowHost(
+        chooser = read.chooser,
+        findRow = { id ->
+            (items.itemSnapshotList.firstOrNull { it is LedgerItem.Row && it.txn.id == id } as LedgerItem.Row?)?.feedRow
+        },
+        categories = categories,
+        merchants = merchants,
+    )
 
     // Where the hero's last line ends inside the summary item: the TopBar
     // takes the total over once that much of the item has scrolled under it.
@@ -415,16 +407,14 @@ internal fun LedgerScreenContent(
                     items = items,
                     summary = read.summary,
                     heroNotReadYetShown = notReadYetShown,
-                    categoriesById = categoriesById,
+                    categoriesById = host.categoriesById,
                     uncategorizedId = read.uncategorizedId,
-                    hasChoices = choices.isNotEmpty(),
-                    onCategorize = { txnId -> categorizing = txnId },
+                    canCategorize = host.canCategorize,
+                    onCategorize = host::categorize,
                     onOpenMerchant = { merchants.openMerchant(it) },
                     awaitingReview = read.awaitingReview,
                     awaitingReviewInMonth = read.awaitingReviewInMonth,
-                    onOpenReview = onOpenReview,
-                    onOpenEntry = onOpenEntry,
-                    onOpenDetail = onOpenDetail,
+                    openings = openings,
                     onAddPayment = onAddPayment,
                     backupReminder = backupReminder,
                     listState = listState,
@@ -454,35 +444,7 @@ internal fun LedgerScreenContent(
         }
     }
 
-    // A sibling of the content, not an item of the list. Gated on there being
-    // something to choose as well as on a row being chosen: a sheet whose every
-    // row was filtered out still draws its heading and its handle. A tap cannot
-    // arrive here with `choices` empty -- the chip is gated on the same list --
-    // but a restore can: `categorizing` comes back from `rememberSaveable`
-    // after a process death while `categories` is still the empty initial
-    // value, because the refresh that fills it is asynchronous.
-    //
-    // The row is found among those loaded rather than saved with the id: what
-    // the sheet needs of it (its key, its category, whether a person set it)
-    // is a read of the database, and after a process death it would be a read
-    // of a ledger that may have moved. A row not loaded draws no sheet.
-    val chosen = categorizing
-    val chosenRow = chosen?.let { id ->
-        items.itemSnapshotList.firstOrNull { it is LedgerItem.Row && it.txn.id == id } as LedgerItem.Row?
-    }
-    if (chosen != null && chosenRow != null && choices.isNotEmpty()) {
-        RowCategoryChooser(
-            row = chosenRow.feedRow,
-            chooser = chooser,
-            actions = categories,
-            onClose = { categorizing = null },
-        )
-    }
-
-    // A sibling for the same reason as the picker. Its state is the holder's,
-    // not saved here: it is a read of the database, and after a process death
-    // it would be a read of a ledger that may have moved.
-    MerchantSheet(merchants)
+    host.Sheets()
 }
 
 /**
@@ -1071,14 +1033,12 @@ private fun Feed(
     heroNotReadYetShown: Boolean,
     categoriesById: Map<Long, Category>,
     uncategorizedId: Long?,
-    hasChoices: Boolean,
+    canCategorize: Boolean,
     onCategorize: (Long) -> Unit,
     onOpenMerchant: (MerchantOpening) -> Unit,
     awaitingReview: Int,
     awaitingReviewInMonth: Int,
-    onOpenReview: (focus: Long?) -> Unit,
-    onOpenEntry: ((EditTarget) -> Unit)?,
-    onOpenDetail: ((EditTarget) -> Unit)?,
+    openings: RowOpenings,
     listState: LazyListState,
     onHeroBottom: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -1151,7 +1111,7 @@ private fun Feed(
                             pinnedReviewLabel(awaitingReview, awaitingReviewInMonth, summary?.month)
                         }
                         AccentLineRow(label) {
-                            onOpenReview(null)
+                            openings.openReview(null)
                         }
                     }
                 }
@@ -1187,12 +1147,10 @@ private fun Feed(
                                 row = item.feedRow,
                                 categoriesById = categoriesById,
                                 uncategorizedId = uncategorizedId,
-                                canCategorize = hasChoices,
+                                canCategorize = canCategorize,
                                 onCategorize = onCategorize,
                                 onOpenMerchant = onOpenMerchant,
-                                onOpenReview = onOpenReview,
-                                onOpenEntry = onOpenEntry,
-                                onOpenDetail = onOpenDetail,
+                                openings = openings,
                             )
                         }
                     }

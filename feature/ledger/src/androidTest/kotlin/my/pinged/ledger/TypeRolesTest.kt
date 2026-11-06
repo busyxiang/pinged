@@ -46,6 +46,7 @@ import my.pinged.ledger.home.CategoryPicker
 import my.pinged.ledger.home.ChooserSubject
 import my.pinged.ledger.home.Empty
 import my.pinged.ledger.home.LedgerRow
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.home.OPEN_SETTINGS
 import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.review.AcceptAll
@@ -172,7 +173,7 @@ class TypeRolesTest {
                     canCategorize = false,
                     onCategorize = {},
                     onOpenMerchant = {},
-                    onOpenReview = {},
+                    openings = RowOpenings.None,
                 )
             }
         }

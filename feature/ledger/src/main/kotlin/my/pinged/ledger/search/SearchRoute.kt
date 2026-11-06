@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import my.pinged.ledger.entry.EditTarget
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.settings.CSV_TYPE
 import my.pinged.ledger.settings.DocumentSink
 
@@ -24,8 +24,7 @@ import my.pinged.ledger.settings.DocumentSink
 fun SearchRoute(
     start: SearchStart?,
     onBack: () -> Unit,
-    onOpenEntry: (EditTarget) -> Unit,
-    onOpenDetail: (EditTarget) -> Unit,
+    openings: RowOpenings,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -39,8 +38,7 @@ fun SearchRoute(
         viewModel = search,
         onBack = onBack,
         modifier = modifier,
-        onOpenEntry = onOpenEntry,
-        onOpenDetail = onOpenDetail,
+        openings = openings,
         onPickExport = { exportLauncher.launch(SEARCH_CSV_FILE_NAME) },
     )
 }

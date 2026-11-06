@@ -34,10 +34,7 @@ import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.TIMEOUT
-import my.pinged.ledger.day.DayScreen
-import my.pinged.ledger.day.DayViewModel
 import my.pinged.ledger.discardTheDatabase
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.freshLedger
 import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.PICKER_HEADING
@@ -61,8 +58,8 @@ import org.junit.runner.RunWith
 /**
  * The transaction detail screen (#153), against a real database through its
  * real holder: what it reads, what each action writes, and which actions a
- * row is offered. The row tap that opens it is drawn by the `Day` screen's
- * real `LedgerRow`, which the Ledger shares.
+ * row is offered. Which rows a tap opens it on is `RowOpeningsTest`'s, and
+ * that each list's rows call it is each screen's own JVM test.
  */
 @RunWith(AndroidJUnit4::class)
 class DetailScreenTest {
@@ -71,29 +68,6 @@ class DetailScreenTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @After fun leaveNothingBehind() = context.discardTheDatabase()
-
-    @Test fun aCapturedRowsTapOpensItsDetailAndAManualEntrysDoesNot() {
-        val dao = context.freshLedger()
-        val captured = dao.insert(row(merchant = MERCHANT))
-        dao.insert(row(merchant = HAND_TYPED).copy(rawCaptureId = null, sourcePackage = null, sourceLabel = null))
-        var opened: EditTarget? = null
-        var detailCalls = 0
-        val viewModel = DayViewModel(context.applicationContext as Application, DAY)
-        compose.setContent {
-            PingedTheme {
-                DayScreen(viewModel, onBack = {}, onOpenEntry = {}, onOpenDetail = { opened = it; detailCalls++ })
-            }
-        }
-
-        waitFor(MERCHANT)
-        compose.onNodeWithText(HAND_TYPED).performScrollTo().performClick()
-        compose.onNodeWithText(MERCHANT).performScrollTo().performClick()
-        compose.waitForIdle()
-
-        assertEquals("Only the captured row opens a detail", 1, detailCalls)
-        assertEquals(EditTarget(captured, dao.byId(captured)!!.createdAt), opened)
-        assertEquals("The tap wrote nothing", TxnState.COMMITTED, dao.byId(captured)?.state)
-    }
 
     @Test fun itQuotesTheNotificationWordForWordAndNamesTheRuleThatReadIt() {
         val dao = context.freshLedger()
@@ -411,7 +385,6 @@ class DetailScreenTest {
         val DAY: LocalDate = LocalDate.now().minusDays(3)
         val NOON: Long = DAY.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         const val MERCHANT = "Kopi Pagi"
-        const val HAND_TYPED = "Pasar malam"
         const val TNG = "my.com.tngdigital.ewallet"
     }
 }
