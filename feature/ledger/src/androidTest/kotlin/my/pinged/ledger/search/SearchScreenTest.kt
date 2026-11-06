@@ -35,7 +35,6 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.parse.Direction
 import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.freshLedger
 import my.pinged.ledger.home.CATEGORY_CHIP as ROW_CATEGORY_CHIP
 import my.pinged.ledger.home.SAVE_LABEL
@@ -153,25 +152,6 @@ class SearchScreenTest {
         // Three payments and the refund are the four rows the button writes (#216).
         compose.onNodeWithText("1 REFUND IN THE TOTAL").assertExists()
         compose.onNodeWithText("EXPORT THESE 4 ROWS").assertExists()
-    }
-
-    @Test fun aCapturedRowOpensItsDetailAndAManualEntryItsEditScreen() {
-        context.freshLedger()
-        val captured = dao().insert(ride(1_840, THIS, merchant = GRAB))
-        val manual = dao().insert(ride(650, THIS, merchant = KOPI).copy(rawCaptureId = null))
-        var detail: EditTarget? = null
-        var entry: EditTarget? = null
-        screen(onOpenDetail = { detail = it }, onOpenEntry = { entry = it })
-        waitForCount("2 PAYMENTS · $THIS_MONTH")
-
-        // The names themselves: an Uncategorized row's centre is its
-        // "+ CATEGORY" chip (#273), which opens the chooser instead.
-        compose.onNodeWithText(GRAB, useUnmergedTree = true).performScrollTo().performClick()
-        compose.onNodeWithText(KOPI, useUnmergedTree = true).performScrollTo().performClick()
-        compose.waitForIdle()
-
-        assertEquals(EditTarget(captured, dao().byId(captured)!!.createdAt), detail)
-        assertEquals(EditTarget(manual, dao().byId(manual)!!.createdAt), entry)
     }
 
     @Test fun wordsThatStartNothingSayNothingWasFoundInTheMonth() {
@@ -367,15 +347,13 @@ class SearchScreenTest {
         )
 
     private fun screen(
-        onOpenDetail: (EditTarget) -> Unit = {},
-        onOpenEntry: (EditTarget) -> Unit = {},
         onPickExport: (() -> Unit)? = null,
         start: SearchStart? = null,
     ) {
         val viewModel = SearchViewModel(context.applicationContext as Application, SavedStateHandle(), start)
         compose.setContent {
             PingedTheme {
-                SearchScreen(viewModel, onBack = {}, onOpenEntry = onOpenEntry, onOpenDetail = onOpenDetail, onPickExport = onPickExport)
+                SearchScreen(viewModel, onBack = {}, onPickExport = onPickExport)
             }
         }
     }

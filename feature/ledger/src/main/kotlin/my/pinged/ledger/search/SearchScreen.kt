@@ -66,14 +66,13 @@ import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.SourceApp
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.TxnState
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.CategoryChip
 import my.pinged.ledger.home.CheckMark
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.HERO_NOT_READ_YET
-import my.pinged.ledger.home.RowCategoryChooser
-import my.pinged.ledger.home.chooserChoices
+import my.pinged.ledger.home.RowOpenings
+import my.pinged.ledger.home.rememberRowHost
 import my.pinged.ledger.settings.SearchExportSheet
 import my.pinged.ledger.settings.TransferJob
 import my.pinged.ledger.settings.Transfers
@@ -125,9 +124,8 @@ import java.time.format.TextStyle as JavaTextStyle
  * the hero, and the rows it found.
  *
  * Matching is by word prefix (spec 15.2's accepted product decision), so the
- * field's placeholder says "starts with". Rows open as the list's do: a
- * manual entry's edit screen through [onOpenEntry], a capture's detail
- * through [onOpenDetail]. An Uncategorized row carries the ledger's
+ * field's placeholder says "starts with". Rows open as the list's do,
+ * through [openings]. An Uncategorized row carries the ledger's
  * "+ CATEGORY", which opens the ledger's chooser over the search (#273).
  *
  * The artboard's "Export these N rows" opens [SearchExportSheet] over every
@@ -140,8 +138,7 @@ fun SearchScreen(
     viewModel: SearchViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings = RowOpenings.None,
     onPickExport: (() -> Unit)? = null,
 ) {
     // Re-read on each foreground and on a delete or restore, as Day's is:
@@ -165,8 +162,7 @@ fun SearchScreen(
         replacing = read.ledger == LedgerAccess.BeingReplaced,
         onBack = onBack,
         onOpenSheet = { sheet = it },
-        onOpenEntry = onOpenEntry,
-        onOpenDetail = onOpenDetail,
+        openings = openings,
         modifier = modifier,
         onExport = onPickExport?.let { { exportOpen = true } },
         categories = viewModel.chooser,
@@ -255,18 +251,19 @@ internal fun SearchScreenContent(
     modifier: Modifier = Modifier,
     /** The words or a filter changed and their read has not landed (#285); [read] is the last answer. */
     rereading: Boolean = false,
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings = RowOpenings.None,
     onExport: (() -> Unit)? = null,
     /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
     replacing: Boolean = false,
 ) {
-    // Hoisted out of the list for the reason `LedgerScreenContent` gives.
-    var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
-    val chooser = read?.chooser
-    val choices = remember(chooser) { chooser?.let(::chooserChoices).orEmpty() }
-    val categoriesById = remember(read?.categories) { read?.categories.orEmpty().associateBy { it.id } }
-    val categoryName = choice.categoryId?.let { categoriesById[it]?.name }
+    val host = rememberRowHost(
+        chooser = read?.chooser,
+        findRow = { id -> read?.rows?.firstOrNull { it.txn.id == id } },
+        categories = categories,
+        // Search's rows open no merchant sheet.
+        merchants = null,
+    )
+    val categoryName = choice.categoryId?.let { host.categoriesById[it]?.name }
     // The rows the totals count, not the ones drawn: the export has no limit.
     val found = read?.takeUnless { storageUnavailable || replacing }?.totals?.sumOf { it.rowCount } ?: 0
     // The last answer stays while [rereading], dimmed under `UPDATING` once
@@ -293,14 +290,13 @@ internal fun SearchScreenContent(
                     items(read.rows, key = { "txn-" + it.txn.id }) { row ->
                         // As `LedgerRow` offers it: never on an excluded row,
                         // whose category is a fact about nothing.
-                        val sortable = choices.isNotEmpty() && !row.txn.isExcluded &&
+                        val sortable = host.canCategorize && !row.txn.isExcluded &&
                             row.txn.categoryId == read.chooser.uncategorizedId
                         ResultRow(
                             row,
-                            categoriesById[row.txn.categoryId],
-                            onOpenEntry,
-                            onOpenDetail,
-                            onCategorize = if (sortable) ({ categorizing = row.txn.id }) else null,
+                            host.categoriesById[row.txn.categoryId],
+                            onOpen = { openings.open(row) },
+                            onCategorize = if (sortable) ({ host.categorize(row.txn.id) }) else null,
                             modifier = Modifier.updating(updating),
                         )
                     }
@@ -310,18 +306,7 @@ internal fun SearchScreenContent(
         if (onExport != null && found > 0) ExportFooter(found.takeUnless { updating }, onExport)
     }
 
-    // Found among the rows read rather than saved with the id, for the reason
-    // `LedgerScreenContent` gives; a row not read draws no sheet.
-    val chosen = categorizing
-    val chosenRow = chosen?.let { id -> read?.rows?.firstOrNull { it.txn.id == id } }
-    if (chosen != null && chosenRow != null && chooser != null && choices.isNotEmpty()) {
-        RowCategoryChooser(
-            row = chosenRow,
-            chooser = chooser,
-            actions = categories,
-            onClose = { categorizing = null },
-        )
-    }
+    host.Sheets()
 }
 
 /**
@@ -548,21 +533,18 @@ private fun Hero(read: SearchRead, modifier: Modifier = Modifier) {
 private fun ResultRow(
     row: FeedRow,
     category: Category?,
-    onOpenEntry: ((EditTarget) -> Unit)?,
-    onOpenDetail: ((EditTarget) -> Unit)?,
+    onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     onCategorize: (() -> Unit)? = null,
 ) {
     val txn = row.txn
-    val open = (if (txn.rawCaptureId == null) onOpenEntry else onOpenDetail)
-        ?.let { { it(EditTarget(txn.id, txn.createdAt)) } }
     val counted = txn.state == TxnState.COMMITTED && !txn.isExcluded
     val tone = if (counted) Ink else Muted
     Row(
         modifier
             .fillMaxWidth()
             .background(Card)
-            .then(if (open != null) Modifier.clickable(onClick = open) else Modifier)
+            .clickable(onClick = onOpen)
             .heightIn(min = 44.dp)
             .padding(horizontal = 20.dp)
             .dottedRule()

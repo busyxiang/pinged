@@ -22,10 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -41,13 +38,11 @@ import my.pinged.data.dao.FeedRow
 import my.pinged.ledger.BackChevron
 import my.pinged.ledger.MonthHeader
 import my.pinged.ledger.MonthHeaderNotReadYet
-import my.pinged.ledger.entry.EditTarget
 import my.pinged.ledger.home.CategoryActions
 import my.pinged.ledger.home.LedgerRow
 import my.pinged.ledger.home.MerchantActions
-import my.pinged.ledger.home.MerchantSheet
-import my.pinged.ledger.home.RowCategoryChooser
-import my.pinged.ledger.home.chooserChoices
+import my.pinged.ledger.home.RowOpenings
+import my.pinged.ledger.home.rememberRowHost
 import my.pinged.ledger.home.dayLabel
 import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
@@ -83,10 +78,9 @@ import java.time.YearMonth
  * ledger, as Day is. A category that no longer exists calls [onGone], which
  * `:app` pops back to Charts.
  *
- * [onOpenReview] is the review inbox, from the kept-out line's *M awaiting
- * review* with the first held row of this category and month, or from a
- * row's badge with its own. [onOpenEntry] and [onOpenDetail] are a row's
- * body, as on Day.
+ * [openings] is where a row's body leads, as on Day, and the review inbox,
+ * from the kept-out line's *M awaiting review* with the first row of this
+ * category and month awaiting review, or from a row's badge with its own.
  */
 @Composable
 fun BreakdownScreen(
@@ -94,9 +88,7 @@ fun BreakdownScreen(
     onBack: () -> Unit,
     onGone: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenReview: (focus: Long?) -> Unit = {},
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings = RowOpenings.None,
 ) {
     val read = viewModel.read.rememberReadState()
     val expanded by viewModel.read.question.collectAsState()
@@ -112,9 +104,7 @@ fun BreakdownScreen(
         categories = viewModel.rows,
         merchants = viewModel.rows,
         modifier = modifier,
-        onOpenReview = onOpenReview,
-        onOpenEntry = onOpenEntry,
-        onOpenDetail = onOpenDetail,
+        openings = openings,
     )
 }
 
@@ -131,18 +121,17 @@ internal fun BreakdownScreenContent(
     categories: CategoryActions,
     merchants: MerchantActions,
     modifier: Modifier = Modifier,
-    onOpenReview: (focus: Long?) -> Unit = {},
-    onOpenEntry: ((EditTarget) -> Unit)? = null,
-    onOpenDetail: ((EditTarget) -> Unit)? = null,
+    openings: RowOpenings = RowOpenings.None,
     today: LocalDate = LocalDate.now(),
     /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
     replacing: Boolean = false,
 ) {
-    // Hoisted out of the list for the reason `LedgerScreenContent` gives.
-    var categorizing by rememberSaveable { mutableStateOf<Long?>(null) }
-    val chooser = read?.chooser
-    val choices = remember(chooser) { chooser?.let(::chooserChoices).orEmpty() }
-    val categoriesById = remember(chooser) { chooser?.categories.orEmpty().associateBy { it.id } }
+    val host = rememberRowHost(
+        chooser = read?.chooser,
+        findRow = { id -> read?.rows?.values?.flatten()?.firstOrNull { it.txn.id == id } },
+        categories = categories,
+        merchants = merchants,
+    )
     val view = remember(read) { read?.let(::breakdown) }
     val refused = storageUnavailable || replacing
     val gone = read != null && view == null && !refused
@@ -162,7 +151,7 @@ internal fun BreakdownScreenContent(
                 replacing -> item { Notice(REPLACING_YOUR_DATA) }
                 storageUnavailable || read == null || view == null -> item { Notice(CANNOT_READ_YOUR_DATA) }
                 else -> {
-                    item { MonthHeader(view.name, view.iconKey, view.figures) { onOpenReview(read.firstHeld) } }
+                    item { MonthHeader(view.name, view.iconKey, view.figures) { openings.openReview(read.firstHeld) } }
                     item { TornEdge(Modifier.background(Paper).padding(top = 20.dp)) }
                     item {
                         Text(WHO_GOT_IT, style = MonoLabel, color = Muted, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 6.dp))
@@ -170,14 +159,12 @@ internal fun BreakdownScreenContent(
                     lines(view, expanded, read, onToggle) { row ->
                         LedgerRow(
                             row = row,
-                            categoriesById = categoriesById,
+                            categoriesById = host.categoriesById,
                             uncategorizedId = read.chooser.uncategorizedId,
-                            canCategorize = choices.isNotEmpty(),
-                            onCategorize = { categorizing = it },
+                            canCategorize = host.canCategorize,
+                            onCategorize = host::categorize,
                             onOpenMerchant = { merchants.openMerchant(it) },
-                            onOpenReview = onOpenReview,
-                            onOpenEntry = onOpenEntry,
-                            onOpenDetail = onOpenDetail,
+                            openings = openings,
                             greyed = view.figures.greyed,
                         )
                     }
@@ -187,18 +174,7 @@ internal fun BreakdownScreenContent(
         }
     }
 
-    // Found among the rows read, for the reason `LedgerScreenContent` gives.
-    val chosen = categorizing
-    val chosenRow = chosen?.let { id -> read?.rows?.values?.flatten()?.firstOrNull { it.txn.id == id } }
-    if (chosen != null && chosenRow != null && chooser != null && choices.isNotEmpty()) {
-        RowCategoryChooser(
-            row = chosenRow,
-            chooser = chooser,
-            actions = categories,
-            onClose = { categorizing = null },
-        )
-    }
-    MerchantSheet(merchants)
+    host.Sheets()
 }
 
 /**

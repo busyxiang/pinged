@@ -1,49 +1,27 @@
 package my.pinged.ledger
 
-import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.paging.LoadState
-import androidx.paging.LoadStates
-import androidx.paging.PagingData
-import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.flow.flowOf
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
-import my.pinged.data.dao.MerchantChoice
-import my.pinged.data.dao.MerchantMember
 import my.pinged.data.dao.MerchantRuleDao
 import my.pinged.data.entity.MatchType
 import my.pinged.data.entity.MerchantRule
 import my.pinged.data.entity.RuleOrigin
-import my.pinged.ledger.home.FakeCategoryActions
-import my.pinged.ledger.home.FakeMerchantActions
-import my.pinged.ledger.home.LedgerRead
-import my.pinged.ledger.home.LedgerScreenContent
-import my.pinged.ledger.home.NAME_HEADING
-import my.pinged.ledger.home.MerchantOpening
-import my.pinged.ledger.home.OpenMerchantSheet
-import my.pinged.ledger.home.MerchantSheetState
-import my.pinged.ledger.home.SEPARATE_NO_RULE
 import my.pinged.ledger.home.readMerchantSheet
-import my.pinged.ui.test.boundedWaitUntil
-import my.pinged.ui.theme.PingedTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Issue #51: what the merchant sheet says, before the tap, about the rules a
- * Separate is about to give back. What a merge says is the Card band's,
+ * Issue #51: the merchant sheet's read of the rules a Separate is about to
+ * give back. What the sheet says of them is `RowHostTest`'s, on the JVM; what
+ * a merge says is the Card band's,
  * `MerchantSheetArtboardTest.theBandNamesTheRuleThatFilesTheMergedShop`.
  */
 @RunWith(AndroidJUnit4::class)
 class MerchantSheetRulesTest {
-    @get:Rule val compose = createComposeRule()
-
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @After fun leaveNothingBehind() = context.discardTheDatabase()
@@ -53,86 +31,6 @@ class MerchantSheetRulesTest {
     /** The header's month, which nothing here reads. */
     private val ANY_DAY = LocalDates.of(0L)
     private val other = "MR D.I.Y."
-
-    private fun sheet(
-        ruleCategory: String? = null,
-        otherRule: String? = null,
-        mergedInto: String? = null,
-        noOwnRule: Boolean = false,
-        members: List<MerchantMember> = emptyList(),
-    ) = MerchantSheetState(
-        ownKey = own,
-        identityKey = if (mergedInto != null) other else own,
-        name = "Mr DIY",
-        derivedName = "Mr DIY",
-        txnCount = 2,
-        mergedInto = mergedInto,
-        members = members,
-        others = listOf(MerchantChoice(other, "Mr D.I.Y.", "Mr D.I.Y.", 3, ruleCategory = otherRule)),
-        suggested = emptySet(),
-        ruleCategory = ruleCategory,
-        noOwnRule = noOwnRule,
-    )
-
-    private fun show(sheet: MerchantSheetState) {
-        val flow = flowOf(
-            PagingData.from(
-                emptyList<my.pinged.ledger.home.LedgerItem>(),
-                LoadStates(LoadState.NotLoading(true), LoadState.NotLoading(true), LoadState.NotLoading(true)),
-            ),
-        )
-        compose.setContent {
-            PingedTheme {
-                LedgerScreenContent(
-                    items = flow.collectAsLazyPagingItems(),
-                    read = LedgerRead(),
-                    storageUnavailable = false,
-                    categories = FakeCategoryActions(),
-                    merchants = FakeMerchantActions(OpenMerchantSheet(MerchantOpening(sheet.ownKey, sheet.name, ANY_DAY), sheet)),
-                    onOpenSettings = {},
-                )
-            }
-        }
-        // The sheet's own list is up once its heading is. Not a choice row: the
-        // list is lazy, and on CI's 320x640 screen the rows below the members
-        // are never composed.
-        compose.boundedWaitUntil(5_000) { compose.onAllNodesWithText(NAME_HEADING).fetchSemanticsNodes().isNotEmpty() }
-    }
-
-    private fun count(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().size
-
-    @Test fun separateSaysASourceWithNoRuleOfItsOwnGoesBackToUncategorized() {
-        show(sheet(mergedInto = "Mr D.I.Y.", ruleCategory = "Food & Drinks", noOwnRule = true))
-        assertEquals(1, count(SEPARATE_NO_RULE))
-    }
-
-    @Test fun separateSaysNothingOfTheKindWhenTheSourceHasItsOwnRule() {
-        show(sheet(mergedInto = "Mr D.I.Y.", ruleCategory = "Food & Drinks", noOwnRule = false))
-        assertEquals(0, count(SEPARATE_NO_RULE))
-    }
-
-    @Test fun separateSaysNothingWhenTheMergedShopHasNoRuleToLose() {
-        show(sheet(mergedInto = "Mr D.I.Y.", ruleCategory = null, noOwnRule = true))
-        assertEquals(0, count(SEPARATE_NO_RULE))
-    }
-
-    @Test fun eachMemberWithNoRuleOfItsOwnCarriesTheSameWarning() {
-        show(
-            sheet(
-                ruleCategory = "Food & Drinks",
-                members = listOf(
-                    MerchantMember("A KEY", "A key", noOwnRule = true),
-                    MerchantMember("B KEY", "B key", noOwnRule = false),
-                ),
-            ),
-        )
-        assertEquals("Only the member without a rule of its own", 1, count(SEPARATE_NO_RULE))
-    }
-
-    @Test fun aMemberWithNoRuleIsNotWarnedAboutWhenTheMergedShopHasNoRuleToLose() {
-        show(sheet(ruleCategory = null, members = listOf(MerchantMember("A KEY", "A key", noOwnRule = true))))
-        assertEquals(0, count(SEPARATE_NO_RULE))
-    }
 
     // ---- read from the real database ----------------------------------------
 

@@ -35,6 +35,7 @@ import my.pinged.ledger.home.CATEGORY_CHIP
 import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.NAME_FIELD_TAG
 import my.pinged.ledger.home.PICKER_HEADING
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.home.SAVE_NAME
 import my.pinged.ledger.ledgerTxn
@@ -250,7 +251,7 @@ class DayScreenTest {
             LaunchedEffect(viewModel) {
                 viewModel.read.state.collect { if (Looper.myLooper() != Looper.getMainLooper()) offMain.incrementAndGet() }
             }
-            PingedTheme { DayScreen(viewModel, onBack = {}, onOpenReview = onOpenReview) }
+            PingedTheme { DayScreen(viewModel, onBack = {}, openings = RowOpenings(openEntry = {}, openDetail = {}, openReview = onOpenReview)) }
         }
     }
 
