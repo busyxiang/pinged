@@ -150,6 +150,10 @@ _Avoid_: reject, dismiss, ignore rule
 A rule the user made by tapping a message's amount and merchant on the Teach screen. It reads only messages of exactly that shape from that app, and only once every rule Pinged shipped with has failed. Its first three transactions wait for review. Settings lists each under MESSAGES, and deleting one leaves the transactions it wrote.
 _Avoid_: user template, custom rule, user regex
 
+**Reading**:
+What Pinged makes of a capture a rule matched: the transaction's amount, merchant, date and filing, the earlier transaction it may duplicate, and whether it counts, waits for review, or is left out by a standing answer. A capture gets its first reading when Pinged first reads it, and a re-reading when a newer parser pack is compared against the transaction its first reading wrote. A re-reading never files a category or consults a standing answer, and it can change whether a transaction counts only while that transaction is awaiting review.
+_Avoid_: parse result, verdict, interpretation, decision (that is only whether it counts)
+
 **Read source**:
 An app the user switched on in Capture sources that at least one rule reads, shipped or taught. One taught message is enough: "read" says some rule reads the app, not that every notification it posts is read.
 _Avoid_: covered app, supported app, unread source
