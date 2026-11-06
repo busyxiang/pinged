@@ -1,5 +1,6 @@
 package my.pinged.charts
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -7,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import my.pinged.charts.model.ChartsState
 import my.pinged.charts.model.monthView
+import my.pinged.data.NamedSource
 import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.entity.CaptureSource
@@ -22,8 +24,8 @@ import java.time.YearMonth
 
 /**
  * The sources line on Charts (#365; spec 9.3, Hero): the read's line, under
- * the hero total and above the grid, and its `NO APP IS READ YET` opening
- * Capture sources. Which apps it names is `SourcesLineTest`'s.
+ * the hero total and above the grid, its `NO APP IS READ YET` opening
+ * Capture sources, and its unreadable names Could not read (#368). Which apps it names is `SourcesLineTest`'s.
  */
 @RunWith(RobolectricTestRunner::class)
 class SourcesLineChartsTest {
@@ -33,7 +35,7 @@ class SourcesLineChartsTest {
 
     private val september = YearMonth.of(2026, 9)
 
-    private fun draw(sources: SourcesLine, onOpenSources: () -> Unit = {}) {
+    private fun draw(sources: SourcesLine, onOpenSources: () -> Unit = {}, onOpenUnread: (NamedSource) -> Unit = {}) {
         val read = chartsRead(
             month = september,
             today = LocalDate.of(2026, 10, 5),
@@ -49,6 +51,7 @@ class SourcesLineChartsTest {
                     ChartsState.Month(monthView(read)),
                     unavailable = false,
                     onOpenSources = onOpenSources,
+                    onOpenUnread = onOpenUnread,
                 )
             }
         }
@@ -81,20 +84,45 @@ class SourcesLineChartsTest {
         assertEquals("NO APP IS READ YET did not open Capture sources", 1, opened)
     }
 
-    @Test fun anUnreadableNameOpensNothingYet() {
-        var opened = 0
+    /**
+     * #368: each unreadable name is a labelled action that opens Could not
+     * read for that app; a name in the `FROM` list is not, and the line
+     * around them opens nothing. The tap on the name itself is
+     * `UnreadFromSourcesLineTest`'s, on a device: it lands by where the text
+     * lays the name out.
+     */
+    @Test fun anUnreadableNameOpensCouldNotReadForItsApp() {
+        var sources = 0
+        val opened = mutableListOf<NamedSource>()
         draw(
-            SourcesLine.of(listOf(on(TNG, "Touch 'n Go"), on(GRAB, "GrabPay")), setOf(TNG), emptySet(), byHand = false),
-            onOpenSources = { opened++ },
+            SourcesLine.of(
+                listOf(on(TNG, "Touch 'n Go"), on(GRAB, "GrabPay"), on(SHOPEE, "ShopeePay")),
+                setOf(TNG),
+                emptySet(),
+                byHand = false,
+            ),
+            onOpenSources = { sources++ },
+            onOpenUnread = { opened += it },
         )
+        val line = compose.onNodeWithText("FROM TOUCH 'N GO. GRABPAY AND SHOPEEPAY ARE ON BUT PINGED CANNOT READ THEM YET")
+        val actions = line.fetchSemanticsNode().config.getOrElse(SemanticsActions.CustomActions) { emptyList() }
 
-        compose.onNodeWithText("FROM TOUCH 'N GO. GRABPAY IS ON BUT PINGED CANNOT READ IT YET").performClick()
-        assertEquals("A line with an app to name opened Capture sources; its names are #368's", 0, opened)
+        assertEquals(
+            "The unreadable names are not each an action naming what it does",
+            listOf(openUnreadLabel("GRABPAY"), openUnreadLabel("SHOPEEPAY")),
+            actions.map { it.label },
+        )
+        actions.first { it.label == openUnreadLabel("GRABPAY") }.action()
+        assertEquals("GRABPAY did not open Could not read for GrabPay", listOf(NamedSource(GRAB, "GRABPAY")), opened)
+
+        line.performClick()
+        assertEquals("A line with an app to name opened Capture sources", 0, sources)
     }
 
     private companion object {
         const val TNG = "my.com.tngdigital.ewallet"
         const val MAE = "com.maybank2u.life"
         const val GRAB = "com.grabtaxi.passenger"
+        const val SHOPEE = "com.shopeepay.my"
     }
 }

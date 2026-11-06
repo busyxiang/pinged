@@ -911,7 +911,11 @@ Coverage grows through a fixed loop, supported by in-app tooling:
 
 1. An in-app **Unmatched captures** screen lists raw notification text for
    captures with `parse_status = UNMATCHED`, newest first, with a
-   "copy as fixture" action.
+   "copy as fixture" action. Opened from Settings it lists every app's;
+   opened from an unreadable source's name in a sources line (section 9.3)
+   it lists that app's alone, says so (`ONLY GRABPAY`), and offers *Show
+   every app* (#368). Teach and "never a transaction" are the same either
+   way.
 2. The copied text becomes a fixture file in `:core:parse` test resources,
    paired with its expected outcome.
 3. Rules are written until the fixture passes.
@@ -2028,8 +2032,9 @@ to name it reads `ONLY BY HAND`, or `NO APP IS READ YET`, which opens
 Capture sources (section 9.6). A second sentence names the unreadable
 sources: `GRABPAY IS ON BUT PINGED CANNOT READ IT YET`, `… AND … ARE ON BUT
 PINGED CANNOT READ THEM YET`. It wraps and never truncates a name, and it
-neither greys nor takes the accent. An unreadable name opens nothing yet
-(#368). (#365)
+neither greys nor takes the accent. Each unreadable name is underlined and
+opens Could not read filtered to that app (section 5.6, #368); a screen
+reader has it as an action, `Open Could not read for GRABPAY`. (#365)
 
 **Comparison line.** Under the hero, when the selected month and the month
 before are both comparable (section 8, "No unfair period comparison"), one

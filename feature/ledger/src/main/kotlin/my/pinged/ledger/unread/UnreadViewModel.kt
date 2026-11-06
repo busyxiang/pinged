@@ -11,6 +11,7 @@ import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
+import my.pinged.data.NamedSource
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
@@ -54,13 +55,18 @@ internal fun ReadState<Int, UnreadPage>.toState(): UnreadState {
  * turn as a write, from the top, in one snapshot: a card dismissed meanwhile
  * can neither repeat nor be skipped at the seam between two pages. The cost is
  * that a page more reads every card already shown again, as a resume does.
+ *
+ * [source] filters the list to one app's (#368), null for every app's. It is
+ * fixed for the holder's life: clearing it is a new destination, so a
+ * restored back stack shows what the user last chose.
  */
 class UnreadViewModel internal constructor(
     app: Application,
     runner: ReadRunner,
     transfers: StateFlow<TransferState> = Transfers.state,
+    val source: NamedSource? = null,
 ) : AndroidViewModel(app) {
-    constructor(app: Application) : this(app, GuardedRunner(app))
+    constructor(app: Application, source: NamedSource? = null) : this(app, GuardedRunner(app), source = source)
 
     private val gate = LedgerBusy(viewModelScope, transfers)
 
@@ -74,7 +80,7 @@ class UnreadViewModel internal constructor(
      */
     internal val read: ScreenRead<Int, UnreadPage> =
         ScreenRead(viewModelScope, runner, "The notifications Pinged could not read cannot be read", initial = PAGE) { db, limit ->
-            val items = db.userRejectRuleDao().unreadPage(Long.MAX_VALUE, Long.MAX_VALUE, limit)
+            val items = db.userRejectRuleDao().unreadPage(Long.MAX_VALUE, Long.MAX_VALUE, limit, source?.pkg)
             UnreadPage(items, more = items.size == limit)
         }
 

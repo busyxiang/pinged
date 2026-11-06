@@ -34,11 +34,12 @@ class SourcesLineRenderTest {
 
     private fun on(pkg: String, label: String) = CaptureSource(pkg, label, enabled = true, firstSeenAt = 0L)
 
+    /** Charts passes `onOpenUnread`, so the unreadable names are drawn as the tap targets it ships (#368). */
     private fun capture(name: String, line: SourcesLine) {
         compose.setContent {
             PingedTheme {
                 Box(Modifier.testTag(LINE).width(320.dp).background(Paper).padding(horizontal = 20.dp, vertical = 6.dp)) {
-                    SourcesLineText(line)
+                    SourcesLineText(line, onOpenUnread = {})
                 }
             }
         }

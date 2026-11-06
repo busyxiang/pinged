@@ -40,6 +40,7 @@ import androidx.lifecycle.createSavedStateHandle
 import my.pinged.capture.CaptureAlerts
 import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
+import my.pinged.data.NamedSource
 import my.pinged.ledger.breakdown.BreakdownScreen
 import my.pinged.ledger.breakdown.BreakdownViewModel
 import my.pinged.ledger.day.DayScreen
@@ -117,7 +118,6 @@ class MainActivity : ComponentActivity() {
         // Sources' are their routes' own.
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
-        val unreadFactory = AppViewModelFactory(application, ::UnreadViewModel)
         val categoriesFactory = AppViewModelFactory(application, ::CategoriesViewModel)
         val reviewFactory = AppViewModelFactory(application, ::ReviewViewModel)
         // Only a first creation's stack: a recreate or a process death hands
@@ -350,6 +350,8 @@ class MainActivity : ComponentActivity() {
                                         // Onto Charts' stack too: Back returns
                                         // to the line it was opened from.
                                         onOpenSources = { tabs.push(Sources) },
+                                        // Onto Charts' stack too, for the same reason.
+                                        onOpenUnread = { source -> tabs.push(Unread(source.pkg, source.name)) },
                                     )
                                 }
                                 entry<MerchantMonth> { key ->
@@ -434,7 +436,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenSources = { tabs.push(Sources) },
                                         onOpenCorrections = { tabs.push(Corrections) },
                                         onOpenLearned = { tabs.push(Learned) },
-                                        onOpenUnread = { tabs.push(Unread) },
+                                        onOpenUnread = { tabs.push(Unread()) },
                                         onOpenCategories = { tabs.push(Categories) },
                                         onOpenLicences = { tabs.push(Licences) },
                                         buildVersion = BuildConfig.VERSION_NAME,
@@ -459,13 +461,17 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                                entry<Unread> {
-                                    val unread: UnreadViewModel = viewModel(factory = unreadFactory)
+                                entry<Unread> { key ->
+                                    // Built from the key alone, as Teach's holder is.
+                                    val unread: UnreadViewModel = viewModel {
+                                        UnreadViewModel(application, key.pkg?.let { NamedSource(it, key.name ?: it) })
+                                    }
                                     UnreadScreen(
                                         viewModel = unread,
                                         onBack = tabs::pop,
                                         onTeach = { tabs.push(Teach(it.id)) },
                                         modifier = Modifier.fillMaxSize(),
+                                        onShowEveryApp = { tabs.replaceTop(Unread()) },
                                     )
                                 }
                                 entry<Teach> { key ->

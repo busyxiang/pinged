@@ -53,11 +53,17 @@ import kotlinx.serialization.Serializable
 
 /**
  * Spec 5.6's unread list, pushed from its row in settings
- * (`SettingsScreen`'s `onOpenUnread`).
+ * (`SettingsScreen`'s `onOpenUnread`) with no [pkg], so every app's.
  *
- * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ * Pushed on the current tab's stack from an unreadable source's name in a
+ * sources line (#368), [pkg] is the app the list is filtered to and [name]
+ * the line's name for it, which the filter shows. Its *Show every app*
+ * replaces it with the unfiltered key ([replaceTop]), so Back still returns
+ * to the line.
+ *
+ * See [Ledger] for why these are `@Serializable` keys registered nowhere.
  */
-@Serializable data object Unread : NavKey
+@Serializable data class Unread(val pkg: String? = null, val name: String? = null) : NavKey
 
 /**
  * Spec 5.8's Teach screen for unread capture [captureId], pushed from its

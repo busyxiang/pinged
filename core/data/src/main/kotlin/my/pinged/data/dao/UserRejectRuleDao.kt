@@ -24,12 +24,17 @@ interface UserRejectRuleDao {
      * The unread list, newest first, a page at a time from the keyset
      * ([beforePostedAt], [beforeId]); `Long.MAX_VALUE` twice for the first.
      * Served by `raw_capture(parse_status, posted_at)`, read backwards.
+     *
+     * [sourcePackage] narrows it to one app (#368), null for every app. The
+     * package is a filter on that same walk, not an index of its own: one
+     * would be a schema change, and the walk stops at [limit] rows of the app.
      */
     @Query(UNREAD_PAGE_SQL)
     fun unreadPage(
         beforePostedAt: Long,
         beforeId: Long,
         limit: Int,
+        sourcePackage: String? = null,
         status: ParseStatus = ParseStatus.UNMATCHED,
     ): List<UnreadCapture>
 
@@ -145,6 +150,7 @@ interface UserRejectRuleDao {
         SELECT c.id, c.source_package, c.posted_at, c.title, c.text, c.big_text, s.label
         FROM raw_capture c LEFT JOIN capture_source s ON s.pkg = c.source_package
         WHERE c.parse_status = :status AND c.user_reject_rule_id IS NULL
+          AND (:sourcePackage IS NULL OR c.source_package = :sourcePackage)
           AND (c.posted_at < :beforePostedAt OR (c.posted_at = :beforePostedAt AND c.id < :beforeId))
         ORDER BY c.posted_at DESC, c.id DESC
         LIMIT :limit

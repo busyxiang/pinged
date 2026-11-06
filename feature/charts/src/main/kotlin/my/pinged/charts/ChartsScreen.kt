@@ -30,6 +30,7 @@ import my.pinged.charts.model.ChartsState
 import my.pinged.charts.model.Chip
 import my.pinged.charts.model.Hero
 import my.pinged.charts.model.chartsState
+import my.pinged.data.NamedSource
 import my.pinged.data.SourcesLine
 import my.pinged.read.rememberReadState
 import my.pinged.ui.monthName
@@ -74,7 +75,8 @@ import java.time.YearMonth
  * is a `WHO GOT IT` row, or a line of the `N more merchants` sheet (#344):
  * that merchant identity's month, routed the same way. [onOpenSources] is
  * the sources line's `NO APP IS READ YET` (#365): Capture sources, routed the
- * same way.
+ * same way. [onOpenUnread] is an unreadable source's name in that line
+ * (#368): Could not read filtered to that app, routed the same way.
  */
 @Composable
 fun ChartsScreen(
@@ -86,6 +88,7 @@ fun ChartsScreen(
     onOpenBreakdown: ((month: YearMonth, categoryId: Long) -> Unit)? = null,
     onOpenMerchant: ((month: YearMonth, identityKey: String) -> Unit)? = null,
     onOpenSources: (() -> Unit)? = null,
+    onOpenUnread: ((NamedSource) -> Unit)? = null,
 ) {
     // Reads on each resume and on `Databases.rewrites`: `rememberReadState` owns
     // both triggers, and what the screen shows while a read is in flight.
@@ -113,6 +116,7 @@ fun ChartsScreen(
         onOpenBreakdown = onOpenBreakdown?.let { open -> read.answer?.let { r -> { id: Long -> open(r.month, id) } } },
         onOpenMerchant = onOpenMerchant?.let { open -> read.answer?.let { r -> { key: String -> open(r.month, key) } } },
         onOpenSources = onOpenSources,
+        onOpenUnread = onOpenUnread,
     )
     if (monthsOpen) {
         MonthsSheetHost(
@@ -153,6 +157,7 @@ internal fun ChartsScreenContent(
     onOpenBreakdown: ((categoryId: Long) -> Unit)? = null,
     onOpenMerchant: ((identityKey: String) -> Unit)? = null,
     onOpenSources: (() -> Unit)? = null,
+    onOpenUnread: ((NamedSource) -> Unit)? = null,
     /** [state] is a month other than [month], whose read is in flight (#285). */
     rereading: Boolean = false,
     /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
@@ -197,7 +202,7 @@ internal fun ChartsScreenContent(
                 )
                 Column(Modifier.updating(updating)) {
                     // Slot: hero (#86).
-                    HeroSection(view.hero, view.sources, onOpenSources)
+                    HeroSection(view.hero, view.sources, onOpenSources, onOpenUnread)
                     // Slot: comparison line (#94), under the hero.
                     ComparisonLine(view.comparison)
                 }
@@ -346,7 +351,7 @@ private fun HeaderSection(month: String, chip: Chip?, onOpenMonths: () -> Unit, 
  * figure, the apps it comes from (#365).
  */
 @Composable
-private fun HeroSection(hero: Hero, sources: SourcesLine, onOpenSources: (() -> Unit)?) {
+private fun HeroSection(hero: Hero, sources: SourcesLine, onOpenSources: (() -> Unit)?, onOpenUnread: ((NamedSource) -> Unit)?) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 18.dp)) {
         MonoLine(hero.label, Muted)
         Text(
@@ -355,7 +360,7 @@ private fun HeroSection(hero: Hero, sources: SourcesLine, onOpenSources: (() -> 
             color = if (hero.greyed) Muted else Ink,
             modifier = Modifier.padding(top = 4.dp),
         )
-        SourcesLineText(sources, Modifier.padding(top = 6.dp), onOpenSources)
+        SourcesLineText(sources, Modifier.padding(top = 6.dp), onOpenSources, onOpenUnread)
         hero.split?.let { MonoLine(it, Muted, Modifier.padding(top = 6.dp)) }
         hero.incomplete?.let { MonoLine(it, Stamp, Modifier.padding(top = 6.dp)) }
     }

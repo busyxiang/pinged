@@ -94,7 +94,7 @@ class QueryPlanTest {
 
     @After fun tearDown() = db.close()
 
-    private fun plan(sql: String, vararg args: Any): String {
+    private fun plan(sql: String, vararg args: Any?): String {
         val out = StringBuilder()
         db.openHelper.readableDatabase.query("EXPLAIN QUERY PLAN $sql", args).use { c ->
             while (c.moveToNext()) out.append(c.getString(c.columnCount - 1)).append('\n')
@@ -1100,13 +1100,16 @@ class QueryPlanTest {
     /**
      * Spec 15.1: the unread list is `raw_capture(parse_status, posted_at)`,
      * read backwards from its keyset with no sort, and the source's name a
-     * primary-key probe of `capture_source`.
+     * primary-key probe of `capture_source`. The same whether it is filtered
+     * to one app (#368) or not.
      */
     @Test fun theUnreadListSeeksTheStatusIndexAndDoesNotSort() {
-        val p = plan(bindable(UserRejectRuleDao.UNREAD_PAGE_SQL), "UNMATCHED", Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 50)
-        assertUsesIndex("index_raw_capture_parse_status_posted_at", p, table = "raw_capture")
-        assertTrue("capture_source is scanned:\n$p", !p.contains("SCAN s"))
-        assertNoSort(p)
+        for (pkg in listOf(null, "com.grabtaxi.passenger")) {
+            val p = plan(bindable(UserRejectRuleDao.UNREAD_PAGE_SQL), "UNMATCHED", pkg, pkg, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 50)
+            assertUsesIndex("index_raw_capture_parse_status_posted_at", p, table = "raw_capture")
+            assertTrue("capture_source is scanned:\n$p", !p.contains("SCAN s"))
+            assertNoSort(p)
+        }
     }
 
     @Test fun theUnreadCountSeeksTheStatusIndex() {
