@@ -1,5 +1,6 @@
 package my.pinged.capture
 
+import kotlinx.coroutines.runBlocking
 import my.pinged.data.Databases
 import android.content.Context
 import my.pinged.data.entity.Arrival
@@ -156,10 +157,14 @@ internal object ParseFixtures {
     }
 
     /**
-     * A [ParsePass] over the real DAOs.
+     * A [ParsePass] over the real database, built by [ParsePass.over] as
+     * `ParseWorker.drain` builds one: the bundled dictionary, the taught rules
+     * and the check limit the device has stored, so a test that says nothing
+     * about them is testing what ships. A suite that sets the limit resets it
+     * in its `@After`.
      *
-     * The pack defaults to the bundled one, so a test that says nothing about
-     * rules is testing what ships.
+     * [dictionary], [categoryIds] and [sourceLabel] each replace
+     * what would be read when given, and nothing is merged into them.
      */
     fun pass(
         context: Context,
@@ -168,27 +173,19 @@ internal object ParseFixtures {
         onCaptureFinished: (Long) -> Unit = {},
         progress: ParsePass.Progress = ParsePass.Progress(),
         sourceLabel: ((String) -> String?)? = null,
-        dictionary: List<my.pinged.parse.DictionaryEntry> = emptyList(),
+        dictionary: List<my.pinged.parse.DictionaryEntry>? = null,
         categoryIds: Map<String, Long>? = null,
-    ): ParsePass {
-        val sources = Databases.captureSourceDao(context)
-        return ParsePass(
-            dictionary = dictionary,
-            // Read when the pass is built, as `ParseWorker.drain` does, so a
-            // category deleted before this call is absent from it.
-            categoryIds = categoryIds ?: Databases.categoryDao(context).seededIds(),
-            captures = Databases.rawCaptureDao(context),
-            txns = Databases.txnDao(context),
-            merchants = Databases.merchantIdentityDao(context),
-            standingAnswers = Databases.standingAnswerDao(context),
-            matcher = matcher,
-            uncategorizedId = Databases.categoryDao(context).requireUncategorizedId(),
-            sourceLabel = sourceLabel ?: { pkg -> sources.byPackage(pkg)?.label },
-            maxRows = maxRows,
-            onCaptureFinished = onCaptureFinished,
-            progress = progress,
-        )
-    }
+    ): ParsePass = ParsePass.over(
+        db = Databases.shared(context),
+        matcher = matcher,
+        checkLimitSen = runBlocking { CheckLimit.sen(context) },
+        progress = progress,
+        maxRows = maxRows,
+        onCaptureFinished = onCaptureFinished,
+        dictionary = dictionary,
+        categoryIds = categoryIds,
+        sourceLabel = sourceLabel,
+    )
 
     /**
      * A transaction for [captureId] written **without** marking the capture,

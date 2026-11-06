@@ -356,6 +356,26 @@ class ParseWorkerTest {
     }
 
     /**
+     * A suite's own dictionary replaces the bundled one rather than joining
+     * it, so a test about filing is about its own entries only. `MY50 PASS`
+     * is the bundled dictionary's Transport; with only an entry for another
+     * merchant, it is filed nowhere.
+     */
+    @Test
+    fun aDictionaryAPassIsGivenReplacesTheBundledOne() {
+        val captureId = insertMy50Capture(base - 9_200L, ParseFixtures.uniqueAmount().second, "$marker-my50-replaced")
+
+        ParseFixtures.pass(
+            context,
+            dictionary = listOf(my.pinged.parse.DictionaryEntry("ZZOTHER$marker", "Shopping", my.pinged.parse.MatchMode.EXACT)),
+        ).run()
+
+        val txn = requireNotNull(ParseFixtures.txnForCapture(context, captureId))
+        assertEquals("precondition: the bundled dictionary's key", "MY50 PASS", txn.merchantKey)
+        assertEquals("The bundled dictionary filed it", Databases.categoryDao(context).requireUncategorizedId(), txn.categoryId)
+    }
+
+    /**
      * #46: an entry whose category the user deleted is skipped, so its
      * merchants fall through to Uncategorized rather than to an id that is
      * gone (which the foreign key would refuse, stranding the capture at NEW).

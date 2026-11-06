@@ -4,6 +4,7 @@ import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.util.Log
 import java.util.concurrent.CancellationException
 import my.pinged.data.Databases
+import my.pinged.data.PingedDatabase
 import my.pinged.data.LiveLearnedRules
 import my.pinged.data.dao.MerchantIdentityDao
 import my.pinged.data.dao.RawCaptureDao
@@ -505,6 +506,65 @@ internal class ParsePass(
 
     internal companion object {
         private const val TAG = "PingedParse"
+
+        /**
+         * A pass over [db] that reads what a run of [ParseWorker] reads, per
+         * pass: the bundled pack's dictionary, the taught rules as their
+         * `match_count` stands now, the seeded categories that exist and each
+         * app's label. [checkLimitSen] is read by the caller, before any lease
+         * ([CheckLimit.sen] suspends on DataStore, which has no place inside one).
+         *
+         * Each of [dictionary], [categoryIds] and [sourceLabel], when
+         * given, **replaces** what would be read, and nothing is merged into it:
+         * a test about filing passes its own dictionary and no other entry can
+         * file its capture. Only tests give them.
+         */
+        fun over(
+            db: PingedDatabase,
+            matcher: RuleMatcher,
+            checkLimitSen: Long,
+            isStopped: () -> Boolean = { false },
+            progress: Progress = Progress(),
+            maxRows: Int = MAX_ROWS_PER_RUN,
+            onCaptureFinished: (Long) -> Unit = {},
+            dictionary: List<DictionaryEntry>? = null,
+            categoryIds: Map<String, Long>? = null,
+            sourceLabel: ((String) -> String?)? = null,
+        ) = ParsePass(
+            captures = db.rawCaptureDao(),
+            txns = db.txnDao(),
+            merchants = db.merchantIdentityDao(),
+            standingAnswers = db.standingAnswerDao(),
+            matcher = matcher,
+            // Read per pass, so a rule saved or deleted between two runs counts on the next.
+            taught = TaughtTemplate.matcher(db.userTemplateRuleDao().all().map { it.stored() }),
+            // requireUncategorizedId, not the nullable form: spec 7.1 files an
+            // unknown merchant here, and a missing seed row must fail saying so
+            // rather than send a 0 down the money path into a foreign-key error
+            // far from the cause.
+            uncategorizedId = db.categoryDao().requireUncategorizedId(),
+            sourceLabel = sourceLabel ?: sourceLabels(db),
+            dictionary = dictionary ?: Graph.parsePack().dictionary,
+            // Read per pass, so a category deleted between two runs stops its
+            // entries filing on the next one.
+            categoryIds = categoryIds ?: db.categoryDao().seededIds(),
+            checkLimitSen = checkLimitSen,
+            maxRows = maxRows,
+            isStopped = isStopped,
+            onCaptureFinished = onCaptureFinished,
+            progress = progress,
+        )
+
+        /**
+         * `capture_source.label` for `txn.source_label` (spec 4), memoized for
+         * the pass. A batch is usually one or two packages, and the alternative
+         * is a point query per capture for an answer that does not change.
+         */
+        private fun sourceLabels(db: PingedDatabase): (String) -> String? {
+            val dao = db.captureSourceDao()
+            val cache = HashMap<String, String?>()
+            return { pkg -> cache.getOrPut(pkg) { dao.byPackage(pkg)?.label } }
+        }
 
         /**
          * Rows per `claimNextIds`.
