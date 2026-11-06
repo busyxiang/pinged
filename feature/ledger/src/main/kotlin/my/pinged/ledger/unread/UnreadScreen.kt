@@ -54,8 +54,8 @@ import my.pinged.data.NamedSource
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
-import my.pinged.ledger.settings.Operation
 import my.pinged.parse.FixtureText
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.theme.Body
@@ -143,7 +143,7 @@ internal fun UnreadContent(
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault(),
     onTeach: (UnreadCapture) -> Unit = {},
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
     source: NamedSource? = null,
     onShowEveryApp: () -> Unit = {},
 ) {

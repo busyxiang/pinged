@@ -21,9 +21,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.pinged.data.entity.Category
-import my.pinged.ledger.settings.Operation
 import my.pinged.parse.Amount
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerReplacement
 
 /**
  * Everything the entry screen draws: the draft, and why Save may be off.
@@ -37,7 +37,7 @@ data class ManualEntryState(
     /** The category chips, most used first; see `ManualEntries.categories`. */
     val categories: List<Category> = emptyList(),
     /** A restore or delete-everything running; nothing is saved meanwhile (`ManualEntries`). */
-    val busy: Operation? = null,
+    val busy: LedgerReplacement? = null,
     /** The ledger would not open on the last save. */
     val storageUnavailable: Boolean = false,
     val saving: Boolean = false,

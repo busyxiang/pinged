@@ -24,6 +24,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import my.pinged.capture.CaptureReport
 import my.pinged.capture.GuardedRunner
+import my.pinged.read.LedgerAccess
+import my.pinged.read.RawRunnerAccess
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
@@ -168,6 +170,7 @@ internal class AppStatus(
      * Guarded as [exportOverdue] is, for the flag's own write: what it
      * answers is in the flag, which [sample] reads next.
      */
+    @OptIn(RawRunnerAccess::class)
     private suspend fun probe() {
         try {
             runner.read(PROBE) {}
@@ -202,6 +205,7 @@ internal class AppStatus(
      * message: connection is closed" as the superclass (measured on
      * emulator-5554).
      */
+    @OptIn(RawRunnerAccess::class)
     private suspend fun exportOverdue(): Boolean = try {
         when (val txns = runner.read(COUNTING) { db -> db.txnDao().countAll() }) {
             Outcome.Refused, Outcome.Replacing -> false
@@ -335,7 +339,7 @@ internal data class AppStatusState(
      * last answer and 0 would say nothing awaits review (#237).
      */
     val awaitingReviewCount: Int?
-        get() = awaitingReview.takeUnless { it.unavailable || it.replacing }?.answer
+        get() = awaitingReview.takeUnless { it.ledger == LedgerAccess.Unreadable || it.ledger == LedgerAccess.BeingReplaced }?.answer
 }
 
 /**

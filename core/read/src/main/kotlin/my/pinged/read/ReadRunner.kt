@@ -17,6 +17,10 @@ import my.pinged.data.PingedDatabase
  *
  * An implementation catches [my.pinged.data.DatabaseUnavailableException] and
  * nothing else. [ScreenRead] never calls two of these at once.
+ *
+ * **A screen never calls one directly** ([RawRunnerAccess], #376): it reads,
+ * writes and looks up through its [ScreenRead], which is where a ledger
+ * replacement's claim refuses a write. Implementing one is not calling it.
  */
 interface ReadRunner {
     /**
@@ -26,6 +30,7 @@ interface ReadRunner {
      *
      * @param what the refusal's name in the log.
      */
+    @RawRunnerAccess
     suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T>
 
     /**
@@ -40,6 +45,7 @@ interface ReadRunner {
      *   it found, as `RowActions.assignCategory` does: [body] runs in one
      *   transaction as [read]'s does, and blocks without switching threads.
      */
+    @RawRunnerAccess
     suspend fun <T> write(what: String, oneTransaction: Boolean = false, body: suspend (PingedDatabase) -> T): Outcome<T>
 }
 
@@ -61,3 +67,21 @@ sealed interface Outcome<out T> {
      */
     data object Replacing : Outcome<Nothing>
 }
+
+/**
+ * Marks [ReadRunner.read] and [ReadRunner.write] (#376): a call to either skips
+ * [ScreenRead]'s turn, and with it the claim that refuses a write during a
+ * ledger replacement. **An error, not a warning.** Gradle opts every test
+ * compilation in; in production only `:core:read`, `GuardedRunner` (the
+ * adapter), `AppStatus`'s health probe, which is no screen, and
+ * `ScriptedRunner` do, and `RawRunnerAccessTest` refuses the name in any other
+ * production source. A screen that needs a one-off read uses [ScreenRead.lookup].
+ */
+@RequiresOptIn(
+    level = RequiresOptIn.Level.ERROR,
+    message = "A screen reads and writes the ledger through its ScreenRead, which refuses a write during a " +
+        "ledger replacement. Use ScreenRead.write or ScreenRead.lookup.",
+)
+@Retention(AnnotationRetention.BINARY)
+@Target(AnnotationTarget.FUNCTION)
+annotation class RawRunnerAccess

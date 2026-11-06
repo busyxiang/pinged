@@ -45,7 +45,6 @@ import my.pinged.ledger.search.SearchChoice
 import my.pinged.ledger.search.SearchRead
 import my.pinged.ledger.search.SearchScreenContent
 import my.pinged.data.SearchTotal
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.sources.SourceRow
 import my.pinged.ledger.sources.SourcesScreenContent
 import my.pinged.ledger.sources.SourcesState
@@ -53,7 +52,9 @@ import my.pinged.ledger.sources.toState
 import my.pinged.ledger.unread.UnreadContent
 import my.pinged.ledger.unread.UnreadPage
 import my.pinged.ledger.unread.toState
+import my.pinged.read.LedgerAccess
 import my.pinged.read.Answered
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.ReadState
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.PingedTheme
@@ -108,7 +109,7 @@ class ReplacingNoticeTest {
 
     /** [answer], landed, and raised to replacing when [replacing] is. */
     private fun <Q, A> held(question: Q, answer: A, replacing: Boolean) =
-        ReadState(Answered(question, answer), rereading = false, unavailable = false, replacing = replacing)
+        ReadState(Answered(question, answer), rereading = false, ledger = if (replacing) LedgerAccess.BeingReplaced else LedgerAccess.Readable)
 
     @Test fun spending() {
         val feed = flowOf(
@@ -208,7 +209,7 @@ class ReplacingNoticeTest {
                 cards = listOf(card),
                 storageUnavailable = false,
                 replacing = replacing,
-                busy = Operation.RESTORE,
+                busy = LedgerReplacement.RESTORE,
                 onBack = {},
                 onAnswer = { _, _ -> },
             )

@@ -1,7 +1,6 @@
 package my.pinged.ledger
 
 import android.content.Context
-import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,8 +11,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import my.pinged.capture.CaptureStorage
 import my.pinged.data.PingedDatabase
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
+import my.pinged.read.LedgerReplacement
 
 /**
  * Whether a ledger replacement -- a restore or a delete-everything -- is
@@ -25,9 +24,9 @@ import my.pinged.ledger.settings.TransferState
  */
 internal class LedgerBusy(scope: CoroutineScope, private val transfers: StateFlow<TransferState>) {
     /** The restore or delete-everything running, while one is: what a screen draws. */
-    val busy: StateFlow<Operation?> = transfers
-        .map { it.replacingLedger }
-        .stateIn(scope, SharingStarted.Eagerly, transfers.value.replacingLedger)
+    val busy: StateFlow<LedgerReplacement?> = transfers
+        .map { it.replacement }
+        .stateIn(scope, SharingStarted.Eagerly, transfers.value.replacement)
 
     /**
      * Whether a restore or a delete-everything is running now: what a write
@@ -65,7 +64,7 @@ internal class LedgerWrites(
     val storageUnavailable: StateFlow<Boolean> = _storageUnavailable.asStateFlow()
 
     /** See [LedgerBusy.busy]. */
-    val busy: StateFlow<Operation?> get() = gate.busy
+    val busy: StateFlow<LedgerReplacement?> get() = gate.busy
 
     /** See [LedgerBusy.replacing]. */
     val replacing: Boolean get() = gate.replacing
@@ -115,11 +114,10 @@ internal enum class Withheld(val word: String) {
  * over the review cards, `... SAVED ...` over the entry screen, and
  * `... CHANGED ...` everywhere else ([ChangedLine]).
  */
-internal fun busyLine(busy: Operation, withheld: Withheld): String {
+internal fun busyLine(busy: LedgerReplacement, withheld: Withheld): String {
     val doing = when (busy) {
-        Operation.RESTORE -> "RESTORING A BACKUP"
-        Operation.DELETE -> "DELETING EVERYTHING"
-        else -> busy.doing.uppercase(Locale.ROOT)
+        LedgerReplacement.RESTORE -> "RESTORING A BACKUP"
+        LedgerReplacement.DELETE -> "DELETING EVERYTHING"
     }
     return "$doing · NOTHING CAN BE ${withheld.word} UNTIL IT FINISHES"
 }

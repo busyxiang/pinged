@@ -38,8 +38,8 @@ import java.util.Locale
 import my.pinged.capture.Graph
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
-import my.pinged.ledger.settings.Operation
 import my.pinged.parse.ParsePack
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Separator
@@ -115,7 +115,7 @@ fun SourcesScreenContent(
     onToggle: (String, Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
     pack: ParsePack = Graph.parsePack(),
 ) {
     val reads = remember(pack) { readsLine(pack) }

@@ -30,8 +30,8 @@ import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.home.REMOVE_CONFIRM
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.settings.Operation
 import my.pinged.parse.ExclusionReason
+import my.pinged.read.LedgerReplacement
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -47,7 +47,7 @@ import java.time.ZoneOffset
 class ReplacingDetailTest {
     @get:Rule val compose = createComposeRule()
 
-    private var busy by mutableStateOf<Operation?>(Operation.RESTORE)
+    private var busy by mutableStateOf<LedgerReplacement?>(LedgerReplacement.RESTORE)
     private val written = mutableListOf<String>()
 
     @Test fun aCountedRowsWritesAreOffDuringARestoreAndOnAfterIt() {
@@ -73,7 +73,7 @@ class ReplacingDetailTest {
     }
 
     @Test fun countAsSpendingIsOffDuringADelete() {
-        busy = Operation.DELETE
+        busy = LedgerReplacement.DELETE
         draw(reason = ExclusionReason.USER)
 
         compose.onNodeWithText("DELETING EVERYTHING · NOTHING CAN BE CHANGED UNTIL IT FINISHES").assertIsDisplayed()
@@ -85,7 +85,7 @@ class ReplacingDetailTest {
         draw(reason = null)
         button(DELETE).performClick()
 
-        busy = Operation.RESTORE
+        busy = LedgerReplacement.RESTORE
 
         compose.onNode(hasText(REMOVE_CONFIRM) and hasClickAction()).assertIsNotEnabled().performClick()
         assertEquals("A row was removed during a restore", emptyList<String>(), written)

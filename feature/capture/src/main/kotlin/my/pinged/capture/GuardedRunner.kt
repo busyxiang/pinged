@@ -4,6 +4,7 @@ import android.content.Context
 import my.pinged.data.DatabaseAccess
 import my.pinged.data.PingedDatabase
 import my.pinged.read.Outcome
+import my.pinged.read.RawRunnerAccess
 import my.pinged.read.ReadRunner
 
 /**
@@ -22,6 +23,7 @@ import my.pinged.read.ReadRunner
  * A delete's or a restore's gate answers [Outcome.Replacing], every other
  * refusal [Outcome.Refused] (#328).
  */
+@OptIn(RawRunnerAccess::class)
 class GuardedRunner(private val context: Context) : ReadRunner {
 
     /**

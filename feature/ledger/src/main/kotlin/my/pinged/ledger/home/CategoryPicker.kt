@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import my.pinged.ledger.ChangedLine
-import my.pinged.ledger.settings.Operation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,6 +56,7 @@ import my.pinged.ui.theme.PlusMark
 import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
+import my.pinged.read.LedgerReplacement
 
 /** The sheet's heading, named so the screen and its test cannot spell it differently. */
 internal const val PICKER_HEADING = "What was this?"
@@ -199,7 +199,7 @@ internal fun CategoryPicker(
     allNames: List<String> = categories.map { it.name },
     onAdd: (suspend (name: String, iconKey: String) -> Long?)? = null,
     noSwitchNote: String? = NO_MERCHANT_NOTE,
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
 ) {
     var adding by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

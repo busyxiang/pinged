@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.sp
 import java.time.ZoneId
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.unread.postedOf
 import my.pinged.ledger.unread.sourceOf
 import my.pinged.parse.Direction
@@ -70,6 +69,7 @@ import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
+import my.pinged.read.LedgerReplacement
 
 /**
  * Spec 5.8's Teach screen, drawn from `design/Teach.dc.html`: the message as
@@ -113,7 +113,7 @@ internal fun TeachContent(
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
     zone: ZoneId = ZoneId.systemDefault(),
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
 ) {
     val capture = state.capture
     val selection = state.selection

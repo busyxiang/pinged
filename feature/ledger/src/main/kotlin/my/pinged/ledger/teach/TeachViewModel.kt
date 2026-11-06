@@ -18,12 +18,13 @@ import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.data.entity.UserTemplateRule
 import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.Direction
 import my.pinged.parse.MatchOutcome
 import my.pinged.parse.TaughtTemplate
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.RawRunnerAccess
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
 
@@ -52,6 +53,7 @@ data class TeachState(
  * each becomes a transaction -- held for review, as its first three are --
  * rather than waiting for a message that may never come again.
  */
+@OptIn(RawRunnerAccess::class)
 class TeachViewModel internal constructor(
     app: Application,
     private val captureId: Long,
@@ -70,7 +72,7 @@ class TeachViewModel internal constructor(
     private val gate = LedgerBusy(viewModelScope, transfers)
 
     /** The ledger replacement running, while one is: the screen disables Save and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
+    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     private val turn = Mutex()
     private val _state = MutableStateFlow(TeachState())

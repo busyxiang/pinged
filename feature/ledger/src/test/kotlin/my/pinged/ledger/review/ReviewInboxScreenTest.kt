@@ -32,7 +32,7 @@ import my.pinged.ledger.SOURCE_LABEL
 import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.settings.Operation
+import my.pinged.read.LedgerReplacement
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -185,7 +185,7 @@ class ReviewInboxScreenTest {
     }
 
     @Test fun aRestoreOrADeleteDisablesEveryAnswerAndUndoWithOneLineSayingWhich() {
-        val busy = mutableStateOf<Operation?>(Operation.RESTORE)
+        val busy = mutableStateOf<LedgerReplacement?>(LedgerReplacement.RESTORE)
         compose.setContent {
             PingedTheme {
                 ReviewInboxScreenContent(
@@ -200,7 +200,7 @@ class ReviewInboxScreenTest {
             }
         }
 
-        listOf(Operation.RESTORE, Operation.DELETE).forEach { operation ->
+        listOf(LedgerReplacement.RESTORE, LedgerReplacement.DELETE).forEach { operation ->
             busy.value = operation
             compose.onNodeWithText(busyLine(operation, Withheld.ANSWERED)).performScrollTo().assertIsDisplayed()
             rent.kind.answers.forEach { answer ->
@@ -218,14 +218,14 @@ class ReviewInboxScreenTest {
         assertEquals(
             "The busy line stayed up after the operation ended",
             0,
-            compose.onAllNodesWithText(busyLine(Operation.RESTORE, Withheld.ANSWERED)).fetchSemanticsNodes().size,
+            compose.onAllNodesWithText(busyLine(LedgerReplacement.RESTORE, Withheld.ANSWERED)).fetchSemanticsNodes().size,
         )
     }
 
     /** Spec 7.3: Always is drawn beside Undo only while a Leave out offers it, and reports its tap. */
     @Test fun alwaysIsDrawnOnlyWhenOfferedAndIsDisabledWhileTheLedgerIsReplaced() {
         var always = 0
-        val busy = mutableStateOf<Operation?>(null)
+        val busy = mutableStateOf<LedgerReplacement?>(null)
         val undoable = mutableStateOf(Undoable("ACCEPTED · RM650.00", rows = emptyList()))
         compose.setContent {
             PingedTheme {
@@ -250,7 +250,7 @@ class ReviewInboxScreenTest {
         compose.onNodeWithText(ALWAYS).assertIsEnabled().performClick()
         assertEquals("Always did not report its tap", 1, always)
 
-        busy.value = Operation.RESTORE
+        busy.value = LedgerReplacement.RESTORE
         compose.onNodeWithText(ALWAYS).assertIsNotEnabled().performClick()
         assertEquals("Always was tapped through while the ledger was being replaced", 1, always)
 

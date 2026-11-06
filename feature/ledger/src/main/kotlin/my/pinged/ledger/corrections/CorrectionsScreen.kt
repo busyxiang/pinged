@@ -31,10 +31,10 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.BackChevron
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.ledger.home.dayLabel
 import my.pinged.ledger.home.words
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.rememberReadState
 import my.pinged.ui.money
 import my.pinged.ui.theme.ButtonLabel
@@ -79,7 +79,7 @@ internal fun CorrectionsContent(
     onAccept: (Corrections.Correction) -> Unit,
     onDecline: (Corrections.Correction) -> Unit,
     modifier: Modifier = Modifier,
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
 ) {
     if (!state.loaded) {
         Column(modifier.fillMaxSize().background(Paper)) {

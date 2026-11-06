@@ -52,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.data.LocalDate
 import my.pinged.parse.TaughtTemplate
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.data.LocalDates
 import my.pinged.data.dao.DetailRow
@@ -59,7 +61,6 @@ import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.home.CategoryActions
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.home.EDIT_MERCHANT
 import my.pinged.ledger.home.HeroSerif
 import my.pinged.ledger.home.MerchantActions
@@ -132,8 +133,8 @@ fun DetailScreen(
     val busy by viewModel.busy.collectAsState()
     DetailScreenContent(
         read = read.answer,
-        storageUnavailable = read.unavailable,
-        replacing = read.replacing,
+        storageUnavailable = read.ledger == LedgerAccess.Unreadable,
+        replacing = read.ledger == LedgerAccess.BeingReplaced,
         busy = busy,
         onBack = onBack,
         categories = viewModel.rows,
@@ -186,7 +187,7 @@ internal fun DetailScreenContent(
     zone: ZoneId = ZoneId.systemDefault(),
     /** A ledger replacement turned the read away (#328): [REPLACING_YOUR_DATA] in place of anything read. */
     replacing: Boolean = false,
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
 ) {
     var categorizing by rememberSaveable { mutableStateOf(false) }
     var removing by rememberSaveable { mutableStateOf(false) }

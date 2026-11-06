@@ -7,12 +7,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.NamedSource
 import my.pinged.data.dao.UnreadCapture
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
@@ -38,8 +39,8 @@ internal data class UnreadPage(val items: List<UnreadCapture>, val more: Boolean
  * whatever the last read held, as `LearnedViewModel`'s does.
  */
 internal fun ReadState<Int, UnreadPage>.toState(): UnreadState {
-    if (replacing) return UnreadState(loaded = true, replacing = true)
-    if (unavailable) return UnreadState(loaded = true, storageUnavailable = true)
+    if (ledger == LedgerAccess.BeingReplaced) return UnreadState(loaded = true, replacing = true)
+    if (ledger == LedgerAccess.Unreadable) return UnreadState(loaded = true, storageUnavailable = true)
     val page = answer ?: return UnreadState()
     return UnreadState(loaded = true, items = page.items, more = page.more)
 }
@@ -71,7 +72,7 @@ class UnreadViewModel internal constructor(
     private val gate = LedgerBusy(viewModelScope, transfers)
 
     /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
+    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * The list from its top, as long as the question says, newest first.

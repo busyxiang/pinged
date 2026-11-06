@@ -8,7 +8,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
@@ -17,6 +16,7 @@ import my.pinged.data.dao.TxnDao
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
@@ -51,7 +51,7 @@ class DetailViewModel internal constructor(
     private val gate = LedgerBusy(viewModelScope, transfers)
 
     /** The ledger replacement running, while one is: the screen disables its own writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
+    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * The row and the chooser's half, in one transaction so the chooser marks

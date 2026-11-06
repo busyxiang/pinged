@@ -10,7 +10,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.CheckLimit
@@ -19,6 +18,8 @@ import my.pinged.capture.Graph
 import my.pinged.capture.GuardedRunner
 import my.pinged.capture.TxnLookup
 import my.pinged.data.PingedDatabase
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
@@ -48,8 +49,8 @@ internal data class Pending(val found: List<Corrections.Correction>?, val packVe
  * whatever the last read held, as `LearnedViewModel`'s does.
  */
 internal fun ReadState<Unit, Pending>.toState(): CorrectionsState {
-    if (replacing) return CorrectionsState(loaded = true, replacing = true)
-    if (unavailable) return CorrectionsState(loaded = true, storageUnavailable = true)
+    if (ledger == LedgerAccess.BeingReplaced) return CorrectionsState(loaded = true, replacing = true)
+    if (ledger == LedgerAccess.Unreadable) return CorrectionsState(loaded = true, storageUnavailable = true)
     val pending = answer ?: return CorrectionsState()
     return CorrectionsState(
         loaded = true,
@@ -81,7 +82,7 @@ class CorrectionsViewModel internal constructor(
     private val gate = LedgerBusy(viewModelScope, transfers)
 
     /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
+    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /** A getter, for the reason `SourcesViewModel.context` gives. */
     private val context: Context get() = getApplication<Application>()

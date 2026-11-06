@@ -32,6 +32,7 @@ import androidx.compose.ui.test.pressKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.ledger.home.PICKER_HEADING
 import my.pinged.ledger.home.SAVE_LABEL
+import my.pinged.read.LedgerReplacement
 import my.pinged.ui.theme.PingedTheme
 import my.pinged.ui.theme.READING
 import my.pinged.ui.theme.READING_DELAY_MILLIS
@@ -153,7 +154,7 @@ class ManualEntryScreenTest {
             .filterToOne(SemanticsMatcher.keyIsDefined(SemanticsProperties.EditableText))
 
     @Test fun saveIsDisabledWhileTheLedgerIsBeingReplaced() {
-        state = ManualEntryState(draft = ManualDraft(amountSen = 1_250L), busy = my.pinged.ledger.settings.Operation.RESTORE)
+        state = ManualEntryState(draft = ManualDraft(amountSen = 1_250L), busy = LedgerReplacement.RESTORE)
         draw()
         compose.onNodeWithText(SAVE).performScrollTo().assertIsNotEnabled()
         amountField().assertTextEquals("RM12.50")

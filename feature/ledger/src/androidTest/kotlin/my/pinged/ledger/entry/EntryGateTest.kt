@@ -25,6 +25,7 @@ import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
 import my.pinged.ledger.holdWhile
+import my.pinged.ledger.replacementOf
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.Transfers
 import org.junit.After
@@ -103,7 +104,7 @@ class EntryGateTest {
 
     private suspend fun refusedWhileHeld(vm: ManualEntryViewModel, operation: Operation) {
         val held = vm.state.value
-        assertEquals("The screen does not say the $operation is running", operation, held.busy)
+        assertEquals("The screen does not say the $operation is running", replacementOf(operation), held.busy)
         assertFalse("Save is on during the $operation", held.canSave)
 
         // As if the tap got through: the holder refuses on the spot.

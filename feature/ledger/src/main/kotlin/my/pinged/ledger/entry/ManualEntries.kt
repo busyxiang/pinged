@@ -29,7 +29,6 @@ import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.LedgerWrites
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.Amount
@@ -37,6 +36,7 @@ import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import my.pinged.parse.Filer
 import my.pinged.parse.MerchantNormalization
+import my.pinged.read.LedgerReplacement
 
 /**
  * Spec 9.4's manual entry: a payment Pinged did not see, typed in by hand
@@ -88,7 +88,7 @@ class ManualEntries(
     val storageUnavailable: StateFlow<Boolean> = writes.storageUnavailable
 
     /** The restore or delete-everything running, while one is; see the class KDoc. */
-    val busy: StateFlow<Operation?> = writes.busy
+    val busy: StateFlow<LedgerReplacement?> = writes.busy
 
     /**
      * Spec 9.4's category chips, most used first ([rank]); empty until a read

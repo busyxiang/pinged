@@ -7,7 +7,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.Graph
@@ -16,6 +15,8 @@ import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
 import my.pinged.data.dao.StandingAnswerRow
 import my.pinged.data.dao.TaughtRuleRow
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.parse.ExclusionReason
@@ -60,8 +61,8 @@ data class LeftOut(val row: StandingAnswerRow, val exclusion: ExclusionReason)
  * supports.
  */
 internal fun ReadState<Unit, Taught>.toState(): LearnedState {
-    if (replacing) return LearnedState(loaded = true, replacing = true)
-    if (unavailable) return LearnedState(loaded = true, storageUnavailable = true)
+    if (ledger == LedgerAccess.BeingReplaced) return LearnedState(loaded = true, replacing = true)
+    if (ledger == LedgerAccess.Unreadable) return LearnedState(loaded = true, storageUnavailable = true)
     val taught = answer ?: return LearnedState()
     return LearnedState(
         loaded = true,
@@ -93,7 +94,7 @@ class LearnedViewModel internal constructor(
     private val gate = LedgerBusy(viewModelScope, transfers)
 
     /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
+    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * The four lists, in one transaction. `LearnedScreen` reads it on resume

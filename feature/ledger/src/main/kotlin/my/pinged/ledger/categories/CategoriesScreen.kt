@@ -40,8 +40,8 @@ import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.home.CategorySheet
 import my.pinged.ledger.home.NEW_CATEGORY
 import my.pinged.ledger.home.categoryIcon
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.grouped
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -139,7 +139,7 @@ internal fun CategoriesContent(
     onEdit: (categoryId: Long, name: String, iconKey: String) -> Unit,
     onDelete: (categoryId: Long) -> Unit,
     modifier: Modifier = Modifier,
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
 ) {
     var editing by rememberSaveable { mutableStateOf<Long?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }

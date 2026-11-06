@@ -47,10 +47,10 @@ import my.pinged.data.dao.TaughtRuleRow
 import my.pinged.ledger.BackChevron
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.SETTINGS_BACK
 import my.pinged.parse.Direction
 import my.pinged.parse.ExclusionReason
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.rememberReadState
 import my.pinged.ui.CALENDAR
 import my.pinged.ledger.settings.grouped
@@ -125,7 +125,7 @@ internal fun LearnedContent(
     onDeleteIgnored: (RejectRuleRow) -> Unit = {},
     initialTab: TaughtTab = TaughtTab.MERCHANTS,
     onDeleteMessage: (TaughtRuleRow) -> Unit = {},
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
     onDeleteLeftOut: (LeftOut) -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }

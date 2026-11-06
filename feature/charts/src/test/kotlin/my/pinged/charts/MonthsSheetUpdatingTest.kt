@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import my.pinged.charts.model.MonthsItem
+import my.pinged.read.LedgerAccess
 import my.pinged.read.Answered
 import my.pinged.read.ReadState
 import my.pinged.ui.test.HeldClock
@@ -40,21 +41,21 @@ class MonthsSheetUpdatingTest {
      * What the sheet's `ScreenRead` has published: this opening's read is in
      * flight, over the last opening's answer, until the test moves it on.
      */
-    private var state: ReadState<Int, Unit> by mutableStateOf(ReadState(Answered(1, Unit), rereading = true, unavailable = false))
+    private var state: ReadState<Int, Unit> by mutableStateOf(ReadState(Answered(1, Unit), rereading = true))
 
     /** This opening's read lands. */
     private fun landed() {
-        state = ReadState(Answered(2, Unit), rereading = false, unavailable = false)
+        state = ReadState(Answered(2, Unit), rereading = false)
     }
 
     /** This opening's read was refused. */
     private fun refused() {
-        state = state.copy(rereading = false, unavailable = true)
+        state = state.copy(rereading = false, ledger = LedgerAccess.Unreadable)
     }
 
     private fun open(items: List<MonthsItem>?) {
         // A first opening has no last answer to hold, and so is not a re-read.
-        if (items == null) state = ReadState(answered = null, rereading = false, unavailable = false)
+        if (items == null) state = ReadState(answered = null, rereading = false)
         compose.mainClock.autoAdvance = false
         compose.setContent {
             PingedTheme {
@@ -143,7 +144,7 @@ class MonthsSheetUpdatingTest {
         open(lastOpening)
 
         at(48)
-        state = state.copy(rereading = false, replacing = true)
+        state = state.copy(rereading = false, ledger = LedgerAccess.BeingReplaced)
         at(READING_DELAY_MILLIS + 40)
 
         assertEquals("A reopening refused by a replacement did not say so: ${texts()}", 1, count(REPLACING_YOUR_DATA))

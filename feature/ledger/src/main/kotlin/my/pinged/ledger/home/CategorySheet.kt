@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.sp
 import my.pinged.data.dao.CategoryDao
 import my.pinged.data.entity.Category
 import my.pinged.ledger.ChangedLine
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.grouped
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
@@ -49,6 +48,7 @@ import my.pinged.ui.theme.ReceiptSheetFrame
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.SheetHeader
 import my.pinged.ui.theme.Stamp
+import my.pinged.read.LedgerReplacement
 
 /** The sheet's two headings, named so the screens and their tests cannot spell them differently. */
 internal const val EDIT_CATEGORY = "Edit category"
@@ -145,7 +145,7 @@ internal fun CategorySheet(
     onSave: (name: String, iconKey: String) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
 ) {
     var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name ?: "") }
     var icon by rememberSaveable(existing?.id) { mutableStateOf(existing?.iconKey ?: NEW_CATEGORY_ICON) }

@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import my.pinged.ledger.home.LedgerRead
 import my.pinged.ledger.home.LedgerViewModel
 import java.time.YearMonth
+import my.pinged.read.LedgerAccess
 
 // What the Ledger's tests ask of the holder's `ScreenRead` (#299): the module
 // must be called on the holder's own thread, which is the main one, and a test
@@ -24,4 +25,4 @@ internal suspend fun LedgerViewModel.readAgain() {
 internal val LedgerViewModel.answer: LedgerRead get() = read.state.value.answer ?: LedgerRead()
 
 /** The last read, or a write, was refused because the database could not be opened. */
-internal val LedgerViewModel.unavailable: Boolean get() = read.state.value.unavailable
+internal val LedgerViewModel.unavailable: Boolean get() = read.state.value.ledger == LedgerAccess.Unreadable

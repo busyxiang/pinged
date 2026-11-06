@@ -59,8 +59,9 @@ import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
 import my.pinged.ledger.home.CategoryPicker
 import my.pinged.ledger.home.ChooserSubject
-import my.pinged.ledger.settings.Operation
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.dayMonthYear
 import my.pinged.ui.money
@@ -112,8 +113,8 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
     val undoable by viewModel.inbox.undoable.collectAsState()
     ReviewInboxScreenContent(
         cards = read.answer,
-        storageUnavailable = read.unavailable,
-        replacing = read.replacing,
+        storageUnavailable = read.ledger == LedgerAccess.Unreadable,
+        replacing = read.ledger == LedgerAccess.BeingReplaced,
         busy = busy,
         onBack = onBack,
         onAnswer = { card, answer -> viewModel.answer(card, answer) },
@@ -160,7 +161,7 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
 fun ReviewInboxScreenContent(
     cards: List<ReviewCard>?,
     storageUnavailable: Boolean,
-    busy: Operation?,
+    busy: LedgerReplacement?,
     onBack: () -> Unit,
     onAnswer: (ReviewCard, ReviewAnswer) -> Unit,
     modifier: Modifier = Modifier,
@@ -240,7 +241,7 @@ private fun Cards(
     cards: List<ReviewCard>?,
     storageUnavailable: Boolean,
     replacing: Boolean,
-    busy: Operation?,
+    busy: LedgerReplacement?,
     onBack: () -> Unit,
     onAnswer: (ReviewCard, ReviewAnswer) -> Unit,
     list: LazyListState,

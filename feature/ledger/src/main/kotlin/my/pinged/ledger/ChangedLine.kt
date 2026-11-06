@@ -6,7 +6,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import my.pinged.ledger.settings.Operation
+import my.pinged.read.LedgerReplacement
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.Stamp
 
@@ -17,6 +17,6 @@ import my.pinged.ui.theme.Stamp
  * top of Detail and of each Settings sub-screen, and under a sheet's header.
  */
 @Composable
-internal fun ChangedLine(busy: Operation, padding: PaddingValues = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp)) {
+internal fun ChangedLine(busy: LedgerReplacement, padding: PaddingValues = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp)) {
     Text(busyLine(busy, Withheld.CHANGED), style = MonoLabel, color = Stamp, modifier = Modifier.padding(padding))
 }

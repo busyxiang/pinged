@@ -57,11 +57,21 @@ subprojects {
 val modulesThatSeeCoreData = setOf(
     ":core:data", ":core:read", ":feature:capture", ":feature:ledger", ":feature:charts", ":app",
 )
+
+// A screen's direct call to `ReadRunner.read` or `write` is opt-in on the same
+// terms (#376): `@RawRunnerAccess` keeps it off the path that skips
+// `ScreenRead`'s claim, and only tests opt in here. The production opt-ins are
+// the few `RawRunnerAccessTest` allows, each at its use.
+val modulesThatSeeCoreRead = setOf(":core:read", ":feature:capture", ":feature:ledger", ":feature:charts", ":app")
 subprojects {
-    if (path in modulesThatSeeCoreData) {
+    val markers = listOfNotNull(
+        "my.pinged.data.RawDatabaseAccess".takeIf { path in modulesThatSeeCoreData },
+        "my.pinged.read.RawRunnerAccess".takeIf { path in modulesThatSeeCoreRead },
+    )
+    if (markers.isNotEmpty()) {
         tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
             if (Regex("compile.*(UnitTest|AndroidTest)Kotlin").matches(name)) {
-                compilerOptions.optIn.add("my.pinged.data.RawDatabaseAccess")
+                compilerOptions.optIn.addAll(markers)
             }
         }
     }

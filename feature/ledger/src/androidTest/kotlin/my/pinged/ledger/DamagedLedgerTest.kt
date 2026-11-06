@@ -38,6 +38,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import my.pinged.read.LedgerAccess
 
 /**
  * The ledger's figures and the settings screen on a ledger with one damaged
@@ -112,7 +113,7 @@ class DamagedLedgerTest {
         }
 
         assertEquals("the ledger's refresh threw past its guard", emptyList<Throwable>(), uncaught.toList())
-        assertEquals("the ledger reported its storage unavailable", false, ledger.read.state.value.unavailable)
+        assertEquals("the ledger reported its storage unavailable", false, ledger.read.state.value.ledger == LedgerAccess.Unreadable)
         val settings = withContext(Dispatchers.Main) { SettingsViewModel(app) }
         settings.refresh()
         assertEquals(

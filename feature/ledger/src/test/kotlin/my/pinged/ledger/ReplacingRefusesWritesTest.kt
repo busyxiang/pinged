@@ -25,6 +25,7 @@ import my.pinged.ledger.teach.TeachState
 import my.pinged.ledger.teach.TeachViewModel
 import my.pinged.ledger.unread.UnreadViewModel
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerAccess
 import my.pinged.read.Outcome
 import my.pinged.read.ScreenRead
 import my.pinged.read.test.ScriptedRunner
@@ -178,7 +179,7 @@ class ReplacingRefusesWritesTest {
             emptyList<String>(),
             runner.calls.drop(before).map { it.what },
         )
-        assertFalse("\"$what\" refused for a replacement raised unavailable", read.state.value.unavailable)
+        assertFalse("\"$what\" refused for a replacement raised unavailable", read.state.value.ledger == LedgerAccess.Unreadable)
 
         transfers.value = TransferState()
         runner.holding = true

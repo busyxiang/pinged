@@ -17,8 +17,8 @@ import androidx.compose.ui.test.swipeRight
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.settings.Operation
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerReplacement
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -64,7 +64,7 @@ class ReviewSwipeScreenTest {
     }
 
     @Test fun aSwipeDoesNothingWhileARestoreRuns() {
-        content(listOf(card(PLAIN, PendingReason.OVER_THRESHOLD)), busy = Operation.RESTORE)
+        content(listOf(card(PLAIN, PendingReason.OVER_THRESHOLD)), busy = LedgerReplacement.RESTORE)
 
         swipe(PLAIN)
         compose.waitForIdle()
@@ -101,7 +101,7 @@ class ReviewSwipeScreenTest {
     /** The duplicate is pairless, so drawn with Accept (#116), and still not plain to Accept all. */
     @Test fun acceptAllIsAbsentWithNoPlainCardsAndDisabledWhileADeleteRuns() {
         val cards = mutableStateOf(listOf(card(TRANSFER, PendingReason.TRANSFER_SUSPECT), card(DUPLICATE, PendingReason.DUPLICATE_SUSPECT)))
-        val busy = mutableStateOf<Operation?>(null)
+        val busy = mutableStateOf<LedgerReplacement?>(null)
         compose.setContent {
             PingedTheme {
                 ReviewInboxScreenContent(
@@ -122,7 +122,7 @@ class ReviewSwipeScreenTest {
         )
 
         cards.value = cards.value + card(PLAIN, PendingReason.RULE_REVIEW, amountSen = 45_000L)
-        busy.value = Operation.DELETE
+        busy.value = LedgerReplacement.DELETE
         compose.onNodeWithText("Accept 1 · RM450.00").performScrollTo().assertIsNotEnabled().performClick()
         assertEquals("Accept all was tapped through while the ledger was being replaced", 0, acceptAlls)
     }
@@ -137,7 +137,7 @@ class ReviewSwipeScreenTest {
         compose.onNodeWithTag(reviewCardTag(id)).performTouchInput { swipeRight() }
     }
 
-    private fun content(cards: List<ReviewCard>, busy: Operation? = null) {
+    private fun content(cards: List<ReviewCard>, busy: LedgerReplacement? = null) {
         compose.setContent {
             PingedTheme {
                 ReviewInboxScreenContent(

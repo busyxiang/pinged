@@ -20,12 +20,14 @@ import my.pinged.data.dao.RetroPreview
 import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.Category
 import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.Filer
 import my.pinged.parse.LearnedRules.Snapshot
 import my.pinged.parse.SameShop
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.RawRunnerAccess
+import my.pinged.read.LedgerAccess
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
@@ -81,7 +83,7 @@ class RowActions(
     private val gate = LedgerBusy(scope, transfers)
 
     /** The ledger replacement running, while one is; see the class KDoc. */
-    override val busy: StateFlow<Operation?> = gate.busy
+    override val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * Spec 6.4's merchant sheet's read: its question is the opening, or null
@@ -208,6 +210,7 @@ class RowActions(
      * count of 0, which the chooser would draw as a fact (#237). The save
      * re-checks inside its own transaction either way.
      */
+    @OptIn(RawRunnerAccess::class)
     override suspend fun retroPreview(txnId: Long, categoryId: Long): RetroPreview? =
         (runner.read("The past payments could not be counted") { db -> db.merchantIdentityDao().retroPreview(txnId, categoryId) } as? Outcome.Done)
             ?.value
@@ -236,7 +239,7 @@ class RowActions(
             // Only an answer to the opening still asked for says it is gone: a
             // read dropped for another question left its refusal or answer behind.
             if (merchant.question.value == opening) {
-                val refused = state.unavailable || state.replacing
+                val refused = state.ledger == LedgerAccess.Unreadable || state.ledger == LedgerAccess.BeingReplaced
                 val gone = refused || state.answered?.let { it.question == opening && it.answer == null } == true
                 if (gone) merchant.setQuestion(null)
                 if (refused) screen.refused()
@@ -294,7 +297,7 @@ class RowActions(
  */
 interface CategoryActions {
     /** The ledger replacement running, while one is: the chooser disables its Save and says so. */
-    val busy: StateFlow<Operation?>
+    val busy: StateFlow<LedgerReplacement?>
 
     /** File one transaction under [categoryId], teaching its merchant when [teach]; see [RowActions.assignCategory]. */
     fun assignCategory(txnId: Long, categoryId: Long, teach: Boolean): Job

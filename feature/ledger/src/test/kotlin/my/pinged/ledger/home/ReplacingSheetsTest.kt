@@ -23,7 +23,7 @@ import my.pinged.data.dao.MerchantMember
 import my.pinged.data.entity.Category
 import my.pinged.data.LocalDates
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.settings.Operation
+import my.pinged.read.LedgerReplacement
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -46,7 +46,7 @@ class ReplacingSheetsTest {
     private val merchants = FakeMerchantActions()
 
     @Test fun aChooserOpenedDuringARestoreSaysSoAndSavesNothing() {
-        categories.busy.value = Operation.RESTORE
+        categories.busy.value = LedgerReplacement.RESTORE
         chooser()
 
         compose.onNodeWithText(RESTORE_LINE).assertIsDisplayed()
@@ -58,7 +58,7 @@ class ReplacingSheetsTest {
         chooser()
         compose.onNode(hasText(SAVE_LABEL) and hasClickAction()).assertIsEnabled()
 
-        categories.busy.value = Operation.DELETE
+        categories.busy.value = LedgerReplacement.DELETE
 
         compose.onNodeWithText(DELETE_LINE).assertIsDisplayed()
         compose.onNode(hasText(SAVE_LABEL) and hasClickAction()).assertIsNotEnabled().performClick()
@@ -70,7 +70,7 @@ class ReplacingSheetsTest {
     }
 
     @Test fun aMerchantSheetOpenedDuringARestoreSaysSoAndChangesNothing() {
-        merchants.busy.value = Operation.RESTORE
+        merchants.busy.value = LedgerReplacement.RESTORE
         merchantSheet(withMembers)
 
         compose.onNodeWithText(RESTORE_LINE).assertIsDisplayed()
@@ -81,14 +81,14 @@ class ReplacingSheetsTest {
         merchantSheet(withMembers)
         separate().assertIsEnabled()
 
-        merchants.busy.value = Operation.RESTORE
+        merchants.busy.value = LedgerReplacement.RESTORE
 
         compose.onNodeWithText(RESTORE_LINE).assertIsDisplayed()
         mergeSeparateAndRenameAreOff()
     }
 
     @Test fun aMergedMerchantsSeparateIsOffDuringARestore() {
-        merchants.busy.value = Operation.RESTORE
+        merchants.busy.value = LedgerReplacement.RESTORE
         merchantSheet(withMembers.copy(identityKey = "TNG*ALI", mergedInto = "Ali", members = emptyList()))
 
         compose.onNode(hasText("$SEPARATE from Ali") and hasClickAction()).performScrollTo().assertIsNotEnabled()

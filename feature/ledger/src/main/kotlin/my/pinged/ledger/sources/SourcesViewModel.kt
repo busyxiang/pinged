@@ -9,7 +9,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
@@ -17,6 +16,8 @@ import my.pinged.capture.Graph
 import my.pinged.capture.SourceCounters
 import my.pinged.capture.SourceGaps
 import my.pinged.data.entity.CaptureSource
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadSteps
 import my.pinged.read.ReadState
@@ -90,8 +91,8 @@ data class SourcesState(
  * list, which an empty allow-list would contradict (spec 11.1).
  */
 fun ReadState<Unit, SourcesState>.toState(): SourcesState {
-    if (replacing) return SourcesState(loaded = true, replacing = true)
-    if (unavailable) return SourcesState(loaded = true, storageUnavailable = true)
+    if (ledger == LedgerAccess.BeingReplaced) return SourcesState(loaded = true, replacing = true)
+    if (ledger == LedgerAccess.Unreadable) return SourcesState(loaded = true, storageUnavailable = true)
     return answer ?: SourcesState()
 }
 
@@ -119,7 +120,7 @@ class SourcesViewModel internal constructor(
     private val gate = LedgerBusy(viewModelScope, transfers)
 
     /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
+    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * A getter, not a field: `private val context: Context = app` is what lint's

@@ -18,11 +18,12 @@ import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.LedgerBusy
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.RawRunnerAccess
 import my.pinged.read.Outcome
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 
@@ -112,7 +113,7 @@ class ReviewInbox(
     val cards: List<ReviewCard>? get() = read.state.value.answer
 
     /** The restore or delete-everything running, while one is; see the class KDoc. */
-    val busy: StateFlow<Operation?> = gate.busy
+    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /** The last answer, while it can still be undone; see the class KDoc. */
     private val _undoable = MutableStateFlow<Undoable?>(null)
@@ -142,6 +143,7 @@ class ReviewInbox(
      * since the cards were read. Without `Uncategorized`, for the reason
      * `chooserChoices` gives.
      */
+    @OptIn(RawRunnerAccess::class)
     suspend fun choices(): List<Category>? =
         (runner.read("The categories could not be read") { db ->
             val categories = db.categoryDao()

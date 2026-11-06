@@ -37,6 +37,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
+import my.pinged.read.LedgerAccess
 
 /**
  * The Charts read and the `Months` read each run under a `Databases` lease, in
@@ -93,7 +94,7 @@ class ChartsReadTest {
         replacing.get()!!.join()
 
         assertNull("The read threw out of the holder: ${uncaught.get()}", uncaught.get())
-        assertFalse("The read was refused", charts.read.state.value.unavailable)
+        assertFalse("The read was refused", charts.read.state.value.ledger == LedgerAccess.Unreadable)
         assertNull(
             "Part of the read was published before the rest was read, so the " +
                 "screen could draw a figure beside another moment's trust: ${midway.get()}",

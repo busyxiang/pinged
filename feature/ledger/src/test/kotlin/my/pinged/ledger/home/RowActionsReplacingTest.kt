@@ -13,6 +13,7 @@ import my.pinged.ledger.ledgerTxn
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferJob
 import my.pinged.ledger.settings.TransferState
+import my.pinged.read.LedgerAccess
 import my.pinged.read.ScreenRead
 import my.pinged.read.test.ScriptedRunner
 import org.junit.After
@@ -117,7 +118,7 @@ class RowActionsReplacingTest {
         rows.separateMerchant(BAKRI)
 
         assertEquals("A separate during a restore asked the runner for anything", before, runner.calls.size)
-        assertFalse(screen.state.value.unavailable)
+        assertFalse(screen.state.value.ledger == LedgerAccess.Unreadable)
 
         cleared()
         rows.separateMerchant(BAKRI)
@@ -141,7 +142,7 @@ class RowActionsReplacingTest {
             emptyList<String>(),
             runner.calls.drop(asked).map { it.what },
         )
-        assertFalse("A write refused for a replacement raised unavailable", screen.state.value.unavailable)
+        assertFalse("A write refused for a replacement raised unavailable", screen.state.value.ledger == LedgerAccess.Unreadable)
     }
 
     private fun wrote(): Boolean = runner.calls.drop(asked).any { it.write && it.ran }

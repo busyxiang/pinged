@@ -8,13 +8,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.TransferState
 import my.pinged.ledger.settings.Transfers
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.CategoryInUseException
 import my.pinged.data.dao.CategoryUse
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
@@ -35,8 +36,8 @@ data class CategoriesState(
  * categories, whatever the last read held, so a sheet open over one closes.
  */
 internal fun ReadState<Unit, List<CategoryUse>>.toState(): CategoriesState {
-    if (replacing) return CategoriesState(loaded = true, replacing = true)
-    if (unavailable) return CategoriesState(loaded = true, storageUnavailable = true)
+    if (ledger == LedgerAccess.BeingReplaced) return CategoriesState(loaded = true, replacing = true)
+    if (ledger == LedgerAccess.Unreadable) return CategoriesState(loaded = true, storageUnavailable = true)
     val items = answer ?: return CategoriesState()
     return CategoriesState(loaded = true, items = items)
 }
@@ -68,7 +69,7 @@ class CategoriesViewModel internal constructor(
     private val gate = LedgerBusy(viewModelScope, transfers)
 
     /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
+    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * Every category with what is filed there. `CategoriesScreen` reads it on
