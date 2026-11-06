@@ -1,6 +1,5 @@
 package my.pinged.ledger
 
-import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -9,14 +8,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
-import androidx.test.platform.app.InstrumentationRegistry
 import my.pinged.data.dao.DetailRow
 import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.RetroPreview
@@ -135,11 +132,14 @@ class SharedControlsTest {
     /** What a sheet's scrim dims: the [Paper] every screen behind a sheet is painted in. */
     @Composable private fun Behind() = Box(Modifier.fillMaxSize().background(Paper))
 
-    /** The screen as the user sees it: `captureToImage` cannot find a sheet's dialog (see `SheetChromeTest`). */
+    /**
+     * The screen as the user sees it, once it holds still: `captureToImage`
+     * cannot find a sheet's dialog, and one capture can be taken before the
+     * dialog reaches the display (see `SheetChromeTest`).
+     */
     private fun screen(): PixelMap {
         compose.waitForIdle()
-        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-        return shot.copy(Bitmap.Config.ARGB_8888, false).asImageBitmap().toPixelMap()
+        return ArtboardProbe.settledScreen()
     }
 
     /** How many of [node]'s pixels on [screen] are nearest each token. */
