@@ -30,6 +30,7 @@ import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerAccess
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -183,7 +184,7 @@ class ManualEntriesTest {
         val saved = entries.save(ManualDraft(amountSen = 1_250L)).await()
 
         assertNull("A save into a ledger that will not open reported a row", saved)
-        assertTrue("The holder did not say the ledger cannot be read", entries.storageUnavailable.value)
+        assertEquals("The holder did not say the ledger cannot be read", LedgerAccess.Unreadable, entries.read.state.value.ledger)
     }
 
     @Test fun anEmptyAmountIsNeverSaved() = runBlocking {

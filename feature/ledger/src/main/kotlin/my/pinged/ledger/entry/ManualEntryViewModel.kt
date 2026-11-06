@@ -1,7 +1,6 @@
 package my.pinged.ledger.entry
 
 import android.app.Application
-import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -20,10 +19,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import my.pinged.capture.GuardedRunner
 import my.pinged.data.entity.Category
+import my.pinged.ledger.refused
 import my.pinged.parse.Amount
 import my.pinged.parse.Direction
 import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerReplacements
+import my.pinged.read.ReadRunner
+import my.pinged.read.ScreenRead
 
 /**
  * Everything the entry screen draws: the draft, and why Save may be off.
@@ -38,7 +42,7 @@ data class ManualEntryState(
     val categories: List<Category> = emptyList(),
     /** A restore or delete-everything running; nothing is saved meanwhile (`ManualEntries`). */
     val busy: LedgerReplacement? = null,
-    /** The ledger would not open on the last save. */
+    /** The chips' read, or a write or lookup, was refused: the ledger would not open, or was being replaced. */
     val storageUnavailable: Boolean = false,
     val saving: Boolean = false,
     val saved: Boolean = false,
@@ -113,13 +117,16 @@ data class ManualEntryState(
  *
  * [preselection] is `ManualEntries.preselection` in production; a parameter so a
  * screen test can answer it when it chooses. [clock] is `ManualEntries`', the
- * one today is read from.
+ * one today is read from, and [runner] and [replacement] its read's: a JVM
+ * test passes `ScriptedRunner` and its own claim.
  */
 class ManualEntryViewModel internal constructor(
     app: Application,
     private val handle: SavedStateHandle,
     target: EditTarget?,
     clock: () -> Long = System::currentTimeMillis,
+    runner: ReadRunner = GuardedRunner(app),
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
     preselection: ((merchant: String) -> Deferred<Long?>)?,
 ) : AndroidViewModel(app) {
 
@@ -127,10 +134,13 @@ class ManualEntryViewModel internal constructor(
 
     constructor(app: Application, handle: SavedStateHandle, editing: EditTarget?) : this(app, handle, editing, preselection = null)
 
-    /** A getter, not a field, for the reason `SourcesViewModel` records. */
-    private val context: Context get() = getApplication<Application>()
+    private val entries = ManualEntries(viewModelScope, runner, replacement, clock)
 
-    private val entries = ManualEntries(context = { context }, scope = viewModelScope, clock = clock)
+    /** The chips' read, which the screen reads again on resume and on `Databases.rewrites` (`rememberReadState`). */
+    internal val chips: ScreenRead<Unit, List<Category>> get() = entries.read
+
+    /** Whether the chips' read, or a write or lookup since, was refused. */
+    private val refused = entries.read.state.map { it.ledger.refused }
 
     private val lookup: (String) -> Deferred<Long?> = preselection ?: entries::preselection
 
@@ -168,7 +178,7 @@ class ManualEntryViewModel internal constructor(
     private val nearbyDraft = combine(draft, warned) { draft, warned -> draft to warned?.takeIf { it.draft == draft }?.nearby }
 
     val state: StateFlow<ManualEntryState> =
-        combine(nearbyDraft, entries.categories, entries.busy, entries.storageUnavailable, combine(progress, loaded, entries.today, ::Triple)) { (draft, nearby), categories, busy, unavailable, (progress, loaded, today) ->
+        combine(nearbyDraft, entries.categories, entries.busy, refused, combine(progress, loaded, entries.today, ::Triple)) { (draft, nearby), categories, busy, unavailable, (progress, loaded, today) ->
             ManualEntryState(
                 draft = draft,
                 categories = categories,

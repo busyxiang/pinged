@@ -26,9 +26,10 @@ import my.pinged.ledger.review.sql
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.ExclusionReason
+import my.pinged.read.LedgerAccess
+import my.pinged.read.LedgerReplacement
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -124,23 +125,27 @@ class CategoryRankingTest {
         assertEquals("A manual entry did not count towards its chip", "Family", entries.categories.value.first().name)
     }
 
-    @Test fun chipsReadDuringARestoreArriveWhenItEnds() = runBlocking {
+    /**
+     * A read is not refused by a ledger replacement's claim, only a write
+     * (#376): chips asked for while a restore is claimed and its gate not yet
+     * up are read, and the screen says nothing can be saved beside them. The
+     * read again after the rewrite is the screen's, `RewriteRereadTest`'s.
+     */
+    @Test fun chipsAskedForDuringARestoreAreReadAndWithheld() = runBlocking {
         context.freshLedger()
         val watch = entries()
-        lateinit var during: ManualEntries
         holdWhile(Operation.RESTORE, watch.busy, releases) { requester, beforeStart ->
             Transfers.restoreFrom(context, open = { null }, requester = requester, beforeStart = beforeStart)
         }.use {
-            during = entries()
+            val during = entries()
             during.rank().join()
-            assertTrue("Chips were read during a restore", during.categories.value.isEmpty())
+            assertEquals("Chips asked for during a restore were not read", SEED_ORDER, during.categories.value.map { it.name })
+            assertEquals(
+                "The chips read during a restore did not say it was running",
+                LedgerAccess.Withholding(LedgerReplacement.RESTORE),
+                during.read.state.value.ledger,
+            )
         }
-
-        assertEquals(
-            "The chips did not arrive once the restore ended",
-            SEED_ORDER,
-            withTimeout(TIMEOUT) { during.categories.first { it.isNotEmpty() } }.map { it.name },
-        )
     }
 
     private fun entries() = ManualEntries(context = { context }, scope = scope, clock = { NOON })

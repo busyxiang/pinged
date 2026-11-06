@@ -22,9 +22,14 @@ import my.pinged.read.ReadRunner
  * Anything else -- `SQLiteFullException` among it -- escapes to the caller.
  * A delete's or a restore's gate answers [Outcome.Replacing], every other
  * refusal [Outcome.Refused] (#328).
+ *
+ * [context] is asked for at each call, as `CaptureStorage.guarded`'s callers
+ * ask: `EntryGateRaceTest` starts a delete from inside it, at the moment a
+ * save enters its guard.
  */
 @OptIn(RawRunnerAccess::class)
-class GuardedRunner(private val context: Context) : ReadRunner {
+class GuardedRunner(private val context: () -> Context) : ReadRunner {
+    constructor(context: Context) : this({ context })
 
     /**
      * [DatabaseAccess.read], so every statement of [body] reads one snapshot,
@@ -33,7 +38,7 @@ class GuardedRunner(private val context: Context) : ReadRunner {
      * its caller measures.
      */
     override suspend fun <T> read(what: String, body: (PingedDatabase) -> T): Outcome<T> =
-        CaptureStorage.guardedRead<Outcome<T>>(context, what, unavailable = { Outcome.Refused }, replacing = { Outcome.Replacing }) { db ->
+        CaptureStorage.guardedRead<Outcome<T>>(context(), what, unavailable = { Outcome.Refused }, replacing = { Outcome.Replacing }) { db ->
             Outcome.Done(body(db))
         }
 
@@ -43,7 +48,7 @@ class GuardedRunner(private val context: Context) : ReadRunner {
      * again on a new connection, so it must be safe to run twice.
      */
     override suspend fun <T> write(what: String, oneTransaction: Boolean, body: suspend (PingedDatabase) -> T): Outcome<T> =
-        CaptureStorage.guardedWrite<Outcome<T>>(context, what, unavailable = { Outcome.Refused }, replacing = { Outcome.Replacing }, oneTransaction = oneTransaction) { db ->
+        CaptureStorage.guardedWrite<Outcome<T>>(context(), what, unavailable = { Outcome.Refused }, replacing = { Outcome.Replacing }, oneTransaction = oneTransaction) { db ->
             Outcome.Done(body(db))
         }
 }

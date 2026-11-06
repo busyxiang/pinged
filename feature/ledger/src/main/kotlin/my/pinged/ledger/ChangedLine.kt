@@ -43,3 +43,32 @@ internal val LedgerAccess.notice: String?
         LedgerAccess.Unreadable -> CANNOT_READ_YOUR_DATA
         else -> null
     }
+
+/** What a screen cannot do while a restore or delete-everything runs, in [busyLine]. */
+internal enum class Withheld(val word: String) {
+    /** The review inbox's answers. */
+    ANSWERED("ANSWERED"),
+
+    /** The manual entry screen's Save and Delete (#108). */
+    SAVED("SAVED"),
+
+    /**
+     * Every other write on a tap (#331): the category chooser's Save, the
+     * merchant sheet's, Detail's and the Settings sub-screens'.
+     */
+    CHANGED("CHANGED"),
+}
+
+/**
+ * The line a [busy] operation draws over a screen that refuses writes while
+ * it runs: `RESTORING A BACKUP · NOTHING CAN BE ANSWERED UNTIL IT FINISHES`
+ * over the review cards, `... SAVED ...` over the entry screen, and
+ * `... CHANGED ...` everywhere else ([ChangedLine]).
+ */
+internal fun busyLine(busy: LedgerReplacement, withheld: Withheld): String {
+    val doing = when (busy) {
+        LedgerReplacement.RESTORE -> "RESTORING A BACKUP"
+        LedgerReplacement.DELETE -> "DELETING EVERYTHING"
+    }
+    return "$doing · NOTHING CAN BE ${withheld.word} UNTIL IT FINISHES"
+}

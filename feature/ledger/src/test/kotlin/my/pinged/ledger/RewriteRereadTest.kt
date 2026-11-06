@@ -1,5 +1,7 @@
 package my.pinged.ledger
 
+import androidx.lifecycle.SavedStateHandle
+import kotlinx.coroutines.CompletableDeferred
 import my.pinged.capture.CheckLimit
 import android.app.Application
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -10,6 +12,8 @@ import my.pinged.ledger.categories.CategoriesScreen
 import my.pinged.ledger.categories.CategoriesViewModel
 import my.pinged.ledger.corrections.CorrectionsScreen
 import my.pinged.ledger.corrections.CorrectionsViewModel
+import my.pinged.ledger.entry.ManualEntryScreen
+import my.pinged.ledger.entry.ManualEntryViewModel
 import my.pinged.ledger.learned.LearnedScreen
 import my.pinged.ledger.learned.LearnedViewModel
 import my.pinged.ledger.review.ReviewScreen
@@ -113,6 +117,22 @@ class RewriteRereadTest {
         assertEquals("The inbox did not read again, or read twice, when the ledger was replaced", 2, reads(INBOX))
     }
 
+    /**
+     * The entry screen's chips (#376): a delete's new ledger ranks them
+     * differently. The holder reads on arrival as well as the screen on its
+     * first resume, so what is counted is the read the rewrite adds.
+     */
+    @Test fun theEntryScreensChipsReadAgainWhenTheLedgerIsReplaced() {
+        val viewModel = ManualEntryViewModel(app, SavedStateHandle(), target = null, runner = runner) { CompletableDeferred(null) }
+        compose.setContent { ManualEntryScreen(viewModel, onBack = {}, onSaved = {}) }
+        compose.waitForIdle()
+        val shown = reads(CHIPS)
+
+        replaceTheLedger()
+
+        assertEquals("The chips did not read again, or read twice, when the ledger was replaced", shown + 1, reads(CHIPS))
+    }
+
     /** Poll for what happens off the compose clock, up to [SETTLE_MS], and leave the assertion to the caller. */
     private fun awaitUntil(done: () -> Boolean) {
         val deadline = System.currentTimeMillis() + SETTLE_MS
@@ -134,5 +154,6 @@ class RewriteRereadTest {
         const val CATEGORIES = "Categories cannot be read"
         const val CORRECTIONS = "Corrections cannot be read"
         const val INBOX = "The review inbox cannot be read"
+        const val CHIPS = "The categories cannot be read"
     }
 }

@@ -78,6 +78,7 @@ import my.pinged.ledger.home.UnderlinedField
 import my.pinged.ledger.home.categoryIcon
 import my.pinged.ledger.review.COUNTS_AGAINST
 import my.pinged.parse.Direction
+import my.pinged.read.rememberReadState
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.money
 import my.pinged.ui.ringgit
@@ -122,6 +123,8 @@ fun ManualEntryScreen(
     modifier: Modifier = Modifier,
     onDeleted: () -> Unit = onSaved,
 ) {
+    // The chips read again on each resume and on `Databases.rewrites`, as every screen's read is.
+    viewModel.chips.rememberReadState()
     val state by viewModel.state.collectAsState()
     ManualEntryScreenContent(
         state = state,

@@ -23,6 +23,7 @@ import my.pinged.ledger.holdWhile
 import my.pinged.ledger.ledgerTxn
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.Transfers
+import my.pinged.read.LedgerAccess
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -107,7 +108,7 @@ class ManualDeleteTest {
         }
 
         assertNotNull("A delete during a restore was written", dao.byId(id))
-        assertFalse("The refusal was reported as a ledger that will not open", entries.storageUnavailable.value)
+        assertFalse("The refusal was reported as a ledger that will not open", entries.read.state.value.ledger == LedgerAccess.Unreadable)
     }
 
     @Test fun nothingIsDeletedDuringADeleteEverything() = runBlocking {
