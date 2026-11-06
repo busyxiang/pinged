@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.ledger.home.HERO_NOT_READ_YET
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.HeldBy
@@ -99,7 +100,7 @@ class EditPaymentNotReadYetTest {
         draw()
         clock.at(48)
 
-        state = state.copy(storageUnavailable = true)
+        state = state.copy(ledger = LedgerAccess.Unreadable)
         clock.at(READING_DELAY_MILLIS - 40)
         assertEquals("An unreadable ledger found at 48ms waited for the delay", 1, clock.count(CANNOT_READ_YOUR_DATA))
 

@@ -76,8 +76,10 @@ import my.pinged.ledger.home.ChooserSubject
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.UnderlinedField
 import my.pinged.ledger.home.categoryIcon
+import my.pinged.ledger.refused
 import my.pinged.ledger.review.COUNTS_AGAINST
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.money
@@ -192,7 +194,7 @@ internal fun ManualEntryScreenContent(
             // payment, and a field typed into now is overwritten by the read.
             // A ledger that will not open is a read that will not land, and
             // the line below says so instead.
-            if (!state.storageUnavailable) NotReadYet()
+            if (!state.ledger.refused) NotReadYet()
         } else {
             // Kind and date on one row above the figure (#355), which then
             // has the whole width: beside it, the two controls left it
@@ -225,10 +227,13 @@ internal fun ManualEntryScreenContent(
             OptionalLine(MERCHANT, state.draft.merchant, onMerchant, MERCHANT_FIELD, KeyboardCapitalization.Words)
             OptionalLine(NOTE, state.draft.note, onNote, NOTE_FIELD, KeyboardCapitalization.Sentences)
         }
-        // One line for what stops Save: the restore or delete running, else
-        // a ledger that will not open (#108). The draft above stays as typed.
-        val stopped = state.busy?.let { busyLine(it, Withheld.SAVED) }
-            ?: CANNOT_READ_YOUR_DATA.takeIf { state.storageUnavailable }
+        // One line for what stops Save (#108): a ledger that will not open,
+        // else the restore or delete running (#376). The draft above stays as typed.
+        val stopped = when (val ledger = state.ledger) {
+            is LedgerAccess.Withholding -> busyLine(ledger.replacement, Withheld.SAVED)
+            LedgerAccess.Unreadable, LedgerAccess.BeingReplaced -> CANNOT_READ_YOUR_DATA
+            LedgerAccess.Readable -> null
+        }
         if (stopped != null) {
             Text(
                 stopped,

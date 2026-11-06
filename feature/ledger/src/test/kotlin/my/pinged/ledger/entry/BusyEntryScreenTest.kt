@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.LocalDate
 import my.pinged.data.entity.Category
+import my.pinged.read.LedgerAccess
 import my.pinged.read.LedgerReplacement
 import my.pinged.ui.dayMonth
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
@@ -59,7 +60,7 @@ class BusyEntryScreenTest {
     }
 
     @Test fun aLedgerThatWillNotOpenSaysSoDisablesSaveAndKeepsTheDraft() {
-        draw(storageUnavailable = true)
+        draw(ledger = LedgerAccess.Unreadable)
 
         line(CANNOT_READ_YOUR_DATA)
         saveIsOffAndTheDraftIsKept()
@@ -69,7 +70,7 @@ class BusyEntryScreenTest {
         draw(busy = LedgerReplacement.RESTORE)
         compose.onNodeWithText(SAVE).performScrollTo().assertIsNotEnabled()
 
-        state = state.copy(busy = null)
+        state = state.copy(ledger = LedgerAccess.Readable)
 
         compose.onNodeWithText(SAVE).performScrollTo().assertIsEnabled().performClick()
         assertEquals("Save, enabled again, did not save", 1, saves)
@@ -77,12 +78,11 @@ class BusyEntryScreenTest {
         theDraftIsKept()
     }
 
-    private fun draw(busy: LedgerReplacement? = null, storageUnavailable: Boolean = false) {
+    private fun draw(busy: LedgerReplacement? = null, ledger: LedgerAccess = busy?.let(LedgerAccess::Withholding) ?: LedgerAccess.Readable) {
         state = ManualEntryState(
             draft = DRAFT,
             categories = CHIPS,
-            busy = busy,
-            storageUnavailable = storageUnavailable,
+            ledger = ledger,
             today = TODAY_,
         )
         compose.setContent {

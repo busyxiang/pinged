@@ -21,9 +21,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.entity.Category
-import my.pinged.ledger.refused
+import my.pinged.ledger.withholding
 import my.pinged.parse.Amount
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerAccess
 import my.pinged.read.LedgerReplacement
 import my.pinged.read.LedgerReplacements
 import my.pinged.read.ReadRunner
@@ -40,10 +41,12 @@ data class ManualEntryState(
     val draft: ManualDraft = ManualDraft(),
     /** The category chips, most used first; see `ManualEntries.categories`. */
     val categories: List<Category> = emptyList(),
-    /** A restore or delete-everything running; nothing is saved meanwhile (`ManualEntries`). */
-    val busy: LedgerReplacement? = null,
-    /** The chips' read, or a write or lookup, was refused: the ledger would not open, or was being replaced. */
-    val storageUnavailable: Boolean = false,
+    /**
+     * What the screen may do with the ledger (#376): the chips' read, or a
+     * write since, refused, or a replacement withholding Save. A refusal
+     * outranks the replacement, as on every screen.
+     */
+    val ledger: LedgerAccess = LedgerAccess.Readable,
     val saving: Boolean = false,
     val saved: Boolean = false,
     /** The day the date chip's picker treats as today, the latest it offers: `ManualEntries.today`. */
@@ -83,9 +86,9 @@ data class ManualEntryState(
 ) {
     /**
      * Spec 9.4: an amount above RM0.00, and nothing in the way of writing it:
-     * no restore or delete running, and a ledger that opens (#108). A ledger
-     * that would not open comes back through a restore or a delete, after
-     * which `ManualEntries` reads the chips again and clears the flag. Off
+     * no restore or delete running, and a ledger that opens (#108): [ledger]
+     * readable. A ledger that would not open comes back through a restore or
+     * a delete, after which the screen reads the chips again and they say so. Off
      * while [nearby] asks its question: Add anyway is the save then.
      */
     val canSave: Boolean get() = draft.amountSen > 0 && writable && nearby == null && (editing == null || loaded != null)
@@ -99,7 +102,10 @@ data class ManualEntryState(
      */
     val canDelete: Boolean get() = editing != null && loaded != null && writable && !deleted
 
-    private val writable: Boolean get() = busy == null && !storageUnavailable && !saving && !saved && !gone
+    private val writable: Boolean get() = ledger == LedgerAccess.Readable && !saving && !saved && !gone
+
+    /** The restore or delete-everything Save is withheld for, while one runs and the ledger can still be read. */
+    val busy: LedgerReplacement? get() = ledger.withholding
 }
 
 /**
@@ -139,8 +145,8 @@ class ManualEntryViewModel internal constructor(
     /** The chips' read, which the screen reads again on resume and on `Databases.rewrites` (`rememberReadState`). */
     internal val chips: ScreenRead<Unit, List<Category>> get() = entries.read
 
-    /** Whether the chips' read, or a write or lookup since, was refused. */
-    private val refused = entries.read.state.map { it.ledger.refused }
+    /** What the chips' read says the screen may do with the ledger: see [ManualEntryState.ledger]. */
+    private val ledger = entries.read.state.map { it.ledger }
 
     private val lookup: (String) -> Deferred<Long?> = preselection ?: entries::preselection
 
@@ -178,12 +184,11 @@ class ManualEntryViewModel internal constructor(
     private val nearbyDraft = combine(draft, warned) { draft, warned -> draft to warned?.takeIf { it.draft == draft }?.nearby }
 
     val state: StateFlow<ManualEntryState> =
-        combine(nearbyDraft, entries.categories, entries.busy, refused, combine(progress, loaded, entries.today, ::Triple)) { (draft, nearby), categories, busy, unavailable, (progress, loaded, today) ->
+        combine(nearbyDraft, entries.categories, ledger, combine(progress, loaded, entries.today, ::Triple)) { (draft, nearby), categories, ledger, (progress, loaded, today) ->
             ManualEntryState(
                 draft = draft,
                 categories = categories,
-                busy = busy,
-                storageUnavailable = unavailable,
+                ledger = ledger,
                 saving = progress == Progress.SAVING,
                 saved = progress == Progress.SAVED,
                 nearby = nearby,
