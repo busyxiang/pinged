@@ -6,11 +6,7 @@ import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.RawCapture
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
-import my.pinged.parse.Kind
-import my.pinged.parse.PackagePack
-import my.pinged.parse.ParsePack
 import my.pinged.parse.RuleMatcher
-import my.pinged.parse.TemplateRule
 
 /**
  * Shared setup for the stage-two instrumented tests.
@@ -227,72 +223,6 @@ internal object ParseFixtures {
             ),
         )
     }
-
-    /**
-     * A pack for the gate conditions the bundled pack cannot isolate.
-     *
-     * `tng-reload-v1` is the only `confidence: REVIEW` rule that ships, and it
-     * also declares `kind: TRANSFER_SUSPECT` and extracts no merchant -- so it
-     * fires three of spec 7.1's five conditions at once and can never show
-     * `RULE_REVIEW` or `MERCHANT_MISSING` on its own. These two rules each fire
-     * exactly one.
-     */
-    fun syntheticMatcher(): RuleMatcher = RuleMatcher(
-        ParsePack(
-            packVersion = SYNTHETIC_PACK_VERSION,
-            packages = listOf(
-                PackagePack(
-                    pkg = SYNTHETIC,
-                    label = "Synthetic Bank",
-                    rules = listOf(
-                        TemplateRule(
-                            id = "synthetic-review-only-v1",
-                            priority = 100,
-                            direction = Direction.EXPENSE,
-                            confidence = Confidence.REVIEW,
-                            kind = null,
-                            pattern = "Maybe spent {{amount}} at (?<merchant>.+?) today",
-                        ),
-                        TemplateRule(
-                            id = "synthetic-no-merchant-v1",
-                            priority = 90,
-                            direction = Direction.EXPENSE,
-                            confidence = Confidence.HIGH,
-                            kind = null,
-                            pattern = "Charge of {{amount}} applied",
-                        ),
-                        TemplateRule(
-                            id = "synthetic-transfer-only-v1",
-                            priority = 80,
-                            direction = Direction.EXPENSE,
-                            confidence = Confidence.HIGH,
-                            kind = Kind.TRANSFER_SUSPECT,
-                            pattern = "Moved {{amount}} to (?<merchant>.+?) account",
-                        ),
-                    ),
-                ),
-            ),
-            // The fragment, not three retyped copies of it. Writing the amount
-            // out per rule is verbatim the defect `PackRegex` exists to
-            // prevent -- all four bundled rules retyped it and none of them
-            // accepted MYR -- and this fixture stands in for a real pack, so
-            // reproducing it here meant the gate tests exercised a pack shaped
-            // unlike the one that ships. Taken from the bundled pack rather
-            // than restated, so it cannot drift from it either.
-            fragments = bundledFragments,
-        ),
-    )
-
-    /**
-     * The bundled pack's fragments, for a synthetic pack to share.
-     *
-     * `Graph.parsePack()` rather than a literal: this is the pack the app
-     * loads, so a fragment added to `pack.json` reaches the fixture without
-     * anyone remembering to copy it.
-     */
-    val bundledFragments: Map<String, String> get() = Graph.parsePack().fragments
-
-    const val SYNTHETIC_PACK_VERSION = 9_001
 
     /**
      * An amount unique to this run, as sen and as the `RMx.yy` string a

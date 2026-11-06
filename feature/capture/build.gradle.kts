@@ -24,10 +24,18 @@ android {
     }
 
     sourceSets {
+        // The Reading's in-memory ports, which the JVM tests read through and
+        // `PairCandidatesContractTest` holds to the Room adapter on the device.
+        getByName("test") {
+            kotlin.directories.add("src/sharedTest/kotlin")
+            // The fixture corpus, so a Reading test reads real notifications.
+            resources.directories.add("$rootDir/core/parse/src/test/resources")
+        }
         // CategorizerDeviceTest runs the boundary table :core:parse's JVM test
         // runs. One file, so the two engines cannot be tested against tables
         // that have drifted apart.
         getByName("androidTest") {
+            kotlin.directories.add("src/sharedTest/kotlin")
             // `retireAndAnnounce`, which the tests that replace an instance as another caller go through.
             kotlin.directories.add(rootProject.file("core/data/src/sharedAndroidTest/kotlin").path)
             resources.directories.add("$rootDir/core/parse/src/sharedTest/resources")

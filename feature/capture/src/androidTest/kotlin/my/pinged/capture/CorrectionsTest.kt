@@ -646,27 +646,6 @@ class CorrectionsTest {
         assertEquals(cardTxn.id, Databases.txnDao(context).duplicatePair(txn(id))?.id)
     }
 
-    /**
-     * The card spend arrived after the FPX payment, so stage two flagged the
-     * card spend and the FPX payment is the older of the pair. Paired again
-     * against that newer row, both would wait as each other's duplicate and
-     * Merge on either card would dismiss the other's money.
-     */
-    @Test
-    fun aWaitingFpxPaymentIsNotPairedWithACardSpendThatArrivedAfterIt() {
-        val at = fpxAt + 7_200_000L
-        val id = fpxHeldForReview("mae-fpx-card-funded-ibilik.txt", at)
-        val card = ParseFixtures.insertCorpus(
-            context, "mae-card-spend-fpx-credit-card-rps.txt", sbnKey = "$marker-fpx-late-card", postedAt = at + 6_000L,
-        )
-        ParseFixtures.pass(context).run()
-        assertEquals("precondition: the later card spend is not the suspect", id, captures.byId(card).duplicateOfId)
-
-        sweep()
-
-        assertEquals(TxnState.COMMITTED to null, offered(id)?.after?.let { it.state to it.pendingReason })
-    }
-
     /** Account-funded: nothing beside it, so the re-read offers to release it. */
     @Test
     fun aWaitingFpxPaymentWithNoCardSpendIsOfferedForRelease() {
@@ -711,28 +690,6 @@ class CorrectionsTest {
         assertNull(offered(id))
         assertEquals(TxnState.COMMITTED, txn(id).state)
         assertEquals(packVersion, captures.byId(id).packVersion)
-    }
-
-    /**
-     * A **Keep both** row: its capture's `duplicate_of_id` stays set forever,
-     * and a new pack must not re-raise the duplicate on it.
-     */
-    @Test
-    fun aCommittedDuplicateRaisesNoStatusDifference() {
-        val (other, _) = warung(base - 850L)
-        val id = readByAnOlderPack(
-            text = "Payment of RM21.00 to KEDAI $marker successful",
-            title = "Touch 'n Go $marker",
-            at = base - 800L,
-            oldRule = "tng-payment-v1",
-            olderRead = "state = 'COMMITTED', pending_reason = NULL",
-        )
-        sql("UPDATE raw_capture SET duplicate_of_id = ? WHERE id = ?", other, id)
-
-        assertEquals("A kept duplicate was offered back to review", 0, sweep().offered)
-        assertNull(offered(id))
-        assertEquals(TxnState.COMMITTED, txn(id).state)
-        assertNull(txn(id).pendingReason)
     }
 
     /**

@@ -497,44 +497,6 @@ class DedupTest {
         assertNull(captures.byId(bank).duplicateOfId)
     }
 
-    /**
-     * Layer 2's merchant clause is a clause and not decoration: the same amount
-     * from two packages within ten minutes at two different merchants is two
-     * purchases, and flagging it would train the user to dismiss the review
-     * inbox.
-     */
-    @Test
-    fun layerTwoDoesNotFlagTwoDifferentMerchantsAtTheSameAmount() {
-        val (_, rm) = ParseFixtures.uniqueAmount()
-        // An hour clear of the positive layer-2 test above, so that even if
-        // both draw the same unique amount neither can be the other's suspect.
-        val postedAt = base - 9_000_000L
-
-        val wallet = ParseFixtures.insertCapture(
-            context,
-            text = "Payment of $rm to 99 SPEEDMART successful",
-            title = marker, pkg = ParseFixtures.TNG,
-            sbnKey = "$marker-l2n-wallet", postedAt = postedAt,
-        )
-        val bank = ParseFixtures.insertCapture(
-            context,
-            text = "You have paid $rm to GUARDIAN PHARMACY",
-            title = marker, pkg = ParseFixtures.MAE,
-            sbnKey = "$marker-l2n-bank", postedAt = postedAt + 120_000L,
-        )
-
-        runPass()
-
-        assertEquals(
-            TxnState.COMMITTED,
-            requireNotNull(ParseFixtures.txnForCapture(context, wallet)).state,
-        )
-        assertEquals(
-            TxnState.COMMITTED,
-            requireNotNull(ParseFixtures.txnForCapture(context, bank)).state,
-        )
-    }
-
     // ---- layer 2 within one app (#255) -----------------------------------
 
     /**
@@ -591,39 +553,6 @@ class DedupTest {
         val secondTxn = requireNotNull(ParseFixtures.txnForCapture(context, second)) { whyNoTransaction(second) }
         assertNull("Two reads by one rule in one app were paired", captures.byId(second).duplicateOfId)
         assertEquals(TxnState.COMMITTED, secondTxn.state)
-    }
-
-    /**
-     * Paid from the account: no card spend beside it, so nothing pairs and the
-     * payment commits rather than waiting in the inbox every month.
-     */
-    @Test
-    fun anFpxPaymentWithNoCardSpendBesideItCommits() {
-        val fpx = ParseFixtures.insertCorpus(
-            context, "mae-fpx-from-account-digi.txt", sbnKey = "$marker-fpx-digi", postedAt = fpxAt + 7_200_000L,
-        )
-
-        runPass()
-
-        val txn = requireNotNull(ParseFixtures.txnForCapture(context, fpx)) { whyNoTransaction(fpx) }
-        assertEquals(TxnState.COMMITTED to null, txn.state to txn.pendingReason)
-    }
-
-    /** The threshold still holds an FPX payment: the masked Digi notice at RM650.00. */
-    @Test
-    fun anFpxPaymentOverTheThresholdStillWaitsForReview() {
-        val digi = ParseFixtures.corpus("mae-fpx-from-account-digi.txt")
-        val body = digi.body.replace("RM30.00", "RM650.00")
-        check(body != digi.body) { "the Digi fixture no longer says RM30.00" }
-        val fpx = ParseFixtures.insertCapture(
-            context, text = body, title = digi.title, pkg = digi.pkg,
-            sbnKey = "$marker-fpx-over", postedAt = fpxAt + 10_800_000L,
-        )
-
-        runPass()
-
-        val txn = requireNotNull(ParseFixtures.txnForCapture(context, fpx)) { whyNoTransaction(fpx) }
-        assertEquals(TxnState.PENDING to PendingReason.OVER_THRESHOLD, txn.state to txn.pendingReason)
     }
 
     private companion object {
