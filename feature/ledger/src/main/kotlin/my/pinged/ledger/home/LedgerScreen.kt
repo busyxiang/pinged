@@ -1262,8 +1262,8 @@ private fun AccentLineRow(label: String, onOpen: () -> Unit) {
  * [LedgerScreenContent] times the whole first read, so rows landing before
  * the total do not restart the delay.
  *
- * Directly under the hero, the summary's sources line (#367), Charts'
- * `SourcesLineText`; its `NO APP IS READ YET` opens [onOpenSources], and an
+ * Under the hero and its `DO NOT TRUST` caveat, the summary's sources line
+ * (#367), Charts' `SourcesLineText`; its `NO APP IS READ YET` opens [onOpenSources], and an
  * unreadable name opens [onOpenUnread] for its app (#368).
  */
 @Composable
@@ -1318,10 +1318,6 @@ internal fun MonthSummaryBlock(
             }
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-            // Below the column [onHeroBottom] measures, not in it: the TopBar
-            // takes the total over at the hero's last line, and a line naming
-            // apps is not the total. Charts' gap under its hero figure.
-            summary?.sources?.let { SourcesLineText(it, Modifier.padding(top = 6.dp), onOpenSources, onOpenUnread) }
             // Drawn over a worded zero as well as over a real total, and never
             // suppressed by either: §8's rule is that a gap in capture is never
             // drawn as a zero, and "NOTHING COUNTED THIS MONTH" is a zero in words
@@ -1335,6 +1331,11 @@ internal fun MonthSummaryBlock(
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
+            // After the caveat, so it stays beside the total it qualifies
+            // (#73); and below the column [onHeroBottom] measures, not in it:
+            // the TopBar takes the total over at the hero's last line, and a
+            // line naming apps is not the total. Charts' gap under its hero.
+            summary?.sources?.let { SourcesLineText(it, Modifier.padding(top = 6.dp), onOpenSources, onOpenUnread) }
 
             summary?.top?.forEach { category ->
                 // On one baseline, as the board's `align-items: baseline` sets

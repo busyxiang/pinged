@@ -347,8 +347,9 @@ private fun HeaderSection(month: String, chip: Chip?, onOpenMonths: () -> Unit, 
 
 /**
  * The hero total. Greyed, never hidden, in an untrusted month, with the one
- * line that explains the grey for the whole screen (#73). Directly under the
- * figure, the apps it comes from (#365).
+ * line that explains the grey for the whole screen (#73). After those, the
+ * apps it comes from (#365): last, so the not-captured caveat stays beside
+ * the figure it qualifies.
  */
 @Composable
 private fun HeroSection(hero: Hero, sources: SourcesLine, onOpenSources: (() -> Unit)?, onOpenUnread: ((NamedSource) -> Unit)?) {
@@ -360,9 +361,9 @@ private fun HeroSection(hero: Hero, sources: SourcesLine, onOpenSources: (() -> 
             color = if (hero.greyed) Muted else Ink,
             modifier = Modifier.padding(top = 4.dp),
         )
-        SourcesLineText(sources, Modifier.padding(top = 6.dp), onOpenSources, onOpenUnread)
         hero.split?.let { MonoLine(it, Muted, Modifier.padding(top = 6.dp)) }
         hero.incomplete?.let { MonoLine(it, Stamp, Modifier.padding(top = 6.dp)) }
+        SourcesLineText(sources, Modifier.padding(top = 6.dp), onOpenSources, onOpenUnread)
     }
 }
 

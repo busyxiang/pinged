@@ -11,6 +11,7 @@ import my.pinged.charts.model.monthView
 import my.pinged.data.NamedSource
 import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CurrencyTotal
+import my.pinged.data.dao.MonthSplit
 import my.pinged.data.entity.CaptureSource
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
@@ -35,13 +36,21 @@ class SourcesLineChartsTest {
 
     private val september = YearMonth.of(2026, 9)
 
-    private fun draw(sources: SourcesLine, onOpenSources: () -> Unit = {}, onOpenUnread: (NamedSource) -> Unit = {}) {
+    private fun draw(
+        sources: SourcesLine,
+        onOpenSources: () -> Unit = {},
+        onOpenUnread: (NamedSource) -> Unit = {},
+        captured: Set<LocalDate> = (1..30).map { september.atDay(it) }.toSet(),
+        net: Long = 84_250L,
+        split: List<MonthSplit> = emptyList(),
+    ) {
         val read = chartsRead(
             month = september,
             today = LocalDate.of(2026, 10, 5),
             historyStart = september.atDay(1),
-            captured = (1..30).map { september.atDay(it) }.toSet(),
-            monthTotals = listOf(CurrencyTotal("MYR", 84_250L)),
+            captured = captured,
+            monthTotals = listOf(CurrencyTotal("MYR", net)),
+            monthSplit = split,
             sources = sources,
         )
         compose.setContent {
@@ -59,13 +68,25 @@ class SourcesLineChartsTest {
 
     private fun on(pkg: String, label: String) = CaptureSource(pkg, label, enabled = true, firstSeenAt = 0L)
 
-    @Test fun theLineIsDrawnUnderTheHeroAndAboveTheGrid() {
-        draw(SourcesLine.of(listOf(on(TNG, "Touch 'n Go"), on(MAE, "MAE")), setOf(TNG, MAE), emptySet(), byHand = true))
+    /**
+     * After the hero's own lines, so `MAY BE INCOMPLETE` stays beside the
+     * figure it qualifies (#73): a month with every line the hero has, its
+     * split and its not-captured caveat.
+     */
+    @Test fun theLineIsDrawnUnderTheHerosCaveatsAndAboveTheGrid() {
+        draw(
+            SourcesLine.of(listOf(on(TNG, "Touch 'n Go"), on(MAE, "MAE")), setOf(TNG, MAE), emptySet(), byHand = true, packLabels = emptyMap()),
+            captured = (2..30).map { september.atDay(it) }.toSet(),
+            net = -1_000L,
+            split = listOf(MonthSplit("MYR", spentSen = 4_000L, cameBackSen = 5_000L)),
+        )
 
         val line = compose.onNodeWithText("FROM MAE AND TOUCH 'N GO, AND BY HAND").getUnclippedBoundsInRoot()
-        val total = compose.onNodeWithText("TOTAL SPENT").getUnclippedBoundsInRoot()
+        val split = compose.onNodeWithText("CAME BACK", substring = true).getUnclippedBoundsInRoot()
+        val incomplete = compose.onNodeWithText("MAY BE INCOMPLETE", substring = true).getUnclippedBoundsInRoot()
         val grid = compose.onNodeWithTag(dayTag(september.atDay(1)), useUnmergedTree = true).getUnclippedBoundsInRoot()
-        assertTrue("The sources line is not under the hero", line.top > total.bottom)
+        assertTrue("The sources line is not under the hero's split", line.top >= split.bottom)
+        assertTrue("The sources line is between the figure and its not-captured caveat", line.top >= incomplete.bottom)
         assertTrue("The sources line is not above the grid and the bars", line.bottom <= grid.top)
     }
 

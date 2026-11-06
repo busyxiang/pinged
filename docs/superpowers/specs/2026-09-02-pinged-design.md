@@ -1867,7 +1867,8 @@ total on its baseline, `SEP · RM2,847.30`, at every width. Several
 currencies show the first in the summary's order and `+N`; a month that
 cannot be trusted greys it as the hero is; a summary still being read, or
 a month with nothing counted, shows none. Tapping it scrolls back to the
-summary. Directly under the hero's total, the summary names the apps it
+summary. Under the hero's total and its `DO NOT TRUST` caveat, which stays
+beside the total it qualifies, the summary names the apps it
 comes from in Charts' sources line (section 8, "The sources line"; section
 9.3), read by the same `SourcesLine.read` in the summary's own transaction,
 so the two screens say the same words for a month; `NO APP IS READ YET`
@@ -2032,8 +2033,9 @@ still running the labels are `SPENT SO FAR` and `NET SPENT SO FAR`. An untrusted
 month greys the figure and adds `MAY BE INCOMPLETE · N DAYS NOT CAPTURED`,
 never "at least", since a missed refund makes the real figure lower.
 
-**Sources line.** Directly under the hero figure, above the grid and the
-bars, one mono line names the apps the total comes from (section 8, "The
+**Sources line.** Under the hero and its own lines (the split, then
+`MAY BE INCOMPLETE`, which stays beside the figure it qualifies), above the
+grid and the bars, one mono line names the apps the total comes from (section 8, "The
 sources line"): `FROM MAYBANK MAE AND TOUCH 'N GO EWALLET`, or `FROM A, B AND C`,
 with `, AND BY HAND` when the month has a counted manual entry. With no app
 to name it reads `ONLY BY HAND`, or `NO APP IS READ YET`, which opens
