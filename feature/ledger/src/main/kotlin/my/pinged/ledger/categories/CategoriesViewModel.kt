@@ -5,17 +5,15 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
-import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
+import my.pinged.ledger.refused
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.CategoryDao
 import my.pinged.data.dao.CategoryInUseException
 import my.pinged.data.dao.CategoryUse
 import my.pinged.read.LedgerReplacement
 import my.pinged.read.LedgerAccess
+import my.pinged.read.LedgerReplacements
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
@@ -25,10 +23,8 @@ data class CategoriesState(
     /** False until the first read completes, so an empty list is not a claim. */
     val loaded: Boolean = false,
     val items: List<CategoryUse> = emptyList(),
-    /** Spec 11.1: the database could not be opened, which is not "no categories". */
-    val storageUnavailable: Boolean = false,
-    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
-    val replacing: Boolean = false,
+    /** What the screen may do with the ledger: draw the list, withhold its writes, or say why it cannot (#376). */
+    val ledger: LedgerAccess = LedgerAccess.Readable,
 )
 
 /**
@@ -36,10 +32,9 @@ data class CategoriesState(
  * categories, whatever the last read held, so a sheet open over one closes.
  */
 internal fun ReadState<Unit, List<CategoryUse>>.toState(): CategoriesState {
-    if (ledger == LedgerAccess.BeingReplaced) return CategoriesState(loaded = true, replacing = true)
-    if (ledger == LedgerAccess.Unreadable) return CategoriesState(loaded = true, storageUnavailable = true)
-    val items = answer ?: return CategoriesState()
-    return CategoriesState(loaded = true, items = items)
+    if (ledger.refused) return CategoriesState(loaded = true, ledger = ledger)
+    val items = answer ?: return CategoriesState(ledger = ledger)
+    return CategoriesState(loaded = true, items = items, ledger = ledger)
 }
 
 /**
@@ -62,21 +57,16 @@ internal fun ReadState<Unit, List<CategoryUse>>.toState(): CategoriesState {
 class CategoriesViewModel internal constructor(
     app: Application,
     runner: ReadRunner,
-    transfers: StateFlow<TransferState> = Transfers.state,
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
 ) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
-
-    private val gate = LedgerBusy(viewModelScope, transfers)
-
-    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<LedgerReplacement?> = gate.busy
 
     /**
      * Every category with what is filed there. `CategoriesScreen` reads it on
      * resume and on `Databases.rewrites` through `rememberReadState`.
      */
     internal val read: ScreenRead<Unit, List<CategoryUse>> =
-        ScreenRead.fixed(viewModelScope, runner, "Categories cannot be read") { db -> db.categoryDao().uses() }
+        ScreenRead.fixed(viewModelScope, runner, "Categories cannot be read", replacement) { db -> db.categoryDao().uses() }
 
     fun add(name: String, iconKey: String): Job = write("The category could not be added") { it.add(name, iconKey) }
 
@@ -85,18 +75,14 @@ class CategoriesViewModel internal constructor(
 
     fun delete(categoryId: Long): Job = write("The category could not be deleted") { it.deleteIfUnused(categoryId) }
 
-    /** Refused outright while the ledger is being replaced, as [busy] says (#331). */
-    private fun write(what: String, change: (CategoryDao) -> Unit): Job = gate.unlessReplacing {
-        viewModelScope.launch {
-            read.write(what) { db ->
-                try {
-                    change(db.categoryDao())
-                } catch (refused: IllegalArgumentException) {
-                    Log.i(TAG, "$what: ${refused.message}")
-                } catch (refused: CategoryInUseException) {
-                    Log.i(TAG, "$what: ${refused.message}")
-                }
-            }.await()
+    /** Refused by [read] while the ledger is being replaced, which the screen says (#331, #376). */
+    private fun write(what: String, change: (CategoryDao) -> Unit): Job = read.write(what) { db ->
+        try {
+            change(db.categoryDao())
+        } catch (refused: IllegalArgumentException) {
+            Log.i(TAG, "$what: ${refused.message}")
+        } catch (refused: CategoryInUseException) {
+            Log.i(TAG, "$what: ${refused.message}")
         }
     }
 

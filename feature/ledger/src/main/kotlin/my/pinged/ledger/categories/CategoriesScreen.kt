@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,12 +39,12 @@ import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.home.CategorySheet
 import my.pinged.ledger.home.NEW_CATEGORY
 import my.pinged.ledger.home.categoryIcon
+import my.pinged.ledger.notice
+import my.pinged.ledger.refused
 import my.pinged.ledger.settings.grouped
-import my.pinged.read.LedgerReplacement
+import my.pinged.ledger.withholding
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.Body
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
-import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.Display
 import my.pinged.ui.theme.Faint
@@ -108,7 +107,6 @@ internal class Arranged(items: List<CategoryUse>) {
 fun CategoriesScreen(viewModel: CategoriesViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
-    val busy by viewModel.busy.collectAsState()
     CategoriesContent(
         state = read.toState(),
         onBack = onBack,
@@ -116,7 +114,6 @@ fun CategoriesScreen(viewModel: CategoriesViewModel, onBack: () -> Unit, modifie
         onEdit = viewModel::edit,
         onDelete = viewModel::delete,
         modifier = modifier,
-        busy = busy,
     )
 }
 
@@ -127,7 +124,7 @@ fun CategoriesScreen(viewModel: CategoriesViewModel, onBack: () -> Unit, modifie
  * sheet after a process death opens on what the database now says, and one
  * whose category has gone opens nothing.
  *
- * While [busy] runs a ledger replacement the list says so at its top and
+ * While [state] is withholding for a ledger replacement the list says so at its top and
  * New category is off (#331); a row still opens its sheet, which says so
  * too and saves and deletes nothing.
  */
@@ -139,12 +136,12 @@ internal fun CategoriesContent(
     onEdit: (categoryId: Long, name: String, iconKey: String) -> Unit,
     onDelete: (categoryId: Long) -> Unit,
     modifier: Modifier = Modifier,
-    busy: LedgerReplacement? = null,
 ) {
+    val busy = state.ledger.withholding
     var editing by rememberSaveable { mutableStateOf<Long?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
     var unfolded by rememberSaveable { mutableStateOf(false) }
-    val usable = state.loaded && !state.storageUnavailable && !state.replacing
+    val usable = state.loaded && !state.ledger.refused
     val arranged = Arranged(state.items)
 
     Column(modifier.fillMaxSize().background(Paper)) {
@@ -156,11 +153,7 @@ internal fun CategoriesContent(
         LazyColumn(Modifier.weight(1f).padding(top = 14.dp)) {
             if (usable && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp)) }
             item {
-                val notice = when {
-                    state.replacing -> REPLACING_YOUR_DATA
-                    state.storageUnavailable -> CANNOT_READ_YOUR_DATA
-                    else -> null
-                }
+                val notice = state.ledger.notice
                 if (notice != null) {
                     Text(notice, fontFamily = Body, fontSize = 14.sp, color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
                 }

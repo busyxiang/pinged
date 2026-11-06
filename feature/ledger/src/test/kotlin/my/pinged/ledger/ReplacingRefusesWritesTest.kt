@@ -26,6 +26,7 @@ import my.pinged.ledger.teach.TeachViewModel
 import my.pinged.ledger.unread.UnreadViewModel
 import my.pinged.parse.Direction
 import my.pinged.read.LedgerAccess
+import my.pinged.read.LedgerReplacement
 import my.pinged.read.Outcome
 import my.pinged.read.ScreenRead
 import my.pinged.read.test.ScriptedRunner
@@ -51,6 +52,9 @@ class ReplacingRefusesWritesTest {
     private val app: Application = ApplicationProvider.getApplicationContext()
     private val runner = ScriptedRunner(app)
     private val transfers = MutableStateFlow(TransferState())
+
+    /** The claim, for a holder whose read takes it (#376); raised and cleared with [transfers]. */
+    private val replacement = MutableStateFlow<LedgerReplacement?>(null)
 
     @Test fun detailsWritesAreRefusedDuringARestore() {
         refuses("The note could not be saved") { detail().let { it.read to { it.saveNote("lunch") } } }
@@ -145,7 +149,7 @@ class ReplacingRefusesWritesTest {
 
     private fun detail() = DetailViewModel(app, txnId = 1L, createdAt = 0L, runner, transfers)
 
-    private fun categories() = CategoriesViewModel(app, runner, transfers)
+    private fun categories() = CategoriesViewModel(app, runner, replacement)
 
     private fun learned() = LearnedViewModel(app, runner, transfers)
 
@@ -169,6 +173,7 @@ class ReplacingRefusesWritesTest {
     ) {
         runner.holding = false
         transfers.value = TransferState(running = TransferJob.Running(operation, 0))
+        replacement.value = transfers.value.replacement
         val (read, write) = holder()
         val before = runner.calls.size
 
@@ -182,6 +187,7 @@ class ReplacingRefusesWritesTest {
         assertFalse("\"$what\" refused for a replacement raised unavailable", read.state.value.ledger == LedgerAccess.Unreadable)
 
         transfers.value = TransferState()
+        replacement.value = null
         runner.holding = true
         val after = runner.calls.size
         write()

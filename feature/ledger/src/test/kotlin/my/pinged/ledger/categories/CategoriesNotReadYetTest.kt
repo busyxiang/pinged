@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import my.pinged.data.dao.CategoryUse
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.NEW_CATEGORY
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.test.HeldClock
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.HeldBy
@@ -62,7 +63,7 @@ class CategoriesNotReadYetTest {
         draw()
         held.at(48)
 
-        state.value = CategoriesState(loaded = true, storageUnavailable = true)
+        state.value = CategoriesState(loaded = true, ledger = LedgerAccess.Unreadable)
         held.at(READING_DELAY_MILLIS - 40)
 
         assertEquals("An unreadable list found at 48ms waited for the delay", 1, held.count(CANNOT_READ_YOUR_DATA))

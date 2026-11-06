@@ -49,6 +49,7 @@ import my.pinged.ledger.unread.TEACH_PINGED_THIS
 import my.pinged.ledger.unread.UnreadContent
 import my.pinged.ledger.unread.UnreadState
 import my.pinged.parse.TaughtTemplate
+import my.pinged.read.LedgerAccess
 import my.pinged.read.LedgerReplacement
 import my.pinged.ui.theme.REPLACING_YOUR_DATA
 import org.junit.Assert.assertEquals
@@ -73,8 +74,11 @@ class ReplacingSettingsScreensTest {
             // No keyboard, for the reason `ChooserNewCategoryTest` gives.
             InterceptPlatformTextInput({ _, _ -> awaitCancellation() }) {
                 CategoriesContent(
-                    state = CategoriesState(loaded = true, items = listOf(CategoryUse(groceries, transactions = 3, rules = 0))),
-                    busy = LedgerReplacement.RESTORE,
+                    state = CategoriesState(
+                        loaded = true,
+                        items = listOf(CategoryUse(groceries, transactions = 3, rules = 0)),
+                        ledger = LedgerAccess.Withholding(LedgerReplacement.RESTORE),
+                    ),
                     onBack = {},
                     onAdd = { _, _ -> tapped += "add" },
                     onEdit = { _, _, _ -> tapped += "edit" },
@@ -95,8 +99,11 @@ class ReplacingSettingsScreensTest {
         val toys = Category(3, "Toys", "tag", 2)
         compose.setContent {
             CategoriesContent(
-                state = CategoriesState(loaded = true, items = listOf(CategoryUse(toys, transactions = 0, rules = 0))),
-                busy = LedgerReplacement.DELETE,
+                state = CategoriesState(
+                    loaded = true,
+                    items = listOf(CategoryUse(toys, transactions = 0, rules = 0)),
+                    ledger = LedgerAccess.Withholding(LedgerReplacement.DELETE),
+                ),
                 onBack = {},
                 onAdd = { _, _ -> },
                 onEdit = { _, _, _ -> },
@@ -205,7 +212,7 @@ class ReplacingSettingsScreensTest {
         var screen by mutableStateOf(0)
         compose.setContent {
             when (screen) {
-                0 -> CategoriesContent(CategoriesState(loaded = true, replacing = true), {}, { _, _ -> }, { _, _, _ -> }, {}, busy = LedgerReplacement.RESTORE)
+                0 -> CategoriesContent(CategoriesState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, { _, _ -> }, { _, _, _ -> }, {})
                 1 -> LearnedContent(LearnedState(loaded = true, replacing = true), {}, {}, busy = LedgerReplacement.RESTORE)
                 2 -> SourcesScreenContent(SourcesState(loaded = true, replacing = true), { _, _ -> }, {}, busy = LedgerReplacement.RESTORE)
                 3 -> CorrectionsContent(CorrectionsState(loaded = true, replacing = true), {}, {}, {}, busy = LedgerReplacement.RESTORE)
