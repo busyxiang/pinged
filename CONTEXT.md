@@ -57,7 +57,7 @@ _Avoid_: hand-set, manual category, user-edited
 ### Transactions
 
 **Manual entry**:
-A transaction the user typed in for a payment Pinged did not see: cash, or a payment whose notification never arrived. The name says how it reached the ledger, not how it was paid. It is the only transaction whose amount or date the user can change, and the only one they can delete, since the user is its only witness.
+A transaction the user typed in for a payment Pinged did not see: cash, or a payment whose notification never arrived. It covers money received too, saved as a refund-direction row, when the notification that would have said so never came. The name says how it reached the ledger, not how it was paid. It is the only transaction whose amount or date the user can change, and the only one they can delete, since the user is its only witness.
 _Avoid_: cash entry, hand entry, manual transaction
 
 **Awaiting review**:

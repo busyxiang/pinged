@@ -1,5 +1,7 @@
 package my.pinged.data.dao
 
+import my.pinged.parse.Direction
+
 /**
  * What a correction of a manual entry changes (#105): each group null when
  * unchanged, so `TxnDao.editManualEntry` names only the columns that moved.
@@ -11,6 +13,8 @@ data class ManualEdit(
     val merchant: Merchant? = null,
     val note: Note? = null,
     val filing: Filing? = null,
+    /** The new `direction` (#355): money received, or spent. */
+    val direction: Direction? = null,
 ) {
     /** The three merchant columns, each null for no merchant. */
     data class Merchant(val raw: String?, val display: String?, val key: String?)

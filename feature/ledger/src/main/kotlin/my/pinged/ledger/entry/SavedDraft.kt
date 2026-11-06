@@ -2,6 +2,7 @@ package my.pinged.ledger.entry
 
 import androidx.lifecycle.SavedStateHandle
 import java.time.LocalDate
+import my.pinged.parse.Direction
 
 /**
  * The entry screen's draft in its `SavedStateHandle` (#108), so a process
@@ -20,6 +21,7 @@ internal object SavedDraft {
     private const val NOTE = "draft.note"
     private const val CATEGORY = "draft.categoryId"
     private const val CHOSEN_BY = "draft.chosenBy"
+    private const val DIRECTION = "draft.direction"
     private const val EDIT_TARGET = "draft.editTarget"
     private const val EDIT_CREATED_AT = "draft.editCreatedAt"
 
@@ -31,6 +33,7 @@ internal object SavedDraft {
         handle[NOTE] = draft.note
         handle[CATEGORY] = draft.category?.categoryId
         handle[CHOSEN_BY] = draft.category?.by?.name
+        handle[DIRECTION] = draft.direction.name
     }
 
     /** The draft [handle] holds, or null when nothing was ever written to it. */
@@ -44,6 +47,7 @@ internal object SavedDraft {
             merchant = handle.get<String>(MERCHANT).orEmpty(),
             note = handle.get<String>(NOTE).orEmpty(),
             category = if (categoryId != null && by != null) CategoryChoice(categoryId, by) else null,
+            direction = handle.get<String>(DIRECTION)?.let(Direction::valueOf) ?: Direction.EXPENSE,
         )
     }
 

@@ -428,6 +428,7 @@ interface TxnDao {
         edit.merchant?.let { setManualMerchant(id, it.raw, it.display, it.key) }
         edit.note?.let { setManualNote(id, it.text) }
         edit.filing?.let { setManualFiling(id, it.categoryId, it.userEdited) }
+        edit.direction?.let { setManualDirection(id, it) }
         return touchManualEntry(id, updatedAt) == 1
     }
 
@@ -455,6 +456,10 @@ interface TxnDao {
     /** [editManualEntry]'s category and how it was filed; call that. */
     @Query("UPDATE txn SET category_id = :categoryId, user_edited = :userEdited WHERE id = :id AND raw_capture_id IS NULL")
     fun setManualFiling(id: Long, categoryId: Long, userEdited: Boolean): Int
+
+    /** [editManualEntry]'s direction (#355); call that. Only `direction`: totals follow it, nothing else moves. */
+    @Query("UPDATE txn SET direction = :direction WHERE id = :id AND raw_capture_id IS NULL")
+    fun setManualDirection(id: Long, direction: Direction): Int
 
     /** [editManualEntry]'s last statement, whose count is its answer; call that. */
     @Query("UPDATE txn SET updated_at = :updatedAt WHERE id = :id AND raw_capture_id IS NULL")
@@ -526,8 +531,8 @@ interface TxnDao {
 
     /**
      * A captured payment the manual entry about to be saved may repeat
-     * (#104, spec 9.4), or null: a row with a capture, of [amountSen], an
-     * `EXPENSE`, not `REJECTED`, and not [selfId] (the entry being edited;
+     * (#104, spec 9.4), or null: a row with a capture, of [amountSen], of
+     * [direction] (a received entry meets a captured `REFUND`, #355), not `REJECTED`, and not [selfId] (the entry being edited;
      * null for a new one), closest to [at].
      *
      * The mirror of [duplicatePair]'s search from the other side, through
@@ -536,11 +541,11 @@ interface TxnDao {
      * whose time of day is made up. By `local_date`, not a range of millis,
      * because the day a row is filed under is the day the user sees it on.
      */
-    fun nearbyCapture(selfId: Long?, amountSen: Long, at: Long, wholeDay: Boolean): Txn? =
+    fun nearbyCapture(selfId: Long?, amountSen: Long, at: Long, wholeDay: Boolean, direction: Direction = Direction.EXPENSE): Txn? =
         if (wholeDay) {
-            closestCaptureOnDay(selfId, amountSen, Direction.EXPENSE, LocalDates.of(at), at)
+            closestCaptureOnDay(selfId, amountSen, direction, LocalDates.of(at), at)
         } else {
-            closestInLayerTwo(selfId, amountSen, Direction.EXPENSE, captured = true, at = at)
+            closestInLayerTwo(selfId, amountSen, direction, captured = true, at = at)
         }
 
     /**

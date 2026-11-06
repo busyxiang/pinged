@@ -2058,10 +2058,11 @@ read, so the sheet and the row cannot disagree. (#344)
 ### 9.4 Manual entry
 
 For any payment Pinged did not see: cash, and a digital payment whose
-notification never arrived. The row is labelled for how it reached the
+notification never arrived; and money that came back with no notification
+to say so. The row is labelled for how it reached the
 ledger (*Entered by hand*, section 9.1), never for how it was paid. It is a
 `txn` row with `raw_capture_id`, `source_package` and `source_label` null,
-`EXPENSE`, `HIGH`, `COMMITTED`, never asked of section 7.1's gate, and
+`EXPENSE` (`REFUND` when the entry is money received, below), `HIGH`, `COMMITTED`, never asked of section 7.1's gate, and
 counted in every total and chart from the moment it is saved. It is never
 evidence of a captured day and never moves the history start.
 
@@ -2073,6 +2074,13 @@ One screen, pushed over the list with the tab bar hidden:
   is `sen * 10 + d`, backspace `sen / 10`, the field takes digits only so a
   keyboard's decimal separator never reaches it, and a digit that would pass
   `Amount`'s ceiling (RM1,000,000.00) is ignored.
+- **Paid / Received**, a two-segment control beside the amount. `Paid` is
+  the default, so the common path takes no tap on it. `Received` saves the
+  row as `REFUND`, which subtracts from totals, charts and merchant months
+  as a captured refund does; no new `Direction` exists. Under it the chip row
+  is labelled `COUNTS AGAINST` (section 9.2's wording) and the title reads
+  `Add money received` (`Edit money received` when corrected). The row's
+  small print stays *Entered by hand*.
 - **A date chip** beside the amount, reading `Today`, moving the entry to any
   past day, the history start's before included, at the current time of day.
   Never a future day.
@@ -2083,10 +2091,11 @@ One screen, pushed over the list with the tab bar hidden:
 - **Merchant** and **Note**, optional, one line each.
 - **Save**, enabled above RM0.00. Amount, category, Save: three taps.
 
-A capture of the same amount near that time (section 7.2's ten minutes, or
-the whole day for a backdated entry) is named above Save, with **Add anyway**
+A capture of the same amount and direction near that time (section 7.2's
+ten minutes, or the whole day for a backdated entry) is named above Save, with **Add anyway**
 and **Cancel**. Tapping a manual entry's row reopens the screen filled in;
-every field can change, and **Delete** removes it after one confirmation.
+every field can change, the direction included (a targeted write of
+`direction` alone), and **Delete** removes it after one confirmation.
 A captured row's amount, date and merchant never change: they are the bank's
 word. Its tap opens section 9.7's detail instead, whose Delete is Not a
 payment, a state change that keeps the capture. While a
