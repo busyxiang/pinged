@@ -19,12 +19,18 @@ the way to make it fail on purpose.
   once. [The keyboard](#the-keyboard).
 - An assert straight after `waitForIdle()` on a result that DataStore,
   `Dispatchers.IO` or `runBlocking` produces, on the device or under
-  Robolectric. [Work the compose clock does not
+  Robolectric, including one a tab switch or a resume starts. [Work the compose clock does not
   drive](#work-the-compose-clock-does-not-drive).
 - A write straight after building a holder that reads in its `init`.
   [A holder that reads on arrival](#a-holder-that-reads-on-arrival).
-- `System.nanoTime()` around a step, from one run, held to a bound.
-  [A duration on a busy host](#a-duration-on-a-busy-host).
+- `System.nanoTime()` around a step, from one run or at the longest of
+  several, held to a bound. [A duration on a busy
+  host](#a-duration-on-a-busy-host).
+- `withTimeoutOrNull(1_500)` around an answer that a wrong outcome would
+  never give. [A duration on a busy host](#a-duration-on-a-busy-host).
+- A `while (now < deadline) { ...; Thread.sleep(100) }` loop of your own
+  around a condition that reads Espresso or compose. [A wait of your
+  own](#a-wait-of-your-own).
 - One `uiAutomation.takeScreenshot()` straight after `waitForIdle()`,
   read for a sheet's pixels. [A screenshot of a
   sheet](#a-screenshot-of-a-sheet).
@@ -176,6 +182,21 @@ every time, which is the way to find this before CI does.
 
 A test that follows such a read polls for the thing it asserts on, with a
 deadline (a published answer, a count of runner calls), and then asserts.
+The rule is easy to miss when the test never asks for the read. A tab
+switch or a lifecycle move starts it. `ReviewWaysInTest` waited for Charts'
+read and then asserted the Spending tab's count straight after
+`waitForIdle()`. The count is a separate read, and until it lands the tab
+draws a dash whose description the test's matcher counts. `MonthPickerTest`
+moved the activity to `RESUMED`, called `waitForIdle()`, and asserted this
+month's total was absent. That passes before the resume's re-read lands,
+whether the read is right or wrong. A negative assert after an unwaited read
+cannot fail. Wait for the read itself: the summary's
+`ScreenRead.beforeEachOperation` to count that one has started, then
+`rereading` false. With the resume made to re-read this month and the read
+held 500ms, the old test passed and the new one failed at its assertion.
+With the tab's count held 3s, the old `ReviewWaysInTest` failed with the
+dash counted as 1, and the new one passed.
+
 Passing `Dispatchers.Unconfined` to a holder only runs its own steps inline;
 it does not make the DataStore step synchronous. This applies to the JVM
 tests under Robolectric as much as to the device ones.
@@ -271,6 +292,24 @@ at 794ms starved. This cannot see a hold that comes only on some runs, such as
 contention with another caller. A test that needs to see that has to make the
 contention happen on every run.
 
+A cancel's latency is timed the same way. `RowReaderDamageTest` and
+`SalvageTransfersTest` cancel the same walk of the same damaged file 3
+times and hold the bound to the quickest stop. `SharedInstanceUnderUseTest`
+reseeds its backlog each round, since a run consumes it. `OpenTest` opens
+the same file 3 times. None of these five was seen failing: starved as
+above, their single samples peaked at a 20.7ms cancel against 50ms, a 26ms
+open against 150ms and a 24ms delete wait against 500ms, in 3 runs of each.
+They took the shape `ReadHoldTest` failed on CI with, so they were changed
+before CI found them. Several runs held at their longest are no better
+than one: `RetroactiveFixTimingTest` holds the shortest of its 5 saves,
+since one descheduled save would fail a bound on the longest.
+
+A budget for an answer that a wrong outcome never gives is not a timed
+step. In `TransfersTest`, a request queued behind a held restore would
+not answer until the restore is released. So the budget it is given to be
+refused only has to outlast a descheduling, and fit inside the hold. Size
+it to the hold, not to how fast the right outcome usually comes.
+
 ## A capture stage two may requeue
 
 A capture seeded at `UNMATCHED` keeps `RawCapture.packVersion`'s default of
@@ -329,3 +368,14 @@ Captures for 1s after each of those 48 settles changed once, by a 13x12px
 status-bar icon. `captureToImage` is no fix: it cannot find a sheet's dialog,
 and reads the activity's window instead.
 
+## A wait of your own
+
+`boundedWaitUntil` is the one wait for a condition that reads Espresso or
+compose. Its KDoc says why. A condition that looks at semantics or a view
+first waits for idle, and a loop that checks its deadline only between
+calls cannot stop a call that never returns. `BoundedWaitSourceTest`
+refuses a bare `waitUntil`. It cannot see a loop written by hand, and
+`DeleteReachesTheLedgerTest` had one around an Espresso `check` and
+`waitForIdle()`, waiting for the keyboard. A loop over a database row, a
+flag or a DataStore value, from a test with no screen, cannot hang this
+way and is fine.

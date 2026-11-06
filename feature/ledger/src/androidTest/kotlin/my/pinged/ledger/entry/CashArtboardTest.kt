@@ -1,11 +1,8 @@
 package my.pinged.ledger.entry
 
-import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -22,9 +19,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.test.platform.app.InstrumentationRegistry
 import java.time.LocalDate
 import my.pinged.data.entity.Category
+import my.pinged.ledger.ArtboardProbe
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.Display
@@ -125,7 +122,7 @@ class CashArtboardTest {
         }
         compose.onNodeWithText(SAVE).performScrollTo()
         compose.waitForIdle()
-        val screen = settledScreen()
+        val screen = ArtboardProbe.settledScreen()
         val save = bounds(compose.onNodeWithText(SAVE).fetchSemanticsNode())
         assertTrue("Save is %.1fdp tall".format(save.height / density), save.height / density >= 51.5f)
         val label = styleOf(SAVE)
@@ -165,20 +162,7 @@ class CashArtboardTest {
     private fun cash(): PixelMap {
         compose.setContent { Cash() }
         compose.waitForIdle()
-        return settledScreen()
-    }
-
-    /** The screen once two captures a beat apart agree; `ChooserArtboardTest.settledScreen`'s reason. */
-    private fun settledScreen(): PixelMap {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        var last = automation.takeScreenshot()
-        repeat(20) {
-            Thread.sleep(100)
-            val next = automation.takeScreenshot()
-            if (next.sameAs(last)) return next.copy(Bitmap.Config.ARGB_8888, false).asImageBitmap().toPixelMap()
-            last = next
-        }
-        error("The screen did not settle in 2s")
+        return ArtboardProbe.settledScreen()
     }
 
     private fun chip(name: String): SemanticsNodeInteraction = compose.onNode(hasText(name) and isSelectable())

@@ -48,6 +48,8 @@ class RowReaderDamageTest {
          * reader that asked only every twenty reads.
          */
         const val CANCEL_BOUND_MS = 50.0
+
+        const val CANCELS = 3
     }
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -406,6 +408,12 @@ class RowReaderDamageTest {
      * The same page, cancelled from another thread partway through: it stops
      * at the next read and throws what `writePaged` throws. A page that asked
      * only at its boundary would run on to all 2,000 rows, about 5 s.
+     *
+     * The cancel is timed [CANCELS] times over the same damaged file and
+     * held to [CANCEL_BOUND_MS] at its shortest: each is one read and one
+     * reopen, a descheduling on a busy host lands on one of them, and a
+     * reader that asked less often would be slow on all of them
+     * (device-tests.md, "A duration on a busy host").
      */
     @Test(timeout = 120_000)
     fun cancellingAPageThatReadsNothingStopsItAtTheNextRead() {
@@ -413,6 +421,16 @@ class RowReaderDamageTest {
         val root = seedLedger(seeded).single { it.tree == "raw_capture" && it.path == "/" }
         Graph.reset()
         damage(root)
+        val took = List(CANCELS) {
+            val (tookMs, steps) = aPageCancelledPartway(seeded)
+            assertTrue("the page ran on to $steps steps after the cancel", steps < seeded)
+            tookMs
+        }
+        assertTrue("cancel took ${took.min()} ms to take effect at its shortest of $took", took.min() <= CANCEL_BOUND_MS)
+    }
+
+    /** A page over the damaged root, cancelled once it has stepped over 100 rows: ms to stop, and its steps. */
+    private fun aPageCancelledPartway(seeded: Int): Pair<Double, Long> {
         val cancelled = AtomicBoolean(false)
         val partway = CountDownLatch(1)
         var steps = 0L
@@ -435,10 +453,9 @@ class RowReaderDamageTest {
         reader.close()
 
         val tookMs = (stoppedAt - cancelledAt) / 1_000_000.0
-        Log.i("RowReaderDamageTest", "cancel took effect in $tookMs ms, after $steps steps")
+        Log.i("RowReaderDamageTest", "cancel took effect in $tookMs ms, after $steps steps of $seeded")
         assertTrue("cancelling did not stop the page: $outcome", outcome?.exceptionOrNull() is TransferCancelledException)
-        assertTrue("the page ran on to $steps steps after the cancel", steps < seeded)
-        assertTrue("cancel took $tookMs ms to take effect", tookMs <= CANCEL_BOUND_MS)
+        return tookMs to steps
     }
 
     @Test(timeout = 120_000)
