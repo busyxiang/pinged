@@ -1,20 +1,19 @@
 package my.pinged.ledger.review
 
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.isDisplayed
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeRight
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
@@ -22,17 +21,20 @@ import my.pinged.ledger.settings.Operation
 import my.pinged.parse.Direction
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Spec 9.2's two fast ways to accept (#114), through [ReviewInboxScreenContent]
  * with no database: a swipe on a plain card, and the Accept all button with
  * its label. Transfer and duplicate cards take neither.
+ *
+ * Where the focused card lands is `ReviewFocusScrollTest`'s, on the device:
+ * it is decided by the cards' measured heights, which follow the font.
  */
-@RunWith(AndroidJUnit4::class)
+@RunWith(RobolectricTestRunner::class)
 class ReviewSwipeScreenTest {
     @get:Rule val compose = createComposeRule()
 
@@ -50,7 +52,7 @@ class ReviewSwipeScreenTest {
         assertEquals("precondition: the pairless duplicate is not drawn as a plain card", CardKind.PLAIN, card(DUPLICATE, PendingReason.DUPLICATE_SUSPECT).kind)
 
         listOf(TRANSFER, DUPLICATE, PLAIN).forEach { id ->
-            compose.onNodeWithTag(reviewCardTag(id)).performScrollTo().performTouchInput { swipeRight() }
+            swipe(id)
             compose.waitForIdle()
         }
 
@@ -64,7 +66,7 @@ class ReviewSwipeScreenTest {
     @Test fun aSwipeDoesNothingWhileARestoreRuns() {
         content(listOf(card(PLAIN, PendingReason.OVER_THRESHOLD)), busy = Operation.RESTORE)
 
-        compose.onNodeWithTag(reviewCardTag(PLAIN)).performScrollTo().performTouchInput { swipeRight() }
+        swipe(PLAIN)
         compose.waitForIdle()
 
         assertEquals("A swipe answered while the ledger was being replaced", emptyList<Any>(), answers)
@@ -125,29 +127,14 @@ class ReviewSwipeScreenTest {
         assertEquals("Accept all was tapped through while the ledger was being replaced", 0, acceptAlls)
     }
 
-    @Test fun aFocusedCardOpensAtTheTopWithAcceptAllAboveTheCards() {
-        val cards = (1L..20L).map { card(it, PendingReason.RULE_REVIEW, amountSen = 45_000L) }
-        compose.setContent {
-            PingedTheme {
-                ReviewInboxScreenContent(
-                    cards = cards,
-                    storageUnavailable = false,
-                    busy = null,
-                    onBack = {},
-                    onAnswer = { _, _ -> },
-                    focus = FOCUSED,
-                )
-            }
-        }
-        compose.waitForIdle()
-
-        compose.onNodeWithTag(reviewCardTag(FOCUSED)).assertIsDisplayed()
-        val above = compose.onAllNodesWithTag(reviewCardTag(FOCUSED - 1)).fetchSemanticsNodes().isNotEmpty() &&
-            compose.onNodeWithTag(reviewCardTag(FOCUSED - 1)).isDisplayed()
-        assertFalse(
-            "The inbox opened on the card above the focused one: the Accept all row was not counted among the items above the cards",
-            above,
-        )
+    /**
+     * Scrolls the list to the card first: a card below the fold is not
+     * composed, so `performScrollTo` on its tag finds no node at all. At
+     * 320x640 the third card is below it here.
+     */
+    private fun swipe(id: Long) {
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(reviewCardTag(id)))
+        compose.onNodeWithTag(reviewCardTag(id)).performTouchInput { swipeRight() }
     }
 
     private fun content(cards: List<ReviewCard>, busy: Operation? = null) {
@@ -176,6 +163,5 @@ class ReviewSwipeScreenTest {
         const val TRANSFER = 42L
         const val DUPLICATE = 43L
         const val REFUND = 44L
-        const val FOCUSED = 15L
     }
 }

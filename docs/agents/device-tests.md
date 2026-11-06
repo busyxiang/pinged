@@ -67,7 +67,11 @@ Gradle's configuration cache can reuse the previous filter, so pass
 A filter that ran too little looks like a pass: check the result XML's
 `classname`s. Alternate whole names, `.*(FooReadsTest|FooViewModelTest).*`:
 `.*Foo(Reads|ViewModel)Test.*` selected no test at all, and the build passed
-in 4s with an empty result XML. Why is not understood.
+in 4s with an empty result XML. Why is not understood. `class=` with one
+fully qualified name has done the same, with `--no-configuration-cache`
+passed, for a class added to the APK in that build
+(`ReviewFocusScrollTest`); `tests_regex=.*ReviewFocusScrollTest.*` then ran
+it.
 
 Before calling work done, run the suites the change can reach, which is what
 CI's emulator job runs on a pull request into `main` that is not a draft, at
