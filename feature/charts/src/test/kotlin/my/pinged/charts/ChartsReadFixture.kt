@@ -1,6 +1,7 @@
 package my.pinged.charts
 
 import my.pinged.data.CaptureRecord
+import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.DayTotal
@@ -40,6 +41,7 @@ internal fun chartsRead(
     uncategorizedId: Long? = null,
     merchantTotals: List<MerchantTotal> = emptyList(),
     dayTotals: List<DayTotal> = emptyList(),
+    sources: SourcesLine = SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false),
 ) = ChartsRead(
     month = month,
     record = recordFor(month, today, historyStart, captured),
@@ -52,4 +54,5 @@ internal fun chartsRead(
     uncategorizedId = uncategorizedId,
     merchantTotals = merchantTotals,
     dayTotals = dayTotals,
+    sources = sources,
 )

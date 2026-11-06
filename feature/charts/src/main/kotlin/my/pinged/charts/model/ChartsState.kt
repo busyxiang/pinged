@@ -2,6 +2,7 @@ package my.pinged.charts.model
 
 import my.pinged.charts.ChartsRead
 import my.pinged.data.Collecting
+import my.pinged.data.SourcesLine
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.monthName
 import java.time.YearMonth
@@ -31,6 +32,7 @@ sealed interface ChartsState {
  * in the total" block, the comparison -- is a field here, a line in
  * [monthView], and a slot in `ChartsScreen`'s column.
  *
+ * @property sources the apps the hero's total comes from, drawn under it (#365).
  * @property comparison the line against the month before, null when held back.
  * @property grid the daily rhythm grid, drawn while collecting too (#66).
  * @property bars the category bars (#91).
@@ -43,6 +45,7 @@ data class MonthView(
     val trust: MonthTrust,
     val header: Header,
     val hero: Hero,
+    val sources: SourcesLine,
     val comparison: String?,
     val grid: RhythmGrid,
     val bars: Bars,
@@ -72,6 +75,7 @@ fun monthView(read: ChartsRead): MonthView {
             trust = trust,
             running = read.month == YearMonth.from(read.today),
         ),
+        sources = read.sources,
         comparison = comparison(
             read.month,
             read.record,

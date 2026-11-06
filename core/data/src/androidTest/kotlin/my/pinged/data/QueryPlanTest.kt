@@ -522,6 +522,19 @@ class QueryPlanTest {
     }
 
     /**
+     * The sources line's apps (#365), [TxnDao.MONTH_TOTALS_SQL]'s predicate
+     * with a `DISTINCT`, range over the month as the total does. `SEARCH` for
+     * the reason the split gives.
+     */
+    @Test fun theSourcesLineTakesTheMonthRange() {
+        val p = plan(bindable(TxnDao.MONTH_SOURCES_SQL), *MONTH)
+        assertTrue(
+            "The sources line does not read txn by a local_date range:\n$p",
+            p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
+        )
+    }
+
+    /**
      * The `Months` sheet's totals range over `local_date` as the month total
      * does, over the sheet's whole span: the history from its first day to
      * the current month's end. `SEARCH` for the reason the split gives.

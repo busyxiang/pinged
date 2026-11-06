@@ -1749,6 +1749,41 @@ Categorical colour is not used anywhere in the app: category identity is
 icon plus name (section 4), which keeps filtering from repainting the chart
 and keeps the ramp meaning magnitude and nothing else.
 
+### The sources line
+
+A not-captured day says Pinged was not watching. An app Pinged does not read
+says nothing at all: a payment by an app no rule reads never becomes a
+transaction, so a month paid partly through it looks whole. So every month's
+total is named by the apps it comes from (#360, #365; `CONTEXT.md`, Read
+source, Unreadable source, Sources line).
+
+- A **read source** is a `capture_source` switched on that a rule reads:
+  the loaded pack has its package (`ParsePack.packages`), or the user taught
+  one message from it (`user_template_rule.source_package`). One taught
+  message is enough.
+- An **unreadable source** is switched on, and no rule reads it.
+- A month's line names every read source as of today, plus every app with
+  a counted captured transaction in the month (`txn.source_package`), so an
+  app switched off since still shows on the months it paid in; `BY HAND`
+  when the month has a counted manual entry; and every unreadable source, in
+  a sentence of its own. An unreadable source that paid in the month (a
+  taught rule since deleted) is in both.
+- Each app is its `capture_source` label in capitals, or its package with
+  none, sorted by that name, so the order is the same on every read.
+
+`SourcesLine` in `:core:data` is the one calculation, read in the screen's own
+transaction, so Charts and Spending (#367) cannot name different apps. It
+needs no table or column. It is a claim about apps and never about days:
+nothing greys for it, and it is never a capture banner, which says whether
+capture is working, where an unreadable source is a lasting limit.
+
+**Two known limits.** Nothing stores when a source was switched on, so a past
+month names today's read sources and can name an app that was not on yet;
+storing it would be a schema change. And a change in which apps are read
+does not stop two months being compared ("No unfair period comparison"): a
+month read from two apps is set against one read from three, and the two
+lines say so.
+
 ### Typefaces, and how they ship
 
 The Receipt design uses three families: **Instrument Serif** for hero
@@ -1971,8 +2006,10 @@ category bars, then the merchant ranking.
 **Header.** The selected month in mono capitals (`SEPTEMBER 2026`); a tap on
 it opens the `Months` sheet. Beside it one chip, the first that applies:
 `N DAYS NOT CAPTURED` in the accent colour when the month is untrusted, else
-`MONTH COMPLETE` for a month that has ended, else `DAY N OF M` for the
-month still running.
+`MONTH ENDED` for a month that has ended, else `DAY N OF M` for the
+month still running. The plain chip says only the date: which days were
+captured is the alert chip's, and which apps the total covers is the
+sources line's (#365).
 
 **Hero.** The month's ringgit net, labelled `TOTAL SPENT` while it is above
 zero. At or below zero it reads `NET SPENT`, keeps its sign, and a mono line
@@ -1980,6 +2017,17 @@ under it gives the two halves: `SPENT RMx · CAME BACK RMy`. In the month
 still running the labels are `SPENT SO FAR` and `NET SPENT SO FAR`. An untrusted
 month greys the figure and adds `MAY BE INCOMPLETE · N DAYS NOT CAPTURED`,
 never "at least", since a missed refund makes the real figure lower.
+
+**Sources line.** Directly under the hero figure, above the grid and the
+bars, one mono line names the apps the total comes from (section 8, "The
+sources line"): `FROM MAE AND TOUCH 'N GO EWALLET`, or `FROM A, B AND C`,
+with `, AND BY HAND` when the month has a counted manual entry. With no app
+to name it reads `ONLY BY HAND`, or `NO APP IS READ YET`, which opens
+Capture sources (section 9.6). A second sentence names the unreadable
+sources: `GRABPAY IS ON BUT PINGED CANNOT READ IT YET`, `… AND … ARE ON BUT
+PINGED CANNOT READ THEM YET`. It wraps and never truncates a name, and it
+neither greys nor takes the accent. An unreadable name opens nothing yet
+(#368). (#365)
 
 **Comparison line.** Under the hero, when the selected month and the month
 before are both comparable (section 8, "No unfair period comparison"), one

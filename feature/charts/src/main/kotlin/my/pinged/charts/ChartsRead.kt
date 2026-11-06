@@ -1,6 +1,7 @@
 package my.pinged.charts
 
 import my.pinged.data.CaptureRecord
+import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.DayTotal
@@ -41,6 +42,8 @@ import java.time.YearMonth
  *   and currency, every merchant: the ranking sums the rest itself (#92).
  * @property dayTotals the month's `TxnDao.dayTotals`, every currency, for the
  *   daily rhythm grid.
+ * @property sources the month's sources line under the hero (#365), read in
+ *   the same transaction, so the apps it names are those of the total above it.
  *
  * **No field has a default**, so a field the read forgets to pass is a
  * compile error rather than an empty section. Tests build one through
@@ -58,6 +61,7 @@ data class ChartsRead(
     val uncategorizedId: Long?,
     val merchantTotals: List<MerchantTotal>,
     val dayTotals: List<DayTotal>,
+    val sources: SourcesLine,
 ) {
     /** The day the read was taken: [record]'s. */
     val today: LocalDate get() = record.today

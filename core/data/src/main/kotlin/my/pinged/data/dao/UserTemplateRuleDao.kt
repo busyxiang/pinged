@@ -17,6 +17,13 @@ interface UserTemplateRuleDao {
     @Query("SELECT * FROM user_template_rule ORDER BY id ASC")
     fun all(): List<UserTemplateRule>
 
+    /**
+     * Every app the user taught a message from: each is a read source while
+     * switched on (CONTEXT.md, Read source; `SourcesLine`).
+     */
+    @Query("SELECT DISTINCT source_package FROM user_template_rule")
+    fun packages(): List<String>
+
     @Query("SELECT COUNT(*) FROM user_template_rule")
     fun countAll(): Int
 

@@ -347,6 +347,9 @@ class MainActivity : ComponentActivity() {
                                         // Onto Charts' stack too, for the same reason.
                                         onOpenBreakdown = { month, id -> tabs.push(Breakdown(id, month.toString())) },
                                         onOpenMerchant = { month, key -> tabs.push(MerchantMonth(key, month.toString())) },
+                                        // Onto Charts' stack too: Back returns
+                                        // to the line it was opened from.
+                                        onOpenSources = { tabs.push(Sources) },
                                     )
                                 }
                                 entry<MerchantMonth> { key ->

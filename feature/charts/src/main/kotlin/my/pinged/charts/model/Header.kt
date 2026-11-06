@@ -19,12 +19,14 @@ data class Chip(val text: String, val alert: Boolean)
  * The chip's precedence, decided by #81 rather than a ticket: an untrusted
  * month says so whatever else is true, since that is the one fact that changes
  * how every figure below reads. Otherwise a month before today's is
- * `MONTH COMPLETE`, and today's month is `DAY N OF M`.
+ * `MONTH ENDED`, and today's month is `DAY N OF M`. The plain chip says only
+ * the date: which apps the month's total covers is the sources line's
+ * (#365), and which days were captured is the alert chip's.
  */
 fun header(month: YearMonth, today: LocalDate, trust: MonthTrust): Header {
     val chip = when {
         trust.untrusted -> Chip(notCapturedLabel(trust.notCaptured), alert = true)
-        month < YearMonth.from(today) -> Chip("MONTH COMPLETE", alert = false)
+        month < YearMonth.from(today) -> Chip("MONTH ENDED", alert = false)
         else -> Chip("DAY ${today.dayOfMonth} OF ${month.lengthOfMonth()}", alert = false)
     }
     return Header(monthName(month), chip)
