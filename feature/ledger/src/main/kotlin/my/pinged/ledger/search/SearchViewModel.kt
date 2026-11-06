@@ -37,6 +37,7 @@ import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
 import my.pinged.ledger.settings.ExportSink
 import my.pinged.ledger.settings.Transfers
+import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
 import java.time.LocalDate
 import java.time.YearMonth
@@ -59,18 +60,25 @@ import java.time.YearMonth
  * A result row offers the ledger's category chooser, and a save re-reads the
  * search through [read], so a row sorted out of an Uncategorized search leaves
  * it at once.
+ *
+ * The export goes through `Transfers`, not [runner].
  */
-class SearchViewModel(
+class SearchViewModel internal constructor(
     app: Application,
     private val handle: SavedStateHandle,
+    runner: ReadRunner,
     start: SearchStart? = null,
     private val today: () -> LocalDate = LocalDate::now,
 ) : AndroidViewModel(app) {
+    constructor(
+        app: Application,
+        handle: SavedStateHandle,
+        start: SearchStart? = null,
+        today: () -> LocalDate = LocalDate::now,
+    ) : this(app, handle, GuardedRunner(app), start, today)
 
     /** A getter, not a field, for the reason `SourcesViewModel` records. */
     private val context: Context get() = getApplication<Application>()
-
-    private val runner = GuardedRunner(app)
 
     private val _query = MutableStateFlow(handle.get<String>(QUERY).orEmpty())
 

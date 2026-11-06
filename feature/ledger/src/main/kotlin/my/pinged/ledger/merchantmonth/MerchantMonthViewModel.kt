@@ -9,6 +9,7 @@ import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
+import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
 import my.pinged.ui.RINGGIT
 import java.time.LocalDate
@@ -33,14 +34,15 @@ import java.time.YearMonth
  * not the Ledger's `PagingSource`, and nothing invalidates them. [today] is
  * asked as each read begins.
  */
-class MerchantMonthViewModel(
+class MerchantMonthViewModel internal constructor(
     app: Application,
     val merchantKey: String,
     val month: YearMonth,
+    runner: ReadRunner,
     private val today: () -> LocalDate = LocalDate::now,
 ) : AndroidViewModel(app) {
-
-    private val runner = GuardedRunner(app)
+    constructor(app: Application, merchantKey: String, month: YearMonth, today: () -> LocalDate = LocalDate::now) :
+        this(app, merchantKey, month, GuardedRunner(app), today)
 
     /**
      * The month's read. `MerchantMonthScreen` reads it again on resume and on

@@ -15,6 +15,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
+import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
 import my.pinged.ui.RINGGIT
 import java.time.LocalDate
@@ -34,18 +35,23 @@ import java.time.LocalDate
  * [today] is asked as each read begins, so a test can place the day relative
  * to it.
  */
-class DayViewModel(
+class DayViewModel internal constructor(
     app: Application,
     val date: LocalDate,
+    runner: ReadRunner,
     private val today: () -> LocalDate = LocalDate::now,
 ) : AndroidViewModel(app) {
+    constructor(app: Application, date: LocalDate, today: () -> LocalDate = LocalDate::now) :
+        this(app, date, GuardedRunner(app), today)
 
     /** A getter, not a field, for the reason `SourcesViewModel` records. */
     private val context: Context get() = getApplication<Application>()
 
-    private val runner = GuardedRunner(app)
-
-    /** Tests only: runs inside each read's transaction, after the rows are read. */
+    /**
+     * Tests only: runs inside each read's transaction, after the rows are read
+     * and before the totals (`DayReadTest`). A runner sees a read whole, from
+     * outside its transaction, so it cannot place a commit there.
+     */
     @VisibleForTesting
     internal var midRead: () -> Unit = {}
 
