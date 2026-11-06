@@ -73,9 +73,9 @@ sealed interface Outcome<out T> {
  * [ScreenRead]'s turn, and with it the claim that refuses a write during a
  * ledger replacement. **An error, not a warning.** Gradle opts every test
  * compilation in; in production only `:core:read`, `GuardedRunner` (the
- * adapter), `AppStatus`'s health probe, which is no screen, and
- * `ScriptedRunner` do, and `RawRunnerAccessTest` refuses the name in any other
- * production source. A screen that needs a one-off read uses [ScreenRead.lookup].
+ * adapter, whose overrides carry it on), `AppStatus`'s probe and backup
+ * count, which are no screen's, and `ScriptedRunner` name it.
+ * `RawRunnerAccessTest` refuses it in any other production source, and holds the list. A screen that needs a one-off read uses [ScreenRead.lookup].
  */
 @RequiresOptIn(
     level = RequiresOptIn.Level.ERROR,
