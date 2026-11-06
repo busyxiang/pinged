@@ -2,7 +2,13 @@ package my.pinged
 
 import androidx.compose.runtime.MutableState
 import androidx.navigation3.runtime.NavKey
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import my.pinged.data.NamedSource
 
 /**
  * The home destination, and the one `rememberNavBackStack` starts on.
@@ -53,11 +59,34 @@ import kotlinx.serialization.Serializable
 
 /**
  * Spec 5.6's unread list, pushed from its row in settings
- * (`SettingsScreen`'s `onOpenUnread`).
+ * (`SettingsScreen`'s `onOpenUnread`) with no [only], so every app's.
  *
- * See [Ledger] for why these are `@Serializable` objects registered nowhere.
+ * Pushed on the current tab's stack from an unreadable source's name in a
+ * sources line (#368), [only] is the app the list is filtered to, as the line
+ * named it, which the filter shows. Its *Show every app* replaces it with
+ * the unfiltered key ([replaceTop]), so Back still returns to the line.
+ *
+ * See [Ledger] for why these are `@Serializable` keys registered nowhere.
  */
-@Serializable data object Unread : NavKey
+@Serializable data class Unread(@Serializable(with = SavedNamedSource::class) val only: NamedSource?) : NavKey
+
+/**
+ * [NamedSource] in a key's saved state. `:core:data` does not apply the
+ * serialization plugin, so the key says how to save it: whole, its package
+ * and name together, never one without the other.
+ */
+internal object SavedNamedSource : KSerializer<NamedSource> {
+    @Serializable @SerialName("NamedSource")
+    private class Saved(val pkg: String, val name: String)
+
+    override val descriptor: SerialDescriptor = Saved.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: NamedSource) =
+        encoder.encodeSerializableValue(Saved.serializer(), Saved(value.pkg, value.name))
+
+    override fun deserialize(decoder: Decoder): NamedSource =
+        decoder.decodeSerializableValue(Saved.serializer()).let { NamedSource(it.pkg, it.name) }
+}
 
 /**
  * Spec 5.8's Teach screen for unread capture [captureId], pushed from its

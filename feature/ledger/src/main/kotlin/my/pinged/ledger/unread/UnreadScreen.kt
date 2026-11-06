@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import my.pinged.data.NamedSource
 import my.pinged.data.dao.UnreadCapture
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
@@ -92,6 +93,11 @@ import my.pinged.ui.theme.dottedRule
  * Read on each foreground, so a capture stage two marked while the user was
  * away is on the list when they come back, and again when a restore or a
  * delete replaces the ledger while it is open.
+ *
+ * Filtered to one app when the holder was built for one (#368), from the
+ * sources line's unreadable names; [onShowEveryApp] is the filter's way back
+ * to every app's, which `:app` routes. Teach and Never a transaction are the
+ * same either way.
  */
 @Composable
 fun UnreadScreen(
@@ -99,6 +105,7 @@ fun UnreadScreen(
     onBack: () -> Unit,
     onTeach: (UnreadCapture) -> Unit,
     modifier: Modifier = Modifier,
+    onShowEveryApp: () -> Unit,
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
@@ -113,11 +120,14 @@ fun UnreadScreen(
         onEnd = { viewModel.loadMore() },
         modifier = modifier,
         busy = busy,
+        source = viewModel.source,
+        onShowEveryApp = onShowEveryApp,
     )
 }
 
 /**
- * [UnreadScreen] without its holder, so a test can draw any state. While
+ * [UnreadScreen] without its holder, so a test can draw any state. [source]
+ * is the app the list is filtered to (#368), null for every app's. While
  * [busy] runs a ledger replacement the list says so under its header, and
  * Never a transaction and Teach Pinged this are off (#331): Teach is a
  * screen whose one end is a write the replacement refuses, about a capture
@@ -134,10 +144,12 @@ internal fun UnreadContent(
     zone: ZoneId = ZoneId.systemDefault(),
     onTeach: (UnreadCapture) -> Unit = {},
     busy: Operation? = null,
+    source: NamedSource? = null,
+    onShowEveryApp: () -> Unit = {},
 ) {
     if (!state.loaded) {
         Column(modifier.fillMaxSize().background(Card)) {
-            Header(onBack)
+            Header(onBack, source, onShowEveryApp)
             // A card's first line: its source and when it was posted.
             ListNotReadYet(caption = NOT_READ_YET + Separator + NOT_READ_YET, icon = false)
         }
@@ -147,12 +159,12 @@ internal fun UnreadContent(
         modifier.fillMaxSize().background(Card),
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
-        item { Header(onBack) }
+        item { Header(onBack, source, onShowEveryApp) }
         if (!state.storageUnavailable && !state.replacing && busy != null) item { ChangedLine(busy, PaddingValues(start = 20.dp, end = 20.dp)) }
         val notice = when {
             state.replacing -> REPLACING_YOUR_DATA
             state.storageUnavailable -> CANNOT_READ_YOUR_DATA
-            state.items.isEmpty() -> NOTHING_UNREAD
+            state.items.isEmpty() -> source?.let(::nothingUnreadFrom) ?: NOTHING_UNREAD
             else -> null
         }
         if (notice != null) {
@@ -187,8 +199,12 @@ internal fun UnreadContent(
     }
 }
 
+/**
+ * The title and what the list is; filtered to [source] (#368), a line naming
+ * the app and [SHOW_EVERY_APP], which [onShowEveryApp] answers.
+ */
 @Composable
-private fun Header(onBack: () -> Unit) {
+private fun Header(onBack: () -> Unit, source: NamedSource?, onShowEveryApp: () -> Unit) {
     Column(Modifier.fillMaxWidth().background(Paper).dottedRule().padding(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -211,6 +227,21 @@ private fun Header(onBack: () -> Unit) {
             color = Muted,
             modifier = Modifier.padding(start = 46.dp, top = 4.dp),
         )
+        if (source != null) {
+            Row(Modifier.padding(start = 46.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(filterLine(source), style = MonoLabel, color = Ink, modifier = Modifier.weight(1f))
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(2.dp))
+                        .clickable(role = Role.Button, onClick = onShowEveryApp)
+                        .heightIn(min = 44.dp)
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(SHOW_EVERY_APP, style = ButtonLabel.copy(fontSize = 13.sp), color = Stamp)
+                }
+            }
+        }
     }
 }
 
@@ -345,3 +376,13 @@ internal const val TEACH_PINGED_THIS = "Teach Pinged this"
 internal const val COPY_AS_FIXTURE = "Copy as a test case"
 internal const val NOTHING_UNREAD = "Nothing here. Every notification Pinged kept was read by a rule."
 internal const val FOOTER = "TEACHING ONE TAKES TWO TAPS \u00B7 NOTHING HERE LEAVES YOUR PHONE"
+
+/** The filter's line under the header (#368): `ONLY GRABPAY`. */
+internal fun filterLine(source: NamedSource): String = "ONLY ${source.name}"
+
+/** The filter's way back to every app's. */
+internal const val SHOW_EVERY_APP = "Show every app"
+
+/** [NOTHING_UNREAD] for one app, when the list is filtered to [source]. */
+internal fun nothingUnreadFrom(source: NamedSource): String =
+    "Nothing here from ${source.name}. Every notification Pinged kept from it was read by a rule."

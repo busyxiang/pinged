@@ -6,10 +6,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import my.pinged.capture.Graph
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.CaptureRecord
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
+import my.pinged.data.SourcesLine
 import my.pinged.read.ScreenRead
 import java.time.LocalDate
 import java.time.YearMonth
@@ -106,6 +108,8 @@ class ChartsViewModel(
         // and its rest summed in the mapping layer. Measured beside
         // `TxnDao.merchantTotals`: 1.74ms for a month of 333 merchants.
         val merchantTotals = txns.merchantTotals(range.start, range.endInclusive, limit = EVERY_MERCHANT)
+        // The apps the total comes from (#365), against the pack loaded now.
+        val sources = SourcesLine.read(db, Graph.parsePack(), month)
 
         return ChartsRead(
             month = month,
@@ -119,6 +123,7 @@ class ChartsViewModel(
             merchantTotals = merchantTotals,
             notInTotal = notInTotal,
             dayTotals = dayTotals,
+            sources = sources,
         )
     }
 

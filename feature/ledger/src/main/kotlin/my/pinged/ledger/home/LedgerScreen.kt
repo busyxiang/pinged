@@ -82,6 +82,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.charts.MonthsSheet
+import my.pinged.charts.SourcesLineActions
+import my.pinged.charts.SourcesLineText
 import my.pinged.charts.model.monthsSheet
 import my.pinged.charts.monthsReading
 import my.pinged.data.Databases
@@ -172,6 +174,8 @@ fun LedgerScreen(
      * null draws no line.
      */
     onOpenToSort: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
+    /** The sources line's taps (#367, #368), as on Charts. */
+    sourcesLine: SourcesLineActions? = null,
     heard: String? = null,
     /** The backup reminder (#252), or null for none; see [BackupReminderRow]. */
     backupReminder: BackupReminder? = null,
@@ -224,6 +228,7 @@ fun LedgerScreen(
         onOpenDetail = onOpenDetail,
         onOpenSearch = onOpenSearch,
         onOpenToSort = onOpenToSort,
+        sourcesLine = sourcesLine,
         heard = heard,
         backupReminder = backupReminder,
         picked = picked,
@@ -279,6 +284,7 @@ internal fun LedgerScreenContent(
     onOpenDetail: ((EditTarget) -> Unit)? = null,
     onOpenSearch: (() -> Unit)? = null,
     onOpenToSort: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
+    sourcesLine: SourcesLineActions? = null,
     heard: String? = null,
     backupReminder: BackupReminder? = null,
     /** The holder's picked month, null to follow the clock; see [LedgerViewModel.picked]. */
@@ -432,6 +438,7 @@ internal fun LedgerScreenContent(
                         val id = read.uncategorizedId
                         if (month != null && id != null) ({ open(month, id) }) else null
                     },
+                    sourcesLine = sourcesLine,
                 )
             }
         }
@@ -1077,6 +1084,7 @@ private fun Feed(
     onAddPayment: (() -> Unit)? = null,
     backupReminder: BackupReminder? = null,
     onOpenToSort: (() -> Unit)? = null,
+    sourcesLine: SourcesLineActions? = null,
     /** [summary] and the rows are the last month's, dimmed while [picked]'s are read (#285). */
     updating: Boolean = false,
     picked: YearMonth? = null,
@@ -1117,7 +1125,7 @@ private fun Feed(
                 item(key = SUMMARY_KEY, contentType = SUMMARY_KEY) {
                     Column(Modifier.testTag(MONTH_SUMMARY).fillMaxWidth().background(Paper)) {
                         Box(Modifier.updating(updating)) {
-                            MonthSummaryBlock(summary, categoriesById, onHeroBottom, onOpenToSort, heroNotReadYetShown)
+                            MonthSummaryBlock(summary, categoriesById, onHeroBottom, onOpenToSort, heroNotReadYetShown, sourcesLine)
                         }
                         // `LoadingSearch`'s place for it: under the dimmed hero.
                         if (updating) UpdatingStatus(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp))
@@ -1247,6 +1255,9 @@ private fun AccentLineRow(label: String, onOpen: () -> Unit) {
  * [heroNotReadYetShown] is whether a null [summary] draws the hero's dash:
  * [LedgerScreenContent] times the whole first read, so rows landing before
  * the total do not restart the delay.
+ *
+ * Under the hero and its `DO NOT TRUST` caveat, the summary's sources line
+ * (#367), Charts' `SourcesLineText`, whose taps go to [sourcesLine] (#368).
  */
 @Composable
 internal fun MonthSummaryBlock(
@@ -1255,6 +1266,7 @@ internal fun MonthSummaryBlock(
     onHeroBottom: (Int) -> Unit,
     onOpenToSort: (() -> Unit)? = null,
     heroNotReadYetShown: Boolean,
+    sourcesLine: SourcesLineActions? = null,
 ) {
     val leaderLift = with(LocalDensity.current) { LEADER_LIFT.roundToPx() }
     Column(Modifier.fillMaxWidth()) {
@@ -1311,6 +1323,11 @@ internal fun MonthSummaryBlock(
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
+            // After the caveat, so it stays beside the total it qualifies
+            // (#73); and below the column [onHeroBottom] measures, not in it:
+            // the TopBar takes the total over at the hero's last line, and a
+            // line naming apps is not the total. Charts' gap under its hero.
+            summary?.sources?.let { SourcesLineText(it, sourcesLine, Modifier.padding(top = 6.dp)) }
 
             summary?.top?.forEach { category ->
                 // On one baseline, as the board's `align-items: baseline` sets

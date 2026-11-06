@@ -6,8 +6,10 @@ import androidx.paging.PagingData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import my.pinged.data.LocalDate
+import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.data.dao.CurrencyTotal
+import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.Category
 import my.pinged.ledger.home.LedgerItem
 import my.pinged.ledger.home.MonthSummary
@@ -35,7 +37,19 @@ internal fun longFeed(count: Long = 24L): List<LedgerItem> {
         rows.map { LedgerItem.Row(it, displayName = "Row ${it.id}") }
 }
 
-/** September 2026's summary, the boards' RM2,847.30 by default. */
+/** September's sources line: the two pack apps, switched on and read. */
+internal val SEPTEMBER_SOURCES: SourcesLine = SourcesLine.of(
+    sources = listOf(
+        CaptureSource("my.com.tngdigital.ewallet", "Touch 'n Go eWallet", enabled = true, firstSeenAt = 0L),
+        CaptureSource("com.maybank2u.life", "Maybank MAE", enabled = true, firstSeenAt = 0L),
+    ),
+    rulePackages = setOf("my.com.tngdigital.ewallet", "com.maybank2u.life"),
+    paidFrom = emptySet(),
+    byHand = false,
+    packLabels = emptyMap(),
+)
+
+/** September 2026's summary, the boards' RM2,847.30 by default, with its sources line under the hero. */
 internal fun septemberSummary(
     totals: List<CurrencyTotal> = listOf(CurrencyTotal("MYR", 284_730L)),
     trustworthy: Boolean = true,
@@ -44,4 +58,5 @@ internal fun septemberSummary(
     totals = totals,
     top = listOf(CategoryTotal(FEED_FOOD.id, "MYR", 84_250L)),
     trustworthy = trustworthy,
+    sources = SEPTEMBER_SOURCES,
 )

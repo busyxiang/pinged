@@ -17,6 +17,7 @@ import my.pinged.charts.model.monthView
 import my.pinged.charts.model.rhythmGrid
 import my.pinged.data.CaptureRecord
 import my.pinged.data.LocalDates
+import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.DayTotal
 import my.pinged.ui.RINGGIT
@@ -69,6 +70,7 @@ class GridDayClickTest {
                 uncategorizedId = null,
                 merchantTotals = emptyList(),
                 dayTotals = totals.map { (d, s) -> DayTotal(LocalDates.of(sep(d)), RINGGIT, s) },
+                sources = SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false, packLabels = emptyMap()),
             ),
         )
         val clicked = mutableListOf<LocalDate>()

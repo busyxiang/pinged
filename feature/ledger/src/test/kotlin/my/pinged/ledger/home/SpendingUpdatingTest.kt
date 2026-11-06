@@ -57,7 +57,7 @@ class SpendingUpdatingTest {
                 LedgerScreenContent(
                     items = feed.collectAsLazyPagingItems(),
                     read = LedgerRead(
-                        summary = MonthSummary(september, listOf(CurrencyTotal("MYR", 31_240L)), emptyList(), trustworthy = true),
+                        summary = MonthSummary(september, listOf(CurrencyTotal("MYR", 31_240L)), emptyList(), trustworthy = true, sources = null),
                         awaitingReview = 11,
                         awaitingReviewInMonth = 5,
                     ),

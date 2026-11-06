@@ -181,7 +181,7 @@ class UnreadScreenTest {
         app.discardTheDatabase()
         unmatched(55)
         val model = UnreadViewModel(app)
-        compose.setContent { UnreadScreen(model, onBack = {}, onTeach = {}) }
+        compose.setContent { UnreadScreen(model, onBack = {}, onTeach = {}, onShowEveryApp = {}) }
         compose.boundedWaitUntil(5_000) { model.read.state.value.toState().items.size == 50 }
         compose.onNode(hasScrollToNodeAction())
             .performScrollToNode(hasText(FOOTER))

@@ -931,7 +931,11 @@ Coverage grows through a fixed loop, supported by in-app tooling:
 
 1. An in-app **Unmatched captures** screen lists raw notification text for
    captures with `parse_status = UNMATCHED`, newest first, with a
-   "copy as fixture" action.
+   "copy as fixture" action. Opened from Settings it lists every app's;
+   opened from an unreadable source's name in a sources line (section 9.3)
+   it lists that app's alone, says so (`ONLY GRABPAY`), and offers *Show
+   every app* (#368). Teach and "never a transaction" are the same either
+   way.
 2. The copied text becomes a fixture file in `:core:parse` test resources,
    paired with its expected outcome.
 3. Rules are written until the fixture passes.
@@ -1797,6 +1801,44 @@ Categorical colour is not used anywhere in the app: category identity is
 icon plus name (section 4), which keeps filtering from repainting the chart
 and keeps the ramp meaning magnitude and nothing else.
 
+### The sources line
+
+A not-captured day says Pinged was not watching. An app Pinged does not read
+says nothing at all: a payment by an app no rule reads never becomes a
+transaction, so a month paid partly through it looks whole. So every month's
+total is named by the apps it comes from (#360, #365; `CONTEXT.md`, Read
+source, Unreadable source, Sources line).
+
+- A **read source** is a `capture_source` switched on that a rule reads:
+  the loaded pack has its package (`ParsePack.packages`), or the user taught
+  one message from it (`user_template_rule.source_package`). One taught
+  message is enough.
+- An **unreadable source** is switched on, and no rule reads it.
+- A month's line names every read source as of today, plus every app with
+  a counted captured transaction in the month (`txn.source_package`), so an
+  app switched off since still shows on the months it paid in; `BY HAND`
+  when the month has a counted manual entry; and every unreadable source, in
+  a sentence of its own. An unreadable source that paid in the month (a
+  taught rule since deleted) is in both.
+- Each app is named in capitals: a pack app by the pack's own `label`, as
+  section 9.6's sentence names it, so the two screens never name one app
+  two ways; any other by its `capture_source` label, or its package with
+  none. The names are sorted, ignoring case, so the order is the same on
+  every read and the same as section 9.6's sentence (`AppNames`).
+
+`SourcesLine` in `:core:data` is the one calculation, read in the screen's own
+transaction, so Charts and Spending (#367) cannot name different apps. It
+needs no table or column. It is a claim about apps and never about days:
+nothing greys for it, and it is never a capture banner, which says whether
+capture is working, where an unreadable source is a lasting limit.
+
+**Two known limits.** Nothing stores when a source was switched on, so a past
+month names today's read sources and can name an app that was not on yet;
+storing it would be a schema change. And a change in which apps are read
+does not stop two months being compared ("No unfair period comparison"): a
+month read from two apps is set against one read from three, and the two
+lines say so.
+
 ### Typefaces, and how they ship
 
 The Receipt design uses three families: **Instrument Serif** for hero
@@ -1874,7 +1916,16 @@ total on its baseline, `SEP · RM2,847.30`, at every width. Several
 currencies show the first in the summary's order and `+N`; a month that
 cannot be trusted greys it as the hero is; a summary still being read, or
 a month with nothing counted, shows none. Tapping it scrolls back to the
-summary. The scroll position is kept across tab switches. Each row shows merchant
+summary. Under the hero's total and its `DO NOT TRUST` caveat, which stays
+beside the total it qualifies, the summary names the apps it
+comes from in Charts' sources line (section 8, "The sources line"; section
+9.3), read by the same `SourcesLine.read` in the summary's own transaction,
+so the two screens say the same words for a month; `NO APP IS READ YET`
+opens Capture sources here too (#367). It belongs to the summary item and
+scrolls away with it, below the hero's last line, so the top bar still
+takes the total over at that line. While the summary is not read yet, or
+the ledger cannot be read, there is no line rather than a guess at one.
+The scroll position is kept across tab switches. Each row shows merchant
 display name, category icon, source app, amount. Uncategorized rows carry a
 tappable chip. Excluded rows are greyed with an exclusion badge. A row
 awaiting review carries `AWAITING REVIEW · <reason>`, and tapping that badge
@@ -2020,8 +2071,10 @@ category bars, then the merchant ranking.
 **Header.** The selected month in mono capitals (`SEPTEMBER 2026`); a tap on
 it opens the `Months` sheet. Beside it one chip, the first that applies:
 `N DAYS NOT CAPTURED` in the accent colour when the month is untrusted, else
-`MONTH COMPLETE` for a month that has ended, else `DAY N OF M` for the
-month still running.
+`MONTH ENDED` for a month that has ended, else `DAY N OF M` for the
+month still running. The plain chip says only the date: which days were
+captured is the alert chip's, and which apps the total covers is the
+sources line's (#365).
 
 **Hero.** The month's ringgit net, labelled `TOTAL SPENT` while it is above
 zero. At or below zero it reads `NET SPENT`, keeps its sign, and a mono line
@@ -2029,6 +2082,19 @@ under it gives the two halves: `SPENT RMx · CAME BACK RMy`. In the month
 still running the labels are `SPENT SO FAR` and `NET SPENT SO FAR`. An untrusted
 month greys the figure and adds `MAY BE INCOMPLETE · N DAYS NOT CAPTURED`,
 never "at least", since a missed refund makes the real figure lower.
+
+**Sources line.** Under the hero and its own lines (the split, then
+`MAY BE INCOMPLETE`, which stays beside the figure it qualifies), above the
+grid and the bars, one mono line names the apps the total comes from (section 8, "The
+sources line"): `FROM MAYBANK MAE AND TOUCH 'N GO EWALLET`, or `FROM A, B AND C`,
+with `, AND BY HAND` when the month has a counted manual entry. With no app
+to name it reads `ONLY BY HAND`, or `NO APP IS READ YET`, which opens
+Capture sources (section 9.6). A second sentence names the unreadable
+sources: `GRABPAY IS ON BUT PINGED CANNOT READ IT YET`, `… AND … ARE ON BUT
+PINGED CANNOT READ THEM YET`. It wraps and never truncates a name, and it
+neither greys nor takes the accent. Each unreadable name is underlined and
+opens Could not read filtered to that app (section 5.6, #368); a screen
+reader has it as an action, `Open Could not read for GRABPAY`. (#365)
 
 **Comparison line.** Under the hero, when the selected month and the month
 before are both comparable (section 8, "No unfair period comparison"), one
@@ -2319,7 +2385,17 @@ package's notification content get stored in `raw_capture`.
 **Screen structure.**
 
 - **Suggested** — known Malaysian bank and wallet packages that are actually
-  installed on this device.
+  installed on this device. Under its heading, one sentence names the apps
+  Pinged reads and says the rest are entered by hand: "Pinged reads Maybank
+  MAE and Touch 'n Go eWallet. Add payments from other apps by hand." It is
+  built from the loaded pack's packages, each named by the pack's own
+  `label`, so a package added to the pack is named with no screen edit, and
+  listed once each, sorted, by the joiner the sources line uses
+  (`AppNames`), so the two never list the pack's apps in two orders. It
+  describes the pack, not the device, so it shows whether or not those apps
+  are installed, in onboarding's step 2 and from Settings alike. Suggested
+  itself does not grow to apps the pack cannot read: every notification from
+  one would go to Could not read and look like a broken parser.
 - **Recently seen** — packages observed posting notifications, with counts,
   so a source the suggested list missed is discoverable.
 

@@ -18,6 +18,16 @@ data class DayTotal(
     val netSen: Long,
 )
 
+/**
+ * One place a period's counted rows came from (`TxnDao.monthSources`): an app,
+ * or, with [byHand], the manual entries, whose [sourcePackage] is then null.
+ * A captured row with no package is a row with neither.
+ */
+data class MonthSource(
+    val byHand: Boolean,
+    val sourcePackage: String?,
+)
+
 /** A period total, per currency. Never one row across currencies. */
 data class CurrencyTotal(
     val currency: String,

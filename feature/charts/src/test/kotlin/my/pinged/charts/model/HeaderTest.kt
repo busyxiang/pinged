@@ -24,10 +24,15 @@ class HeaderTest {
         assertFalse("A running month is not an alert", chip!!.alert)
     }
 
-    @Test fun anEndedMonthIsComplete() {
+    @Test fun anEndedMonthSaysOnlyThatItEnded() {
         val chip = header(september, today = LocalDate.of(2026, 10, 1), trust = MonthTrust(0)).chip
 
-        assertEquals("MONTH COMPLETE", chip?.text)
+        assertEquals(
+            "The plain chip claims more than the date: whether the month's apps " +
+                "are all read is the sources line's to say (#365), not the chip's",
+            "MONTH ENDED",
+            chip?.text,
+        )
         assertFalse(chip!!.alert)
     }
 

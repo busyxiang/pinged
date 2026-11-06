@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import my.pinged.capture.Graph
+import my.pinged.ledger.sources.readsLine
 import my.pinged.tracker.BuildConfig
 import my.pinged.ui.test.boundedWaitUntil
 import org.junit.Before
@@ -37,6 +38,17 @@ class SettingsNavigationTest {
         // both screens, so asserting it passed a click that went nowhere.
         compose.onNodeWithText("TEXT IS STORED ONLY FOR THESE", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Replace everything from a backup").assertDoesNotExist()
+    }
+
+    /** #366: Settings' way in draws the sentence naming the loaded pack's apps. */
+    @Test fun sourcesFromSettingsSaysWhichAppsPingedReads() {
+        compose.onNodeWithText("SETTINGS").performClick()
+        compose.onNodeWithText("Capture sources").performClick()
+        // The heading is drawn once the list is read, in the item the sentence is in.
+        compose.boundedWaitUntil(5_000, "the allow-list to be read") {
+            compose.onAllNodesWithText("ON YOUR PHONE").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(readsLine(Graph.parsePack())).performScrollTo().assertIsDisplayed()
     }
 
     /** #50: the row is wired to the list, whose empty state is its own text. */

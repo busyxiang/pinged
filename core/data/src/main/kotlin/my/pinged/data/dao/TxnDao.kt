@@ -299,6 +299,19 @@ interface TxnDao {
     fun monthTotals(from: LocalDate, to: LocalDate): List<CurrencyTotal>
 
     /**
+     * Where the period's counted rows came from, for the sources line
+     * (`SourcesLine`; #365): one row per app with a counted captured
+     * transaction, and one with `byHand` when there is a counted manual entry
+     * (`raw_capture_id IS NULL`, spec 4). [COUNTED], as [monthTotals] is, so
+     * the apps named are the ones in the total. Every currency.
+     *
+     * Served by `index_txn_local_date_occurred_at`, as [monthTotals] is;
+     * [MONTH_SOURCES_SQL] is the string `QueryPlanTest` pins.
+     */
+    @Query(MONTH_SOURCES_SQL)
+    fun monthSources(from: LocalDate, to: LocalDate): List<MonthSource>
+
+    /**
      * [monthTotals] split into its two halves, for the Charts hero's
      * `SPENT RMx · CAME BACK RMy` under a net of zero or less (#81, #68).
      * Every direction that is not `EXPENSE` counts as came back, as it
@@ -1381,6 +1394,16 @@ interface TxnDao {
             WHERE """ + COUNTED + """
               AND local_date BETWEEN :from AND :to
             GROUP BY currency
+            """
+
+        /** [monthSources]' query, hoisted for `QueryPlanTest`. */
+        const val MONTH_SOURCES_SQL =
+            """
+            SELECT DISTINCT raw_capture_id IS NULL AS byHand,
+                   CASE WHEN raw_capture_id IS NULL THEN NULL ELSE source_package END AS sourcePackage
+            FROM txn
+            WHERE """ + COUNTED + """
+              AND local_date BETWEEN :from AND :to
             """
 
         const val MONTHLY_TOTALS_SQL =

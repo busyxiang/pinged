@@ -53,7 +53,8 @@ class SummaryScrollTest {
     /**
      * Two pixels short of the hero's foot under the list's top, no total;
      * two past it, the total. The hero's foot rather than the summary's: the
-     * top three are still on screen when the total takes over.
+     * sources line under it (#367) and the top three are still on screen
+     * when the total takes over.
      */
     @Test fun theTotalAppearsOnlyOnceTheHeroHasGone() = assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder = null)
 
@@ -65,8 +66,21 @@ class SummaryScrollTest {
     @Test fun underTheBackupReminderTheTotalAppearsOnlyOnceTheHeroHasGone() =
         assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder = BackupReminder(damaged = false, onAction = {}, onDismiss = {}))
 
-    private fun assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder: BackupReminder?) {
-        show(reminder)
+    /**
+     * A month with gaps: the sources line comes after `DO NOT TRUST`, so the
+     * caveat stays beside the total it qualifies (#73), and the total still
+     * takes over at the figure's foot, not the caveat's or the line's.
+     */
+    @Test fun inAMonthWithGapsTheLineIsUnderTheCaveatAndTheTotalStillAppearsOnceTheHeroHasGone() {
+        assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder = null, trustworthy = false)
+    }
+
+    private fun assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder: BackupReminder?, trustworthy: Boolean = true) {
+        show(reminder, trustworthy)
+        if (!trustworthy) {
+            assertTrue("The sources line is between the total and its caveat", boundsOf(SOURCES).top >= boundsOf(DO_NOT_TRUST).bottom)
+        }
+        assertTrue("The sources line is not under the hero", boundsOf(SOURCES).top >= boundsOf(HERO).bottom)
         val toFoot = boundsOf(HERO).bottom - list().fetchSemanticsNode().boundsInRoot.top
         scrollBy(toFoot - 2f)
         compose.onNodeWithTag(TOP_BAR_TOTAL).assertDoesNotExist()
@@ -74,6 +88,7 @@ class SummaryScrollTest {
 
         scrollBy(4f)
         compose.onNodeWithTag(TOP_BAR_TOTAL).assertIsDisplayed()
+        compose.onNodeWithText(SOURCES, useUnmergedTree = true).assertExists()
         compose.onNodeWithText(FOOD_NAME, useUnmergedTree = true).assertExists()
     }
 
@@ -108,13 +123,13 @@ class SummaryScrollTest {
         assertEquals("The pinned review row is not at the list's top", top, rowTop, 2f)
     }
 
-    private fun show(reminder: BackupReminder? = null) {
+    private fun show(reminder: BackupReminder? = null, trustworthy: Boolean = true) {
         val feed = loadedFeed(longFeed())
         compose.setContent {
             PingedTheme {
                 LedgerScreenContent(
                     items = feed.collectAsLazyPagingItems(),
-                    read = LedgerRead(summary = septemberSummary(), categories = listOf(FEED_FOOD), awaitingReview = 4, awaitingReviewInMonth = 4),
+                    read = LedgerRead(summary = septemberSummary(trustworthy = trustworthy), categories = listOf(FEED_FOOD), awaitingReview = 4, awaitingReviewInMonth = 4),
                     storageUnavailable = false,
                     categories = FakeCategoryActions(),
                     merchants = FakeMerchantActions(),
@@ -140,7 +155,9 @@ class SummaryScrollTest {
     private companion object {
         val HERO = money(284_730L, "MYR", symbol = true)
         val FOOD_NAME = FEED_FOOD.name
+        val SOURCES = SEPTEMBER_SOURCES.text
         val REVIEW = awaitingReviewLabel(4)
+        const val DO_NOT_TRUST = "DO NOT TRUST · CAPTURE HAS GAPS THIS MONTH"
 
         /** The summary, the review row, the day's heading, then Row 1: "Row 20" is the 23rd item. */
         const val ROW_20 = 22

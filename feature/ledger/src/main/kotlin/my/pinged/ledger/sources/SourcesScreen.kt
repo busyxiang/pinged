@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,9 +35,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
+import my.pinged.capture.Graph
 import my.pinged.ledger.ChangedLine
 import my.pinged.ledger.ListNotReadYet
 import my.pinged.ledger.settings.Operation
+import my.pinged.parse.ParsePack
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.ReadingLayout
 import my.pinged.ui.theme.Separator
@@ -102,6 +105,9 @@ fun SourcesScreen(
  *
  * While [busy] runs a ledger replacement the screen says so under its header
  * and no switch moves (#331): a restore replaces the allow-list too.
+ *
+ * [pack] is what the sentence under ON YOUR PHONE names (#366, [readsLine]):
+ * the loaded pack, unless a test hands it another.
  */
 @Composable
 fun SourcesScreenContent(
@@ -110,7 +116,9 @@ fun SourcesScreenContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     busy: Operation? = null,
+    pack: ParsePack = Graph.parsePack(),
 ) {
+    val reads = remember(pack) { readsLine(pack) }
     val suggested = state.suggested
     val seenNotCaptured = state.seenNotCaptured
     val loaded = state.loaded
@@ -143,6 +151,16 @@ fun SourcesScreenContent(
                     Header(enabledCount = enabledCount, reading = false, onBack = onBack)
                     if (!state.storageUnavailable && !state.replacing && busy != null) ChangedLine(busy)
                     SectionLabel("ON YOUR PHONE", Modifier.padding(start = 20.dp, top = 26.dp))
+                    // Whatever the read answered, including nothing installed:
+                    // it is a fact about the pack, not about this phone.
+                    Text(
+                        reads,
+                        fontFamily = Body,
+                        fontSize = 14.sp,
+                        lineHeight = 19.sp,
+                        color = Muted,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+                    )
                     Spacer(Modifier.height(12.dp))
                 }
             }

@@ -40,6 +40,7 @@ import androidx.lifecycle.createSavedStateHandle
 import my.pinged.capture.CaptureAlerts
 import my.pinged.charts.ChartsScreen
 import my.pinged.charts.ChartsViewModel
+import my.pinged.charts.SourcesLineActions
 import my.pinged.ledger.breakdown.BreakdownScreen
 import my.pinged.ledger.breakdown.BreakdownViewModel
 import my.pinged.ledger.day.DayScreen
@@ -117,7 +118,6 @@ class MainActivity : ComponentActivity() {
         // Sources' are their routes' own.
         val correctionsFactory = AppViewModelFactory(application, ::CorrectionsViewModel)
         val learnedFactory = AppViewModelFactory(application, ::LearnedViewModel)
-        val unreadFactory = AppViewModelFactory(application, ::UnreadViewModel)
         val categoriesFactory = AppViewModelFactory(application, ::CategoriesViewModel)
         val reviewFactory = AppViewModelFactory(application, ::ReviewViewModel)
         // Only a first creation's stack: a recreate or a process death hands
@@ -148,6 +148,14 @@ class MainActivity : ComponentActivity() {
                             Tab.Settings to settingsStack,
                         ),
                         selection,
+                    )
+                }
+                // The sources line's taps, on Spending and Charts alike: onto
+                // the current tab's stack, so Back returns to the line.
+                val sourcesLine = remember(tabs) {
+                    SourcesLineActions(
+                        openSources = { tabs.push(Sources) },
+                        openUnread = { source -> tabs.push(Unread(only = source)) },
                     )
                 }
                 val predictivePop = defaultPredictivePopTransitionSpec<NavKey>()
@@ -263,6 +271,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                         onOpenSearch = { tabs.push(Search()) },
                                         onOpenToSort = { month, id -> tabs.push(Search(month.toString(), id)) },
+                                        sourcesLine = sourcesLine,
                                         heard = current.heard,
                                         // Both lead to settings' root, where the
                                         // export sheet is hosted and the
@@ -347,6 +356,7 @@ class MainActivity : ComponentActivity() {
                                         // Onto Charts' stack too, for the same reason.
                                         onOpenBreakdown = { month, id -> tabs.push(Breakdown(id, month.toString())) },
                                         onOpenMerchant = { month, key -> tabs.push(MerchantMonth(key, month.toString())) },
+                                        sourcesLine = sourcesLine,
                                     )
                                 }
                                 entry<MerchantMonth> { key ->
@@ -431,7 +441,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenSources = { tabs.push(Sources) },
                                         onOpenCorrections = { tabs.push(Corrections) },
                                         onOpenLearned = { tabs.push(Learned) },
-                                        onOpenUnread = { tabs.push(Unread) },
+                                        onOpenUnread = { tabs.push(Unread(only = null)) },
                                         onOpenCategories = { tabs.push(Categories) },
                                         onOpenLicences = { tabs.push(Licences) },
                                         buildVersion = BuildConfig.VERSION_NAME,
@@ -456,13 +466,17 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                                entry<Unread> {
-                                    val unread: UnreadViewModel = viewModel(factory = unreadFactory)
+                                entry<Unread> { key ->
+                                    // Built from the key alone, as Teach's holder is.
+                                    val unread: UnreadViewModel = viewModel {
+                                        UnreadViewModel(application, key.only)
+                                    }
                                     UnreadScreen(
                                         viewModel = unread,
                                         onBack = tabs::pop,
                                         onTeach = { tabs.push(Teach(it.id)) },
                                         modifier = Modifier.fillMaxSize(),
+                                        onShowEveryApp = { tabs.replaceTop(Unread(only = null)) },
                                     )
                                 }
                                 entry<Teach> { key ->
