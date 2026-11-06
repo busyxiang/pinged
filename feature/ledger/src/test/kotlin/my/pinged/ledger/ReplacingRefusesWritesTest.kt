@@ -151,7 +151,7 @@ class ReplacingRefusesWritesTest {
 
     private fun categories() = CategoriesViewModel(app, runner, replacement)
 
-    private fun learned() = LearnedViewModel(app, runner, transfers)
+    private fun learned() = LearnedViewModel(app, runner, replacement)
 
     private fun corrections() = CorrectionsViewModel(app, runner, Dispatchers.Unconfined, replacement)
 

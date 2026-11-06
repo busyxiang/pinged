@@ -120,10 +120,13 @@ class ReplacingSettingsScreensTest {
     @Test fun learnedDeletesNothing() {
         compose.setContent {
             LearnedContent(
-                LearnedState(loaded = true, items = listOf(LearnedMerchant("MR DIY", "Mr DIY", 1L, "Shopping", 0))),
+                LearnedState(
+                    loaded = true,
+                    items = listOf(LearnedMerchant("MR DIY", "Mr DIY", 1L, "Shopping", 0)),
+                    ledger = LedgerAccess.Withholding(LedgerReplacement.RESTORE),
+                ),
                 onBack = {},
                 onDelete = { tapped += "delete" },
-                busy = LedgerReplacement.RESTORE,
             )
         }
 
@@ -216,7 +219,7 @@ class ReplacingSettingsScreensTest {
         compose.setContent {
             when (screen) {
                 0 -> CategoriesContent(CategoriesState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, { _, _ -> }, { _, _, _ -> }, {})
-                1 -> LearnedContent(LearnedState(loaded = true, replacing = true), {}, {}, busy = LedgerReplacement.RESTORE)
+                1 -> LearnedContent(LearnedState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {})
                 2 -> SourcesScreenContent(SourcesState(loaded = true, replacing = true), { _, _ -> }, {}, busy = LedgerReplacement.RESTORE)
                 3 -> CorrectionsContent(CorrectionsState(loaded = true, ledger = LedgerAccess.BeingReplaced), {}, {}, {})
                 4 -> UnreadContent(UnreadState(loaded = true, replacing = true), {}, {}, {}, {}, busy = LedgerReplacement.RESTORE)
