@@ -33,8 +33,12 @@ class SourcesLineReadTest {
 
     @After fun tearDown() { db.close() }
 
-    /** The shipped pack's two packages, and no rule in either: only the packages decide. */
-    private val pack = ParsePack(packVersion = 1, packages = listOf(PackagePack(TNG, "TNG"), PackagePack(MAE, "MAE")))
+    /**
+     * The shipped pack's two packages, and no rule in either: only the packages
+     * decide. Labelled as `capture_source` labels them, so every expected line
+     * reads the same whichever names them; `SourcesLineTest` holds which does.
+     */
+    private val pack = ParsePack(packVersion = 1, packages = listOf(PackagePack(TNG, "Touch 'n Go"), PackagePack(MAE, "MAE")))
 
     private fun line(month: YearMonth = SEPTEMBER) = SourcesLine.read(db, pack, month).text
 

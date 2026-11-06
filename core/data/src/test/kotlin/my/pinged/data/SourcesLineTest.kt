@@ -92,6 +92,21 @@ class SourcesLineTest {
         )
     }
 
+    @Test fun aPackAppIsNamedByThePacksLabel() {
+        assertEquals(
+            "A pack app was named by this phone's label, so Charts and Capture sources' " +
+                "sentence (#366) name one app two ways",
+            "FROM MAYBANK MAE AND TOUCH 'N GO EWALLET",
+            SourcesLine.of(
+                listOf(on(TNG, "TNG eWallet"), on(MAE, "MAE")),
+                PACK,
+                emptySet(),
+                byHand = false,
+                packLabels = mapOf(TNG to "Touch 'n Go eWallet", MAE to "Maybank MAE"),
+            ).text,
+        )
+    }
+
     // ---- BY HAND --------------------------------------------------------
 
     @Test fun aMonthWithAManualEntryEndsAndByHand() {

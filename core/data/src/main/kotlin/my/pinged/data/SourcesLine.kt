@@ -26,9 +26,11 @@ data class NamedSource(val pkg: String, val name: String)
  * - [byHand]: the month has a counted manual entry.
  *
  * Each list is sorted by name, then package, so the order is stable from one
- * read to the next and the same on both screens. A name is the source's
- * `capture_source` label in capitals, or its package when it has no label,
- * as Could not read falls back.
+ * read to the next and the same on both screens. A name is in capitals: a
+ * pack app's is the pack's own `label`, as Capture sources' sentence names it
+ * (`readsLine`, #366), so the two screens never name one app two ways; any
+ * other app's is its `capture_source` label, or its package when it has no
+ * label, as Could not read falls back.
  *
  * It is a claim about apps, never about days; greying stays the capture
  * record's (#73), and nothing here greys.
@@ -119,15 +121,21 @@ class SourcesLine private constructor(
          * @param paidFrom every package with a counted captured transaction in
          *   the month.
          * @param byHand the month has a counted manual entry.
+         * @param packLabels each pack package's `label`, which names it ahead
+         *   of its `capture_source` label.
          */
         fun of(
             sources: List<CaptureSource>,
             rulePackages: Set<String>,
             paidFrom: Set<String>,
             byHand: Boolean,
+            packLabels: Map<String, String> = emptyMap(),
         ): SourcesLine {
             val labels = sources.associate { it.pkg to it.label }
-            fun named(pkg: String) = NamedSource(pkg, (labels[pkg]?.takeIf { it.isNotBlank() } ?: pkg).uppercase(Locale.ROOT))
+            fun named(pkg: String): NamedSource {
+                val label = sequenceOf(packLabels[pkg], labels[pkg]).firstOrNull { !it.isNullOrBlank() } ?: pkg
+                return NamedSource(pkg, label.uppercase(Locale.ROOT))
+            }
             val on = sources.filter { it.enabled }.map { it.pkg }
             val read = on.filter { it in rulePackages }
             return SourcesLine(
@@ -154,6 +162,7 @@ class SourcesLine private constructor(
                 rulePackages = pack.packages.mapTo(HashSet()) { it.pkg } + db.userTemplateRuleDao().packages(),
                 paidFrom = paid.mapNotNullTo(HashSet()) { if (it.byHand) null else it.sourcePackage },
                 byHand = paid.any { it.byHand },
+                packLabels = pack.packages.associate { it.pkg to it.label },
             )
         }
 

@@ -1768,8 +1768,10 @@ source, Unreadable source, Sources line).
   when the month has a counted manual entry; and every unreadable source, in
   a sentence of its own. An unreadable source that paid in the month (a
   taught rule since deleted) is in both.
-- Each app is its `capture_source` label in capitals, or its package with
-  none, sorted by that name, so the order is the same on every read.
+- Each app is named in capitals: a pack app by the pack's own `label`, as
+  section 9.6's sentence names it, so the two screens never name one app
+  two ways; any other by its `capture_source` label, or its package with
+  none. The names are sorted, so the order is the same on every read.
 
 `SourcesLine` in `:core:data` is the one calculation, read in the screen's own
 transaction, so Charts and Spending (#367) cannot name different apps. It
@@ -2020,7 +2022,7 @@ never "at least", since a missed refund makes the real figure lower.
 
 **Sources line.** Directly under the hero figure, above the grid and the
 bars, one mono line names the apps the total comes from (section 8, "The
-sources line"): `FROM MAE AND TOUCH 'N GO EWALLET`, or `FROM A, B AND C`,
+sources line"): `FROM MAYBANK MAE AND TOUCH 'N GO EWALLET`, or `FROM A, B AND C`,
 with `, AND BY HAND` when the month has a counted manual entry. With no app
 to name it reads `ONLY BY HAND`, or `NO APP IS READ YET`, which opens
 Capture sources (section 9.6). A second sentence names the unreadable
