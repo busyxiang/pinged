@@ -867,8 +867,21 @@ still show, a status difference never does. Without this, every accepted row
 would come back on the next pack, and every **Keep both** with it, because a
 capture's `duplicate_of_id` is kept forever. A row still awaiting review is
 re-read through the gate as before, and can move to a new reason or be
-released. The cost is that a new transfer rule does not reach rows committed
-before it, as no rule reaches history. Applying a correction is guarded on the
+released. Before the gate it is paired again by section 7.2's layer 2 --
+the same function stage two pairs with, so the two cannot disagree --
+against the rows written before it, unless it is already a duplicate
+suspect or its capture already names a pair. So an FPX payment held under
+`mae-fpx-v1`'s old `REVIEW` comes back as a duplicate of the card spend
+that already counts it, and one paid from the account is offered for
+release. Accepting a correction that paired records the pair as the
+capture's `duplicate_of_id`, where the review inbox finds it. Only rows
+written before it are candidates, so a row is never paired with the
+newer row already flagged as its own duplicate; the cost is that an FPX
+notice an older pack read *before* its card spend, with the card spend
+committed unpaired, is offered for release. MAE has only been seen to post
+the card spend first. The cost is
+that a new transfer rule does not reach rows committed before it, as no rule
+reaches history. Applying a correction is guarded on the
 `state` and `pending_reason` it was compared against: when an inbox answer has
 landed since, the write changes nothing and the capture is compared again on
 the next sweep.
@@ -1344,6 +1357,15 @@ A transaction is set `PENDING` if any of the following hold:
 Otherwise it is `COMMITTED`. The gate is a deterministic rule list, not a
 numeric score, so the app can always state exactly why an item needs review.
 
+`confidence: REVIEW` says a rule's reading may be wrong. It is not how a
+possible double count is held: that is the duplicate detector's (section
+7.2), which holds only the payments that have a pair. `mae-fpx-v1` reads
+MAE's FPX notices at `HIGH` for that reason. The wording is the same
+whether a card or the account paid, so a `REVIEW` there held every FPX bill
+every month; now one paid from the account commits, one paid by card is
+held as a duplicate of its card spend, and one over the threshold is held
+for that.
+
 ### 7.2 Duplicate detection, two layers
 
 **Layer 1 — the same notification, again.** Android fires
@@ -1418,10 +1440,30 @@ second transaction.
 
 **Layer 2 — same purchase seen twice.** One card swipe can fire both the
 banking app and a separate card-alert notification. Flag
-`DUPLICATE_SUSPECT` when: identical `amount_sen`, within 10 minutes,
-different `source_package`, and merchant tokens overlap or one merchant is
+`DUPLICATE_SUSPECT` when: identical `amount_sen` and `direction`, within 10
+minutes, not `REJECTED`, a different `source_package` **or the same package
+read by a different rule**, and merchant tokens overlap or one merchant is
 absent. The newer transaction goes to the review inbox offering
 **Merge** or **Keep both**.
+
+**One app can post one payment twice.** When a card pays an FPX bill, MAE
+posts a card spend at the gateway ("You've just spent RM 75.00 at
+FPX-CREDIT CARD-RPS KUALA LUMPUR MYS") and, six seconds later, the FPX
+notice naming the payee. Two rules read them, so the same-package clause is
+"a different rule", not "any capture": two captures one rule read in one app
+are two payments, as two RM5.00 parking payments are. A capture whose rule
+is not recorded, on either side, pairs with nothing in its own package.
+
+**A merchant that is only a payment gateway counts as absent.** Gateway-only
+means the raw merchant starts with an entry of the pack's
+`acquirer_prefixes` (section 5.4), such as `FPX-`, matched case-folded as
+normalization matches it. No pack key says which prefixes are gateways:
+every acquirer prefix is one. Without this the card spend's "CREDIT
+CARD-RPS KUALA LUMPUR" shares no token with the payee, and the bill is
+counted twice.
+
+The 10 minutes is not measured for this case. The one observed gap is 6
+seconds, from a single device-export pair; nothing else has been measured.
 
 Duplicates are never dropped automatically. Two genuine RM5.00 parking
 payments in one afternoon are entirely normal, and silently deleting one
@@ -1444,6 +1486,19 @@ and a manual entry, whose `occurred_at` can be later than its capture's, is
 never the one rejected. Merge writes nothing once the pair is itself
 `REJECTED`, which would leave neither counted. **Keep both** commits the row
 awaiting review.
+
+**Except when exactly one row of the pair is gateway-only.** Then Merge
+keeps the row that names the payee and rejects the gateway row, whichever
+arrived first: the FPX notice naming IBILIK 02 is held, and its pair, the
+card spend at `FPX-CREDIT CARD-RPS`, is usually already `COMMITTED`. So
+here Merge rejects a committed pair and commits the held row. The rejected
+row's `category_id` moves to the kept row unless the kept row is filed
+somewhere other than Uncategorized. A pair whose gateway row is
+`user_edited` is merged as any other pair is -- the held row rejected, no
+category moved -- so an edited row counted before the card arrived is not
+discarded for the one awaiting review. The card heads each row with what Merge
+will actually do to it, and Undo puts both rows back -- state, reason and
+category -- or neither.
 
 The pair is found in this order: the transaction whose `raw_capture_id` is
 the capture's `duplicate_of_id` (layer 1's slot suspect, layer 2); else the
@@ -1829,9 +1884,12 @@ Each answer is one targeted `UPDATE` of `state`, `pending_reason`,
 `PENDING` for the reason the card showed; an answer that writes nothing
 re-reads the card. Accept, Keep as expense and Keep both write `COMMITTED`;
 Not a payment and Merge write `REJECTED` on the row awaiting review (Merge
-never touches its pair); Leave out writes `COMMITTED`, excluded, with the
+never touches its pair, except a gateway-only pair as section 7.2 says,
+where it rejects the gateway row, commits the payee row and moves the
+category); Leave out writes `COMMITTED`, excluded, with the
 rule's suggested exclusion reason (section 7.3). None of them touches
-`confidence`, `category_id`, `user_edited` or the merchant columns.
+`confidence`, `user_edited` or the merchant columns, and only that gateway
+Merge touches `category_id`.
 A rejected capture is kept as evidence and stops appearing.
 
 **One answer settles a row.** Only the highest-precedence reason is stored

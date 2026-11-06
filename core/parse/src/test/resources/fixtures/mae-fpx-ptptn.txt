@@ -5,9 +5,9 @@ rule: mae-fpx-v1
 amount_sen: 30000
 merchant: PTPTN APPS
 direction: EXPENSE
-confidence: REVIEW
+confidence: HIGH
 # A real MAE notification, from a device export, and the dictionary's observed
-# sample for PTPTN. REVIEW for the reason mae-fpx-from-account-digi.txt gives.
+# sample for PTPTN. HIGH for the reason mae-fpx-from-account-digi.txt gives.
 # The FPX ID is masked to zeros of the same shape (CLAUDE.md, fixtures).
 
 Successful payment of RM300.00 to PTPTN APPS on 04 Oct 2026 08:21:16. Did not perform this transaction? Please call 03-58914744. FPX ID: 0000000000000000

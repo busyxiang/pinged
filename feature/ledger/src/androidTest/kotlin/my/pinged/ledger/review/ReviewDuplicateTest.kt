@@ -213,6 +213,116 @@ class ReviewDuplicateTest {
         assertEquals("The card did not re-read as a plain one", CardKind.PLAIN, card(inbox, held).kind)
     }
 
+    // ---- Merge of a gateway pair (#255) ---------------------------------
+
+    /**
+     * The card spend at the FPX gateway, counted first, and the FPX notice
+     * naming the payee held as its duplicate: Merge keeps the payee and
+     * dismisses the committed gateway row, so the bill is counted once under
+     * the name the user knows.
+     */
+    @Test fun mergeOfAGatewayPairKeepsThePayeeAndDismissesTheCommittedGatewayRow() = runBlocking {
+        val dao = context.freshLedger()
+        val (gateway, payee) = gatewayPair(gatewayHeld = false)
+        val gatewayBefore = dao.byId(gateway)!!
+        val payeeBefore = dao.byId(payee)!!
+        val inbox = inbox()
+
+        inbox.merge(card(inbox, payee)).join()
+
+        assertEquals(
+            "Merge did not dismiss the committed gateway row",
+            gatewayBefore.copy(state = TxnState.REJECTED, pendingReason = null, updatedAt = dao.byId(gateway)!!.updatedAt),
+            dao.byId(gateway)!!,
+        )
+        assertEquals(
+            "Merge did not keep the row naming the payee",
+            payeeBefore.copy(state = TxnState.COMMITTED, pendingReason = null, updatedAt = dao.byId(payee)!!.updatedAt),
+            dao.byId(payee)!!,
+        )
+        assertEquals("After Merge the bill is not counted once", listOf(AMOUNT), dao.monthTotals(DAY, DAY).map { it.netSen })
+        assertEquals("The merged card is still in the inbox", emptyList<ReviewCard>(), inbox.cards)
+    }
+
+    /** The gateway row arrived second: it is the held row, and Merge dismisses it as before. */
+    @Test fun mergeOfAGatewayPairDismissesTheGatewayRowWhenItIsTheHeldOne() = runBlocking {
+        val dao = context.freshLedger()
+        val (gateway, payee) = gatewayPair(gatewayHeld = true)
+        val payeeBefore = dao.byId(payee)!!
+        val inbox = inbox()
+
+        inbox.merge(card(inbox, gateway)).join()
+
+        assertEquals(TxnState.REJECTED, dao.byId(gateway)!!.state)
+        assertEquals("Merge touched the payee row it keeps", payeeBefore, dao.byId(payee)!!)
+    }
+
+    @Test fun mergeOfAGatewayPairCarriesTheDismissedRowsCategory() = runBlocking {
+        val dao = context.freshLedger()
+        val (bills, _) = twoCategories()
+        val (gateway, payee) = gatewayPair(gatewayHeld = false, gatewayCategory = bills)
+        val inbox = inbox()
+
+        inbox.merge(card(inbox, payee)).join()
+
+        assertEquals("The gateway row's category did not move to the payee row", bills, dao.byId(payee)!!.categoryId)
+        assertEquals(TxnState.REJECTED, dao.byId(gateway)!!.state)
+    }
+
+    @Test fun mergeOfAGatewayPairCarriesTheHeldGatewayRowsCategoryToThePayee() = runBlocking {
+        val dao = context.freshLedger()
+        val (bills, _) = twoCategories()
+        val (gateway, payee) = gatewayPair(gatewayHeld = true, gatewayCategory = bills)
+        val inbox = inbox()
+
+        inbox.merge(card(inbox, gateway)).join()
+
+        assertEquals("The held gateway row's category did not move to the payee row", bills, dao.byId(payee)!!.categoryId)
+    }
+
+    @Test fun mergeOfAGatewayPairKeepsThePayeeRowsOwnCategory() = runBlocking {
+        val dao = context.freshLedger()
+        val (bills, rent) = twoCategories()
+        val (_, payee) = gatewayPair(gatewayHeld = false, gatewayCategory = bills, payeeCategory = rent)
+        val inbox = inbox()
+
+        inbox.merge(card(inbox, payee)).join()
+
+        assertEquals("Merge overwrote the payee row's own category", rent, dao.byId(payee)!!.categoryId)
+        assertEquals(TxnState.COMMITTED, dao.byId(payee)!!.state)
+    }
+
+    /** A person edited the gateway row: Merge does what it does for any pair, and the edit stays counted. */
+    @Test fun mergeOfAnEditedGatewayRowDismissesTheHeldRowInstead() = runBlocking {
+        val dao = context.freshLedger()
+        val (gateway, payee) = gatewayPair(gatewayHeld = false)
+        sql("UPDATE txn SET user_edited = 1 WHERE id = $gateway")
+        val gatewayBefore = dao.byId(gateway)!!
+        val inbox = inbox()
+
+        inbox.merge(card(inbox, payee)).join()
+
+        assertEquals("Merge discarded the user's edited gateway row", gatewayBefore, dao.byId(gateway)!!)
+        assertEquals(TxnState.REJECTED, dao.byId(payee)!!.state)
+    }
+
+    @Test fun undoAfterAGatewayMergeRestoresBothRowsExactly() = runBlocking {
+        val dao = context.freshLedger()
+        val (bills, _) = twoCategories()
+        val (gateway, payee) = gatewayPair(gatewayHeld = false, gatewayCategory = bills)
+        val gatewayBefore = dao.byId(gateway)!!
+        val payeeBefore = dao.byId(payee)!!
+        val inbox = inbox()
+        inbox.merge(card(inbox, payee)).join()
+        assertEquals("precondition: Merge did not dismiss the gateway row", TxnState.REJECTED, dao.byId(gateway)!!.state)
+
+        inbox.undo().join()
+
+        assertEquals("Undo did not restore the committed gateway row", gatewayBefore, dao.byId(gateway)!!.copy(updatedAt = gatewayBefore.updatedAt))
+        assertEquals("Undo did not restore the payee row awaiting review", payeeBefore, dao.byId(payee)!!.copy(updatedAt = payeeBefore.updatedAt))
+        assertEquals(listOf(payee to gateway), inbox.cards?.map { it.txn.id to it.pair?.id })
+    }
+
     // ---- fixtures ------------------------------------------------------
 
     /**
@@ -231,6 +341,28 @@ class ReviewDuplicateTest {
         val held = dao.insert(heldTxn(newerCapture, NOON + apart).copy(sourcePackage = newerPackage))
         return pair to held
     }
+
+    /**
+     * A [capturedPair] from MAE alone, its merchants the fixtures' own: the
+     * card spend at the FPX gateway and the FPX notice naming the payee.
+     * [gatewayHeld] makes the gateway row the newer one awaiting review.
+     * Returns (gateway, payee).
+     */
+    private fun gatewayPair(
+        gatewayHeld: Boolean,
+        gatewayCategory: Long = uncategorized(),
+        payeeCategory: Long = uncategorized(),
+    ): Pair<Long, Long> {
+        val (pair, held) = capturedPair(olderPackage = MAE, newerPackage = MAE, sameSlot = false, apart = 6_000L)
+        val (gateway, payee) = if (gatewayHeld) held to pair else pair to held
+        sql("UPDATE txn SET merchant_raw = '$GATEWAY', category_id = $gatewayCategory WHERE id = $gateway")
+        sql("UPDATE txn SET merchant_raw = '$PAYEE', category_id = $payeeCategory WHERE id = $payee")
+        return gateway to payee
+    }
+
+    /** Two seeded categories other than Uncategorized. */
+    private fun twoCategories(): Pair<Long, Long> =
+        Databases.categoryDao(context).all().map { it.id }.filter { it != uncategorized() }.let { it[0] to it[1] }
 
     private fun heldTxn(captureId: Long, at: Long): Txn =
         ledgerTxn(
@@ -272,5 +404,7 @@ class ReviewDuplicateTest {
         const val MAE = "com.maybank2u.life"
         const val AMOUNT = 1_234L
         const val MINUTE = 60_000L
+        const val GATEWAY = "FPX-CREDIT CARD-RPS KUALA LUMPUR MYS"
+        const val PAYEE = "IBILIK 02"
     }
 }

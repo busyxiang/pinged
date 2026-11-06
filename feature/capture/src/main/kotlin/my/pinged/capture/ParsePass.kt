@@ -418,6 +418,7 @@ internal class ParsePass(
                 Dedup.layerTwo(
                     dao = txns,
                     sourcePackage = capture.sourcePackage,
+                    ruleId = outcome.ruleId,
                     amountSen = outcome.amountSen,
                     occurredAt = occurredAt,
                     direction = outcome.direction,

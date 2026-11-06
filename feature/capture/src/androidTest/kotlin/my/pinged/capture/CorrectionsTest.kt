@@ -38,6 +38,7 @@ import org.junit.runner.RunWith
 class CorrectionsTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val captures = Databases.rawCaptureDao(context)
+    private val txns = Databases.txnDao(context)
     private val matcher = Graph.ruleMatcher()
     private val packVersion = matcher.packVersion
 
@@ -56,7 +57,7 @@ class CorrectionsTest {
         runBlocking {
             Corrections.forgetSweeps(context)
             while (sweep().more) Unit
-            Corrections.pending(context, captures, matcher)!!.forEach { Corrections.decline(captures, it) }
+            Corrections.pending(context, captures, txns, matcher)!!.forEach { Corrections.decline(captures, it) }
             Corrections.forgetSweeps(context)
         }
     }
@@ -66,10 +67,10 @@ class CorrectionsTest {
     fun leaveTheSweepFinished() = runBlocking { Corrections.markSwept(context, packVersion) }
 
     private fun sweep(limit: Int = Corrections.MAX_COMPARED_PER_RUN): Corrections.Swept =
-        runBlocking { Corrections.sweep(context, captures, matcher, limit = limit) }
+        runBlocking { Corrections.sweep(context, captures, txns, matcher, limit = limit) }
 
     private fun pending(): List<Corrections.Correction>? =
-        runBlocking { Corrections.pending(context, captures, matcher) }
+        runBlocking { Corrections.pending(context, captures, txns, matcher) }
 
     /**
      * A capture the current pack reads, committed, then restamped as pack
@@ -592,6 +593,92 @@ class CorrectionsTest {
         assertEquals(ids.toSet(), pending()!!.map { it.captureId }.filter { it in ids }.toSet())
     }
 
+    // ---- FPX payments waiting under the rule's old REVIEW (#255) ----------
+
+    /**
+     * Where this test's RM75.00 rows sit: a random instant years back, since
+     * the fixtures' amount is fixed and the database keeps earlier runs' rows.
+     */
+    private val fpxAt = base - 400 * DAY - kotlin.random.Random.nextLong(0, 3_000 * DAY)
+
+    /** [fixture] read by pack `N - 1` and held for its rule's `REVIEW`, with no pair recorded. */
+    private fun fpxHeldForReview(fixture: String, at: Long): Long {
+        val read = ParseFixtures.corpus(fixture)
+        return readByAnOlderPack(
+            text = read.body,
+            title = read.title!!,
+            pkg = read.pkg,
+            at = at,
+            oldRule = "mae-fpx-v1",
+            olderRead = "state = 'PENDING', pending_reason = 'RULE_REVIEW', confidence = 'REVIEW'",
+        )
+    }
+
+    /**
+     * Card-funded: the card spend at the FPX gateway is already counted, so
+     * the re-read pairs the waiting payment with it, as stage two would,
+     * rather than release RM75 a second time.
+     */
+    @Test
+    fun aWaitingFpxPaymentBesideItsCardSpendComesBackAsADuplicateSuspect() {
+        val card = ParseFixtures.insertCorpus(
+            context, "mae-card-spend-fpx-credit-card-rps.txt", sbnKey = "$marker-fpx-card", postedAt = fpxAt,
+        )
+        val id = fpxHeldForReview("mae-fpx-card-funded-ibilik.txt", fpxAt + 6_000L)
+        val cardTxn = txn(card)
+        assertEquals("precondition: the card spend is not counted", TxnState.COMMITTED, cardTxn.state)
+
+        sweep()
+        val correction = offered(id)
+
+        assertNotNull("The waiting FPX payment was not offered a correction", correction)
+        assertEquals(
+            "The re-read released a card-funded FPX payment its card spend already counts",
+            TxnState.PENDING to PendingReason.DUPLICATE_SUSPECT,
+            correction!!.after.state to correction.after.pendingReason,
+        )
+        assertTrue(Corrections.accept(captures, correction))
+        assertEquals(PendingReason.DUPLICATE_SUSPECT, txn(id).pendingReason)
+        assertEquals("Accepting did not record the pair", card, captures.byId(id).duplicateOfId)
+        assertEquals(cardTxn.id, Databases.txnDao(context).duplicatePair(txn(id))?.id)
+    }
+
+    /**
+     * The card spend arrived after the FPX payment, so stage two flagged the
+     * card spend and the FPX payment is the older of the pair. Paired again
+     * against that newer row, both would wait as each other's duplicate and
+     * Merge on either card would dismiss the other's money.
+     */
+    @Test
+    fun aWaitingFpxPaymentIsNotPairedWithACardSpendThatArrivedAfterIt() {
+        val at = fpxAt + 7_200_000L
+        val id = fpxHeldForReview("mae-fpx-card-funded-ibilik.txt", at)
+        val card = ParseFixtures.insertCorpus(
+            context, "mae-card-spend-fpx-credit-card-rps.txt", sbnKey = "$marker-fpx-late-card", postedAt = at + 6_000L,
+        )
+        ParseFixtures.pass(context).run()
+        assertEquals("precondition: the later card spend is not the suspect", id, captures.byId(card).duplicateOfId)
+
+        sweep()
+
+        assertEquals(TxnState.COMMITTED to null, offered(id)?.after?.let { it.state to it.pendingReason })
+    }
+
+    /** Account-funded: nothing beside it, so the re-read offers to release it. */
+    @Test
+    fun aWaitingFpxPaymentWithNoCardSpendIsOfferedForRelease() {
+        val id = fpxHeldForReview("mae-fpx-from-account-digi.txt", fpxAt + 3_600_000L)
+
+        sweep()
+        val correction = offered(id)
+
+        assertNotNull("The waiting FPX payment was not offered a correction", correction)
+        assertEquals(TxnState.COMMITTED to null, correction!!.after.state to correction.after.pendingReason)
+        assertTrue(Corrections.accept(captures, correction))
+        assertEquals(TxnState.COMMITTED, txn(id).state)
+        assertNull(captures.byId(id).duplicateOfId)
+    }
+
     private fun sql(statement: String, vararg args: Any) =
         Databases.shared(context).openHelper.writableDatabase.execSQL(statement, args)
 
@@ -726,5 +813,9 @@ class CorrectionsTest {
         )
         assertEquals(ListenableWorker.Result.success(), ParseFixtures.runWorker(context))
         assertEquals("The worker did not compare matched captures", "SPADES BAKERY 3", txn(id).merchantKey)
+    }
+
+    private companion object {
+        const val DAY = 24 * 60 * 60 * 1000L
     }
 }

@@ -11,12 +11,23 @@ import kotlinx.coroutines.withContext
 import my.pinged.data.Databases
 import my.pinged.data.dao.RawCaptureDao
 import my.pinged.data.dao.StaleCaptureException
+import my.pinged.data.dao.TxnDao
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.parse.MatchOutcome
 import my.pinged.parse.RuleMatcher
+
+/**
+ * Runs one read of the ledger's transactions for [Corrections]: the caller's
+ * own DAO where it holds the connection, or a short transaction of its own
+ * where the re-reading runs outside one (`CorrectionsViewModel`).
+ */
+typealias TxnLookup = suspend (read: (TxnDao) -> Txn?) -> Txn?
+
+/** [TxnLookup] on [txns], for a caller already on the connection. */
+fun lookupOn(txns: TxnDao): TxnLookup = { read -> read(txns) }
 
 /**
  * Spec 5.5's third mode: `MATCHED` captures re-read by a newer pack and
@@ -99,6 +110,14 @@ object Corrections {
         val before: Txn,
         val after: Txn,
         val changed: Set<Field>,
+        /**
+         * The capture whose transaction the re-read paired [after] with
+         * (spec 7.2's layer 2), which [accept] records as the capture's
+         * `duplicate_of_id` so the review inbox shows the pair. Null when it
+         * paired nothing, or paired a manual entry, which has no capture
+         * and is found by its time instead (`TxnDao.duplicatePair`).
+         */
+        val pairCaptureId: Long? = null,
     )
 
     /** One sweep: captures compared, how many await an answer, and whether it stopped short. */
@@ -124,11 +143,17 @@ object Corrections {
      * which can move to a new reason or be released. A `COMMITTED` row keeps
      * its state and reason (spec 5.5), so STATUS is never its difference; a
      * card bill read as spending before the rule existed stays counted, as any
-     * rule does not reach history. The duplicate condition is not re-derived
-     * -- layer two is a judgement against the ledger as it stood -- but
-     * carried: a pending row that was a suspect stays one.
+     * rule does not reach history.
+     *
+     * A pending row that was a suspect stays one. One that was not is paired
+     * again, before the gate, by [Dedup.layerTwo] through [lookUp] -- the one
+     * function stage two pairs with, so the two cannot disagree -- against
+     * rows written before it, so a payment whose card spend already counts it
+     * is held as that spend's duplicate rather than released (#255). Only a
+     * pending row is looked up: a committed one keeps its state whatever the
+     * gate says.
      */
-    internal fun reread(capture: RawCapture, txn: Txn, matcher: RuleMatcher, now: Long): Reread {
+    internal suspend fun reread(capture: RawCapture, txn: Txn, matcher: RuleMatcher, now: Long, lookUp: TxnLookup): Reread {
         // A REJECTED transaction is somebody's decision that it is not money.
         // `user_edited` is not asked here: [RawCaptureDao.matchedStaleAfter]
         // never returns an edited row, and the write refuses one.
@@ -142,19 +167,36 @@ object Corrections {
         if (outcome !is MatchOutcome.Matched) return Reread.NotComparable
 
         val merchant = MerchantColumns.of(outcome.merchantRaw, matcher.merchantNormalization)
-        val decision = ConfidenceGate.decide(
-            confidence = outcome.confidence,
-            kind = outcome.kind,
-            merchantRaw = merchant.raw,
-            amountSen = outcome.amountSen,
-            duplicateSuspect = capture.duplicateOfId != null ||
-                txn.pendingReason == PendingReason.DUPLICATE_SUSPECT,
-        )
         // Spec 5.5: a COMMITTED row is never sent back to awaiting review. It
         // was answered in the inbox, or never held, and either way the gate's
         // verdict on it is settled; a Keep both row's `duplicate_of_id` stays
         // set forever and would otherwise re-raise the duplicate every pack.
         val committed = txn.state == TxnState.COMMITTED
+        val carried = capture.duplicateOfId != null || txn.pendingReason == PendingReason.DUPLICATE_SUSPECT
+        val pair = if (committed || carried) {
+            null
+        } else {
+            lookUp { txns ->
+                Dedup.layerTwo(
+                    dao = txns,
+                    sourcePackage = capture.sourcePackage,
+                    ruleId = outcome.ruleId,
+                    amountSen = outcome.amountSen,
+                    occurredAt = txn.occurredAt,
+                    direction = outcome.direction,
+                    merchantRaw = merchant.raw,
+                    normalization = matcher.merchantNormalization,
+                    olderThan = txn.id,
+                )
+            }
+        }
+        val decision = ConfidenceGate.decide(
+            confidence = outcome.confidence,
+            kind = outcome.kind,
+            merchantRaw = merchant.raw,
+            amountSen = outcome.amountSen,
+            duplicateSuspect = carried || pair != null,
+        )
         val after = txn.copy(
             amountSen = outcome.amountSen,
             direction = outcome.direction,
@@ -187,6 +229,7 @@ object Corrections {
                     before = txn,
                     after = after,
                     changed = changed,
+                    pairCaptureId = pair?.rawCaptureId,
                 ),
             )
             unseen -> Reread.Silent(outcome.ruleId, after)
@@ -206,6 +249,7 @@ object Corrections {
     suspend fun sweep(
         context: Context,
         captures: RawCaptureDao,
+        txns: TxnDao,
         matcher: RuleMatcher,
         isStopped: () -> Boolean = { false },
         limit: Int = MAX_COMPARED_PER_RUN,
@@ -225,7 +269,7 @@ object Corrections {
                 val page = captures.matchedStaleAfter(version, afterId, want)
                 for (capture in page) {
                     if (isStopped() || Databases.gated) return Swept(compared, offered, more = true)
-                    if (settle(captures, capture, matcher)) offered++
+                    if (settle(captures, txns, capture, matcher)) offered++
                     afterId = capture.id
                     compared++
                 }
@@ -260,9 +304,9 @@ object Corrections {
     }
 
     /** One capture's comparison and its write. True when it awaits an answer. */
-    private fun settle(captures: RawCaptureDao, capture: RawCapture, matcher: RuleMatcher): Boolean {
+    private suspend fun settle(captures: RawCaptureDao, txns: TxnDao, capture: RawCapture, matcher: RuleMatcher): Boolean {
         val txn = captures.txnForCapture(capture.id) ?: return false
-        return when (val reread = reread(capture, txn, matcher, System.currentTimeMillis())) {
+        return when (val reread = reread(capture, txn, matcher, System.currentTimeMillis(), lookupOn(txns))) {
             is Reread.Agrees -> {
                 captures.markCompared(capture.id, capture.packVersion, matcher.packVersion, reread.ruleId)
                 false
@@ -296,8 +340,10 @@ object Corrections {
      * one snapshot: a capture that moves between pages is caught by [accept],
      * which refuses it.
      */
-    suspend fun pending(context: Context, captures: RawCaptureDao, matcher: RuleMatcher): List<Correction>? =
-        pending(comparedVersion(context), matcher) { afterId -> stalePage(captures, matcher.packVersion, afterId) }
+    suspend fun pending(context: Context, captures: RawCaptureDao, txns: TxnDao, matcher: RuleMatcher): List<Correction>? =
+        pending(comparedVersion(context), matcher, lookupOn(txns)) { afterId ->
+            stalePage(captures, matcher.packVersion, afterId)
+        }
 
     /**
      * The pack version whose [sweep] has reached the end of the history, 0 for
@@ -334,13 +380,15 @@ object Corrections {
     /**
      * [pending] with the swept version, [comparedVersion], already read, and
      * each page fetched by [readPage] -- [stalePage], in a transaction of its
-     * own for a caller that must not hold the connection across the matching:
+     * own for a caller that must not hold the connection across the matching,
+     * which runs each re-read's pairing ([reread]) through [lookUp] the same way:
      * on emulator-5554, 1,000 awaiting captures took 230ms to read and re-read
      * and 62ms of that to read (medians of 7).
      */
     suspend fun pending(
         compared: Int,
         matcher: RuleMatcher,
+        lookUp: TxnLookup,
         readPage: suspend (afterId: Long) -> StalePage,
     ): List<Correction>? {
         if (compared < matcher.packVersion) return null
@@ -350,7 +398,7 @@ object Corrections {
         while (true) {
             val page = readPage(afterId)
             for (stale in page.rows) {
-                val reread = reread(stale.capture, stale.txn, matcher, now)
+                val reread = reread(stale.capture, stale.txn, matcher, now, lookUp)
                 if (reread is Reread.Differs) found += reread.correction
             }
             if (page.last) return found
@@ -372,6 +420,7 @@ object Corrections {
                 ruleId = correction.ruleId,
                 compared = correction.before,
                 corrected = correction.after.copy(updatedAt = now),
+                duplicateOf = correction.pairCaptureId,
             )
         } catch (_: StaleCaptureException) {
             false

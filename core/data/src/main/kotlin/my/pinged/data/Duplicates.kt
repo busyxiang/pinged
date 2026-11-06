@@ -40,10 +40,15 @@ object DuplicateWindows {
     const val SLOT_SUSPECT_MILLIS = 12 * 60 * 60_000L
 
     /**
-     * Layer 2: identical `amount_sen` across different packages within ten
-     * minutes. Expressed as being the same number as [SLOT_REFRESH_MILLIS],
-     * not a second literal, so the two cannot be tuned apart -- spec 7.2 chose
-     * ten minutes for rule 1 precisely so the design carries two windows.
+     * Layer 2: identical `amount_sen` within ten minutes, across different
+     * packages or one package's two rules. Expressed as being the same number
+     * as [SLOT_REFRESH_MILLIS], not a second literal, so the two cannot be
+     * tuned apart -- spec 7.2 chose ten minutes for rule 1 precisely so the
+     * design carries two windows.
+     *
+     * Not measured. The one observed gap is 6s, between MAE's card spend at
+     * the FPX gateway and its FPX notice, from a single device-export pair
+     * (#255); nothing else has been measured.
      */
     const val LAYER_TWO_MILLIS = SLOT_REFRESH_MILLIS
 

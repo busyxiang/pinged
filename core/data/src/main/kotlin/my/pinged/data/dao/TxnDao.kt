@@ -157,7 +157,10 @@ interface TxnDao {
     /**
      * Duplicate detection, **layer 2** of spec 7.2: one card swipe firing both the
      * banking app and a separate card-alert app. Identical `amount_sen`, within 10
-     * minutes, **different** `source_package`. The caller passes
+     * minutes, **different** `source_package`, or the same package read by a
+     * rule other than [ruleId] (#255: MAE posts a card spend at the FPX gateway
+     * and the FPX notice for one bill). A row whose capture recorded no rule
+     * does not pass the second clause. The caller passes
      * `occurredAt -/+ DuplicateWindows.LAYER_TWO_MILLIS` and applies the
      * merchant-token-overlap and `is_authoritative` parts to what comes back.
      *
@@ -182,19 +185,15 @@ interface TxnDao {
      * Served by `txn(amount_sen, occurred_at)` (spec 15.1); without it this is a
      * full scan of `txn` on every capture.
      */
-    @Query(
-        "SELECT * FROM txn WHERE amount_sen = :amountSen " +
-            "AND occurred_at BETWEEN :from AND :to " +
-            "AND direction = :direction " +
-            "AND (source_package IS NULL OR source_package != :excludePackage) " +
-            "AND state != :excludeState"
-    )
+    @Query(DUPLICATE_SUSPECTS_SQL)
     fun findDuplicateSuspects(
         amountSen: Long,
         from: Long,
         to: Long,
         direction: Direction,
-        excludePackage: String,
+        sourcePackage: String,
+        /** The rule that read the capture being decided; null pairs only across packages. */
+        ruleId: String?,
         // A bound parameter rather than a 'REJECTED' literal, so renaming the
         // enum constant fails to compile instead of matching nothing.
         excludeState: TxnState = TxnState.REJECTED,
@@ -735,6 +734,109 @@ interface TxnDao {
     fun merge(id: Long, reason: PendingReason?, pairId: Long, updatedAt: Long): Int
 
     /**
+     * Merge of a pair where exactly one row is gateway-only (§7.2, #255):
+     * [dismiss], the gateway row, to `REJECTED`; [keep], the row naming the
+     * payee, to `COMMITTED`; and [dismiss]'s category onto [keep] when [keep]
+     * is filed under [uncategorizedId] and [dismiss] is not. Unlike [merge],
+     * [dismiss] may be `COMMITTED`: the card spend at the gateway is counted
+     * before the FPX notice naming the payee arrives.
+     *
+     * All or nothing, and only while both rows are still what the card drew
+     * -- state, reason and category -- and [dismiss] is not `user_edited`,
+     * which a person's edit outranks. Returns null, having written nothing,
+     * otherwise.
+     */
+    fun mergeGateway(dismiss: Txn, keep: Txn, uncategorizedId: Long?, updatedAt: Long): GatewayMerge? = try {
+        mergeGatewayOrThrow(dismiss, keep, uncategorizedId, updatedAt)
+    } catch (_: StaleAnswerException) {
+        null
+    }
+
+    /** [mergeGateway]'s transaction, which a moved row rolls back by throwing; call that. */
+    @Transaction
+    fun mergeGatewayOrThrow(dismiss: Txn, keep: Txn, uncategorizedId: Long?, updatedAt: Long): GatewayMerge {
+        val carried = dismiss.categoryId.takeIf { keep.categoryId == uncategorizedId && it != uncategorizedId }
+        if (dismissRow(dismiss.id, dismiss.state, dismiss.pendingReason, dismiss.categoryId, updatedAt) != 1) {
+            throw StaleAnswerException()
+        }
+        if (keepRow(keep.id, keep.state, keep.pendingReason, keep.categoryId, carried ?: keep.categoryId, updatedAt) != 1) {
+            throw StaleAnswerException()
+        }
+        return GatewayMerge(
+            dismissed = MergedRow(dismiss.id, dismiss.state, dismiss.pendingReason, dismiss.categoryId),
+            kept = MergedRow(keep.id, keep.state, keep.pendingReason, keep.categoryId),
+            carriedCategory = carried,
+        )
+    }
+
+    /** [mergeGateway]'s rejection, guarded on what the card drew; unchecked. */
+    @Query(
+        """
+        UPDATE txn SET state = 'REJECTED', pending_reason = NULL, updated_at = :updatedAt
+        WHERE id = :id AND state = :state AND state != 'REJECTED' AND pending_reason IS :reason
+          AND category_id = :categoryId AND user_edited = 0
+        """,
+    )
+    fun dismissRow(id: Long, state: TxnState, reason: PendingReason?, categoryId: Long, updatedAt: Long): Int
+
+    /**
+     * [mergeGateway]'s kept row, guarded on what the card drew; unchecked. A
+     * committed row given no category keeps its `updated_at`: nothing was
+     * written to it.
+     */
+    @Query(
+        """
+        UPDATE txn SET state = 'COMMITTED', pending_reason = NULL, category_id = :toCategory,
+                       updated_at = CASE WHEN state = 'COMMITTED' AND category_id = :toCategory
+                                         THEN updated_at ELSE :updatedAt END
+        WHERE id = :id AND state = :state AND state != 'REJECTED' AND pending_reason IS :reason
+          AND category_id = :categoryId
+        """,
+    )
+    fun keepRow(id: Long, state: TxnState, reason: PendingReason?, categoryId: Long, toCategory: Long, updatedAt: Long): Int
+
+    /**
+     * Undo of [mergeGateway]: both rows back to the state, reason and
+     * category [merge] recorded, **all or none**, and only while each is
+     * still what the Merge left. Returns false, having written nothing,
+     * when another writer has moved either since.
+     */
+    fun unmergeGateway(merge: GatewayMerge, updatedAt: Long): Boolean = try {
+        unmergeGatewayOrThrow(merge, updatedAt)
+        true
+    } catch (_: StaleAnswerException) {
+        false
+    }
+
+    /** [unmergeGateway]'s transaction; call that. */
+    @Transaction
+    fun unmergeGatewayOrThrow(merge: GatewayMerge, updatedAt: Long) {
+        val dismissed = merge.dismissed
+        val kept = merge.kept
+        val restored =
+            restoreRow(dismissed.id, TxnState.REJECTED, dismissed.categoryId, dismissed.state, dismissed.reason, dismissed.categoryId, updatedAt) +
+                restoreRow(kept.id, TxnState.COMMITTED, merge.carriedCategory ?: kept.categoryId, kept.state, kept.reason, kept.categoryId, updatedAt)
+        if (restored != 2) throw StaleAnswerException()
+    }
+
+    /** One row of [unmergeGateway], unchecked. */
+    @Query(
+        """
+        UPDATE txn SET state = :toState, pending_reason = :toReason, category_id = :toCategory, updated_at = :updatedAt
+        WHERE id = :id AND state = :fromState AND pending_reason IS NULL AND category_id = :fromCategory
+        """,
+    )
+    fun restoreRow(
+        id: Long,
+        fromState: TxnState,
+        fromCategory: Long,
+        toState: TxnState,
+        toReason: PendingReason?,
+        toCategory: Long,
+        updatedAt: Long,
+    ): Int
+
+    /**
      * Leave out (§7.3, §9.2): count a transfer the user says moved their own
      * money as no spending -- `COMMITTED`, no reason, `is_excluded = 1` with
      * [exclusion] -- **only if it still is the row the card showed**, as
@@ -1218,6 +1320,22 @@ interface TxnDao {
               AND state != 'REJECTED' AND id IS NOT :selfId
             ORDER BY ABS(occurred_at - :at), id
             LIMIT 1
+            """
+
+        /**
+         * [findDuplicateSuspects]'s query, hoisted for `QueryPlanTest`. The
+         * rule is read off `raw_capture`'s primary key, once for each row the
+         * `txn(amount_sen, occurred_at)` seek leaves: one amount in one window.
+         * `!=`, not `IS NOT`: a null on either side pairs nothing in one app.
+         */
+        const val DUPLICATE_SUSPECTS_SQL =
+            """
+            SELECT * FROM txn
+            WHERE amount_sen = :amountSen AND occurred_at BETWEEN :from AND :to
+              AND direction = :direction
+              AND (source_package IS NULL OR source_package != :sourcePackage
+                   OR (SELECT c.matched_rule_id FROM raw_capture AS c WHERE c.id = txn.raw_capture_id) != :ruleId)
+              AND state != :excludeState
             """
 
         /**

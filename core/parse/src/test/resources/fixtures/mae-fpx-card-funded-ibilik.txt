@@ -6,14 +6,17 @@ amount_sen: 7500
 merchant: IBILIK 02
 merchant_display: Ibilik 02
 direction: EXPENSE
-confidence: REVIEW
+confidence: HIGH
 # A real MAE notification, from a device export. Six seconds earlier the
 # same app posted "You've just spent RM 75.00 at FPX-CREDIT CARD-RPS KUALA
 # LUMPUR MYS with your MasterCard", which mae-card-spend-v1 commits. This is
 # the same RM75, naming the payee the card spend does not.
 # Nothing in this text tells it apart from mae-fpx-from-account-digi.txt,
-# which is the only record of its money. So both wait for review: counted
-# here at HIGH, this one is RM75 spent twice with nobody asked.
+# which is the only record of its money. So the rule reads both at HIGH and
+# spec 7.2's layer 2 pairs this one with the card spend
+# (mae-card-spend-fpx-credit-card-rps.txt): one app, two rules, and a
+# gateway merchant that counts as absent. It reaches review as a duplicate
+# suspect, not as RM75 spent twice (#255).
 # The transaction reference is masked to zeros of the same shape (CLAUDE.md,
 # fixtures). No rule reads it.
 

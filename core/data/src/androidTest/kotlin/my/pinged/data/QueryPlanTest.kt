@@ -731,12 +731,11 @@ class QueryPlanTest {
     /** The full predicate set: a plan pinned on a subset of it is another plan. */
     @Test fun duplicateLayerTwoUsesTheAmountWindowIndex() {
         val p = plan(
-            "SELECT * FROM txn WHERE amount_sen = ? AND occurred_at BETWEEN ? AND ? " +
-                "AND direction = ? AND (source_package IS NULL OR source_package != ?) " +
-                "AND state != ?",
-            1200, 0, Long.MAX_VALUE, "EXPENSE", "com.example", "REJECTED",
+            bindable(TxnDao.DUPLICATE_SUSPECTS_SQL),
+            1200, 0, Long.MAX_VALUE, "EXPENSE", "com.example", "rule-v1", "REJECTED",
         )
         assertUsesIndex("index_txn_amount_sen_occurred_at", p)
+        assertTrue("The candidate's rule is not read by primary key:\n$p", p.contains("SEARCH c USING INTEGER PRIMARY KEY"))
     }
 
     // ---- the review inbox's duplicate pair, TxnDao.duplicatePair ------

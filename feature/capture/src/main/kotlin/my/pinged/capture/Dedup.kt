@@ -166,8 +166,8 @@ internal object Dedup {
 
     /**
      * Spec 7.2 layer 2: identical `amount_sen` within ten minutes from a
-     * **different** `source_package`, where merchant tokens overlap or one merchant
-     * is absent.
+     * **different** `source_package`, or from the same one read by a rule other
+     * than [ruleId], where merchant tokens overlap or one merchant is absent.
      *
      * Returns the transaction the new capture looks like a duplicate of, or null.
      * It never modifies anything: the resolution is a review-inbox prompt.
@@ -179,6 +179,12 @@ internal object Dedup {
      *
      * `is_authoritative` is deliberately not consulted; see [ParsePass].
      *
+     * [olderThan] is for spec 5.5's re-read (`Corrections.reread`), which pairs
+     * a transaction already in the table: only rows written before it, by
+     * `txn.id`, so a row is never its own pair and the newer of a pair stays
+     * the one flagged. Stage two writes nothing until after this returns, so
+     * every row is older.
+     *
      * `direction` has to match, for the reason on [TxnDao.findDuplicateSuspects]:
      * an expense and the refund reversing it satisfy every clause spec 7.2 writes
      * down, and the Merge the inbox would offer erases the reversal.
@@ -186,18 +192,21 @@ internal object Dedup {
     fun layerTwo(
         dao: TxnDao,
         sourcePackage: String,
+        ruleId: String,
         amountSen: Long,
         occurredAt: Long,
         direction: Direction,
         merchantRaw: String?,
         normalization: MerchantNormalization,
+        olderThan: Long = Long.MAX_VALUE,
     ): Txn? = dao.findDuplicateSuspects(
         amountSen = amountSen,
         from = occurredAt - DuplicateWindows.LAYER_TWO_MILLIS,
         to = occurredAt + DuplicateWindows.LAYER_TWO_MILLIS,
         direction = direction,
-        excludePackage = sourcePackage,
-    ).firstOrNull { merchantsAgree(merchantRaw, it.merchantRaw, normalization) }
+        sourcePackage = sourcePackage,
+        ruleId = ruleId,
+    ).firstOrNull { it.id < olderThan && merchantsAgree(merchantRaw, it.merchantRaw, normalization) }
 
     /**
      * Spec 7.2 layer 2's merchant clause: "merchant tokens overlap or one merchant
@@ -210,8 +219,13 @@ internal object Dedup {
      *
      * Tokens are compared after [Merchant.clean], so `TNG*STARBUCKS KLCC` and
      * `Starbucks KLCC` overlap, which they would not as raw strings.
+     *
+     * A merchant that is only a gateway ([Merchant.isGatewayOnly]) is absent
+     * too: MAE's card spend at `FPX-CREDIT CARD-RPS` and the FPX notice naming
+     * the payee are one payment and share no token (#255).
      */
     fun merchantsAgree(a: String?, b: String?, normalization: MerchantNormalization): Boolean {
+        if (Merchant.isGatewayOnly(a, normalization) || Merchant.isGatewayOnly(b, normalization)) return true
         val left = tokens(a, normalization)
         val right = tokens(b, normalization)
         if (left.isEmpty() || right.isEmpty()) return true

@@ -136,7 +136,7 @@ class ReadHoldTest {
         val category = Databases.categoryDao(app).requireUncategorizedId()
         Databases.txnDao(app).insert(ledgerTxn(amountSen = 32, categoryId = category, rawCaptureId = seed))
         cloneCaptures(seed, copies = 999, sourceExpr = "c.source_package", postedExpr = "c.posted_at - n.i", withTxn = true)
-        while (Corrections.sweep(app, Databases.rawCaptureDao(app), matcher).more) { }
+        while (Corrections.sweep(app, Databases.rawCaptureDao(app), Databases.txnDao(app), matcher).more) { }
         val runner = TimedRunner(GuardedRunner(app))
         val model = CorrectionsViewModel(app, runner)
 

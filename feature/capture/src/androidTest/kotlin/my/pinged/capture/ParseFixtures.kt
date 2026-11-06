@@ -132,6 +132,33 @@ internal object ParseFixtures {
         )
     }
 
+    /** A corpus fixture's package, title and notification body. */
+    data class Corpus(val pkg: String, val title: String?, val body: String)
+
+    /**
+     * `core/parse`'s fixture [name], read as `:core:parse`'s own corpus test
+     * reads it: a header block, a blank line, then the body.
+     */
+    fun corpus(name: String): Corpus {
+        val text = requireNotNull(ParseFixtures::class.java.getResource("/fixtures/$name")) {
+            "no fixture named '$name' on the androidTest classpath"
+        }.readText().replace("\r\n", "\n")
+        val (header, body) = text.split("\n\n", limit = 2)
+        val h = header.lineSequence()
+            .filter { it.contains(':') && !it.startsWith("#") }
+            .associate { it.substringBefore(':').trim() to it.substringAfter(':').trim() }
+        return Corpus(pkg = requireNotNull(h["package"]), title = h["title"], body = body.trim())
+    }
+
+    /** Inserts corpus fixture [name] as a capture, as [insertCapture] does. */
+    fun insertCorpus(context: Context, name: String, sbnKey: String, postedAt: Long): Long {
+        val fixture = corpus(name)
+        return insertCapture(
+            context, text = fixture.body, title = fixture.title, pkg = fixture.pkg,
+            sbnKey = sbnKey, postedAt = postedAt,
+        )
+    }
+
     /**
      * A [ParsePass] over the real DAOs.
      *
