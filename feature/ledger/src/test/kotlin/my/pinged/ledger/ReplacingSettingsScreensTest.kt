@@ -59,8 +59,8 @@ import org.junit.runner.RunWith
 
 /**
  * The Settings sub-screens and Teach during a ledger replacement (#331): each
- * says so at its top and its writes are off. What the holders refuse beneath
- * them is `ReplacingRefusesWritesTest`'s.
+ * says so at its top and its writes are off. That a write asked for beneath
+ * them reaches no runner is the holders' `ScreenRead`'s, `ScreenReadTest`'s (#376).
  */
 @RunWith(AndroidJUnit4::class)
 class ReplacingSettingsScreensTest {

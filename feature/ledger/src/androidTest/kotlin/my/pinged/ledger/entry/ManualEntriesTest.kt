@@ -4,15 +4,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.time.YearMonth
 import java.time.ZoneId
-import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import my.pinged.data.CaptureRecord
 import my.pinged.data.DayStatus
 import my.pinged.data.Databases
@@ -20,14 +17,10 @@ import my.pinged.data.LocalDates
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.MERCHANT
-import my.pinged.ledger.TIMEOUT
 import my.pinged.ledger.corruptTheDatabase
 import my.pinged.ledger.discardTheDatabase
 import my.pinged.ledger.freshLedger
-import my.pinged.ledger.holdWhile
 import my.pinged.ledger.ledgerTxn
-import my.pinged.ledger.settings.Operation
-import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import my.pinged.read.LedgerAccess
@@ -49,13 +42,9 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ManualEntriesTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val releases = mutableListOf<CountDownLatch>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     @After fun leaveNothingBehind() {
-        releases.forEach { it.countDown() }
-        runBlocking { withTimeout(TIMEOUT) { Transfers.state.first { it.running == null } } }
-        Transfers.forgetOutcome()
         scope.cancel()
         context.discardTheDatabase()
     }
@@ -135,46 +124,6 @@ class ManualEntriesTest {
             DayStatus.OUTSIDE_RECORD,
             record.day(LocalDates.calendarDay(DAY)),
         )
-    }
-
-    @Test fun nothingIsSavedDuringARestoreAndSaveWorksAfterwards() = runBlocking {
-        val dao = context.freshLedger()
-        val entries = entries()
-
-        // Held before it touches anything; a document that will not open then
-        // ends it with the ledger as it was.
-        holdWhile(Operation.RESTORE, entries.busy, releases) { requester, beforeStart ->
-            Transfers.restoreFrom(context, open = { null }, requester = requester, beforeStart = beforeStart)
-        }.use {
-            val refused = withTimeout(SAVE_BUDGET) { entries.save(ManualDraft(amountSen = 1_250L)).await() }
-            assertNull("A save during a restore reported a row", refused)
-        }
-
-        assertEquals("A save during a restore was written", 0, dao.countAll())
-        assertNull("The holder still says a restore is running after it ended", entries.busy.value)
-        assertTrue("Save did nothing once the restore had ended", entries.save(ManualDraft(amountSen = 1_250L)).await() != null)
-        assertEquals(1, dao.countAll())
-    }
-
-    @Test fun nothingIsSavedDuringADeleteAndSaveWorksAfterwards() = runBlocking {
-        val dao = context.freshLedger()
-        val entries = entries()
-
-        // Held before it touches anything; the requester then goes away, so
-        // the delete never starts.
-        val requester = Job()
-        holdWhile(Operation.DELETE, entries.busy, releases, requester) { r, beforeStart ->
-            Transfers.deleteEverything(context, requester = r, beforeStart = beforeStart)
-        }.use {
-            val refused = withTimeout(SAVE_BUDGET) { entries.save(ManualDraft(amountSen = 1_250L)).await() }
-            assertNull("A save during a delete reported a row", refused)
-            requester.cancel()
-        }
-
-        assertEquals("A save during a delete was written", 0, dao.countAll())
-        assertNull("The holder still says a delete is running after it ended", entries.busy.value)
-        assertTrue("Save did nothing once the delete had ended", entries.save(ManualDraft(amountSen = 1_250L)).await() != null)
-        assertEquals(1, dao.countAll())
     }
 
     @Test fun aLedgerThatWillNotOpenSavesNothingAndSaysSo() = runBlocking {

@@ -315,48 +315,6 @@ class ReviewInboxTest {
         }
     }
 
-    @Test fun nothingIsAnsweredDuringARestoreAndAnswersWorkAfterwards() = runBlocking {
-        val dao = context.freshLedger()
-        val held = dao.insert(pending(PendingReason.OVER_THRESHOLD, at = NOON))
-        val inbox = inbox()
-        val drawn = card(inbox, held)
-
-        // Held before it touches anything; a document that will not open then
-        // ends it with the ledger as it was.
-        holdWhile(Operation.RESTORE, inbox) { requester, beforeStart ->
-            Transfers.restoreFrom(context, open = { null }, requester = requester, beforeStart = beforeStart)
-        }.use {
-            withTimeout(ANSWER_BUDGET) { inbox.accept(drawn).join() }
-        }
-
-        assertEquals("An answer during a restore was written", TxnState.PENDING, dao.byId(held)!!.state)
-        assertEquals("The inbox still says a restore is running after it ended", null, inbox.read.state.value.ledger.withholding)
-        inbox.accept(drawn).join()
-        assertEquals("Accept did nothing once the restore had ended", TxnState.COMMITTED, dao.byId(held)!!.state)
-    }
-
-    @Test fun nothingIsAnsweredDuringADeleteAndAnswersWorkAfterwards() = runBlocking {
-        val dao = context.freshLedger()
-        val held = dao.insert(pending(PendingReason.OVER_THRESHOLD, at = NOON))
-        val inbox = inbox()
-        val drawn = card(inbox, held)
-
-        // Held before it touches anything; the requester then goes away, so
-        // the delete never starts.
-        val requester = Job()
-        holdWhile(Operation.DELETE, inbox, requester) { r, beforeStart ->
-            Transfers.deleteEverything(context, requester = r, beforeStart = beforeStart)
-        }.use {
-            withTimeout(ANSWER_BUDGET) { inbox.reject(drawn).join() }
-            requester.cancel()
-        }
-
-        assertEquals("An answer during a delete was written", TxnState.PENDING, dao.byId(held)!!.state)
-        assertEquals("The inbox still says a delete is running after it ended", null, inbox.read.state.value.ledger.withholding)
-        inbox.reject(drawn).join()
-        assertEquals("Not a payment did nothing once the delete had ended", TxnState.REJECTED, dao.byId(held)!!.state)
-    }
-
     @Test fun aDeleteEverythingWithdrawsTheUndoAndItsRowIdNowNamesAnotherPayment() = runBlocking {
         val dao = context.freshLedger()
         val held = dao.insert(pending(PendingReason.OVER_THRESHOLD, at = NOON))
