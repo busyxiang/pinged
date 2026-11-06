@@ -53,7 +53,8 @@ class SummaryScrollTest {
     /**
      * Two pixels short of the hero's foot under the list's top, no total;
      * two past it, the total. The hero's foot rather than the summary's: the
-     * top three are still on screen when the total takes over.
+     * sources line under it (#367) and the top three are still on screen
+     * when the total takes over.
      */
     @Test fun theTotalAppearsOnlyOnceTheHeroHasGone() = assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder = null)
 
@@ -67,6 +68,7 @@ class SummaryScrollTest {
 
     private fun assertTheTotalAppearsOnlyOnceTheHeroHasGone(reminder: BackupReminder?) {
         show(reminder)
+        assertTrue("The sources line is not under the hero", boundsOf(SOURCES).top >= boundsOf(HERO).bottom)
         val toFoot = boundsOf(HERO).bottom - list().fetchSemanticsNode().boundsInRoot.top
         scrollBy(toFoot - 2f)
         compose.onNodeWithTag(TOP_BAR_TOTAL).assertDoesNotExist()
@@ -74,6 +76,7 @@ class SummaryScrollTest {
 
         scrollBy(4f)
         compose.onNodeWithTag(TOP_BAR_TOTAL).assertIsDisplayed()
+        compose.onNodeWithText(SOURCES, useUnmergedTree = true).assertExists()
         compose.onNodeWithText(FOOD_NAME, useUnmergedTree = true).assertExists()
     }
 
@@ -140,6 +143,7 @@ class SummaryScrollTest {
     private companion object {
         val HERO = money(284_730L, "MYR", symbol = true)
         val FOOD_NAME = FEED_FOOD.name
+        val SOURCES = SEPTEMBER_SOURCES.text
         val REVIEW = awaitingReviewLabel(4)
 
         /** The summary, the review row, the day's heading, then Row 1: "Row 20" is the 23rd item. */

@@ -1863,7 +1863,15 @@ total on its baseline, `SEP · RM2,847.30`, at every width. Several
 currencies show the first in the summary's order and `+N`; a month that
 cannot be trusted greys it as the hero is; a summary still being read, or
 a month with nothing counted, shows none. Tapping it scrolls back to the
-summary. The scroll position is kept across tab switches. Each row shows merchant
+summary. Directly under the hero's total, the summary names the apps it
+comes from in Charts' sources line (section 8, "The sources line"; section
+9.3), read by the same `SourcesLine.read` in the summary's own transaction,
+so the two screens say the same words for a month; `NO APP IS READ YET`
+opens Capture sources here too (#367). It belongs to the summary item and
+scrolls away with it, below the hero's last line, so the top bar still
+takes the total over at that line. While the summary is not read yet, or
+the ledger cannot be read, there is no line rather than a guess at one.
+The scroll position is kept across tab switches. Each row shows merchant
 display name, category icon, source app, amount. Uncategorized rows carry a
 tappable chip. Excluded rows are greyed with an exclusion badge. A row
 awaiting review carries `AWAITING REVIEW · <reason>`, and tapping that badge

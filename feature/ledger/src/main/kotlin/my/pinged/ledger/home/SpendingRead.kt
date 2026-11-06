@@ -8,12 +8,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import my.pinged.capture.Graph
 import my.pinged.charts.MonthsRead
 import my.pinged.charts.monthsRead
 import my.pinged.data.CaptureRecord
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
+import my.pinged.data.SourcesLine
 import my.pinged.data.dao.NotInTotalLine
+import my.pinged.parse.ParsePack
 import my.pinged.read.ReadRunner
 import my.pinged.read.ScreenRead
 import java.time.LocalDate
@@ -37,7 +40,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * [chooser] is the category chooser's half of the read, called inside the read's
  * transaction so it is of one snapshot with the rows it marks. [today] is asked
- * as each read begins and each time the month is worked out.
+ * as each read begins and each time the month is worked out. [pack] is the
+ * parse pack loaded now, which the sources line names its apps against, as
+ * Charts' read does.
  *
  * Built on the holder's scope, whose thread the module's calls must be made on.
  */
@@ -47,6 +52,7 @@ internal class SpendingRead(
     private val handle: SavedStateHandle,
     private val chooser: (PingedDatabase) -> ChooserRead,
     private val today: () -> LocalDate = LocalDate::now,
+    private val pack: () -> ParsePack = Graph::parsePack,
 ) {
     /**
      * The month Spending's header picked (#192), or null to follow the clock:
@@ -72,7 +78,7 @@ internal class SpendingRead(
         runner = runner,
         what = "The ledger cannot be read",
         initial = shownMonth(),
-    ) { db, month -> readLedger(db, month, chooser(db), today()) }
+    ) { db, month -> readLedger(db, month, chooser(db), today(), pack()) }
 
     /**
      * The `Months` sheet's read, as Charts' is: the question is the opening,
@@ -135,13 +141,17 @@ internal class SpendingRead(
  * longest single capture (66ms over 6,000 parsed, measured for
  * `Databases.reset`'s lease wait).
  *
+ * The sources line (#367) is `SourcesLine.read`, Charts' own call, over
+ * [pack]: measured beside `monthTotals` at 0.65ms median for the month
+ * (`SourcesLine.read`), inside the same transaction.
+ *
  * The month-trust rule is the one Charts and `Months` grey on too (#81), so the
  * three cannot disagree. It never counts today: the first foreground of a day
  * writes today's row launched, not awaited, so this read can run before it
  * lands.
  */
 @VisibleForTesting
-internal fun readLedger(db: PingedDatabase, month: YearMonth, chooser: ChooserRead, today: LocalDate): LedgerRead {
+internal fun readLedger(db: PingedDatabase, month: YearMonth, chooser: ChooserRead, today: LocalDate, pack: ParsePack): LedgerRead {
     val range = LocalDates.monthRange(month)
     val txns = db.txnDao()
     val record = CaptureRecord.read(db, today, month.atDay(1)..month.atEndOfMonth())
@@ -153,6 +163,7 @@ internal fun readLedger(db: PingedDatabase, month: YearMonth, chooser: ChooserRe
             top = txns.monthTopNamed(range.start, range.endInclusive, limit = LedgerViewModel.TOP_CATEGORIES),
             trustworthy = !record.month(month).untrusted,
             toSort = txns.toSortCount(range.start, range.endInclusive),
+            sources = SourcesLine.read(db, pack, month),
         ),
         categories = chooser.categories,
         uncategorizedId = chooser.uncategorizedId,
