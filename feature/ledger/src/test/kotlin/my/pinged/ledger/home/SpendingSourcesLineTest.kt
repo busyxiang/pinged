@@ -1,5 +1,6 @@
 package my.pinged.ledger.home
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -8,6 +9,8 @@ import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.flowOf
+import my.pinged.charts.openUnreadLabel
+import my.pinged.data.NamedSource
 import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.entity.CaptureSource
@@ -49,7 +52,7 @@ class SpendingSourcesLineTest {
         sources = sources,
     )
 
-    private fun draw(summary: MonthSummary?, onOpenSources: () -> Unit = {}) = compose.setContent {
+    private fun draw(summary: MonthSummary?, onOpenSources: () -> Unit = {}, onOpenUnread: (NamedSource) -> Unit = {}) = compose.setContent {
         PingedTheme {
             MonthSummaryBlock(
                 summary = summary,
@@ -57,6 +60,7 @@ class SpendingSourcesLineTest {
                 onHeroBottom = {},
                 heroNotReadYetShown = true,
                 onOpenSources = onOpenSources,
+                onOpenUnread = onOpenUnread,
             )
         }
     }
@@ -78,6 +82,22 @@ class SpendingSourcesLineTest {
         compose.onNodeWithText("NO APP IS READ YET").performClick()
 
         assertEquals("NO APP IS READ YET on Spending did not open Capture sources", 1, opened)
+    }
+
+    /**
+     * #368: an unreadable name opens Could not read for its app, by the action
+     * Charts' line labels it with. The tap on the name is
+     * `UnreadFromSourcesLineTest`'s, on a device.
+     */
+    @Test fun anUnreadableNameOpensCouldNotReadForItsApp() {
+        val opened = mutableListOf<NamedSource>()
+        draw(summary(tngAndGrab), onOpenUnread = { opened += it })
+        val line = compose.onNodeWithText("FROM TOUCH 'N GO, AND BY HAND. GRABPAY IS ON BUT PINGED CANNOT READ IT YET")
+        val actions = line.fetchSemanticsNode().config.getOrElse(SemanticsActions.CustomActions) { emptyList() }
+
+        actions.singleOrNull { it.label == openUnreadLabel("GRABPAY") }?.action?.invoke()
+
+        assertEquals("GRABPAY on Spending did not open Could not read for GrabPay", listOf(NamedSource(GRAB, "GRABPAY")), opened)
     }
 
     /** No apps are known before the read lands: no line rather than a guess at one. */

@@ -18,6 +18,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import my.pinged.capture.Graph
 import my.pinged.data.DatabaseFactory
 import my.pinged.data.Databases
 import my.pinged.data.LocalDates
@@ -25,6 +26,10 @@ import my.pinged.data.entity.Arrival
 import my.pinged.data.entity.CaptureSource
 import my.pinged.data.entity.ParseStatus
 import my.pinged.data.entity.RawCapture
+import my.pinged.data.entity.Txn
+import my.pinged.data.entity.TxnState
+import my.pinged.parse.Confidence
+import my.pinged.parse.Direction
 import my.pinged.ui.test.boundedWaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -37,7 +42,7 @@ import java.time.LocalDate
 
 /**
  * Could not read filtered to one app (#368), through the real Activity:
- * `GRABPAY` in Charts' sources line opens it, its *Show every app* clears it,
+ * `GRABPAY` in Charts' sources line opens it, and in Spending's, its *Show every app* clears it,
  * Settings opens it unfiltered, and teaching a GrabPay message from it takes
  * GrabPay out of the line's warning -- Teach, then `user_template_rule`, then
  * `SourcesLine` on the next read.
@@ -82,6 +87,19 @@ class UnreadFromSourcesLineTest {
             // Replaced, not pushed: Back still returns to the line.
             compose.onNodeWithContentDescription("Back").performClick()
             assertTrue("Back from every app's list did not return to Charts", compose.waitFor { compose.countOf(WARNING, substring = true) == 1 })
+        }
+    }
+
+    /** Spending's line, under its summary (#367): a manual entry keeps Spending on its feed. */
+    @Test fun grabPayInSpendingsLineOpensItsFilter() {
+        Databases.shared(context).txnDao().insert(byHand())
+        ActivityScenario.launch(MainActivity::class.java).use {
+            compose.awaitTheTabBar()
+            assertTrue("Spending did not warn that Pinged cannot read GrabPay", compose.waitFor { compose.countOf(WARNING, substring = true) == 1 })
+
+            tapInTheLine("GRABPAY")
+
+            awaitFilteredToGrabPay()
         }
     }
 
@@ -153,6 +171,28 @@ class UnreadFromSourcesLineTest {
         assertEquals("The GrabPay filter lists MAE's capture", 0, compose.countOf(MAE_TEXT))
     }
 
+    /** A counted manual entry today. */
+    private fun byHand(): Txn {
+        val at = System.currentTimeMillis()
+        return Txn(
+            rawCaptureId = null,
+            amountSen = 1_250L,
+            direction = Direction.EXPENSE,
+            occurredAt = at,
+            localDate = LocalDates.of(at),
+            merchantRaw = "KEDAI RUNCIT",
+            merchantDisplay = "Kedai Runcit",
+            merchantKey = "KEDAI RUNCIT",
+            categoryId = Databases.categoryDao(context).requireUncategorizedId(),
+            sourcePackage = null,
+            sourceLabel = null,
+            confidence = Confidence.HIGH,
+            state = TxnState.COMMITTED,
+            createdAt = 1_000L,
+            updatedAt = 1_000L,
+        )
+    }
+
     private fun unmatched(index: Int, pkg: String, text: String) = RawCapture(
         sourcePackage = pkg,
         postedAt = System.currentTimeMillis() - index,
@@ -172,6 +212,10 @@ class UnreadFromSourcesLineTest {
         extrasJson = null,
         contentHash = "unread-from-line-$index",
         parseStatus = ParseStatus.UNMATCHED,
+        // Marked under the loaded pack, as stage two marks one: a capture
+        // stamped older is requeued by `Reparse.sweep` whenever a run finds
+        // the sweep unrecorded, and is off the list until it is parsed again.
+        packVersion = Graph.parsePack().packVersion,
     )
 
     private fun discard() {
@@ -196,7 +240,8 @@ class UnreadFromSourcesLineTest {
 
         const val MAE = "com.maybank2u.life"
         const val GRAB = "com.grabtaxi.passenger"
-        const val MAE_TEXT = "Your fixed deposit of RM1,000.00 has matured."
+        /** A wording no rule in the shipped pack reads or rejects. */
+        const val MAE_TEXT = "MAE test notice 4417 for the unread list"
         const val GRAB_TEXT = "Paid RM12.00 to Kedai Satu"
         const val WARNING = "GRABPAY IS ON BUT PINGED CANNOT READ IT YET"
         const val ONLY_GRABPAY = "ONLY GRABPAY"

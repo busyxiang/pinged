@@ -25,6 +25,9 @@ the way to make it fail on purpose.
   [A holder that reads on arrival](#a-holder-that-reads-on-arrival).
 - `System.nanoTime()` around a step, from one run, held to a bound.
   [A duration on a busy host](#a-duration-on-a-busy-host).
+- A seeded `RawCapture` at `UNMATCHED` with no `packVersion`, read back
+  from the unread list. [A capture stage two may
+  requeue](#a-capture-stage-two-may-requeue).
 
 A rule added for a new flake gets a line here too, written as the code a
 reader would see in their own test, not as the cause.
@@ -261,3 +264,21 @@ transaction, a real hold, the new one failed at 211ms and 212ms unstarved, and
 at 794ms starved. This cannot see a hold that comes only on some runs, such as
 contention with another caller. A test that needs to see that has to make the
 contention happen on every run.
+
+## A capture stage two may requeue
+
+A capture seeded at `UNMATCHED` keeps `RawCapture.packVersion`'s default of
+0. `Reparse.sweep` moves every such capture back to `NEW` on any stage-two
+run that finds the sweep for the loaded pack unrecorded, which a fresh
+install of the test APK is, and the drain then parses it again. Until it
+does, it is off the unread list; a wording the pack reads or rejects never
+comes back. A Teach save, a foreground with the grant held, or a
+notification starts that run, and WorkManager can run it after the test that
+asked for it has ended, in the next test's freshly seeded ledger.
+`UnreadFromSourcesLineTest.settingsOpensCouldNotReadUnfiltered` failed once
+in its first two runs, straight after the class's Teach test, with its MAE
+fixed-deposit notice missing from the list. That run was not logged, so this
+path is the explanation that fits, not one observed. Seed the capture with
+`packVersion = Graph.parsePack().packVersion`, as stage two would have
+marked it, and with a wording no pack rule reads or rejects.
+

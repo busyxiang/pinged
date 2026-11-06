@@ -266,6 +266,7 @@ class MainActivity : ComponentActivity() {
                                         // Onto Spending's stack, as Charts'
                                         // line pushes onto Charts'.
                                         onOpenSources = { tabs.push(Sources) },
+                                        onOpenUnread = { source -> tabs.push(Unread(source.pkg, source.name)) },
                                         heard = current.heard,
                                         // Both lead to settings' root, where the
                                         // export sheet is hosted and the

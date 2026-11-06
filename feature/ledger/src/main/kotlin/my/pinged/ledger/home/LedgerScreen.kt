@@ -88,6 +88,7 @@ import my.pinged.charts.monthsReading
 import my.pinged.data.Databases
 import my.pinged.data.LocalDate
 import my.pinged.data.LocalDates
+import my.pinged.data.NamedSource
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.entity.Category
 import my.pinged.ledger.RowNotReadYet
@@ -175,6 +176,8 @@ fun LedgerScreen(
     onOpenToSort: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
     /** The sources line's `NO APP IS READ YET` (#367): Capture sources, as on Charts. */
     onOpenSources: (() -> Unit)? = null,
+    /** An unreadable name in the sources line (#368): Could not read for that app, as on Charts. */
+    onOpenUnread: ((NamedSource) -> Unit)? = null,
     heard: String? = null,
     /** The backup reminder (#252), or null for none; see [BackupReminderRow]. */
     backupReminder: BackupReminder? = null,
@@ -228,6 +231,7 @@ fun LedgerScreen(
         onOpenSearch = onOpenSearch,
         onOpenToSort = onOpenToSort,
         onOpenSources = onOpenSources,
+        onOpenUnread = onOpenUnread,
         heard = heard,
         backupReminder = backupReminder,
         picked = picked,
@@ -284,6 +288,7 @@ internal fun LedgerScreenContent(
     onOpenSearch: (() -> Unit)? = null,
     onOpenToSort: ((month: YearMonth, uncategorizedId: Long) -> Unit)? = null,
     onOpenSources: (() -> Unit)? = null,
+    onOpenUnread: ((NamedSource) -> Unit)? = null,
     heard: String? = null,
     backupReminder: BackupReminder? = null,
     /** The holder's picked month, null to follow the clock; see [LedgerViewModel.picked]. */
@@ -438,6 +443,7 @@ internal fun LedgerScreenContent(
                         if (month != null && id != null) ({ open(month, id) }) else null
                     },
                     onOpenSources = onOpenSources,
+                    onOpenUnread = onOpenUnread,
                 )
             }
         }
@@ -1084,6 +1090,7 @@ private fun Feed(
     backupReminder: BackupReminder? = null,
     onOpenToSort: (() -> Unit)? = null,
     onOpenSources: (() -> Unit)? = null,
+    onOpenUnread: ((NamedSource) -> Unit)? = null,
     /** [summary] and the rows are the last month's, dimmed while [picked]'s are read (#285). */
     updating: Boolean = false,
     picked: YearMonth? = null,
@@ -1124,7 +1131,7 @@ private fun Feed(
                 item(key = SUMMARY_KEY, contentType = SUMMARY_KEY) {
                     Column(Modifier.testTag(MONTH_SUMMARY).fillMaxWidth().background(Paper)) {
                         Box(Modifier.updating(updating)) {
-                            MonthSummaryBlock(summary, categoriesById, onHeroBottom, onOpenToSort, heroNotReadYetShown, onOpenSources)
+                            MonthSummaryBlock(summary, categoriesById, onHeroBottom, onOpenToSort, heroNotReadYetShown, onOpenSources, onOpenUnread)
                         }
                         // `LoadingSearch`'s place for it: under the dimmed hero.
                         if (updating) UpdatingStatus(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp))
@@ -1256,7 +1263,8 @@ private fun AccentLineRow(label: String, onOpen: () -> Unit) {
  * the total do not restart the delay.
  *
  * Directly under the hero, the summary's sources line (#367), Charts'
- * `SourcesLineText`; its `NO APP IS READ YET` opens [onOpenSources].
+ * `SourcesLineText`; its `NO APP IS READ YET` opens [onOpenSources], and an
+ * unreadable name opens [onOpenUnread] for its app (#368).
  */
 @Composable
 internal fun MonthSummaryBlock(
@@ -1266,6 +1274,7 @@ internal fun MonthSummaryBlock(
     onOpenToSort: (() -> Unit)? = null,
     heroNotReadYetShown: Boolean,
     onOpenSources: (() -> Unit)? = null,
+    onOpenUnread: ((NamedSource) -> Unit)? = null,
 ) {
     val leaderLift = with(LocalDensity.current) { LEADER_LIFT.roundToPx() }
     Column(Modifier.fillMaxWidth()) {
@@ -1312,7 +1321,7 @@ internal fun MonthSummaryBlock(
             // Below the column [onHeroBottom] measures, not in it: the TopBar
             // takes the total over at the hero's last line, and a line naming
             // apps is not the total. Charts' gap under its hero figure.
-            summary?.sources?.let { SourcesLineText(it, Modifier.padding(top = 6.dp), onOpenSources) }
+            summary?.sources?.let { SourcesLineText(it, Modifier.padding(top = 6.dp), onOpenSources, onOpenUnread) }
             // Drawn over a worded zero as well as over a real total, and never
             // suppressed by either: §8's rule is that a gap in capture is never
             // drawn as a zero, and "NOTHING COUNTED THIS MONTH" is a zero in words
