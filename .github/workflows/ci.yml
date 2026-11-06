@@ -360,9 +360,15 @@ jobs:
 
       # `-no-snapshot-save` so a run that dirtied the device does not write that
       # state back over the clean snapshot.
+      #
+      # `PINGED_MEASURE` on main's push alone: :core:data's @Measurement tests
+      # assert nothing and cost ~5 minutes of the shard a PR waits for. See
+      # core/data/build.gradle.kts.
       - name: Instrumented tests
         id: instrumented
         if: steps.suites.outputs.tasks != ''
+        env:
+          PINGED_MEASURE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}

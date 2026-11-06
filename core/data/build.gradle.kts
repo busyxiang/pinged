@@ -13,10 +13,13 @@ android {
     defaultConfig {
         minSdk = 27
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // A local run skips @Measurement tests, which log and assert nothing:
-        // the 100k-row retroactive fix alone was 26s of the 71s suite. CI sets
-        // `CI`, so they run there. `CI=true` runs them here.
-        if (providers.environmentVariable("CI").orNull == null) {
+        // @Measurement tests log a figure and assert nothing, so they run only
+        // where `PINGED_MEASURE=true`: CI's push to main, which keeps the
+        // figures current, and a local run that asks. Not on a PR: CI run
+        // 42173181882 spent 337s on the six of them in the shard every PR
+        // waits for, 285s in the 100k-row retroactive fix alone (145s on
+        // emulator-5554). Not keyed on `CI`, which GitHub sets on a PR's run.
+        if (providers.environmentVariable("PINGED_MEASURE").orNull != "true") {
             testInstrumentationRunnerArguments["notAnnotation"] = "my.pinged.data.Measurement"
         }
     }
