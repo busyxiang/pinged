@@ -1,6 +1,7 @@
 package my.pinged.charts
 
 import my.pinged.read.Answered
+import my.pinged.read.LedgerAccess
 import my.pinged.read.ReadState
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -10,26 +11,26 @@ class MonthsReadingTest {
     private val held = Answered(1, "last opening's months")
 
     @Test fun anOpeningWhoseReadIsRunningWhileTheLastOpeningsMonthsAreHeldIsInFlight() {
-        assertEquals(MonthsReading.InFlight, monthsReading(ReadState(held, rereading = true, unavailable = false)))
+        assertEquals(MonthsReading.InFlight, monthsReading(ReadState(held, rereading = true)))
     }
 
     @Test fun anOpeningWhoseReadHasLandedIsLanded() {
-        assertEquals(MonthsReading.Landed, monthsReading(ReadState(held, rereading = false, unavailable = false)))
+        assertEquals(MonthsReading.Landed, monthsReading(ReadState(held, rereading = false)))
     }
 
     @Test fun aFirstOpeningHasNothingHeldToDimSoItIsLandedAndTheSheetDrawsNotReadYetItself() {
-        assertEquals(MonthsReading.Landed, monthsReading(ReadState<Int, String>(null, rereading = false, unavailable = false)))
+        assertEquals(MonthsReading.Landed, monthsReading(ReadState<Int, String>(null, rereading = false)))
     }
 
     /** At once, and in place of the months held: the last opening's are not this one's. */
     @Test fun aRefusedOpeningIsUnreadableWhateverIsHeld() {
-        assertEquals(MonthsReading.Unreadable, monthsReading(ReadState(held, rereading = true, unavailable = true)))
-        assertEquals(MonthsReading.Unreadable, monthsReading(ReadState<Int, String>(null, rereading = false, unavailable = true)))
+        assertEquals(MonthsReading.Unreadable, monthsReading(ReadState(held, rereading = true, ledger = LedgerAccess.Unreadable)))
+        assertEquals(MonthsReading.Unreadable, monthsReading(ReadState<Int, String>(null, rereading = false, ledger = LedgerAccess.Unreadable)))
     }
 
     /** As a refusal, in place of the months held, but saying a replacement turned it away (#328). */
     @Test fun anOpeningRefusedByAReplacementIsReplacingWhateverIsHeld() {
-        assertEquals(MonthsReading.Replacing, monthsReading(ReadState(held, rereading = true, unavailable = false, replacing = true)))
-        assertEquals(MonthsReading.Replacing, monthsReading(ReadState<Int, String>(null, rereading = false, unavailable = false, replacing = true)))
+        assertEquals(MonthsReading.Replacing, monthsReading(ReadState(held, rereading = true, ledger = LedgerAccess.BeingReplaced)))
+        assertEquals(MonthsReading.Replacing, monthsReading(ReadState<Int, String>(null, rereading = false, ledger = LedgerAccess.BeingReplaced)))
     }
 }

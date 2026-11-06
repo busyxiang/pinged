@@ -76,15 +76,18 @@ import my.pinged.ledger.home.ChooserSubject
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.UnderlinedField
 import my.pinged.ledger.home.categoryIcon
+import my.pinged.ledger.notice
+import my.pinged.ledger.refused
 import my.pinged.ledger.review.COUNTS_AGAINST
+import my.pinged.ledger.withholding
 import my.pinged.parse.Direction
+import my.pinged.read.rememberReadState
 import my.pinged.ui.RINGGIT
 import my.pinged.ui.money
 import my.pinged.ui.ringgit
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
 import my.pinged.ui.theme.Card
-import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Chevron
 import my.pinged.ui.theme.ButtonLabel
 import my.pinged.ui.theme.DashLeader
@@ -122,6 +125,8 @@ fun ManualEntryScreen(
     modifier: Modifier = Modifier,
     onDeleted: () -> Unit = onSaved,
 ) {
+    // The chips read again on each resume and on `Databases.rewrites`, as every screen's read is.
+    viewModel.chips.rememberReadState()
     val state by viewModel.state.collectAsState()
     ManualEntryScreenContent(
         state = state,
@@ -189,7 +194,7 @@ internal fun ManualEntryScreenContent(
             // payment, and a field typed into now is overwritten by the read.
             // A ledger that will not open is a read that will not land, and
             // the line below says so instead.
-            if (!state.storageUnavailable) NotReadYet()
+            if (!state.ledger.refused) NotReadYet()
         } else {
             // Kind and date on one row above the figure (#355), which then
             // has the whole width: beside it, the two controls left it
@@ -222,10 +227,10 @@ internal fun ManualEntryScreenContent(
             OptionalLine(MERCHANT, state.draft.merchant, onMerchant, MERCHANT_FIELD, KeyboardCapitalization.Words)
             OptionalLine(NOTE, state.draft.note, onNote, NOTE_FIELD, KeyboardCapitalization.Sentences)
         }
-        // One line for what stops Save: the restore or delete running, else
-        // a ledger that will not open (#108). The draft above stays as typed.
-        val stopped = state.busy?.let { busyLine(it, Withheld.SAVED) }
-            ?: CANNOT_READ_YOUR_DATA.takeIf { state.storageUnavailable }
+        // One line for what stops Save (#108): a refusal -- a ledger that will
+        // not open, or one a replacement's gate holds -- else the restore or
+        // delete running (#376). The draft above stays as typed.
+        val stopped = state.ledger.withholding?.let { busyLine(it, Withheld.SAVED) } ?: state.ledger.notice
         if (stopped != null) {
             Text(
                 stopped,

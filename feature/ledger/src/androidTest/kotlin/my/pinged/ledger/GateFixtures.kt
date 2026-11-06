@@ -3,13 +3,14 @@ package my.pinged.ledger
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.Transfers
+import my.pinged.read.LedgerReplacement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 
@@ -24,7 +25,7 @@ import org.junit.Assert.assertTrue
  */
 internal suspend fun holdWhile(
     operation: Operation,
-    busy: StateFlow<Operation?>,
+    busy: Flow<LedgerReplacement?>,
     releases: MutableList<CountDownLatch>,
     requester: Job = Job(),
     start: (Job, suspend () -> Unit) -> Unit,
@@ -38,7 +39,7 @@ internal suspend fun holdWhile(
     assertTrue("precondition: the $operation never took its turn", held.await(TIMEOUT, TimeUnit.MILLISECONDS))
     assertEquals(
         "The holder does not say a $operation is running",
-        operation,
+        replacementOf(operation),
         withTimeout(TIMEOUT) { busy.first { it != null } },
     )
     return AutoCloseable {
@@ -52,4 +53,11 @@ internal suspend fun holdWhile(
             withTimeoutOrNull(TIMEOUT) { busy.first { it == null } }
         }
     }
+}
+
+/** What every screen's read is told while [operation], a restore or a delete, runs. */
+internal fun replacementOf(operation: Operation): LedgerReplacement = when (operation) {
+    Operation.RESTORE -> LedgerReplacement.RESTORE
+    Operation.DELETE -> LedgerReplacement.DELETE
+    else -> throw IllegalArgumentException("$operation does not replace the ledger")
 }

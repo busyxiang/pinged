@@ -88,7 +88,7 @@ Spending's one-line notice that the ledger holds transactions and none has been 
 _Avoid_: nudge, export nudge, staleness nudge
 
 **Ledger replacement**:
-A restore or a delete-everything, from the moment the user starts it until it finishes. Nothing the user does to the ledger meanwhile would last, so nothing is saved, and a screen that cannot read says the ledger is being replaced, not that it cannot be read. An export, a check or a rescue is not one: it leaves the ledger as it was.
+A restore or a delete-everything, from the moment the user starts it until it finishes. Nothing the user does to the ledger meanwhile would last, so nothing is saved, and a screen that cannot read says the ledger is being replaced, not that it cannot be read. A screen that can still read meanwhile shows what it read and says nothing can be changed until the replacement finishes. An export, a check or a rescue is not one: it leaves the ledger as it was.
 _Avoid_: busy, transfer (that covers exports too), gate (that is the mechanism)
 
 

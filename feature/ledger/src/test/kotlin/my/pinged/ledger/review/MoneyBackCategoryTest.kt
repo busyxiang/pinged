@@ -20,6 +20,7 @@ import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.SAVE_LABEL
 import my.pinged.ledger.ledgerTxn
 import my.pinged.parse.Direction
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.PingedTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -45,8 +46,7 @@ class MoneyBackCategoryTest {
             PingedTheme {
                 ReviewInboxScreenContent(
                     cards = cards,
-                    storageUnavailable = false,
-                    busy = null,
+                    ledger = LedgerAccess.Readable,
                     onBack = {},
                     onAnswer = { card, answer -> answers += card.txn.id to answer },
                     choices = {

@@ -66,7 +66,6 @@ import my.pinged.data.dao.MerchantChoice
 import my.pinged.data.dao.MerchantMember
 import my.pinged.data.dao.MerchantTotal
 import my.pinged.ledger.ChangedLine
-import my.pinged.ledger.settings.Operation
 import my.pinged.ui.CALENDAR
 import my.pinged.ui.money
 import my.pinged.ui.theme.Body
@@ -89,6 +88,7 @@ import my.pinged.ui.theme.SheetHeader
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
+import my.pinged.read.LedgerReplacement
 import java.time.YearMonth
 import java.time.format.TextStyle as DateStyle
 import java.util.Locale
@@ -203,7 +203,7 @@ interface MerchantActions {
     val merchantSheet: StateFlow<OpenMerchantSheet?>
 
     /** The ledger replacement running, while one is: the sheet disables its writes and says so. */
-    val busy: StateFlow<Operation?>
+    val busy: StateFlow<LedgerReplacement?>
 
     /** Open the sheet on the tap; see [RowActions.openMerchant]. */
     fun openMerchant(opening: MerchantOpening): Job
@@ -263,7 +263,7 @@ internal fun MerchantSheet(
     sheet: MerchantSheetState,
     actions: MerchantActions,
     modifier: Modifier = Modifier,
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
 ) {
     ReceiptSheetFrame(onDismissRequest = actions::closeMerchant, modifier = modifier) { MerchantSheetRead(sheet, actions, busy) }
 }
@@ -281,7 +281,7 @@ internal fun MerchantSheet(
     sheet: OpenMerchantSheet,
     actions: MerchantActions,
     modifier: Modifier = Modifier,
-    busy: Operation? = null,
+    busy: LedgerReplacement? = null,
 ) {
     ReceiptSheetFrame(onDismissRequest = actions::closeMerchant, modifier = modifier) {
         val read = sheet.read
@@ -291,7 +291,7 @@ internal fun MerchantSheet(
 
 /** [MerchantSheet]'s body once its read has landed; nothing in it writes while [busy] runs. */
 @Composable
-private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: MerchantActions, busy: Operation?) {
+private fun ColumnScope.MerchantSheetRead(sheet: MerchantSheetState, actions: MerchantActions, busy: LedgerReplacement?) {
     val writable = busy == null
     var name by rememberSaveable(sheet.identityKey) { mutableStateOf(sheet.name) }
     var filter by rememberSaveable(sheet.identityKey) { mutableStateOf("") }

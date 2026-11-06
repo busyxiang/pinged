@@ -7,18 +7,17 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
-import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
+import my.pinged.ledger.refused
 import my.pinged.capture.CheckLimit
 import my.pinged.capture.Corrections
 import my.pinged.capture.Graph
 import my.pinged.capture.GuardedRunner
 import my.pinged.capture.TxnLookup
 import my.pinged.data.PingedDatabase
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
+import my.pinged.read.LedgerReplacements
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.read.ScreenRead
@@ -34,10 +33,8 @@ data class CorrectionsState(
     val checking: Boolean = false,
     val items: List<Corrections.Correction> = emptyList(),
     val packVersion: Int = 0,
-    /** Spec 11.1: the database could not be opened, which is not "nothing to review". */
-    val storageUnavailable: Boolean = false,
-    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
-    val replacing: Boolean = false,
+    /** What the screen may do with the ledger: draw the list, withhold its answers, or say why it cannot (#376). */
+    val ledger: LedgerAccess = LedgerAccess.Readable,
 )
 
 /** What one read of [CorrectionsViewModel.read] found: [Corrections.pending]'s list, null while [checking]. */
@@ -48,14 +45,14 @@ internal data class Pending(val found: List<Corrections.Correction>?, val packVe
  * whatever the last read held, as `LearnedViewModel`'s does.
  */
 internal fun ReadState<Unit, Pending>.toState(): CorrectionsState {
-    if (replacing) return CorrectionsState(loaded = true, replacing = true)
-    if (unavailable) return CorrectionsState(loaded = true, storageUnavailable = true)
-    val pending = answer ?: return CorrectionsState()
+    if (ledger.refused) return CorrectionsState(loaded = true, ledger = ledger)
+    val pending = answer ?: return CorrectionsState(ledger = ledger)
     return CorrectionsState(
         loaded = true,
         checking = pending.found == null,
         items = pending.found.orEmpty(),
         packVersion = pending.packVersion,
+        ledger = ledger,
     )
 }
 
@@ -74,14 +71,9 @@ class CorrectionsViewModel internal constructor(
     runner: ReadRunner,
     /** Where the read's own work runs; a JVM test passes the one it drives. */
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    transfers: StateFlow<TransferState> = Transfers.state,
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
 ) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
-
-    private val gate = LedgerBusy(viewModelScope, transfers)
-
-    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
 
     /** A getter, for the reason `SourcesViewModel.context` gives. */
     private val context: Context get() = getApplication<Application>()
@@ -103,7 +95,7 @@ class CorrectionsViewModel internal constructor(
      * through `rememberReadState`.
      */
     internal val read: ScreenRead<Unit, Pending> =
-        ScreenRead.fixedStaged(viewModelScope, runner, "Corrections cannot be read", dispatcher) {
+        ScreenRead.fixedStaged(viewModelScope, runner, "Corrections cannot be read", dispatcher, replacement) {
             val matcher = Graph.ruleMatcher()
             // The open, asked for before the sweep has reached the end as well,
             // when no page is read: a ledger that cannot be opened is
@@ -127,9 +119,7 @@ class CorrectionsViewModel internal constructor(
 
     /**
      * A write the guard refuses leaves the row as it was, and the read after it
-     * draws that. None is asked for while the ledger is being replaced ([busy]).
+     * draws that. [read] refuses one while the ledger is being replaced (#376).
      */
-    private fun answer(what: String, write: (PingedDatabase) -> Boolean): Job = gate.unlessReplacing {
-        viewModelScope.launch { read.write(what) { db -> write(db) }.await() }
-    }
+    private fun answer(what: String, write: (PingedDatabase) -> Boolean): Job = read.write(what) { db -> write(db) }
 }

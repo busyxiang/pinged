@@ -8,6 +8,7 @@ import my.pinged.capture.Corrections
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ledgerTxn
+import my.pinged.read.LedgerAccess
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -92,7 +93,7 @@ class CorrectionsScreenTest {
     @Test fun anUnreadableDatabaseIsNotNothingToReview() {
         compose.setContent {
             CorrectionsContent(
-                CorrectionsState(loaded = true, storageUnavailable = true),
+                CorrectionsState(loaded = true, ledger = LedgerAccess.Unreadable),
                 onBack = {}, onAccept = {}, onDecline = {},
             )
         }

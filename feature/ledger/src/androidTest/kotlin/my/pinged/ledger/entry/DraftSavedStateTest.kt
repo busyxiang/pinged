@@ -136,7 +136,7 @@ class DraftSavedStateTest {
     @Test fun aCorrectionKilledBeforeItsRowWasReadOpensWithTheRow() = runBlocking {
         val id = Databases.txnDao(context).insert(manual(amountSen = 500L, occurredAt = NOON))
         val handle = SavedStateHandle()
-        val busy = Transfers.state.map { it.replacingLedger }.stateIn(scope, SharingStarted.Eagerly, null)
+        val busy = Transfers.state.map { it.replacement }.stateIn(scope, SharingStarted.Eagerly, null)
 
         // A restore holds the row's read off; the process dies meanwhile.
         val killed = holdWhile(Operation.RESTORE, busy, releases) { requester, beforeStart ->

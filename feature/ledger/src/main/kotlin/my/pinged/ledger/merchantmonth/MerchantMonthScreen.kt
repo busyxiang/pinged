@@ -31,6 +31,7 @@ import my.pinged.ledger.home.MerchantActions
 import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.CANNOT_READ_YOUR_DATA
 import my.pinged.ui.theme.Card
@@ -74,8 +75,8 @@ fun MerchantMonthScreen(
     MerchantMonthScreenContent(
         month = viewModel.month,
         read = read.answer,
-        storageUnavailable = read.unavailable,
-        replacing = read.replacing,
+        storageUnavailable = read.ledger == LedgerAccess.Unreadable,
+        replacing = read.ledger == LedgerAccess.BeingReplaced,
         onBack = onBack,
         categories = viewModel.rows,
         merchants = viewModel.rows,

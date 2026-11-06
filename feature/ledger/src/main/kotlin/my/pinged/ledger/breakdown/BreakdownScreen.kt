@@ -49,6 +49,7 @@ import my.pinged.ledger.home.MerchantSheet
 import my.pinged.ledger.home.RowCategoryChooser
 import my.pinged.ledger.home.chooserChoices
 import my.pinged.ledger.home.dayLabel
+import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Border
@@ -103,8 +104,8 @@ fun BreakdownScreen(
         month = viewModel.month,
         read = read.answer,
         expanded = expanded,
-        storageUnavailable = read.unavailable,
-        replacing = read.replacing,
+        storageUnavailable = read.ledger == LedgerAccess.Unreadable,
+        replacing = read.ledger == LedgerAccess.BeingReplaced,
         onBack = onBack,
         onGone = onGone,
         onToggle = { viewModel.toggle(it) },

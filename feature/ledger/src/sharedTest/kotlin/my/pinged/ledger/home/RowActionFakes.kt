@@ -3,7 +3,7 @@ package my.pinged.ledger.home
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import my.pinged.data.dao.RetroPreview
-import my.pinged.ledger.settings.Operation
+import my.pinged.read.LedgerReplacement
 
 /** A finished `Job`: what a fake's write returns, having written nothing. */
 private fun done(): Job = Job().apply { complete() }
@@ -17,7 +17,7 @@ internal class FakeCategoryActions(
     private val preview: suspend (txnId: Long, categoryId: Long) -> RetroPreview? = { _, _ -> RetroPreview(0, emptyList()) },
     private val add: suspend (name: String, iconKey: String) -> Long? = { _, _ -> null },
 ) : CategoryActions {
-    override val busy = MutableStateFlow<Operation?>(null)
+    override val busy = MutableStateFlow<LedgerReplacement?>(null)
 
     /** Each save, as (txnId, categoryId, teach), in the order made. */
     val assigned = mutableListOf<Triple<Long, Long, Boolean>>()
@@ -40,7 +40,7 @@ internal class FakeCategoryActions(
 internal class FakeMerchantActions(sheet: OpenMerchantSheet? = null) : MerchantActions {
     override val merchantSheet = MutableStateFlow(sheet)
 
-    override val busy = MutableStateFlow<Operation?>(null)
+    override val busy = MutableStateFlow<LedgerReplacement?>(null)
 
     val opened = mutableListOf<MerchantOpening>()
     val renamed = mutableListOf<String>()

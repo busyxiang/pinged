@@ -4,18 +4,17 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
-import my.pinged.ledger.LedgerBusy
-import my.pinged.ledger.settings.Operation
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
+import my.pinged.ledger.refused
 import my.pinged.capture.Graph
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.LearnedMerchant
 import my.pinged.data.dao.RejectRuleRow
 import my.pinged.data.dao.StandingAnswerRow
 import my.pinged.data.dao.TaughtRuleRow
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerAccess
+import my.pinged.read.LedgerReplacements
 import my.pinged.read.ReadRunner
 import my.pinged.read.ReadState
 import my.pinged.parse.ExclusionReason
@@ -32,10 +31,8 @@ data class LearnedState(
     val ignored: List<RejectRuleRow> = emptyList(),
     /** Spec 7.3's standing answers, newest first. */
     val leftOut: List<LeftOut> = emptyList(),
-    /** Spec 11.1: the database could not be opened, which is not "nothing taught". */
-    val storageUnavailable: Boolean = false,
-    /** A ledger replacement turned the read away (#328): drawn as `REPLACING_YOUR_DATA`, never with [storageUnavailable]. */
-    val replacing: Boolean = false,
+    /** What the screen may do with the ledger: draw the lists, withhold its deletes, or say why it cannot (#376). */
+    val ledger: LedgerAccess = LedgerAccess.Readable,
 )
 
 /** What one read of [LearnedViewModel.read] found, in one transaction. */
@@ -60,15 +57,15 @@ data class LeftOut(val row: StandingAnswerRow, val exclusion: ExclusionReason)
  * supports.
  */
 internal fun ReadState<Unit, Taught>.toState(): LearnedState {
-    if (replacing) return LearnedState(loaded = true, replacing = true)
-    if (unavailable) return LearnedState(loaded = true, storageUnavailable = true)
-    val taught = answer ?: return LearnedState()
+    if (ledger.refused) return LearnedState(loaded = true, ledger = ledger)
+    val taught = answer ?: return LearnedState(ledger = ledger)
     return LearnedState(
         loaded = true,
         items = taught.items,
         messages = taught.messages,
         ignored = taught.ignored,
         leftOut = taught.leftOut,
+        ledger = ledger,
     )
 }
 
@@ -80,27 +77,22 @@ internal fun ReadState<Unit, Taught>.toState(): LearnedState {
  * The read is `:core:read`'s [ScreenRead] (#296), and each delete is its
  * `write`, so the list never draws a state older than a delete that landed.
  * Delete is `MerchantIdentityDao.deleteLearnedOfIdentity` and nothing else: it
- * touches no `txn` row and re-files nothing. No delete is made while the
- * ledger is being replaced ([busy], #331).
+ * touches no `txn` row and re-files nothing. [read] refuses every delete
+ * while the ledger is being replaced (#331, #376).
  */
 class LearnedViewModel internal constructor(
     app: Application,
     runner: ReadRunner,
-    transfers: StateFlow<TransferState> = Transfers.state,
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
 ) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, GuardedRunner(app))
-
-    private val gate = LedgerBusy(viewModelScope, transfers)
-
-    /** The ledger replacement running, while one is: the screen disables its writes and says so (#331). */
-    val busy: StateFlow<Operation?> = gate.busy
 
     /**
      * The four lists, in one transaction. `LearnedScreen` reads it on resume
      * and on `Databases.rewrites` through `rememberReadState`.
      */
     internal val read: ScreenRead<Unit, Taught> =
-        ScreenRead.fixed(viewModelScope, runner, "Learned merchants cannot be read") { db ->
+        ScreenRead.fixed(viewModelScope, runner, "Learned merchants cannot be read", replacement) { db ->
             Taught(
                 items = db.merchantIdentityDao().learnedMerchants(),
                 messages = db.userTemplateRuleDao().rows(),
@@ -113,41 +105,27 @@ class LearnedViewModel internal constructor(
      * A refused delete leaves the rule, and the read after it draws that. A
      * delete is its read's `write`: guarded, `viewModelScope` having no handler.
      */
-    fun delete(merchant: LearnedMerchant): Job = gate.unlessReplacing {
-        viewModelScope.launch {
-            read.write("The learned merchant could not be deleted") { db ->
-                db.merchantIdentityDao().deleteLearnedOfIdentity(merchant.identity)
-            }.await()
-        }
-    }
+    fun delete(merchant: LearnedMerchant): Job =
+        read.write("The learned merchant could not be deleted") { db -> db.merchantIdentityDao().deleteLearnedOfIdentity(merchant.identity) }
 
     /**
      * Forget [rule]: `UserRejectRuleDao.delete`, which returns its captures to
      * the unread list (spec 5.7) and touches nothing else.
      */
-    fun deleteIgnored(rule: RejectRuleRow): Job = gate.unlessReplacing {
-        viewModelScope.launch {
-            read.write("The ignored message could not be deleted") { db -> db.userRejectRuleDao().delete(rule.id) }.await()
-        }
-    }
+    fun deleteIgnored(rule: RejectRuleRow): Job =
+        read.write("The ignored message could not be deleted") { db -> db.userRejectRuleDao().delete(rule.id) }
 
     /**
      * Forget [rule]: `UserTemplateRuleDao.delete`, which leaves every
      * transaction it wrote as it is (spec 5.8).
      */
-    fun deleteMessage(rule: TaughtRuleRow): Job = gate.unlessReplacing {
-        viewModelScope.launch {
-            read.write("The taught message could not be deleted") { db -> db.userTemplateRuleDao().delete(rule.id) }.await()
-        }
-    }
+    fun deleteMessage(rule: TaughtRuleRow): Job =
+        read.write("The taught message could not be deleted") { db -> db.userTemplateRuleDao().delete(rule.id) }
 
     /**
      * Forget [answer]: `StandingAnswerDao.delete`. Later transfers it would
      * have answered go back to review; no transaction changes (spec 7.3).
      */
-    fun deleteLeftOut(answer: LeftOut): Job = gate.unlessReplacing {
-        viewModelScope.launch {
-            read.write("The standing answer could not be deleted") { db -> db.standingAnswerDao().delete(answer.row.id) }.await()
-        }
-    }
+    fun deleteLeftOut(answer: LeftOut): Job =
+        read.write("The standing answer could not be deleted") { db -> db.standingAnswerDao().delete(answer.row.id) }
 }

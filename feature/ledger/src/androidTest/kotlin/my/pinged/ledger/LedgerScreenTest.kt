@@ -91,7 +91,7 @@ class LedgerScreenTest {
      *
      * What is *not* undone is `CaptureHealth`'s durable `storage_unavailable`
      * flag: it is `internal` to `:feature:capture` and unreachable from here,
-     * it has no reader in this test APK -- `SourcesState.storageUnavailable` is
+     * it has no reader in this test APK -- `LedgerAccess.Unreadable` is
      * a live failure from `guarded`, never the stored flag -- and the next
      * successful open clears it.
      */

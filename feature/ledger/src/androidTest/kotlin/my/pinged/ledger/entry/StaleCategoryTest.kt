@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.data.Databases
@@ -89,6 +90,9 @@ class StaleCategoryTest {
         withTimeout(TIMEOUT) { vm.state.first { it.draft.category?.categoryId == kopi } }
 
         Transfers.deleteEverything(context, requester = Job()).await()
+        // The read the screen makes on `Databases.rewrites` (`rememberReadState`,
+        // whose trigger `RewriteRereadTest` holds); no screen is composed here.
+        withContext(Dispatchers.Main) { vm.chips.refresh() }.join()
 
         withTimeout(TIMEOUT) { vm.state.first { state -> state.busy == null && state.categories.isNotEmpty() && state.categories.none { it.id == kopi } } }
         val dropped = withTimeoutOrNull(TIMEOUT) { vm.state.first { it.draft.category == null } }

@@ -11,15 +11,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import my.pinged.capture.Graph
+import my.pinged.capture.GuardedRunner
 import my.pinged.capture.MerchantColumns
 import my.pinged.data.LiveLearnedRules
 import my.pinged.data.LocalDates
@@ -28,15 +27,16 @@ import my.pinged.data.dao.ManualEdit
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
-import my.pinged.ledger.LedgerWrites
-import my.pinged.ledger.settings.Operation
-import my.pinged.ledger.settings.TransferState
-import my.pinged.ledger.settings.Transfers
 import my.pinged.parse.Amount
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
 import my.pinged.parse.Filer
 import my.pinged.parse.MerchantNormalization
+import my.pinged.read.LedgerReplacement
+import my.pinged.read.LedgerReplacements
+import my.pinged.read.Outcome
+import my.pinged.read.ReadRunner
+import my.pinged.read.ScreenRead
 
 /**
  * Spec 9.4's manual entry: a payment Pinged did not see, typed in by hand
@@ -49,32 +49,41 @@ import my.pinged.parse.MerchantNormalization
  * the history start (`CaptureRecord.historyStart`), so typing in cash cannot
  * hide a day Pinged was not watching.
  *
- * Owned by a view model, which hands over its [scope]; every database touch
- * inside `LedgerWrites.guarded`, which leases the instance and turns a database
- * that will not open into [storageUnavailable] rather than a process kill on a
- * tap. (`ReviewInbox`, whose busy state is the same, writes through
- * `:core:read` instead.)
+ * Owned by a view model, which hands over its [scope]. Every database touch
+ * is [read]'s (#376): the chips are its read, a save, a correction and a
+ * delete its writes, and the lookups that feed them -- the pre-selection, the
+ * entry a correction starts from, the nearby capture -- its lookups. Leased
+ * and guarded by [runner], a database that will not open is the read's
+ * `ledger` rather than a process kill on a tap.
  *
- * **During a restore or a delete-everything nothing is saved** ([busy]). A
- * save asked for then is refused on the spot, not queued behind the gate:
- * queued, it would hold a lease past the gate, which `CLAUDE.md`'s lease rules
- * forbid, and it would land in a ledger the user has not seen. The draft is
- * the screen's to keep, so the entry is only delayed. Asked before the guard
- * ([LedgerWrites.replacing] says why).
+ * **During a restore or a delete-everything nothing is saved** ([busy]). The
+ * read refuses a write or a lookup asked for then on the spot, not queued
+ * behind the gate: queued, it would hold a lease past the gate, which
+ * `CLAUDE.md`'s lease rules forbid, and it would land in a ledger the user has
+ * not seen. The draft is the screen's to keep, so the entry is only delayed.
  *
- * [transfers] is a parameter so the busy state has one source in production,
- * `Transfers.state`; [clock] so a test can name the moment an entry is dated.
+ * [replacement] is the claim, `LedgerReplacements.current` in production;
+ * [clock] is a parameter so a test can name the moment an entry is dated.
  * [normalization] is the parser pack's, the one stage two cleans a captured
  * merchant with, so a typed merchant and a captured one land on one key.
  */
 class ManualEntries(
-    private val context: () -> Context,
     private val scope: CoroutineScope,
-    transfers: StateFlow<TransferState> = Transfers.state,
+    runner: ReadRunner,
+    replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
     private val clock: () -> Long = System::currentTimeMillis,
     private val normalization: () -> MerchantNormalization = { Graph.ruleMatcher().merchantNormalization },
 ) {
-    private val writes = LedgerWrites(context, scope, transfers)
+    /**
+     * The production runner over [context], which it asks for at each call
+     * (`GuardedRunner`), as `EntryGateRaceTest`'s provider needs.
+     */
+    constructor(
+        context: () -> Context,
+        scope: CoroutineScope,
+        clock: () -> Long = System::currentTimeMillis,
+        normalization: () -> MerchantNormalization = { Graph.ruleMatcher().merchantNormalization },
+    ) : this(scope, GuardedRunner(context), clock = clock, normalization = normalization)
 
     /**
      * Tests only: runs inside [save]'s guard, once it holds its lease and
@@ -84,18 +93,28 @@ class ManualEntries(
     @VisibleForTesting
     internal var midSave: () -> Unit = {}
 
-    /** The database would not open on the last write. */
-    val storageUnavailable: StateFlow<Boolean> = writes.storageUnavailable
-
-    /** The restore or delete-everything running, while one is; see the class KDoc. */
-    val busy: StateFlow<Operation?> = writes.busy
+    /** The restore or delete-everything running, while one is: the claim [read] refuses on. */
+    val busy: StateFlow<LedgerReplacement?> = replacement
 
     /**
-     * Spec 9.4's category chips, most used first ([rank]); empty until a read
-     * lands.
+     * Spec 9.4's category chips: every category but Uncategorized, by how many
+     * counted rows each has over the [RANKING_DAYS] days ending today, then
+     * `sort_order` (`CategoryDao.rankedByUse`, #100). Read on arrival, after
+     * each write, and wherever the entry screen reads it again
+     * (`rememberReadState`); its `ledger` is what the entry screen draws.
      */
-    private val _categories = MutableStateFlow<List<Category>>(emptyList())
-    val categories: StateFlow<List<Category>> = _categories.asStateFlow()
+    val read: ScreenRead<Unit, List<Category>> =
+        ScreenRead.fixed(scope, runner, "The categories cannot be read", replacement) { db ->
+            val today = LocalDates.calendarDay(LocalDates.of(clock()))
+            db.categoryDao().rankedByUse(
+                from = LocalDates.of(today.minusDays(RANKING_DAYS - 1L)),
+                to = LocalDates.of(today),
+            )
+        }
+
+    /** [read]'s chips, most used first; empty until a read lands, and kept through a refusal. */
+    val categories: StateFlow<List<Category>> =
+        read.state.map { it.answer.orEmpty() }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /**
      * Today by [clock] in the system zone, which a save is dated by: the date
@@ -122,29 +141,13 @@ class ManualEntries(
     private fun dayOf(moment: Long): LocalDate = Instant.ofEpochMilli(moment).atZone(ZoneId.systemDefault()).toLocalDate()
 
     init {
-        // Ranked on arrival, and again when a restore or delete ends: a rank
-        // asked for during one is refused, as a save is, and the chips would
-        // otherwise stay empty until the screen was reopened.
-        scope.launch { busy.collect { if (it == null) rank() } }
+        // Ranked on arrival. A replacement's rewrite is the screen's to read
+        // again on, as every screen's is.
+        rank()
     }
 
-    /**
-     * Read [categories] again: every category but Uncategorized, by how many
-     * counted rows each has over the [RANKING_DAYS] days ending today, then
-     * `sort_order` (`CategoryDao.rankedByUse`, #100). Refused, like [save],
-     * while a restore or delete runs.
-     */
-    fun rank(): Job = scope.launch {
-        if (writes.replacing) return@launch
-        writes.guarded("The categories cannot be read", unavailable = Unit) { db ->
-            val today = LocalDates.calendarDay(LocalDates.of(clock()))
-            _categories.value = db.categoryDao().rankedByUse(
-                from = LocalDates.of(today.minusDays(RANKING_DAYS - 1L)),
-                to = LocalDates.of(today),
-            )
-            writes.opened()
-        }
-    }
+    /** Read [categories] again. */
+    fun rank(): Job = read.refresh()
 
     /**
      * Spec 9.4's pre-selection (#102): the category [merchant], as typed, is
@@ -157,10 +160,7 @@ class ManualEntries(
         // Outside the lease, for the reason [save] gives.
         val key = withContext(Dispatchers.IO) { MerchantColumns.of(merchant, normalization()).key }
             ?: return@async null
-        if (writes.replacing) return@async null
-        writes.guarded("The merchant's category cannot be read", unavailable = null) { db ->
-            ruleFiling(db, key).also { writes.opened() }
-        }
+        read.lookup("The merchant's category cannot be read") { db -> ruleFiling(db, key) }.await().orNull()
     }
 
     /**
@@ -170,8 +170,8 @@ class ManualEntries(
      * The one lookup both the entry screen's pre-selection and an edit's
      * re-filing (#105) make.
      *
-     * Blocking, so only inside a `LedgerWrites.guarded` block, which leases
-     * the instance and hands it over as [db].
+     * Blocking, so only inside one of [read]'s bodies, which leases the
+     * instance and hands it over as [db].
      */
     internal fun ruleFiling(db: PingedDatabase, key: String): Long? = filer(db).file(key).categoryId
 
@@ -217,16 +217,15 @@ class ManualEntries(
      */
     fun save(draft: ManualDraft): Deferred<Long?> = scope.async {
         // Outside the lease: the first call builds the pack's matcher, which
-        // compiles every pattern, and a lease must not outlast a gate. Before
-        // [admitted], so its busy check stays next to the guard.
+        // compiles every pattern, and a lease must not outlast a gate.
         val merchant = withContext(Dispatchers.IO) { MerchantColumns.of(draft.merchant, normalization()) }
         val now = admitted(draft) ?: return@async null
         val zone = ZoneId.systemDefault()
-        writes.guarded("The payment could not be saved", unavailable = null) { db ->
+        read.write("The payment could not be saved") { db ->
             midSave()
             val chosen = draft.category
             val categories = db.categoryDao()
-            if (chosen != null && !categories.exists(chosen.categoryId)) return@guarded null
+            if (chosen != null && !categories.exists(chosen.categoryId)) return@write null
             db.txnDao().insert(
                 Txn(
                     rawCaptureId = null,
@@ -246,8 +245,8 @@ class ManualEntries(
                     createdAt = now,
                     updatedAt = now,
                 ),
-            ).also { writes.opened() }
-        }
+            )
+        }.await().orNull()
     }
 
     /**
@@ -264,9 +263,8 @@ class ManualEntries(
      * that will not open.
      */
     fun load(id: Long, createdAt: Long? = null): Deferred<Loaded?> = scope.async {
-        if (writes.replacing) return@async null
         val today = today()
-        writes.guarded("The payment could not be read", unavailable = null) { db ->
+        read.lookup("The payment could not be read") { db ->
             val stored = db.txnDao().byId(id)
                 ?.takeIf { it.rawCaptureId == null && (createdAt == null || it.createdAt == createdAt) }
             val loaded = stored?.let {
@@ -282,8 +280,8 @@ class ManualEntries(
                     ),
                 )
             } ?: Loaded.Gone
-            loaded.also { writes.opened() }
-        }
+            loaded
+        }.await().orNull()
     }
 
     /**
@@ -311,13 +309,13 @@ class ManualEntries(
      * [target]'s manual entry, so the screen closes as after a save.
      */
     fun update(target: EditTarget, draft: ManualDraft): Deferred<Boolean> = scope.async {
-        // Outside the lease, and before [admitted], for the reasons [save] gives.
+        // Outside the lease, for the reason [save] gives.
         val merchant = withContext(Dispatchers.IO) { MerchantColumns.of(draft.merchant, normalization()) }
         val now = admitted(draft) ?: return@async false
         val zone = ZoneId.systemDefault()
-        writes.guarded("The payment could not be corrected", unavailable = false) { db ->
+        read.write("The payment could not be corrected") { db ->
             val dao = db.txnDao()
-            val stored = dao.byId(target.id)?.takeIf { it.createdAt == target.createdAt } ?: return@guarded false
+            val stored = dao.byId(target.id)?.takeIf { it.createdAt == target.createdAt } ?: return@write false
             val uncategorized = db.categoryDao().requireUncategorizedId()
             val note = draft.note.trim().ifEmpty { null }
             val columns = ManualEdit.Merchant(merchant.raw, merchant.display, merchant.key)
@@ -331,10 +329,9 @@ class ManualEntries(
                     merchant.key?.let { ruleFiling(db, it) } ?: uncategorized
                 }?.takeIf { it != ManualEdit.Filing(stored.categoryId, stored.userEdited) },
             )
-            if (edit.filing?.let { db.categoryDao().exists(it.categoryId) } == false) return@guarded false
-            val written = if (edit == ManualEdit()) stored.rawCaptureId == null else dao.editManualEntry(target.id, target.createdAt, edit, now)
-            written.also { writes.opened() }
-        }
+            if (edit.filing?.let { db.categoryDao().exists(it.categoryId) } == false) return@write false
+            if (edit == ManualEdit()) stored.rawCaptureId == null else dao.editManualEntry(target.id, target.createdAt, edit, now)
+        }.await().orNull() ?: false
     }
 
     /**
@@ -349,25 +346,23 @@ class ManualEntries(
      * the row back would give it a new id and a new `created_at`.
      */
     fun delete(target: EditTarget): Deferred<Boolean> = scope.async {
-        if (writes.replacing) return@async false
-        writes.guarded("The payment could not be deleted", unavailable = false) { db ->
+        read.write("The payment could not be deleted") { db ->
             val dao = db.txnDao()
-            val gone = dao.deleteManualEntry(target.id, target.createdAt) == 1 ||
+            dao.deleteManualEntry(target.id, target.createdAt) == 1 ||
                 dao.byId(target.id)?.createdAt != target.createdAt
-            gone.also { writes.opened() }
-        }
+        }.await().orNull() ?: false
     }
 
     /**
      * The moment a write of [draft] is dated, or null where [save], [update]
-     * and [nearbyCapture] all refuse it before the guard: an amount of RM0.00
-     * or past [Amount.CEILING_SEN]; a restore or delete running
-     * ([LedgerWrites.replacing]); or a future day, which spec 9.4 forbids --
-     * the chip cannot offer one, but a draft kept past a clock moving back
-     * could still hold one.
+     * and [nearbyCapture] all refuse it before asking [read]: an amount of
+     * RM0.00 or past [Amount.CEILING_SEN]; or a future day, which spec 9.4
+     * forbids -- the chip cannot offer one, but a draft kept past a clock
+     * moving back could still hold one. A restore or delete running is
+     * [read]'s to refuse.
      */
     private fun admitted(draft: ManualDraft): Long? {
-        if (draft.amountSen !in 1..Amount.CEILING_SEN || writes.replacing) return null
+        if (draft.amountSen !in 1..Amount.CEILING_SEN) return null
         val now = clock()
         return now.takeUnless { draft.day?.isAfter(dayOf(now)) == true }
     }
@@ -389,7 +384,7 @@ class ManualEntries(
     fun nearbyCapture(draft: ManualDraft, editing: Long?): Deferred<NearbyCapture?> = scope.async {
         val now = admitted(draft) ?: return@async null
         val zone = ZoneId.systemDefault()
-        writes.guarded("Pinged could not look for the same payment", unavailable = null) { db ->
+        read.lookup("Pinged could not look for the same payment") { db ->
             val dao = db.txnDao()
             // An edit is dated as [update] would date it: on its unchanged
             // day, that is when it was paid, not now.
@@ -398,10 +393,12 @@ class ManualEntries(
             dao
                 .nearbyCapture(editing, draft.amountSen, at, wholeDay = draft.backdated, direction = draft.direction)
                 ?.let(NearbyCapture::of)
-                .also { writes.opened() }
-        }
+        }.await().orNull()
     }
 }
+
+/** What a body returned, or null for a refusal: [ManualEntries]' callers treat every refusal alike. */
+private fun <T> Outcome<T>.orNull(): T? = (this as? Outcome.Done)?.value
 
 /**
  * The chip a stored row's category shows as when edit mode opens (#105):

@@ -27,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import my.pinged.read.LedgerAccess
 
 /**
  * What each holder moved onto `:core:read` asks of it when a tap writes
@@ -87,7 +88,7 @@ class WritesReadBackTest {
             listOf("write The category could not be added", "read $CATEGORIES"),
             calls(),
         )
-        assertTrue("A refused write did not raise storage-unavailable", model.read.state.value.unavailable)
+        assertTrue("A refused write did not raise storage-unavailable", model.read.state.value.ledger == LedgerAccess.Unreadable)
     }
 
     @Test fun anAnsweredCorrectionIsReadBackInItsOwnTurn() {
@@ -116,7 +117,7 @@ class WritesReadBackTest {
         model.answer(card, ReviewAnswer.ACCEPT)
 
         assertNull("An answer that was refused is on offer for Undo", model.inbox.undoable.value)
-        assertTrue("A refused answer did not raise storage-unavailable", model.inbox.read.state.value.unavailable)
+        assertTrue("A refused answer did not raise storage-unavailable", model.inbox.read.state.value.ledger == LedgerAccess.Unreadable)
         assertFalse("A refused answer wrote", runner.calls[0].ran)
     }
 
