@@ -1,6 +1,7 @@
 package my.pinged.ledger.home
 
 import my.pinged.data.LocalDate
+import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
@@ -116,6 +117,14 @@ internal fun dayHeaderBetween(before: LedgerItem?, after: LedgerItem?): LedgerIt
  * [top] never holds Uncategorized (`TxnDao.monthTopNamed`, #273); [toSort]
  * is how many of the month's counted rows are filed there, every currency,
  * and draws `N TO SORT` above zero.
+ *
+ * [sources] is the month's sources line (#367; spec 8, "The sources line"),
+ * read in the same transaction as [totals] by `SourcesLine.read`, the call
+ * Charts makes, so the two screens name the same apps for a month. Here
+ * rather than beside the summary, so it exists exactly when a summary does
+ * and is never a guess drawn before one. Null draws no line: `readLedger`
+ * always passes one, and only a test drawing a board from before the line
+ * leaves it out.
  */
 data class MonthSummary(
     val month: YearMonth,
@@ -123,6 +132,7 @@ data class MonthSummary(
     val top: List<CategoryTotal>,
     val trustworthy: Boolean,
     val toSort: Int = 0,
+    val sources: SourcesLine? = null,
 )
 
 /**

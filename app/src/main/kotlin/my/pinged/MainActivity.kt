@@ -263,6 +263,9 @@ class MainActivity : ComponentActivity() {
                                         onOpenDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                                         onOpenSearch = { tabs.push(Search()) },
                                         onOpenToSort = { month, id -> tabs.push(Search(month.toString(), id)) },
+                                        // Onto Spending's stack, as Charts'
+                                        // line pushes onto Charts'.
+                                        onOpenSources = { tabs.push(Sources) },
                                         heard = current.heard,
                                         // Both lead to settings' root, where the
                                         // export sheet is hosted and the
