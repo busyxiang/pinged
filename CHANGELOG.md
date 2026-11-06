@@ -5,6 +5,13 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.16.1](https://github.com/busyxiang/pinged/compare/v0.16.0...v0.16.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* leave room under Charts' last line above the tab bar ([#390](https://github.com/busyxiang/pinged/issues/390)) ([f722df5](https://github.com/busyxiang/pinged/commit/f722df5ee9be942336613e478a7a517af552f6d0)), closes [#389](https://github.com/busyxiang/pinged/issues/389)
+
 ## [0.16.0](https://github.com/busyxiang/pinged/compare/v0.15.0...v0.16.0) (2026-11-06)
 
 
