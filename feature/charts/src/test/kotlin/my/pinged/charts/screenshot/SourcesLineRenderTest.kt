@@ -53,6 +53,7 @@ class SourcesLineRenderTest {
             setOf(TNG, MAE, GRAB),
             emptySet(),
             byHand = true,
+            packLabels = emptyMap(),
         ),
     )
 
@@ -63,6 +64,7 @@ class SourcesLineRenderTest {
             setOf(TNG, MAE),
             emptySet(),
             byHand = false,
+            packLabels = emptyMap(),
         ),
     )
 

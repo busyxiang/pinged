@@ -41,7 +41,7 @@ internal fun chartsRead(
     uncategorizedId: Long? = null,
     merchantTotals: List<MerchantTotal> = emptyList(),
     dayTotals: List<DayTotal> = emptyList(),
-    sources: SourcesLine = SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false),
+    sources: SourcesLine = SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false, packLabels = emptyMap()),
 ) = ChartsRead(
     month = month,
     record = recordFor(month, today, historyStart, captured),

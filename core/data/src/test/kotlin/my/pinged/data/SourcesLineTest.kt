@@ -28,7 +28,7 @@ class SourcesLineTest {
         rulePackages: Set<String> = PACK,
         paidFrom: Set<String> = emptySet(),
         byHand: Boolean = false,
-    ) = SourcesLine.of(sources, rulePackages, paidFrom, byHand).text
+    ) = SourcesLine.of(sources, rulePackages, paidFrom, byHand, packLabels = emptyMap()).text
 
     // ---- FROM -----------------------------------------------------------
 
@@ -189,7 +189,7 @@ class SourcesLineTest {
     // ---- the structure #368 and the screens draw from ----------------------
 
     @Test fun theSegmentsSpellTheTextAndMarkEachUnreadableName() {
-        val line = SourcesLine.of(listOf(tng, mae, grab), PACK, paidFrom = setOf(GRAB), byHand = false)
+        val line = SourcesLine.of(listOf(tng, mae, grab), PACK, paidFrom = setOf(GRAB), byHand = false, packLabels = emptyMap())
         assertEquals(line.text, line.segments.joinToString("") { it.text })
         assertEquals(
             "The warning's names are what #368 makes tap targets, so each must carry its package",
@@ -204,7 +204,7 @@ class SourcesLineTest {
         assertEquals(
             "NO APP IS READ YET opens Capture sources, so the screen has to find it",
             listOf(SourcesLine.Segment.NoAppRead),
-            SourcesLine.of(emptyList(), PACK, emptySet(), byHand = false).segments,
+            SourcesLine.of(emptyList(), PACK, emptySet(), byHand = false, packLabels = emptyMap()).segments,
         )
     }
 

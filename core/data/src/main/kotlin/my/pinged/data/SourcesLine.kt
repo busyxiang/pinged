@@ -121,7 +121,7 @@ class SourcesLine private constructor(
             rulePackages: Set<String>,
             paidFrom: Set<String>,
             byHand: Boolean,
-            packLabels: Map<String, String> = emptyMap(),
+            packLabels: Map<String, String>,
         ): SourcesLine {
             val labels = sources.associate { it.pkg to it.label }
             fun named(pkg: String): NamedSource {

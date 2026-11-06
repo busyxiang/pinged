@@ -65,7 +65,7 @@ class RewriteRereadTest {
 
     @Test fun couldNotReadReadsAgainWhenTheLedgerIsReplaced() {
         val viewModel = UnreadViewModel(app, runner)
-        compose.setContent { UnreadScreen(viewModel, onBack = {}, onTeach = {}) }
+        compose.setContent { UnreadScreen(viewModel, onBack = {}, onTeach = {}, onShowEveryApp = {}) }
         compose.waitForIdle()
         assertEquals("Unread was not read once when shown", 1, reads(UNREAD))
 

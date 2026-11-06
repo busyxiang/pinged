@@ -339,6 +339,7 @@ class LedgerScreenTest {
                 totals = listOf(CurrencyTotal("MYR", 120_450L)),
                 top = emptyList(),
                 trustworthy = false,
+                sources = null,
             ),
         )
         compose.waitForText(
@@ -381,6 +382,7 @@ class LedgerScreenTest {
                     CategoryTotal(41L, "SGD", 1_111L),
                 ),
                 trustworthy = trustworthy,
+                sources = null,
             ),
             categories = TWO_CATEGORIES,
         )
@@ -425,6 +427,7 @@ class LedgerScreenTest {
                 totals = emptyList(),
                 top = emptyList(),
                 trustworthy = false,
+                sources = null,
             ),
         )
         compose.waitForText(NOTHING_COUNTED, "A month with no countable rows did not say so")

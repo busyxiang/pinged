@@ -70,7 +70,7 @@ class GridDayClickTest {
                 uncategorizedId = null,
                 merchantTotals = emptyList(),
                 dayTotals = totals.map { (d, s) -> DayTotal(LocalDates.of(sep(d)), RINGGIT, s) },
-                sources = SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false),
+                sources = SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false, packLabels = emptyMap()),
             ),
         )
         val clicked = mutableListOf<LocalDate>()

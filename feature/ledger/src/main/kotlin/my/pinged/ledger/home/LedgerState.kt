@@ -124,7 +124,7 @@ internal fun dayHeaderBetween(before: LedgerItem?, after: LedgerItem?): LedgerIt
  * rather than beside the summary, so it exists exactly when a summary does
  * and is never a guess drawn before one. Null draws no line: `readLedger`
  * always passes one, and only a test drawing a board from before the line
- * leaves it out.
+ * passes null. No default, so a read that forgets it does not compile.
  */
 data class MonthSummary(
     val month: YearMonth,
@@ -132,7 +132,7 @@ data class MonthSummary(
     val top: List<CategoryTotal>,
     val trustworthy: Boolean,
     val toSort: Int = 0,
-    val sources: SourcesLine? = null,
+    val sources: SourcesLine?,
 )
 
 /**

@@ -46,6 +46,7 @@ internal val SEPTEMBER_SOURCES: SourcesLine = SourcesLine.of(
     rulePackages = setOf("my.com.tngdigital.ewallet", "com.maybank2u.life"),
     paidFrom = emptySet(),
     byHand = false,
+    packLabels = emptyMap(),
 )
 
 /** September 2026's summary, the boards' RM2,847.30 by default, with its sources line under the hero. */

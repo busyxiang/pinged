@@ -105,7 +105,7 @@ fun UnreadScreen(
     onBack: () -> Unit,
     onTeach: (UnreadCapture) -> Unit,
     modifier: Modifier = Modifier,
-    onShowEveryApp: () -> Unit = {},
+    onShowEveryApp: () -> Unit,
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()

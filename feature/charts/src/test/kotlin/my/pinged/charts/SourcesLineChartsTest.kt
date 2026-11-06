@@ -91,7 +91,7 @@ class SourcesLineChartsTest {
     }
 
     @Test fun aPastMonthWithEveryDayCapturedSaysMonthEnded() {
-        draw(SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false))
+        draw(SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false, packLabels = emptyMap()))
 
         compose.onNodeWithText("MONTH ENDED").assertExists()
         compose.onNodeWithText("MONTH COMPLETE").assertDoesNotExist()
@@ -99,7 +99,7 @@ class SourcesLineChartsTest {
 
     @Test fun noAppIsReadYetOpensCaptureSources() {
         var opened = 0
-        draw(SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false), onOpenSources = { opened++ })
+        draw(SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false, packLabels = emptyMap()), onOpenSources = { opened++ })
 
         compose.onNodeWithText("NO APP IS READ YET").performClick()
         assertEquals("NO APP IS READ YET did not open Capture sources", 1, opened)
@@ -121,6 +121,7 @@ class SourcesLineChartsTest {
                 setOf(TNG),
                 emptySet(),
                 byHand = false,
+                packLabels = emptyMap(),
             ),
             onOpenSources = { sources++ },
             onOpenUnread = { opened += it },

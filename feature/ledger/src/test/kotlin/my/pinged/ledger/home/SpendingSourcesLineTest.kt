@@ -40,9 +40,9 @@ class SpendingSourcesLineTest {
 
     private fun on(pkg: String, label: String) = CaptureSource(pkg, label, enabled = true, firstSeenAt = 0L)
 
-    private val tngAndGrab = SourcesLine.of(listOf(on(TNG, "Touch 'n Go"), on(GRAB, "GrabPay")), setOf(TNG), emptySet(), byHand = true)
+    private val tngAndGrab = SourcesLine.of(listOf(on(TNG, "Touch 'n Go"), on(GRAB, "GrabPay")), setOf(TNG), emptySet(), byHand = true, packLabels = emptyMap())
 
-    private val nothingRead = SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false)
+    private val nothingRead = SourcesLine.of(emptyList(), emptySet(), emptySet(), byHand = false, packLabels = emptyMap())
 
     private fun summary(sources: SourcesLine) = MonthSummary(
         month = october,

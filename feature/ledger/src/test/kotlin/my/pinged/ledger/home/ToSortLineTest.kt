@@ -36,6 +36,7 @@ class ToSortLineTest {
                     top = emptyList(),
                     trustworthy = true,
                     toSort = toSort,
+                    sources = null,
                 ),
                 categoriesById = emptyMap(),
                 onHeroBottom = {},
