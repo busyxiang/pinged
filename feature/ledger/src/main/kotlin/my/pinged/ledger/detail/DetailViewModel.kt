@@ -6,10 +6,17 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import my.pinged.capture.GuardedRunner
+import my.pinged.data.Databases
+import my.pinged.data.dao.BillChoice
 import my.pinged.data.dao.DetailRow
 import my.pinged.data.dao.TxnDao
+import my.pinged.ledger.bill.BillFor
+import my.pinged.ledger.bill.BillOffer
+import my.pinged.ledger.bill.offerBills
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
@@ -53,7 +60,7 @@ class DetailViewModel internal constructor(
      */
     internal val read: ScreenRead<Unit, DetailRead> = ScreenRead.fixed(viewModelScope, runner, "The payment cannot be read", replacement) { db ->
         val row = db.txnDao().detail(txnId)?.takeIf { it.row.txn.createdAt == createdAt }
-        DetailRead(row = row, chooser = rows.readChooser(db))
+        DetailRead(row = row, chooser = rows.readChooser(db), bill = row?.row?.txn?.billTxnId?.let(db.txnDao()::billChoice))
     }
 
     /** The category chooser and the merchant sheet, shared with the list; the row is read again after each write. */
@@ -62,6 +69,66 @@ class DetailViewModel internal constructor(
         runner = runner,
         screen = read.rowScreen(),
     )
+
+    /**
+     * The bill Not a payback took off, while its Undo is on offer (spec 9.7):
+     * until it is used, a later pick replaces it, or a restore or a
+     * delete-everything rewrites the ledger -- a delete restarts ids, so the
+     * id could name another payment afterwards.
+     */
+    private val _unlinked = MutableStateFlow<Long?>(null)
+    val unlinked: StateFlow<Long?> = _unlinked.asStateFlow()
+
+    init {
+        // Read here, not on the collector's first value, for `ReviewInbox`'s reason.
+        var file = Databases.rewrites.value
+        viewModelScope.launch {
+            Databases.rewrites.collect {
+                if (it != file) {
+                    file = it
+                    _unlinked.value = null
+                }
+            }
+        }
+    }
+
+    /** What the bill chooser lists for [payback] and [query], or null when it cannot be read, which closes it. */
+    suspend fun bills(payback: BillFor, query: String): BillOffer? =
+        (read.lookup("The bills could not be read") { db -> offerBills(db.txnDao(), payback, query) }.await() as? Outcome.Done)?.value
+
+    /**
+     * The chooser's pick (spec 7.4): `TxnDao.setBill`, whose guards a bill
+     * that stopped counting since the list was drawn meets; No bill (null)
+     * is [notAPayback].
+     */
+    fun pickBill(billId: Long?): Job {
+        if (billId == null) return notAPayback()
+        _unlinked.value = null
+        return write("The bill could not be set") { it.setBill(txnId, billId, now()) }
+    }
+
+    /**
+     * Not a payback (spec 9.7): `TxnDao.clearBill`, so the row is plain money
+     * received, counted on its own date, category and merchant, which the
+     * link never changed. Offers [undo] once written.
+     */
+    fun notAPayback(): Job {
+        val bill = read.state.value.answer?.row?.row?.txn?.billTxnId
+        return write("The payment could not be unlinked", after = { wrote -> if (wrote && bill != null) _unlinked.value = bill }) {
+            it.clearBill(txnId, now())
+        }
+    }
+
+    /**
+     * Undo Not a payback: the bill goes back on by `TxnDao.setBill`, held to
+     * its guards, so a bill left out meanwhile is not linked again behind the
+     * user's back. Spent either way.
+     */
+    fun undo(): Job {
+        val bill = _unlinked.value ?: return viewModelScope.launch {}
+        _unlinked.value = null
+        return write("The payback could not be put back") { it.setBill(txnId, bill, now()) }
+    }
 
     /** `TxnDao.setCapturedNote`. */
     fun saveNote(note: String): Job = write("The note could not be saved") { it.setCapturedNote(txnId, note, now()) }
@@ -100,9 +167,10 @@ class DetailViewModel internal constructor(
 
 /**
  * What one read of [DetailViewModel.read] found: [row], null when the row is gone,
- * and the chooser's half.
+ * the chooser's half, and the [bill] the row pays back, null for none.
  */
 internal data class DetailRead(
     val row: DetailRow?,
     val chooser: ChooserRead,
+    val bill: BillChoice? = null,
 )

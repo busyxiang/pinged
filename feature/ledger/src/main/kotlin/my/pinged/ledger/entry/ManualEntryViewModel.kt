@@ -20,7 +20,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.pinged.capture.GuardedRunner
+import my.pinged.data.dao.BillChoice
 import my.pinged.data.entity.Category
+import my.pinged.ledger.bill.BillFor
+import my.pinged.ledger.bill.BillOffer
+import my.pinged.ledger.bill.billDay
+import my.pinged.ledger.bill.shortDay
+import my.pinged.ui.CALENDAR
 import my.pinged.ledger.withholding
 import my.pinged.parse.Amount
 import my.pinged.parse.Direction
@@ -77,6 +83,16 @@ data class ManualEntryState(
     /** The entry was deleted (#106): the screen's cue to close, as [saved] is. */
     val deleted: Boolean = false,
     /**
+     * The bill [ManualDraft.bill] names, as read, so `PAYS BACK` can name it
+     * and say where Save counts the money; null until read, and for none.
+     */
+    val bill: BillChoice? = null,
+    /**
+     * For a typed bill being corrected, the day of its earliest payback: the
+     * latest day it may move to (spec 9.4). Null for any other entry.
+     */
+    val earliestPayback: LocalDate? = null,
+    /**
      * [editing]'s entry is no longer there -- deleted elsewhere, or replaced
      * by a delete-everything or a restore that may have given its id to
      * another payment: the screen's cue to close, as [deleted] is, with
@@ -91,7 +107,34 @@ data class ManualEntryState(
      * a delete, after which the screen reads the chips again and they say so. Off
      * while [nearby] asks its question: Add anyway is the save then.
      */
-    val canSave: Boolean get() = draft.amountSen > 0 && writable && nearby == null && (editing == null || loaded != null)
+    val canSave: Boolean get() =
+        draft.amountSen > 0 && writable && nearby == null && (editing == null || loaded != null) && dateConflict == null
+
+    /** The bill `PAYS BACK` names: under Received only, and once [bill] is the one the draft picked. */
+    val shownBill: BillChoice? get() = bill?.takeIf { draft.paysBack != null && it.txn.id == draft.paysBack }
+
+    /**
+     * What of this entry the bill's paid back already holds, for the line
+     * that says what the share becomes: the stored amount when the entry
+     * being corrected already pays back the bill picked, else nothing.
+     */
+    val countedSen: Long get() = loaded?.takeIf { it.paysBack != null && it.paysBack == draft.paysBack }?.amountSen ?: 0L
+
+    /**
+     * Why the date chip is [Stamp] and Save is off (spec 9.4,
+     * `design/CashPaybackEdit.dc.html`): a bill is dated on or before every
+     * payback it has, so a payback may not move before its bill, nor a typed
+     * bill after its earliest payback. Null while the date is fine.
+     */
+    val dateConflict: String? get() {
+        val day = draft.day ?: today
+        val bill = shownBill
+        return when {
+            bill != null && billDay(bill).isAfter(day) -> billAfterLine(billDay(bill))
+            draft.direction == Direction.EXPENSE && earliestPayback?.isBefore(day) == true -> paybackBeforeLine(earliestPayback)
+            else -> null
+        }
+    }
 
     /** [nearby]'s Add anyway: Save's conditions, the question aside. */
     val canAddAnyway: Boolean get() = nearby != null && writable
@@ -164,6 +207,12 @@ class ManualEntryViewModel internal constructor(
     internal val editing: EditTarget? = SavedDraft.editTarget(handle, target)
 
     private val draft = MutableStateFlow(restoredDraft ?: ManualDraft())
+
+    /** [ManualEntryState.bill]: the draft's bill, read whenever the pick changes. */
+    private val bill = MutableStateFlow<BillChoice?>(null)
+
+    /** [ManualEntryState.earliestPayback], read with a correction's entry. */
+    private val earliestPayback = MutableStateFlow<LocalDate?>(null)
     private val progress = MutableStateFlow(Progress.EDITING)
 
     /**
@@ -184,7 +233,13 @@ class ManualEntryViewModel internal constructor(
     private val nearbyDraft = combine(draft, warned) { draft, warned -> draft to warned?.takeIf { it.draft == draft }?.nearby }
 
     val state: StateFlow<ManualEntryState> =
-        combine(nearbyDraft, entries.categories, ledger, combine(progress, loaded, entries.today, ::Triple)) { (draft, nearby), categories, ledger, (progress, loaded, today) ->
+        combine(
+            nearbyDraft,
+            entries.categories,
+            ledger,
+            combine(progress, loaded, entries.today, ::Triple),
+            combine(bill, earliestPayback, ::Pair),
+        ) { (draft, nearby), categories, ledger, (progress, loaded, today), (bill, earliestPayback) ->
             ManualEntryState(
                 draft = draft,
                 categories = categories,
@@ -198,6 +253,8 @@ class ManualEntryViewModel internal constructor(
                 deleted = progress == Progress.DELETED,
                 gone = progress == Progress.GONE,
                 today = today,
+                bill = bill,
+                earliestPayback = earliestPayback,
             )
         }.stateIn(
             viewModelScope,
@@ -239,6 +296,13 @@ class ManualEntryViewModel internal constructor(
                 val categoryId = lookup(merchant).await()
                 draft.update { it.preselected(merchant, categoryId) }
             }
+        }
+        // The picked bill, read as the pick changes and again when a restore
+        // or delete ends, which may have taken it.
+        viewModelScope.launch {
+            combine(draft.map { it.bill }.distinctUntilChanged(), entries.busy) { id, busy -> id to busy }
+                .filter { (_, busy) -> busy == null }
+                .collectLatest { (id, _) -> bill.value = id?.let { entries.bill(it).await() } }
         }
         // A chip the ledger no longer has -- chosen before a restore or a
         // delete-everything replaced the categories -- is dropped once the
@@ -288,6 +352,7 @@ class ManualEntryViewModel internal constructor(
             is Loaded.Entry -> {
                 val first = loaded.value == null
                 loaded.value = read.draft
+                earliestPayback.value = read.earliestPayback
                 if (first && restoredDraft == null) draft.value = read.draft
             }
         }
@@ -317,6 +382,18 @@ class ManualEntryViewModel internal constructor(
     fun direction(direction: Direction) {
         draft.update { it.copy(direction = direction) }
     }
+
+    /**
+     * The bill chooser's pick under Received (spec 9.4), null for No bill.
+     * Not written until Save; it hides the category chips, since the bill
+     * decides the category.
+     */
+    fun pickBill(billId: Long?) {
+        draft.update { it.copy(bill = billId) }
+    }
+
+    /** What the bill chooser lists for [payback] and [query]; see [ManualEntries.bills]. */
+    suspend fun bills(payback: BillFor, query: String): BillOffer? = entries.bills(payback, query).await()
 
     /** The note field's text, as typed; see [ManualDraft.note]. */
     fun note(text: String) {
@@ -395,3 +472,9 @@ class ManualEntryViewModel internal constructor(
 
     private data class Warned(val draft: ManualDraft, val nearby: NearbyCapture)
 }
+
+/** The date line under a payback moved before its bill: `THE BILL, 15 AUG, IS AFTER THIS DATE`. */
+internal fun billAfterLine(billDay: LocalDate): String = "THE BILL, " + shortDay(billDay).uppercase(CALENDAR) + ", IS AFTER THIS DATE"
+
+/** The date line under a typed bill moved after a payback: `A PAYBACK, 16 AUG, IS BEFORE THIS DATE`. */
+internal fun paybackBeforeLine(paybackDay: LocalDate): String = "A PAYBACK, " + shortDay(paybackDay).uppercase(CALENDAR) + ", IS BEFORE THIS DATE"

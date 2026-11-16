@@ -1,0 +1,54 @@
+package my.pinged.ledger.bill
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** Spec 7.4's chooser ranking and its words, in the boards' own figures (`design/BillChooser.dc.html`, `InboxPayback`). */
+class BillWordsTest {
+    private val yuenKee = billChoice(1L, "Yuen Kee", 9_600L, SEP_18, paidBackSen = 3_200L)
+
+    @Test fun theAmountOrAWholeMultipleOfItRanksFirst() {
+        assertTrue("the payback's own amount", isMultiple(3_200L, 3_200L))
+        assertTrue("a dinner for three", isMultiple(9_600L, 3_200L))
+        assertFalse(isMultiple(6_400L, 3_000L))
+        assertFalse("a part of the payback is no multiple of it", isMultiple(1_600L, 3_200L))
+        assertFalse("a payback of nothing ranks nothing", isMultiple(0L, 0L))
+    }
+
+    @Test fun aBillPaidBackSaysHowMuchAndWhatTheShareIsBelowZeroWithATrueMinus() {
+        assertEquals("32.00 PAID BACK · YOUR SHARE 64.00", paidBackLine(yuenKee))
+        val rounded = billChoice(2L, "foodpanda", 6_400L, SEP_18, paidBackSen = 6_450L)
+        assertEquals("64.50 PAID BACK · YOUR SHARE \u22120.50", paidBackLine(rounded))
+        assertNull("nothing paid back draws no line", paidBackLine(billChoice(3L, "Tealive", 890L, SEP_20)))
+    }
+
+    @Test fun theCountsAgainstLineSubtractsOnlyWhatIsNotCountedYet() {
+        assertEquals(
+            "Counts against Food & Drinks on 18 Sep. Your share of Yuen Kee becomes RM32.00.",
+            countsAgainstLine(yuenKee, 3_200L),
+        )
+        // A typed payback already counted against it, retyped from RM32.00 to RM30.00.
+        val counted = billChoice(1L, "Yuen Kee", 9_600L, SEP_18, paidBackSen = 6_400L)
+        assertEquals(
+            "Counts against Food & Drinks on 18 Sep. Your share of Yuen Kee becomes RM34.00.",
+            countsAgainstLine(counted, paybackSen = 3_000L, countedSen = 3_200L),
+        )
+    }
+
+    @Test fun aBillIsWrittenAsItsNameThenItsDate() {
+        assertEquals("Yuen Kee · 18 Sep", billLabel(yuenKee))
+        assertEquals("FRI 18 SEP", chooserDay(SEP_18))
+        assertEquals("32.00, OR A MULTIPLE OF IT", multiplesHeading(3_200L, "MYR"))
+        assertEquals("ONLY BILLS THAT COUNT, ON OR BEFORE 20 SEP. A TAP PICKS AND CLOSES", chooserFootnote(SEP_20, searched = false))
+        assertEquals("No bill matches “kfc” on or before 20 Sep, in all of your history.", nothingLine(SEP_20, "kfc"))
+    }
+
+    @Test fun aSearchSaysHowManyItFoundOrThatItHoldsOnlyTheNewest() {
+        assertEquals("4 BILLS, ALL HISTORY", foundHeading(BillOffer.Found("64", List(4) { yuenKee }, capped = false)))
+        assertEquals("1 BILL, ALL HISTORY", foundHeading(BillOffer.Found("64", listOf(yuenKee), capped = false)))
+        assertEquals("THE NEWEST 200, ALL HISTORY", foundHeading(BillOffer.Found("a", List(200) { yuenKee }, capped = true)))
+    }
+}

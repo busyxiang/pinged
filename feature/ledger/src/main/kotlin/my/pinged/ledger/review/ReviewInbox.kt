@@ -17,6 +17,8 @@ import my.pinged.data.entity.Category
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.bill.BillOffer
+import my.pinged.ledger.bill.offerBills
 import my.pinged.read.LedgerAccess
 import my.pinged.read.LedgerReplacement
 import my.pinged.read.LedgerReplacements
@@ -100,6 +102,7 @@ class ReviewInbox(
                         checkLimitSen = limitSen,
                         pair = pair,
                         merge = pair?.let { MergeWay.of(row.txn, it, normalization) } ?: MergeWay.HELD,
+                        bill = row.txn.billTxnId?.let(txns::billChoice),
                     )
                 }
             }
@@ -155,6 +158,33 @@ class ReviewInbox(
     fun file(card: ReviewCard, categoryId: Long): Job = scope.launch {
         written("The category could not be set", unavailable = 0) { now ->
             fileAwaiting(card.txn.id, card.txn.pendingReason, categoryId, now)
+        }
+    }
+
+    /**
+     * What the bill chooser lists for [card] and [query] (spec 7.4), or null
+     * when the ledger cannot be read, which closes the chooser. A lookup, not
+     * the cards' read: only a money-back card asks, when its chooser opens
+     * and as its search is typed.
+     */
+    suspend fun bills(card: ReviewCard, query: String): BillOffer? =
+        (read.lookup("The bills could not be read") { db -> offerBills(db.txnDao(), card.billFor, query) }.await() as? Outcome.Done)?.value
+
+    /**
+     * [card]'s `PAYS BACK` pick (spec 9.2): `TxnDao.setBillAwaiting`, or for
+     * No bill (null) `TxnDao.clearBillAwaiting`, each guarded on the card as
+     * [file] is. **Not an answer**: Accept still commits the card, and this
+     * leaves what is on offer for Undo. The cards are read again before it
+     * returns, which is how the card names the bill, or shows the row as it
+     * now is when the pick was refused.
+     */
+    fun pickBill(card: ReviewCard, billId: Long?): Job = scope.launch {
+        written("The bill could not be set", unavailable = 0) { now ->
+            if (billId == null) {
+                clearBillAwaiting(card.txn.id, card.txn.pendingReason, now)
+            } else {
+                setBillAwaiting(card.txn.id, card.txn.pendingReason, billId, now)
+            }
         }
     }
 

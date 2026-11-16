@@ -68,7 +68,15 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import my.pinged.data.dao.BillChoice
 import my.pinged.data.entity.Category
+import my.pinged.ledger.bill.BillChooser
+import my.pinged.ledger.bill.BillFor
+import my.pinged.ledger.bill.BillLabel
+import my.pinged.ledger.bill.BillOffer
+import my.pinged.ledger.bill.NO_BILL_PICKED
+import my.pinged.ledger.bill.PAYS_BACK
+import my.pinged.ledger.bill.countsAgainstLine
 import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
 import my.pinged.ledger.home.CategoryPicker
@@ -145,6 +153,8 @@ fun ManualEntryScreen(
         onKeepEditing = viewModel::keepEditing,
         onDelete = viewModel::delete,
         onDeleted = onDeleted,
+        onPickBill = viewModel::pickBill,
+        bills = viewModel::bills,
     )
 }
 
@@ -154,6 +164,10 @@ fun ManualEntryScreen(
  * Driven by [state] and callbacks alone: every field spec 9.4 adds -- the
  * date chip beside the amount, the category chips, the merchant and the note
  * -- is one more value on [ManualEntryState] and one more callback here.
+ *
+ * Under Received, `PAYS BACK` opens spec 7.4's bill chooser, whose list
+ * [bills] reads; [onPickBill] reports the pick, null for No bill
+ * (`design/CashPayback.dc.html`).
  */
 @Composable
 internal fun ManualEntryScreenContent(
@@ -173,6 +187,8 @@ internal fun ManualEntryScreenContent(
     onKeepEditing: () -> Unit = {},
     onDelete: () -> Unit = {},
     onDeleted: () -> Unit = onSaved,
+    onPickBill: (Long?) -> Unit = {},
+    bills: suspend (BillFor, String) -> BillOffer? = { _, _ -> null },
 ) {
     LaunchedEffect(state.saved) { if (state.saved) onSaved() }
     LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
@@ -205,7 +221,10 @@ internal fun ManualEntryScreenContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 DirectionControl(state.draft.direction, onDirection)
-                DateChip(day = state.draft.day, today = state.today, onDay = onDay)
+                DateChip(day = state.draft.day, today = state.today, onDay = onDay, conflict = state.dateConflict != null)
+            }
+            state.dateConflict?.let {
+                Text(it, style = MonoLabel, color = Stamp, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp).testTag(DATE_CONFLICT))
             }
             AmountField(
                 sen = state.draft.amountSen,
@@ -213,7 +232,28 @@ internal fun ManualEntryScreenContent(
                 focusOnArrival = state.editing == null,
                 modifier = Modifier.fillMaxWidth(),
             )
-            CategoryChips(
+            val paysBack = state.draft.paysBack
+            val bill = state.shownBill
+            if (state.draft.direction == Direction.REFUND) {
+                PaysBack(
+                    payback = BillFor(
+                        state.draft.merchant.ifBlank { ENTERED_BY_HAND },
+                        state.draft.amountSen,
+                        RINGGIT,
+                        state.draft.day ?: state.today,
+                    ),
+                    picked = paysBack,
+                    bill = bill,
+                    countedSen = state.countedSen,
+                    amountSen = state.draft.amountSen,
+                    bills = bills,
+                    onPick = onPickBill,
+                )
+            }
+            // A bill decides the category, so its chips go while one is
+            // picked; one that has stopped counting leaves the money counting
+            // on its own, filed by them.
+            if (paysBack == null || bill?.counts == false) CategoryChips(
                 state.categories,
                 selected = state.draft.category?.categoryId,
                 subject = ChooserSubject(
@@ -272,6 +312,71 @@ private fun NotReadYet() {
                 }
             }
         }
+    }
+}
+
+/**
+ * `PAYS BACK` under Received (spec 9.4, `design/CashPayback.dc.html`): the
+ * label over a 44dp line naming the bill, `Warung Pak Din · 15 Aug`, or
+ * `None` in [Ink] before one is picked, with a [Muted] chevron; a tap opens
+ * the bill chooser. Once a counted bill is picked, one line in Karla says
+ * where Save will count the money and what the share becomes. [picked] is
+ * the draft's pick and [bill] its read, null while it is read.
+ */
+@Composable
+private fun PaysBack(
+    payback: BillFor,
+    picked: Long?,
+    bill: BillChoice?,
+    countedSen: Long,
+    amountSen: Long,
+    bills: suspend (BillFor, String) -> BillOffer?,
+    onPick: (Long?) -> Unit,
+) {
+    var choosing by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) {
+        Text(PAYS_BACK, style = MonoLabel, color = Muted)
+        Row(
+            Modifier
+                .padding(top = 4.dp)
+                .fillMaxWidth()
+                .dottedRule()
+                .clickable(role = Role.Button) { choosing = true }
+                .heightIn(min = 44.dp)
+                .testTag(PAYS_BACK_LINE),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.weight(1f)) {
+                when {
+                    bill != null -> BillLabel(bill, Ink)
+                    picked == null -> Text(NO_BILL_PICKED, fontFamily = Body, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = Ink)
+                }
+            }
+            Chevron(pointsRight = true, size = 17.dp, strokeWidth = 1.7.dp, tint = Muted)
+        }
+        if (bill != null && bill.counts) {
+            Text(
+                countsAgainstLine(bill, amountSen, countedSen),
+                fontFamily = Body,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = Muted,
+                modifier = Modifier.padding(top = 8.dp).testTag(BILL_LINE),
+            )
+        }
+    }
+    if (choosing) {
+        BillChooser(
+            payback = payback,
+            current = picked,
+            offer = { query -> bills(payback, query) },
+            onPick = {
+                choosing = false
+                onPick(it)
+            },
+            onDismiss = { choosing = false },
+        )
     }
 }
 
@@ -578,23 +683,24 @@ private fun CategoryChip(category: Category, chosen: Boolean, onTap: () -> Unit)
 /**
  * The date chip opposite the Paid/Received control, above the amount (#103): `Today`, or the past day the entry
  * is moved to, and a tap opens [EntryDatePicker]. Picking a day closes it.
+ * [Stamp] while [conflict]: the day puts a bill after its payback (spec 9.4).
  * The artboard has no date chip; it is outlined in [Border] like the
  * category chips, since `Rule` is the dotted rules' colour.
  */
 @Composable
-private fun DateChip(day: LocalDate?, today: LocalDate, onDay: (LocalDate) -> Unit) {
+private fun DateChip(day: LocalDate?, today: LocalDate, onDay: (LocalDate) -> Unit, conflict: Boolean = false) {
     var picking by rememberSaveable { mutableStateOf(false) }
     Box(
         Modifier
             .clip(RoundedCornerShape(2.dp))
             .clickable(role = Role.Button) { picking = true }
             .heightIn(min = 44.dp)
-            .border(1.dp, Border, RoundedCornerShape(2.dp))
+            .border(1.dp, if (conflict) Stamp else Border, RoundedCornerShape(2.dp))
             .padding(horizontal = 10.dp, vertical = 6.dp)
             .testTag(DATE_CHIP),
         contentAlignment = Alignment.Center,
     ) {
-        Text(EntryDate.chip(day, today), style = MonoLabel, color = Ink)
+        Text(EntryDate.chip(day, today), style = MonoLabel, color = if (conflict) Stamp else Ink)
     }
     if (picking) {
         EntryDatePicker(
@@ -800,6 +906,13 @@ fun entryBack(title: String): String = "Back from $title"
 
 /** What a test finds the date chip by. */
 internal const val DATE_CHIP = "manual-entry-date"
+
+/** What a test finds the line under a date that puts a bill after its payback by. */
+internal const val DATE_CONFLICT = "manual-entry-date-conflict"
+
+/** What a test finds `PAYS BACK`'s line by, and the line that says where Save counts a payback. */
+internal const val PAYS_BACK_LINE = "manual-entry-pays-back"
+internal const val BILL_LINE = "manual-entry-bill"
 
 /** What a test finds the amount field by. */
 internal const val AMOUNT_FIELD = "manual-entry-amount"

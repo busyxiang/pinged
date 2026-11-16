@@ -1688,6 +1688,9 @@ over the payback it is choosing for:
   friends rounded up. The current pick is ticked in Stamp.
 - A tap picks and closes the sheet; there is no Save. A search that finds
   nothing says what it searched and how far, and No bill stays.
+- Only bills in the payback's currency are offered: a payback counted against
+  one in another currency would put money of one currency into a line of
+  another.
 
 **Words.** `PAYS BACK` names the link and `PAID BACK` the amount. A bill is
 written as its name and then its date, `Yuen Kee · 18 Sep`: the name in
@@ -2083,7 +2086,11 @@ in Ink, `Yuen Kee · 18 Sep`, and `COUNTS AGAINST` gives way to one line in
 Karla saying where Accept will count the money and what the share becomes:
 `Counts against Food & Drinks on 18 Sep. Your share of Yuen Kee becomes
 RM32.00.` The chooser's No bill brings `COUNTS AGAINST` back. A merchant's
-refund, read by any other rule, never offers a bill here.
+refund, read by any other rule, never offers a bill here. The pack marks a
+received-money rule by its name alone, `<app>-received-v<N>`, and a test holds
+every bundled refund rule that asks to be checked to that name. A bill that
+stops counting after it was picked leaves `COUNTS AGAINST` asked again, since
+the money would count on its own.
 
 The pick is stored like the category's, one targeted `UPDATE` of
 `bill_txn_id` with the same guards, and **it is not an answer**: Accept still
@@ -2398,7 +2405,9 @@ One screen, pushed over the list with the tab bar hidden:
   screen under Received with the bill picked. A date moved before the
   bill's turns the chip Stamp, with `THE BILL, <DATE>, IS AFTER THIS DATE`
   under it, and Save is off until one of them moves (`CashPaybackEdit`). A
-  bill's date moved after a payback's is refused the same way.
+  bill's date moved after a payback's is refused the same way, with
+  `A PAYBACK, <DATE>, IS BEFORE THIS DATE` naming its earliest payback.
+  The writer refuses both as well, whatever the screen allowed.
 - **A row of category chips**, most used in the last 90 days first, then
   `sort_order`. Uncategorized is never a chip: no chip saves as
   Uncategorized. A merchant Pinged already files pre-selects its category; a

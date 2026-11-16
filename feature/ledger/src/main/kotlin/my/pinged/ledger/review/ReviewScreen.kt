@@ -57,6 +57,12 @@ import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.ledger.Withheld
 import my.pinged.ledger.busyLine
+import my.pinged.ledger.bill.BillChooser
+import my.pinged.ledger.bill.BillLabel
+import my.pinged.ledger.bill.BillOffer
+import my.pinged.ledger.bill.NO_BILL_PICKED
+import my.pinged.ledger.bill.PAYS_BACK
+import my.pinged.ledger.bill.countsAgainstLine
 import my.pinged.ledger.home.CategoryPicker
 import my.pinged.ledger.home.ChooserSubject
 import my.pinged.ledger.notice
@@ -123,6 +129,8 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
         onAcceptAll = { viewModel.inbox.acceptAll() },
         choices = viewModel.inbox::choices,
         onFile = { card, categoryId -> viewModel.inbox.file(card, categoryId) },
+        bills = viewModel.inbox::bills,
+        onPickBill = { card, billId -> viewModel.inbox.pickBill(card, billId) },
     )
 }
 
@@ -154,6 +162,11 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit, modifier: Modif
  * it counts against, and a tap on it opens the category sheet over the inbox.
  * [choices] reads the sheet's categories when it opens, null when they cannot
  * be read, which closes it; [onFile] reports the pick, which is not an answer.
+ *
+ * A card that offers a bill ([ReviewCard.offersBill]) draws `PAYS BACK` above
+ * that line, and a tap opens spec 7.4's bill chooser, whose list [bills]
+ * reads; [onPickBill] reports a pick, null for No bill, and it is not an
+ * answer either (`design/InboxPayback.dc.html`).
  */
 @Composable
 fun ReviewInboxScreenContent(
@@ -169,6 +182,8 @@ fun ReviewInboxScreenContent(
     onAcceptAll: () -> Unit = {},
     choices: suspend () -> List<Category>? = { null },
     onFile: (ReviewCard, Long) -> Unit = { _, _ -> },
+    bills: suspend (ReviewCard, String) -> BillOffer? = { _, _ -> null },
+    onPickBill: (ReviewCard, Long?) -> Unit = { _, _ -> },
 ) {
     val busy = ledger.withholding
     val acceptAll = cards?.let(AcceptAll::of)
@@ -178,6 +193,11 @@ fun ReviewInboxScreenContent(
     var offered by remember { mutableStateOf<List<Category>?>(null) }
     LaunchedEffect(cards, filing) {
         if (filing != null && cards != null && cards.none { it.txn.id == filing }) filing = null
+    }
+    // The card whose bill chooser is open, by its row's id, as [filing] is.
+    var billing by rememberSaveable { mutableStateOf<Long?>(null) }
+    LaunchedEffect(cards, billing) {
+        if (billing != null && cards != null && cards.none { it.txn.id == billing && it.offersBill }) billing = null
     }
     LaunchedEffect(filing) {
         offered = null
@@ -203,7 +223,21 @@ fun ReviewInboxScreenContent(
             acceptAll = acceptAll,
             onAcceptAll = onAcceptAll,
             onChooseCategory = { filing = it.txn.id },
+            onChooseBill = { billing = it.txn.id },
         )
+        val paying = cards?.firstOrNull { it.txn.id == billing }
+        if (paying != null && busy == null) {
+            BillChooser(
+                payback = paying.billFor,
+                current = paying.bill?.txn?.id,
+                offer = { query -> bills(paying, query) },
+                onPick = { billId ->
+                    billing = null
+                    if (billId != paying.bill?.txn?.id) onPickBill(paying, billId)
+                },
+                onDismiss = { billing = null },
+            )
+        }
         // A card that left the inbox while its sheet was open takes the sheet
         // with it: the pick would be an answer to nothing.
         val card = cards?.firstOrNull { it.txn.id == filing }
@@ -243,6 +277,7 @@ private fun Cards(
     acceptAll: AcceptAll?,
     onAcceptAll: () -> Unit,
     onChooseCategory: (ReviewCard) -> Unit,
+    onChooseBill: (ReviewCard) -> Unit,
 ) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = bottom + CARD_GAP)) {
         val refused = ledger.refused
@@ -269,6 +304,7 @@ private fun Cards(
                             card, margin, enabled = busy == null,
                             onAnswer = { onAnswer(card, it) },
                             onChooseCategory = { onChooseCategory(card) },
+                            onChooseBill = { onChooseBill(card) },
                         )
                     }
                 }
@@ -403,6 +439,7 @@ private fun ReviewCardView(
     enabled: Boolean,
     onAnswer: (ReviewAnswer) -> Unit,
     onChooseCategory: () -> Unit,
+    onChooseBill: () -> Unit,
 ) {
     val txn = card.txn
     Column(
@@ -450,7 +487,20 @@ private fun ReviewCardView(
 
         if (card.kind != CardKind.TRANSFER) MerchantAndAmount(card)
 
-        if (card.asksCategory) CategoryLine(card, enabled, onChooseCategory)
+        if (card.offersBill) PaysBackLine(card, enabled, ruled = !card.countsAgainstBill, onChooseBill)
+        val bill = card.bill
+        if (card.countsAgainstBill && bill != null) {
+            Text(
+                countsAgainstLine(bill, txn.amountSen),
+                fontFamily = Body,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = Muted,
+                modifier = Modifier.testTag(BILL_LINE),
+            )
+        } else if (card.asksCategory) {
+            CategoryLine(card, enabled, onChooseCategory)
+        }
 
         if (card.kind == CardKind.DUPLICATE) card.pair?.let { SideBySide(txn, it, dismissesPair = card.merge == MergeWay.GATEWAY_PAIR) }
 
@@ -524,6 +574,40 @@ private fun MerchantAndAmount(card: ReviewCard) {
             modifier = Modifier.weight(1f),
         )
         Text(amountOf(card, symbol = false), style = MonoNumerals.copy(fontSize = 15.sp, lineHeight = 20.sp), color = Ink)
+    }
+}
+
+/**
+ * A received-money card's `PAYS BACK` (spec 9.2, `design/InboxPayback.dc.html`):
+ * `None` in [Ink] until a bill is picked, then the bill, `Yuen Kee · 18 Sep`,
+ * and a [Muted] chevron either way. Ink, never [Stamp]: a bill is an offer the
+ * card does not need answered, so the category line under it stays the one
+ * open question. A tap opens the bill chooser. [ruled] draws the dotted rule
+ * that parts it from `COUNTS AGAINST`, which a counted bill takes away.
+ */
+@Composable
+private fun PaysBackLine(card: ReviewCard, enabled: Boolean, ruled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .padding(top = 2.dp)
+            .fillMaxWidth()
+            .then(if (ruled) Modifier.dottedRule() else Modifier)
+            .testTag(PAYS_BACK_LINE)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = 44.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(PAYS_BACK, style = MonoLabel, color = Muted)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            val bill = card.bill
+            if (bill != null) {
+                BillLabel(bill, Ink)
+            } else {
+                Text(NO_BILL_PICKED, fontFamily = Body, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = Ink)
+            }
+        }
+        Chevron(pointsRight = true, size = 17.dp, strokeWidth = 1.7.dp, tint = Muted)
     }
 }
 
@@ -682,6 +766,12 @@ const val CARD_READING = "reviewCardReading"
 
 /** A money-back card's category line, as a test finds it. */
 const val CATEGORY_LINE = "reviewCardCategory"
+
+/** A received-money card's `PAYS BACK` line, as a test finds it. */
+const val PAYS_BACK_LINE = "reviewCardPaysBack"
+
+/** The line that says where Accept counts a payback, as a test finds it. */
+const val BILL_LINE = "reviewCardBill"
 
 internal const val COUNTS_AGAINST = "COUNTS AGAINST"
 internal const val CHOOSE_A_CATEGORY = "Choose a category"

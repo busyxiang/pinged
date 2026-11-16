@@ -460,16 +460,36 @@ interface TxnDao {
      * (spec 9.4, story 45), and no id handed in can reach one. In one
      * transaction, so the row is never seen half corrected.
      */
+    fun editManualEntry(id: Long, createdAt: Long, edit: ManualEdit, updatedAt: Long): Boolean = try {
+        editManualEntryOrThrow(id, createdAt, edit, updatedAt)
+    } catch (_: RefusedWriteException) {
+        false
+    }
+
+    /**
+     * [editManualEntry]'s transaction; call that. A guard that refuses part
+     * of the edit throws, and the transaction rolls back every statement
+     * before it, so a refused edit writes nothing at all.
+     *
+     * Spec 7.4's link is held here as well as on screen: [ManualEdit.bill]
+     * comes off before the direction is written, since a payback switched to
+     * Paid is refused a direction while it has a bill; a bill goes on after
+     * the date, since [setBill] compares the two; and once everything is
+     * written, [datesOutOfOrder] refuses an entry left on either end of a
+     * link with its bill after its payback.
+     */
     @Transaction
-    fun editManualEntry(id: Long, createdAt: Long, edit: ManualEdit, updatedAt: Long): Boolean {
+    fun editManualEntryOrThrow(id: Long, createdAt: Long, edit: ManualEdit, updatedAt: Long): Boolean {
         if (edit == ManualEdit() || byId(id)?.createdAt != createdAt) return false
-        // First, so a direction the row may not take writes nothing at all.
-        edit.direction?.let { if (setManualDirection(id, it) == 0) return false }
+        if (edit.bill == ManualEdit.Bill(null)) clearBill(id, updatedAt)
+        edit.direction?.let { if (setManualDirection(id, it) == 0) throw RefusedWriteException() }
         edit.amountSen?.let { setManualAmount(id, it) }
         edit.occurredAt?.let { setManualDate(id, it, LocalDates.of(it)) }
         edit.merchant?.let { setManualMerchant(id, it.raw, it.display, it.key) }
         edit.note?.let { setManualNote(id, it.text) }
         edit.filing?.let { setManualFiling(id, it.categoryId, it.userEdited) }
+        edit.bill?.id?.let { if (setBill(id, it, updatedAt) != 1) throw RefusedWriteException() }
+        if (datesOutOfOrder(id)) throw RefusedWriteException()
         return touchManualEntry(id, updatedAt) == 1
     }
 
@@ -555,13 +575,7 @@ interface TxnDao {
         """
         UPDATE txn SET bill_txn_id = :billId, updated_at = :updatedAt
         WHERE id = :paybackId AND direction = 'REFUND' AND state != 'REJECTED'
-          AND EXISTS (
-            SELECT 1 FROM txn AS bill
-            WHERE bill.id = :billId AND bill.direction = 'EXPENSE'
-              AND bill.state = 'COMMITTED' AND bill.is_excluded = 0
-              AND bill.local_date <= txn.local_date
-          )
-        """,
+          AND """ + PICKABLE_BILL_SQL,
     )
     fun setBill(paybackId: Long, billId: Long, updatedAt: Long): Int
 
@@ -577,6 +591,114 @@ interface TxnDao {
         """,
     )
     fun clearBill(paybackId: Long, updatedAt: Long): Int
+
+    /**
+     * A money-back card's `PAYS BACK` pick (spec 9.2): [setBill]'s write and
+     * its guards, **and only while the row is still the one the card drew**
+     * -- `PENDING`, for [reason] -- as [fileAwaiting] guards the card's
+     * category. 1, or 0 when the row moved or the bill no longer counts, and
+     * the card reads again.
+     *
+     * Not an answer: `state` and `pending_reason` are left as they are, so
+     * the card stays and nothing is offered for Undo. The link stays through
+     * Accept, Not a payment and an Undo of either, as a filed category does;
+     * nothing counts a row awaiting review, so it counts against the bill
+     * from the moment Accept commits it.
+     */
+    @Query(
+        """
+        UPDATE txn SET bill_txn_id = :billId, updated_at = :updatedAt
+        WHERE id = :id AND state = 'PENDING' AND pending_reason IS :reason AND direction = 'REFUND'
+          AND """ + PICKABLE_BILL_SQL,
+    )
+    fun setBillAwaiting(id: Long, reason: PendingReason?, billId: Long, updatedAt: Long): Int
+
+    /**
+     * The chooser's No bill on a money-back card (spec 9.2): [clearBill],
+     * guarded on the card as [setBillAwaiting] is. 0 when the row moved, or
+     * pays back nothing already.
+     */
+    @Query(
+        """
+        UPDATE txn SET bill_txn_id = NULL, updated_at = :updatedAt
+        WHERE id = :id AND state = 'PENDING' AND pending_reason IS :reason AND bill_txn_id IS NOT NULL
+        """,
+    )
+    fun clearBillAwaiting(id: Long, reason: PendingReason?, updatedAt: Long): Int
+
+    /**
+     * Spec 7.4's chooser unsearched: the bills [setBill] would take that are
+     * in [currency] and dated [from] to [to] -- the payback's day and the
+     * sixty before it -- newest first, at most [limit]. A bill in another
+     * currency is not offered: a payback counted against it would put money
+     * of one currency into a line of another.
+     *
+     * The `+state` is the class KDoc's hint: the day range is the seek.
+     */
+    @Query(BILL_CHOICES_SQL)
+    fun billChoices(currency: String, from: LocalDate, to: LocalDate, limit: Int): List<BillChoice>
+
+    /**
+     * The chooser's search (spec 7.4), built by [BillSearchSql]: the bills
+     * [billChoices] would offer, over the whole history up to the payback's
+     * day, whose name has the words typed or whose amount is the one typed.
+     */
+    @RawQuery
+    fun billSearchRaw(query: SupportSQLiteQuery): List<BillChoice>
+
+    /**
+     * Bill [id] as a payback names it -- on the inbox card, the detail
+     * screen and manual entry -- whether or not it counts; null when it is
+     * gone.
+     */
+    @Query(BILL_CHOICE_SQL + "WHERE txn.id = :id")
+    fun billChoice(id: Long): BillChoice?
+
+    /**
+     * The earliest day any payback of [billId] is dated, or null for none:
+     * the latest day a typed bill may move to (spec 9.4), since a bill is
+     * dated on or before every payback it has. Served by `txn(bill_txn_id)`.
+     */
+    @Query("SELECT MIN(local_date) FROM txn WHERE bill_txn_id = :billId")
+    fun earliestPaybackDate(billId: Long): LocalDate?
+
+    /**
+     * Whether [id] stands on either end of a link whose bill is dated after
+     * its payback (spec 7.4): what [editManualEntry] refuses once its writes
+     * are made, in both directions, a payback moved before its bill and a
+     * bill moved after a payback.
+     */
+    @Query(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM txn AS payback JOIN txn AS bill ON bill.id = payback.bill_txn_id
+            WHERE payback.id = :id AND bill.local_date > payback.local_date
+        ) OR EXISTS (
+            SELECT 1 FROM txn AS payback JOIN txn AS bill ON bill.id = payback.bill_txn_id
+            WHERE payback.bill_txn_id = :id AND bill.local_date > payback.local_date
+        )
+        """,
+    )
+    fun datesOutOfOrder(id: Long): Boolean
+
+    /**
+     * Insert manual entry [txn] (spec 9.4) and, when [billId] is given, make
+     * it a payback of that bill by [setBill], whose guards it is then held
+     * to: the id, or null having written nothing when [setBill] refuses.
+     */
+    fun insertManual(txn: Txn, billId: Long?): Long? = try {
+        insertManualOrThrow(txn, billId)
+    } catch (_: RefusedWriteException) {
+        null
+    }
+
+    /** [insertManual]'s transaction, which a refused bill rolls back by throwing; call that. */
+    @Transaction
+    fun insertManualOrThrow(txn: Txn, billId: Long?): Long {
+        val id = insert(txn)
+        if (billId != null && setBill(id, billId, txn.updatedAt) != 1) throw RefusedWriteException()
+        return id
+    }
 
     /**
      * Paybacks naming no `EXPENSE`: their bill is not in the table, or is
@@ -1299,6 +1421,55 @@ interface TxnDao {
             "(txn.bill_txn_id IS NULL AND NOT EXISTS (SELECT 1 FROM txn AS payback WHERE payback.bill_txn_id = txn.id))"
 
         /**
+         * Bill `:billId` is one a payback `txn` may name (spec 7.4): an
+         * `EXPENSE` that counts, dated on or before `txn`. The guard of every
+         * write of `bill_txn_id` that sets one; read inside an `UPDATE txn`.
+         */
+        const val PICKABLE_BILL_SQL =
+            """EXISTS (
+                SELECT 1 FROM txn AS bill
+                WHERE bill.id = :billId AND bill.direction = 'EXPENSE'
+                  AND bill.state = 'COMMITTED' AND bill.is_excluded = 0
+                  AND bill.local_date <= txn.local_date
+              )"""
+
+        /**
+         * A bill as the chooser draws it ([BillChoice]): its row, name and
+         * category, and what its counted paybacks add up to, found through
+         * `txn(bill_txn_id)`. Ends in the joins; the caller adds its `WHERE`.
+         */
+        const val BILL_CHOICE_SQL =
+            """
+            SELECT txn.*,
+                   """ + MerchantSql.NAME + """ AS display_name,
+                   category.name AS category_name,
+                   (SELECT COALESCE(SUM(payback.amount_sen), 0) FROM txn AS payback
+                    WHERE payback.bill_txn_id = txn.id AND payback.state = 'COMMITTED' AND payback.is_excluded = 0
+                   ) AS paid_back_sen
+            FROM txn """ + MerchantSql.JOINS + """
+            LEFT JOIN category ON category.id = txn.category_id
+            """
+
+        /**
+         * The bills the chooser offers: [PICKABLE_BILL_SQL]'s, in `:currency`.
+         * `+state` for the class KDoc's reason, so the day is what seeks.
+         */
+        const val BILL_OFFERED_SQL =
+            "txn.direction = 'EXPENSE' AND +txn.state = 'COMMITTED' AND txn.is_excluded = 0 AND txn.currency = :currency"
+
+        /** The chooser's order: newest first, as the feed orders a day. */
+        const val BILL_ORDER = "ORDER BY txn.local_date DESC, txn.occurred_at DESC, txn.id DESC"
+
+        /**
+         * [billChoices]' query: the day range seeks
+         * `index_txn_local_date_occurred_at` and walks it newest first, and
+         * each bill's paybacks are found through `txn(bill_txn_id)`.
+         * `QueryPlanTest.theBillChooserSeeksTheDaysAndFindsPaybacksByTheirBill` pins it.
+         */
+        const val BILL_CHOICES_SQL =
+            BILL_CHOICE_SQL + "WHERE " + BILL_OFFERED_SQL + " AND txn.local_date BETWEEN :from AND :to " + BILL_ORDER + " LIMIT :limit"
+
+        /**
          * The feed's select, joins and `REJECTED` filter, without its order,
          * so [DAY_ROWS_SQL] can add its own clause between the two halves and
          * cannot otherwise differ from the feed.
@@ -1505,7 +1676,8 @@ interface TxnDao {
                    category.name AS category_name,
                    raw_capture.title AS capture_title,
                    raw_capture.text AS capture_text,
-                   raw_capture.big_text AS capture_big_text
+                   raw_capture.big_text AS capture_big_text,
+                   raw_capture.matched_rule_id AS matched_rule_id
             FROM txn """ + MerchantSql.JOINS + """
             LEFT JOIN category ON category.id = txn.category_id
             LEFT JOIN raw_capture ON raw_capture.id = txn.raw_capture_id
