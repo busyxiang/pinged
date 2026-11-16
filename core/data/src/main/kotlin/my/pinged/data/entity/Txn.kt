@@ -93,6 +93,25 @@ object PendingReasons {
 }
 
 /**
+ * Spec 7.4's half of a payback that its own row can show: it is money
+ * received. Whether its bill is an `EXPENSE` needs the bill's row, so
+ * `TxnDao.insert` reads it, and an import checks every bill once all its rows
+ * are in.
+ *
+ * Not part of [requireStorable], which a re-read's corrected row passes
+ * through too: that row is a copy of the stored one, link and all, and a
+ * re-read writes no link. Whether it may turn a payback into spending is
+ * decided in its `UPDATE`.
+ */
+fun Txn.requirePaybackShape() {
+    require(billTxnId == null || direction == Direction.REFUND) {
+        "A payback must be money received; this row is $direction and names " +
+            "bill $billTxnId. Spec 7.4 counts a payback against its bill's spending, " +
+            "so an EXPENSE pointing at a bill would subtract money that went out."
+    }
+}
+
+/**
  * Both directions of **both** of this table's flag/reason pairs, checked at the
  * write path because nothing below it can be: Room has no CHECK-constraint
  * support and this schema carries no triggers.
@@ -170,6 +189,26 @@ fun Txn.requireStorable() {
             childColumns = ["category_id"],
             onDelete = ForeignKey.RESTRICT,
         ),
+        // Spec 7.4's payback naming its bill. SET NULL, so deleting a manual
+        // bill leaves its paybacks as plain money received (spec 9.4) rather
+        // than refusing the delete or taking them with it.
+        //
+        // Deferred, because a restore inserts in id order and a bill can have
+        // a higher id than its payback: a cash bill typed after the friend's
+        // transfer arrived. Checked immediately, that file would refuse with
+        // SQLite 787. Deferred, it is checked at the commit of the import's one
+        // transaction, and `ImportJson.verifyReferences` refuses a dangling
+        // one first, by name. Every other writer names a bill it has just
+        // checked exists (`TxnDao.insert`, `TxnDao.setBill`), so the deferral
+        // changes no other outcome. SET NULL is an action, not a
+        // check, and fires at the delete whether deferred or not.
+        ForeignKey(
+            entity = Txn::class,
+            parentColumns = ["id"],
+            childColumns = ["bill_txn_id"],
+            onDelete = ForeignKey.SET_NULL,
+            deferred = true,
+        ),
     ],
     indices = [
         // Serves TxnDao.recent and nothing else, and that query is tests-only.
@@ -202,6 +241,10 @@ fun Txn.requireStorable() {
         // predicates") and the list of apps it offers, `TxnDao.sourceApps`,
         // which groups by it. Added in v3 with search's own table.
         Index("source_package"),
+        // Spec 15.1: a bill's paybacks, the counting fragment's self-join
+        // (spec 15.3), and the lookup `ON DELETE SET NULL` makes on every
+        // delete of a row, which would otherwise scan `txn`.
+        Index("bill_txn_id"),
     ],
 )
 data class Txn(
@@ -273,6 +316,14 @@ data class Txn(
      */
     @ColumnInfo(name = "exclusion_reason") val exclusionReason: ExclusionReason? = null,
     val note: String? = null,
+    /**
+     * The bill this row pays back (spec 7.4), null for every row that is not
+     * a payback. Non-null only on a [Direction.REFUND], and naming only an
+     * [Direction.EXPENSE]: [requirePaybackShape] holds the first on insert, and
+     * every other write of it is `TxnDao.setBill` or `TxnDao.clearBill`, which
+     * check both. No re-read writes it.
+     */
+    @ColumnInfo(name = "bill_txn_id") val billTxnId: Long? = null,
     @ColumnInfo(name = "user_edited") val userEdited: Boolean = false,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,

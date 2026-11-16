@@ -86,8 +86,12 @@ object Backup {
      *
      * 6 added spec 7.3's `standing_answers` (schema 7). An older file has
      * none, and restores with every transfer asked about, as it was.
+     *
+     * 7 added spec 7.4's `txns[].bill_txn_id` (schema 8). An older file has
+     * none, and each transaction is read with no bill: its ledger held no
+     * paybacks, so its money received comes back as plain money received.
      */
-    const val FORMAT_VERSION = 6
+    const val FORMAT_VERSION = 7
 
     /** The oldest format [ImportJson] still reads; see [BackupSection.sinceFormat]. */
     const val OLDEST_READABLE = 1
@@ -336,6 +340,7 @@ internal val TXN_SECTION = BackupSection<Txn>(
         BackupColumn("is_excluded", "isExcluded") { w, r -> w.value(r.isExcluded) },
         BackupColumn("exclusion_reason", "exclusionReason") { w, r -> w.enum(r.exclusionReason) },
         BackupColumn("note", "note") { w, r -> w.value(r.note) },
+        BackupColumn("bill_txn_id", "billTxnId") { w, r -> w.nullableLong(r.billTxnId) },
         BackupColumn("user_edited", "userEdited") { w, r -> w.value(r.userEdited) },
         BackupColumn("created_at", "createdAt") { w, r -> w.value(r.createdAt) },
         BackupColumn("updated_at", "updatedAt") { w, r -> w.value(r.updatedAt) },
@@ -343,6 +348,11 @@ internal val TXN_SECTION = BackupSection<Txn>(
     // `TxnDao.insert`, never `insertRow`: the checked one. An import is a write
     // path like any other and inherits spec 7.1's invariant by going through the
     // DAO, which is the whole reason that guard lives there.
+    //
+    // A payback can name a bill later in this section -- a cash bill typed after
+    // the transfer arrived has the higher id -- which `bill_txn_id`'s deferred
+    // foreign key allows until the import's commit. `ImportJson` checks every
+    // bill once the section is in.
     insert = { db, rows -> db.txnDao().insertAll(rows.map(ImportJson::txn)) },
 )
 

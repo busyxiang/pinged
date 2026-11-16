@@ -18,6 +18,7 @@ import my.pinged.data.Seed
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.data.entity.requirePaybackShape
 import my.pinged.data.entity.requireStorable
 import my.pinged.parse.Direction
 import my.pinged.parse.ExclusionReason
@@ -67,17 +68,35 @@ interface TxnDao {
      */
     fun insert(txn: Txn): Long {
         txn.requireStorable()
+        txn.requirePaybackShape()
+        txn.billTxnId?.let { bill ->
+            require(isExpense(bill)) {
+                "A payback must name an expense (spec 7.4); bill $bill is not one, or is gone."
+            }
+        }
         return insertRow(txn)
     }
 
+    /** Whether [id] is an `EXPENSE`, which spec 7.4 requires of every bill. */
+    @Query("SELECT EXISTS(SELECT 1 FROM txn WHERE id = :id AND direction = 'EXPENSE')")
+    fun isExpense(id: Long): Boolean
+
     /**
      * The batch form of [insert], checking every row before any reaches SQLite.
+     *
+     * Not a payback's bill: the one batch caller is a restore, whose bill can
+     * be a later row of the same file (`txn.bill_txn_id`'s foreign key is
+     * deferred for it), so `ImportJson` checks every bill once the section is
+     * in, with [paybacksWithoutAnExpenseCount].
      * Room's `@Insert(List)` is the same statement count as a loop but acquires
      * the prepared statement once: 997ms against 231ms for 20,000 rows in one
      * transaction.
      */
     fun insertAll(txns: List<Txn>) {
-        txns.forEach { it.requireStorable() }
+        txns.forEach {
+            it.requireStorable()
+            it.requirePaybackShape()
+        }
         insertAllRows(txns)
     }
 
@@ -435,12 +454,13 @@ interface TxnDao {
     @Transaction
     fun editManualEntry(id: Long, createdAt: Long, edit: ManualEdit, updatedAt: Long): Boolean {
         if (edit == ManualEdit() || byId(id)?.createdAt != createdAt) return false
+        // First, so a direction the row may not take writes nothing at all.
+        edit.direction?.let { if (setManualDirection(id, it) == 0) return false }
         edit.amountSen?.let { setManualAmount(id, it) }
         edit.occurredAt?.let { setManualDate(id, it, LocalDates.of(it)) }
         edit.merchant?.let { setManualMerchant(id, it.raw, it.display, it.key) }
         edit.note?.let { setManualNote(id, it.text) }
         edit.filing?.let { setManualFiling(id, it.categoryId, it.userEdited) }
-        edit.direction?.let { setManualDirection(id, it) }
         return touchManualEntry(id, updatedAt) == 1
     }
 
@@ -469,8 +489,23 @@ interface TxnDao {
     @Query("UPDATE txn SET category_id = :categoryId, user_edited = :userEdited WHERE id = :id AND raw_capture_id IS NULL")
     fun setManualFiling(id: Long, categoryId: Long, userEdited: Boolean): Int
 
-    /** [editManualEntry]'s direction (#355); call that. Only `direction`: totals follow it, nothing else moves. */
-    @Query("UPDATE txn SET direction = :direction WHERE id = :id AND raw_capture_id IS NULL")
+    /**
+     * [editManualEntry]'s direction (#355); call that. Only `direction`: totals
+     * follow it, nothing else moves.
+     *
+     * **Refused, 0 rows, for a payback or a bill that would change
+     * direction**, since a payback is always a `REFUND` and a bill always an
+     * `EXPENSE` (spec 7.4). Spec 9.4 turns Received off on a typed bill with
+     * paybacks; a typed payback switched to Paid has its bill cleared first,
+     * by [clearBill]. Unchanged, it writes its row, so 0 still means only
+     * "refused or not a manual entry".
+     */
+    @Query(
+        """
+        UPDATE txn SET direction = :direction
+        WHERE id = :id AND raw_capture_id IS NULL AND (direction = :direction OR $UNLINKED_SQL)
+        """,
+    )
     fun setManualDirection(id: Long, direction: Direction): Int
 
     /** [editManualEntry]'s last statement, whose count is its answer; call that. */
@@ -482,11 +517,73 @@ interface TxnDao {
      * 1, or 0 for a captured row, a row that is gone, and a row [id] names
      * that was not created at [createdAt] ([editManualEntry] says why).
      * `raw_capture_id IS NULL` keeps a captured row out, as in
-     * [editManualEntry]: it is the bank's word. No table references
-     * `txn.id`, so nothing is left dangling.
+     * [editManualEntry]: it is the bank's word. The one column that
+     * references `txn.id` is a payback's `bill_txn_id`, whose `ON DELETE SET
+     * NULL` leaves a typed bill's paybacks as plain money received (spec 9.4).
      */
     @Query("DELETE FROM txn WHERE id = :id AND created_at = :createdAt AND raw_capture_id IS NULL")
     fun deleteManualEntry(id: Long, createdAt: Long): Int
+
+    /**
+     * Make [paybackId] a payback of [billId] (spec 7.4), or move it to
+     * [billId] from another bill, answering the rows written: 1, or 0 for a
+     * pair this refuses.
+     *
+     * **The writer's half of spec 7.4's invariant**, in the `WHERE`, so that
+     * the row read and the row written are one: the payback is a `REFUND`
+     * and the bill an `EXPENSE`, so a bill is never itself a payback, nor
+     * a row its own bill. The rest is what the bill chooser offers,
+     * held here too because a chooser opened a minute ago can offer a bill
+     * that has since changed: the bill counts (`COMMITTED`, not excluded) and
+     * is dated on or before the payback, and the payback is not rejected.
+     * Both directions of a pick are the user's own, never a re-read's, so
+     * `user_edited` is left alone, as a note leaves it.
+     *
+     * One targeted `UPDATE` naming its own columns, for [setCategory]'s
+     * reason.
+     */
+    @Query(
+        """
+        UPDATE txn SET bill_txn_id = :billId, updated_at = :updatedAt
+        WHERE id = :paybackId AND direction = 'REFUND' AND state != 'REJECTED'
+          AND EXISTS (
+            SELECT 1 FROM txn AS bill
+            WHERE bill.id = :billId AND bill.direction = 'EXPENSE'
+              AND bill.state = 'COMMITTED' AND bill.is_excluded = 0
+              AND bill.local_date <= txn.local_date
+          )
+        """,
+    )
+    fun setBill(paybackId: Long, billId: Long, updatedAt: Long): Int
+
+    /**
+     * Not a payback (spec 9.7): [paybackId] becomes plain money received,
+     * counted on its own date, category and merchant, which a link never
+     * changed. 1, or 0 when it is gone or pays back nothing.
+     */
+    @Query(
+        """
+        UPDATE txn SET bill_txn_id = NULL, updated_at = :updatedAt
+        WHERE id = :paybackId AND bill_txn_id IS NOT NULL
+        """,
+    )
+    fun clearBill(paybackId: Long, updatedAt: Long): Int
+
+    /**
+     * Paybacks naming no `EXPENSE`: their bill is not in the table, or is
+     * money received. `ImportJson` refuses a file holding one; nothing else
+     * here can write one.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM txn AS payback
+        WHERE payback.bill_txn_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM txn AS bill WHERE bill.id = payback.bill_txn_id AND bill.direction = 'EXPENSE'
+          )
+        """,
+    )
+    fun paybacksWithoutAnExpenseCount(): Int
 
     /**
      * How many transactions are awaiting review (§9.2): the Spending list's
@@ -1177,6 +1274,16 @@ interface TxnDao {
      * into the annotation reaches it.
      */
     companion object {
+        /**
+         * A row on neither end of spec 7.4's link: no bill of its own, and no
+         * payback naming it. Only such a row may change `direction`, because
+         * a payback must stay a `REFUND` and a bill an `EXPENSE`. Read inside
+         * an `UPDATE txn`, where `txn` is the row being written; served by
+         * `txn(bill_txn_id)`.
+         */
+        const val UNLINKED_SQL =
+            "(txn.bill_txn_id IS NULL AND NOT EXISTS (SELECT 1 FROM txn AS payback WHERE payback.bill_txn_id = txn.id))"
+
         /**
          * The feed's select, joins and `REJECTED` filter, without its order,
          * so [DAY_ROWS_SQL] can add its own clause between the two halves and

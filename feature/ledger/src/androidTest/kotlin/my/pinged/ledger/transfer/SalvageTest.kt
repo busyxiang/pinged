@@ -501,6 +501,72 @@ class SalvageTest {
     }
 
     /**
+     * **A payback whose bill will not read is kept, as plain money
+     * received** (spec 7.4, 12). Four paybacks, each way round: naming an
+     * earlier bill and a later one, each either readable or on the damaged
+     * `txn` leaf. Without the salvage clearing the two whose bill is lost,
+     * the import refuses the whole file for them.
+     */
+    @Test(timeout = 120_000)
+    fun aPaybackWhoseBillWillNotReadIsKeptWithoutItAndTheFileRestores() {
+        val seeded = 2_000
+        // payback -> bill, as raw SQL: the bills a middle leaf is likely to
+        // hold, and two that are surely readable.
+        val links = mapOf(1L to 1_000L, 2L to 2_000L, 1_999L to 3L, 1_998L to 1_001L)
+        val pages = seedLedger(seeded) { db, _ ->
+            links.forEach { (payback, bill) ->
+                db.openHelper.writableDatabase.execSQL(
+                    "UPDATE txn SET direction = 'REFUND', bill_txn_id = $bill WHERE id = $payback",
+                )
+            }
+        }
+        val leaf = pages.single { it.tree == "txn" && it.type == "leaf" && 1_000L in it.ids }
+        val lost = leaf.ids
+        assertTrue("a payback is on the damaged leaf, so this test proves something else", links.keys.none { it in lost })
+        Databases.reset()
+        damage(leaf)
+
+        val (report, bytes) = salvage()
+        restore(bytes)
+
+        val cleared = links.filterValues { it in lost }.keys
+        assertEquals("paybacks whose bill was lost were not each counted", cleared.size, report.paybacksUnlinked)
+        val txns = restored().txnDao()
+        links.forEach { (payback, bill) ->
+            assertEquals("payback $payback's bill", bill.takeUnless { it in lost }, txns.byId(payback)!!.billTxnId)
+        }
+        val said = if (cleared.size == 1) {
+            "1 payback is kept as plain money received, because the bill it pays back is not in the file."
+        } else {
+            "${cleared.size} paybacks are kept as plain money received, because the bill each pays back is not in the file."
+        }
+        assertTrue("the sheet does not say so: ${salvageSentences(report)}", said in salvageSentences(report))
+    }
+
+    /** Paybacks naming a later bill are held to [SalvageJson.FORWARD_HELD], as captures are. */
+    @Test(timeout = 60_000)
+    fun pastTheBoundAPaybackNamingALaterBillIsClearedAndCounted() {
+        val over = 2
+        val seeded = SalvageJson.FORWARD_HELD + over + 1
+        val bill = seeded.toLong()
+        seedLedger(seeded) { db, _ ->
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE txn SET direction = 'REFUND', bill_txn_id = $bill WHERE id < $bill",
+            )
+        }
+        Databases.reset()
+
+        val (report, bytes) = salvage()
+        restore(bytes)
+
+        assertEquals("paybacks past the bound were not cleared and counted", over, report.paybacksUnlinked)
+        val txns = restored().txnDao()
+        assertEquals("a held payback lost its bill", bill, txns.byId(1L)!!.billTxnId)
+        assertEquals("the last held payback lost its bill", bill, txns.byId(SalvageJson.FORWARD_HELD.toLong())!!.billTxnId)
+        assertNull("a payback past the bound kept its bill", txns.byId(bill - 1)!!.billTxnId)
+    }
+
+    /**
      * **The key is read once a salvage, not at every reopen** -- a Keystore
      * load and an AES-GCM decrypt each, 7,410 of them over a damaged interior
      * page at 50,000. Shown by taking the key file away once the walk has

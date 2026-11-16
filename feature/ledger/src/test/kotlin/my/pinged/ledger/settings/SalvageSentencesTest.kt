@@ -122,6 +122,19 @@ class SalvageSentencesTest {
         )
     }
 
+    /** Spec 7.4: a payback whose bill is not in the file is said, in the singular and the plural. */
+    @Test fun paybacksKeptWithoutTheirBillAreSaid() {
+        assertTrue(
+            "1 payback is kept as plain money received, because the bill it pays back is not in the file." in
+                salvageSentences(report().copy(paybacksUnlinked = 1)),
+        )
+        assertTrue(
+            "3 paybacks are kept as plain money received, because the bill each pays back is not in the file." in
+                salvageSentences(report().copy(paybacksUnlinked = 3)),
+        )
+        assertFalse(salvageSentences(report()).any { "payback" in it })
+    }
+
     /** Spec 5.7: what a restore brings back to the unread list is said. */
     @Test fun ignoredMessagesThatComeBackAreSaid() {
         val said = salvageSentences(report().copy(lostWhole = setOf("user_reject_rule"), unhidden = 2))

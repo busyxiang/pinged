@@ -241,6 +241,8 @@ fun seedOneOfEverything(db: PingedDatabase): SeededLedger {
             isExcluded = true,
             exclusionReason = ExclusionReason.TRANSFER,
             note = "asked the bank about this one",
+            // Spec 7.4: the first transaction is this money's bill.
+            billTxnId = txns[0],
             userEdited = true,
             createdAt = 3L,
             updatedAt = 4L,

@@ -709,6 +709,13 @@ internal fun salvageSentences(report: SalvageReport): List<String> = buildList {
     copyMarkCleared(report.linksCleared, "could not be read")
     copyMarkCleared(report.linksClearedSince, "arrived after the rescue started")
     copyMarkCleared(report.linksUnheld, "came after ${if (report.linksUnheld == 1) "it" else "them"}")
+    if (report.paybacksUnlinked > 0) {
+        val one = report.paybacksUnlinked == 1
+        add(
+            "${count(report.paybacksUnlinked, "payback is", "paybacks are")} kept as plain money received, " +
+                "because the bill ${if (one) "it pays" else "each pays"} back is not in the file.",
+        )
+    }
     if ("category" in report.lostWhole) add("Your categories could not be read, so the file has the standard ones.")
     categoryLost(report.txnsUncategorized, "transaction is", "transactions are", "filed under Uncategorized", "could not be read")
     categoryLost(

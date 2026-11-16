@@ -289,6 +289,45 @@ class ImportFailureTest {
     }
 
     /**
+     * `txn.bill_txn_id`'s foreign key is deferred to the import's commit, so
+     * a payback naming nothing is found by the import's own check first,
+     * and refused as one -- not as a constraint failure at the commit, outside
+     * every message an import gives.
+     */
+    @Test fun aPaybackNamingNoBillIsRefused() {
+        val document = goodExport().editingOnly(Backup.TXNS) {
+            it.replace("\"bill_txn_id\":1,", "\"bill_txn_id\":6666,")
+        }
+        check(document.contains("\"bill_txn_id\":6666,")) { "the fixture's payback names bill 1" }
+        val target = fresh()
+        val thrown = assertThrows(ImportIntegrityException::class.java) { importInto(target, document) }
+        assertTrue(thrown.message!!, thrown.message!!.contains("payback"))
+        assertUntouched(target)
+    }
+
+    /** Spec 7.4: a bill is money spent. The fixture's payback named as its own bill is money received. */
+    @Test fun aPaybackNamingMoneyReceivedIsRefused() {
+        val document = goodExport().editingOnly(Backup.TXNS) {
+            it.replace("\"bill_txn_id\":1,", "\"bill_txn_id\":2,")
+        }
+        val target = fresh()
+        val thrown = assertThrows(ImportIntegrityException::class.java) { importInto(target, document) }
+        assertTrue(thrown.message!!, thrown.message!!.contains("payback"))
+        assertUntouched(target)
+    }
+
+    /** Spec 7.4: a payback is money received. The fixture's bill naming the payback is spending that does not. */
+    @Test fun spendingThatNamesABillIsRefused() {
+        val document = goodExport().editingOnly(Backup.TXNS) {
+            it.replaceFirst("\"bill_txn_id\":null,", "\"bill_txn_id\":2,")
+        }
+        val target = fresh()
+        val thrown = assertThrows(ImportIntegrityException::class.java) { importInto(target, document) }
+        assertTrue(thrown.message!!, thrown.message!!.contains("contradicts itself"))
+        assertUntouched(target)
+    }
+
+    /**
      * A ledger with no Uncategorized row restores cleanly and then throws on
      * the first capture, which is the definition of a restore that looks
      * successful and is not.

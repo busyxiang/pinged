@@ -16,6 +16,8 @@ import org.junit.Assert.assertTrue
 import my.pinged.data.entity.CaptureDay
 import my.pinged.data.entity.RawCapture
 import my.pinged.data.entity.Txn
+import my.pinged.parse.Confidence
+import my.pinged.parse.Direction
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -227,6 +229,63 @@ class RoundTripTest {
         assertEquals(1, report.userTemplateRules)
         assertEquals(0, report.standingAnswers)
         assertEquals(0, restored.standingAnswerDao().countAll())
+    }
+
+    /**
+     * A format-6 file -- every export before spec 7.4's paybacks -- restores
+     * with no bill on any transaction: its money received is plain money
+     * received, as its ledger held it.
+     */
+    @Test fun aFormatSixFileRestoresWithNoPaybacks() {
+        val original = fresh()
+        seedOneOfEverything(original)
+        val formatSix = String(exportBytes(original), Charsets.UTF_8)
+            .replaceFirst("{\"${Backup.FIELD_FORMAT}\":${Backup.FORMAT_VERSION}", "{\"${Backup.FIELD_FORMAT}\":6")
+            .replace(Regex("\"bill_txn_id\":(null|[0-9]+),"), "")
+        check("bill_txn_id" !in formatSix) { "a format-6 file carries no bill" }
+
+        val restored = fresh()
+        val report = ImportJson.read(restored, ByteArrayInputStream(formatSix.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(6, report.formatVersion)
+        assertEquals(2, report.standingAnswers)
+        assertEquals(listOf<Long?>(null, null), restored.txnDao().pageFrom(0L, 100).map { it.billTxnId })
+    }
+
+    /**
+     * A payback whose bill has the higher id restores: a cash bill typed after
+     * the friend's transfer arrived. The file is in id order, so the payback
+     * is inserted naming a row not yet there, which `bill_txn_id`'s deferred
+     * foreign key allows until the import commits.
+     */
+    @Test fun aPaybackBeforeItsBillRestores() {
+        val original = fresh()
+        val uncategorized = original.categoryDao().requireUncategorizedId()
+        fun row(direction: Direction, at: Long) = Txn(
+            rawCaptureId = null,
+            amountSen = 3_200L,
+            direction = direction,
+            occurredAt = at,
+            merchantRaw = null,
+            merchantDisplay = null,
+            merchantKey = null,
+            categoryId = uncategorized,
+            sourcePackage = null,
+            sourceLabel = null,
+            confidence = Confidence.HIGH,
+            state = TxnState.COMMITTED,
+            createdAt = at,
+            updatedAt = at,
+        )
+        val payback = original.txnDao().insert(row(Direction.REFUND, 1_788_300_000_000L))
+        val bill = original.txnDao().insert(row(Direction.EXPENSE, 1_788_200_000_000L))
+        assertEquals(1, original.txnDao().setBill(payback, bill, 1L))
+        val bytes = exportBytes(original)
+
+        val restored = fresh()
+        ImportJson.read(restored, ByteArrayInputStream(bytes))
+
+        assertEquals(bill, restored.txnDao().byId(payback)!!.billTxnId)
     }
 
     /**

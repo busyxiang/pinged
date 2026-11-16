@@ -606,6 +606,11 @@ interface RawCaptureDao : MerchantDecisions {
      * [comparedState] and [comparedReason] the re-read was compared against,
      * so neither an edit nor a review-inbox answer that lands between the
      * comparison and the write is ever overwritten (spec 5.5).
+     *
+     * `bill_txn_id` is not among them: a payback is the user's statement and
+     * no re-read touches it (spec 7.4). Nor may a re-read move a payback or a
+     * bill to the other direction, which would break the invariant the link
+     * rests on, so such a row is refused like an edited one.
      */
     @Query(
         "UPDATE txn SET amount_sen = :amountSen, direction = :direction, " +
@@ -613,7 +618,8 @@ interface RawCaptureDao : MerchantDecisions {
             "merchant_key = :merchantKey, confidence = :confidence, state = :state, " +
             "pending_reason = :pendingReason, updated_at = :updatedAt " +
             "WHERE id = :id AND user_edited = 0 " +
-            "AND state = :comparedState AND pending_reason IS :comparedReason"
+            "AND state = :comparedState AND pending_reason IS :comparedReason " +
+            "AND (direction = :direction OR " + TxnDao.UNLINKED_SQL + ")"
     )
     fun rewriteParsedFields(
         id: Long,
@@ -637,7 +643,8 @@ interface RawCaptureDao : MerchantDecisions {
      * [duplicateOf], and the capture marked compared, as one unit.
      *
      * Returns false, having written nothing, when the transaction has been
-     * edited, or its state or reason is no longer [compared]'s. A capture
+     * edited, its state or reason is no longer [compared]'s, or it is a
+     * payback or a bill that [corrected] would turn the other way. A capture
      * another writer has answered since [fromPackVersion] was read throws
      * [StaleCaptureException], which rolls the transaction's rewrite back with
      * it -- so of two answers to one re-read, one lands.

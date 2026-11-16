@@ -56,16 +56,19 @@ class SpreadsheetTransfersTest {
     /**
      * The whole file, written out by hand: the BOM, the header, a merchant
      * that is a formula with a comma and a quote in it, a refund, an
-     * excluded row, a manual entry with no app or raw name, and a note on
-     * two lines -- newest first, as the feed draws them.
+     * excluded row, a manual entry with no app or raw name, a note on
+     * two lines, and the refund paying back the Kedai bill (spec 7.4) --
+     * newest first, as the feed draws them.
      */
     @Test fun theFileIsSpecTwelvesColumnsAsASpreadsheetReadsThem() {
+        var bill = 0L
         val category = DatabaseFactory.build(app).useDb { db ->
             val id = db.categoryDao().requireUncategorizedId()
-            db.txnDao().insert(txn(id, 1234, SEP_7, display = "=Kedai, \"Kopi\"", raw = "QR-KEDAI"))
-            db.txnDao().insert(
+            bill = db.txnDao().insert(txn(id, 1234, SEP_7, display = "=Kedai, \"Kopi\"", raw = "QR-KEDAI"))
+            val payback = db.txnDao().insert(
                 txn(id, 500, SEP_8, display = "Grab", raw = "GRAB*1", direction = Direction.REFUND, excluded = true, note = "two\nlines"),
             )
+            check(db.txnDao().setBill(payback, bill, 1L) == 1)
             db.txnDao().insert(txn(id, 7, SEP_6, display = "Warung", raw = null, pkg = null))
             db.categoryDao().all().single { it.id == id }.name
         }
@@ -76,10 +79,10 @@ class SpreadsheetTransfersTest {
         assertEquals(TransferJob.Spreadsheet(3, savedAs = "mine.csv"), job)
         assertEquals(
             "\uFEFF" +
-                "date,amount,currency,direction,merchant_display,merchant_raw,category,source_app,excluded,note\r\n" +
-                "2026-09-08,5.00,MYR,REFUND,Grab,GRAB*1,$category,Grab,true,\"two\nlines\"\r\n" +
-                "2026-09-07,12.34,MYR,EXPENSE,\"'=Kedai, \"\"Kopi\"\"\",QR-KEDAI,$category,Grab,false,\r\n" +
-                "2026-09-06,0.07,MYR,EXPENSE,Warung,,$category,,false,\r\n",
+                "date,amount,currency,direction,merchant_display,merchant_raw,category,source_app,excluded,note,pays_back\r\n" +
+                "2026-09-08,5.00,MYR,REFUND,Grab,GRAB*1,$category,Grab,true,\"two\nlines\",$bill\r\n" +
+                "2026-09-07,12.34,MYR,EXPENSE,\"'=Kedai, \"\"Kopi\"\"\",QR-KEDAI,$category,Grab,false,,\r\n" +
+                "2026-09-06,0.07,MYR,EXPENSE,Warung,,$category,,false,,\r\n",
             target.readText(Charsets.UTF_8),
         )
     }

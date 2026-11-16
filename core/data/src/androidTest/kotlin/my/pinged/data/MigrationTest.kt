@@ -42,6 +42,7 @@ class MigrationTest {
         const val MIGRATED_1_TO_5 = "migration-1-5.db"
         const val MIGRATED_TO_6 = "migration-%d-6.db"
         const val MIGRATED_TO_7 = "migration-%d-7.db"
+        const val MIGRATED_TO_8 = "migration-%d-8.db"
 
         /** One unread capture, in the columns every version from v1 shares. */
         const val CAPTURE_SQL =
@@ -354,6 +355,52 @@ class MigrationTest {
         }
     }
 
+    /**
+     * Spec 7.4's v7 -> v8, [MIGRATION_7_8], from each released version: every
+     * row kept with no bill, and the new link behaving on the migrated file
+     * as it does on a fresh one. Room's validation reads `PRAGMA
+     * foreign_key_list`, which does not report the deferral, so it is
+     * exercised: a payback inserted before the later-numbered bill it names
+     * commits, as a restore needs. And `ON DELETE SET NULL`: deleting the
+     * bill leaves the payback.
+     */
+    @Test fun everyReleasedVersionMigratesToEightWithEveryRowAndAWorkingLink() {
+        for (from in 1..7) {
+            val name = MIGRATED_TO_8.format(from)
+            helper.createDatabase(name, from).use { old ->
+                old.insertSeededPair()
+                old.insertSampleTxn(categoryId = 1)
+                old.execSQL(CAPTURE_SQL)
+                if (from >= 7) {
+                    old.execSQL(
+                        "INSERT INTO standing_answer (matched_rule_id, source_package, merchant_key, created_at) " +
+                            "VALUES ('tng-transfer-v1', 'my.com.tngdigital.ewallet', 'AH MENG', 1)",
+                    )
+                }
+            }
+
+            helper.runMigrationsAndValidate(name, 8, true, MIGRATION_3_4, MIGRATION_7_8).use { v8 ->
+                assertEquals("v$from's transaction", listOf<String?>(null), v8.column("SELECT bill_txn_id FROM txn WHERE id = 7"))
+                assertEquals("v$from's capture", 1L, v8.count("raw_capture"))
+                assertEquals("v$from's standing answer", if (from >= 7) 1L else 0L, v8.count("standing_answer"))
+                assertEquals(8L, v8.pragma("user_version"))
+
+                v8.beginTransaction()
+                try {
+                    v8.insertTxn(id = 8, direction = "REFUND", merchant = "AH MENG", billId = 9)
+                    v8.insertTxn(id = 9, direction = "EXPENSE", merchant = "YUEN KEE", billId = null)
+                    v8.setTransactionSuccessful()
+                } finally {
+                    v8.endTransaction()
+                }
+                assertEquals("v$from: the payback before its bill", listOf<String?>("9"), v8.column("SELECT bill_txn_id FROM txn WHERE id = 8"))
+
+                v8.execSQL("DELETE FROM txn WHERE id = 9")
+                assertEquals("v$from: the bill's delete", listOf<String?>(null), v8.column("SELECT bill_txn_id FROM txn WHERE id = 8"))
+            }
+        }
+    }
+
     // ---- harness/app DDL parity ----------------------------------------
 
     /**
@@ -489,6 +536,19 @@ class MigrationTest {
                 "(7, NULL, 1250, 'MYR', 'EXPENSE', 1788739200000, 20260907, " +
                 "'YUENKEEHOMETOWNCAFE', 'Yuenkeehometowncafe', 'YUENKEEHOMETOWNCAFE', $categoryId, " +
                 "NULL, NULL, 'HIGH', 'COMMITTED', NULL, 0, NULL, NULL, 0, 1, 1)",
+        )
+    }
+
+    /** A `txn` row at v8, where [billId] is the payback's bill or null. */
+    private fun SupportSQLiteDatabase.insertTxn(id: Long, direction: String, merchant: String, billId: Long?) {
+        execSQL(
+            "INSERT INTO txn (id, raw_capture_id, amount_sen, currency, direction, occurred_at, " +
+                "local_date, merchant_raw, merchant_display, merchant_key, category_id, " +
+                "source_package, source_label, confidence, state, pending_reason, is_excluded, " +
+                "exclusion_reason, note, bill_txn_id, user_edited, created_at, updated_at) VALUES " +
+                "($id, NULL, 3200, 'MYR', '$direction', 1788739200000, 20260907, " +
+                "'$merchant', '$merchant', '$merchant', 1, " +
+                "NULL, NULL, 'HIGH', 'COMMITTED', NULL, 0, NULL, NULL, ${billId ?: "NULL"}, 0, 1, 1)",
         )
     }
 

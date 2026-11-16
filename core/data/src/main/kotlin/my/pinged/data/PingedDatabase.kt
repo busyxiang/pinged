@@ -47,7 +47,8 @@ import my.pinged.data.entity.UserTemplateRule
     // in v1 already. v6 is the same for spec 5.8's `user_template_rule`; a
     // taught rule's transactions name it as text in `matched_rule_id`, in v1.
     // v7 is the same for spec 7.3's `standing_answer`: nothing references it,
-    // and no `txn` column records which answer wrote a row.
+    // and no `txn` column records which answer wrote a row. v8 is
+    // [MIGRATION_7_8], written by hand; see there for why.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3, spec = PingedDatabase.IndexExistingRows::class),
@@ -64,7 +65,7 @@ abstract class PingedDatabase : RoomDatabase() {
          * because reading it back through `openHelper` is a path ruling R42
          * keeps to an allowlist.
          */
-        const val VERSION = 7
+        const val VERSION = 8
     }
 
     /**
@@ -158,5 +159,34 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         Seed.NAMES_BEFORE_V4.forEach { name ->
             db.execSQL("UPDATE category SET seed_name = ? WHERE name = ?", arrayOf<Any>(name, name))
         }
+    }
+}
+
+/**
+ * v7 -> v8: spec 7.4's `txn.bill_txn_id`, its foreign key to `txn.id` and its
+ * index. Every existing row is no payback, so the column starts null and
+ * nothing is backfilled.
+ *
+ * **By hand, because Room's auto-migration rebuilds `txn` for a new foreign
+ * key.** Read off Room 2.8.4's generated `AutoMigration(7, 8)`: a `_new_txn`
+ * copy of every row, `DROP TABLE txn`, a RENAME and all nine indices built
+ * again, on the largest table on the phone, at the first open after the
+ * update. SQLite adds a column with a `REFERENCES` clause in place, because
+ * its default is NULL, and no row is touched. (Search's sync triggers survive
+ * either way: Room drops them before any migration and creates them again
+ * after, in `onPostMigrate`.)
+ *
+ * The clause is the one Room writes for the entity, `DEFERRABLE INITIALLY
+ * DEFERRED` included. Room's validation reads `PRAGMA foreign_key_list`,
+ * which does not report deferral, so `MigrationTest` exercises it: a
+ * payback inserted before its bill commits.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE `txn` ADD COLUMN `bill_txn_id` INTEGER REFERENCES `txn`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED",
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_bill_txn_id` ON `txn` (`bill_txn_id`)")
     }
 }

@@ -47,7 +47,9 @@ class ExportCursorTest {
         val txnsBefore = target.txnDao().countAll()
 
         // Straight to SQL: no DAO renumbers a row, because nothing in the app
-        // has any reason to.
+        // has any reason to. The fixture's payback names this row as its bill
+        // (spec 7.4), and `bill_txn_id`'s key would refuse the renumbering.
+        target.openHelper.writableDatabase.execSQL("UPDATE txn SET bill_txn_id = NULL")
         target.openHelper.writableDatabase
             .execSQL("UPDATE txn SET id = -1 WHERE id = $victim")
 

@@ -87,7 +87,10 @@ in 4s with an empty result XML. Why is not understood. `class=` with one
 fully qualified name has done the same, with `--no-configuration-cache`
 passed, for a class added to the APK in that build
 (`ReviewFocusScrollTest`); `tests_regex=.*ReviewFocusScrollTest.*` then ran
-it.
+it. In `:core:data`, `.*(PaybackWriteTest|MigrationTest|SchemaConstraintTest|EnumVocabularyTest|QueryPlanTest|WritePathTest|PendingReasonTest).*`
+selected no test either, while `.*MigrationTest.*` alone ran its 17 and a
+six-name alternation ran in `:feature:ledger` in the same lease. Run one
+class per `gradlew` call when the XML's count matters.
 
 Before calling work done, run the suites the change can reach, which is what
 CI's emulator job runs on a pull request into `main` that is not a draft, at
