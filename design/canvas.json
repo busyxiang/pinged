@@ -409,6 +409,150 @@
       "w": 390,
       "h": 844,
       "page": "page-1"
+    },
+    {
+      "file": "PaybackList.dc.html",
+      "x": 0,
+      "y": 9000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "PaybackList320.dc.html",
+      "x": 490,
+      "y": 9000,
+      "w": 320,
+      "h": 640,
+      "page": "page-1"
+    },
+    {
+      "file": "PaybackListLeftOut.dc.html",
+      "x": 980,
+      "y": 9000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "DetailBill.dc.html",
+      "x": 1470,
+      "y": 9000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "DetailBillExcluded.dc.html",
+      "x": 1960,
+      "y": 9000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "NotPaymentBill.dc.html",
+      "x": 2450,
+      "y": 9000,
+      "w": 390,
+      "h": 340,
+      "page": "page-1"
+    },
+    {
+      "file": "DetailPayback.dc.html",
+      "x": 2940,
+      "y": 9000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "DetailRefund.dc.html",
+      "x": 3430,
+      "y": 9000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "DetailRefundFiled.dc.html",
+      "x": 3920,
+      "y": 9000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "InboxPayback.dc.html",
+      "x": 0,
+      "y": 10000,
+      "w": 390,
+      "h": 740,
+      "page": "page-1"
+    },
+    {
+      "file": "BillChooser.dc.html",
+      "x": 490,
+      "y": 10000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "BillChooserSearch.dc.html",
+      "x": 980,
+      "y": 10000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "BillChooserEmpty.dc.html",
+      "x": 1470,
+      "y": 10000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "BreakdownPayback.dc.html",
+      "x": 1960,
+      "y": 10000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "CashPayback.dc.html",
+      "x": 2450,
+      "y": 10000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "CashPaybackEdit.dc.html",
+      "x": 2940,
+      "y": 10000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "CashBill.dc.html",
+      "x": 3430,
+      "y": 10000,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "DeleteBill.dc.html",
+      "x": 3920,
+      "y": 10000,
+      "w": 390,
+      "h": 300,
+      "page": "page-1"
     }
   ],
   "annotations": [
@@ -427,6 +571,14 @@
       "w": 900,
       "page": "page-2",
       "text": "Directions not taken. Kept as a record of the choice, not for further work."
+    },
+    {
+      "id": "note-paybacks",
+      "x": 0,
+      "y": 8900,
+      "w": 1400,
+      "page": "page-1",
+      "text": "Rows 10 and 11, proposed in #392 and not built: a friend's payback counted against the bill it pays back. Yuen Kee on 18 September is a RM96.00 dinner for three, two RM32.00 paybacks, so its Breakdown line already holds the RM32.00 share. The typed-by-hand boards are pinned to August."
     }
   ],
   "launch": {

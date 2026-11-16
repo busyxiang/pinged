@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body { margin: 0; }
+a { color: #a03826; } a:hover { color: #7a2a1c; }
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- Siti Hajar's cash payback reopened to correct it (#392). A manual entry opens here, never on Detail, so this is where its bill changes: PAYS BACK opens the chooser, whose No bill makes it plain money received again. The date chip was moved to 14 August, a day before the bill. A bill must be on or before its payback, so the chip and the line under it turn Stamp and Save changes is off until either moves. -->
+  <div style="padding: 12px 0 0 8px;">
+    <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+    </div>
+  </div>
+  <div style="padding: 8px 20px 0; font-family: 'Instrument Serif', Georgia, serif; font-size: 24px; line-height: 28px;">Edit money received</div>
+
+  <div style="padding: 16px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex;">
+      <div style="min-height: 44px; padding: 0 10px; display: flex; align-items: center; border: 1px solid #ded5c4; border-radius: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #6b6459;">PAID</div>
+      <div style="min-height: 44px; padding: 0 10px; display: flex; align-items: center; border: 1px solid #1a1714; border-radius: 2px; background: #efe7d8; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #1a1714; position: relative; z-index: 1; margin-left: -1px;">RECEIVED</div>
+    </div>
+    <div style="min-height: 44px; padding: 0 12px; display: flex; align-items: center; border: 1px solid #a03826; border-radius: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #a03826;">14 AUG</div>
+  </div>
+  <div style="padding: 8px 20px 0; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: #a03826;">THE BILL, 15 AUG, IS AFTER THIS DATE</div>
+
+  <div style="padding: 22px 20px 0; display: flex; align-items: baseline; gap: 4px;">
+    <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 30px; color: #8a8175;">RM</span>
+    <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 58px; line-height: 1; font-variant-numeric: tabular-nums lining-nums;">20.00</span>
+  </div>
+
+  <div style="padding: 20px 20px 0;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #6b6459;">PAYS BACK</div>
+    <div style="display: flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 4px; border-bottom: 1px dotted #cfc4ae;">
+      <span style="min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Warung Pak Din</span>
+      <span style="flex: 1; font-size: 14px; font-weight: 500; white-space: nowrap;">&middot; 15 Aug</span>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M9 6l6 6-6 6"/></svg>
+    </div>
+    <div style="font-size: 13px; line-height: 18px; color: #6b6459; margin-top: 8px;">Counts against Food &amp; Drinks on 15 Aug. Your share of Warung Pak Din becomes RM20.00.</div>
+  </div>
+
+  <div style="padding: 22px 20px 0;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #6b6459;">MERCHANT</div>
+    <div style="border-bottom: 1px dashed #cfc4ae; padding: 10px 0 7px; font-size: 15px;">Siti Hajar</div>
+  </div>
+
+  <div style="padding: 22px 20px 0;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #6b6459;">NOTE</div>
+    <div style="border-bottom: 1px dashed #cfc4ae; padding: 10px 0 7px; font-size: 15px; color: #8a8175;">Optional</div>
+  </div>
+
+  <div style="flex: 1;"></div>
+  <div style="padding: 14px 20px 0px; border-top: 1px dotted #cfc4ae;">
+    <div style="border: 1px solid #6b6459; color: #6b6459; min-height: 52px; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 15.5px; font-weight: 500; box-sizing: border-box;">Save changes</div>
+  </div>
+  <div style="padding: 9px 20px 20px;">
+    <div style="border: 1px solid #a03826; color: #a03826; min-height: 46px; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 14px; box-sizing: border-box;">Delete payment</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
