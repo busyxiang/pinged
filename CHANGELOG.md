@@ -5,6 +5,23 @@ An entry should say what the release does for you and what it still cannot do;
 `release-please` drafts each one from the commits, and the release PR is where
 it gets edited into that before anything ships.
 
+## [0.17.0](https://github.com/busyxiang/pinged/compare/v0.16.0...v0.17.0) (2026-11-16)
+
+
+### Features
+
+* count a friend's payback against its bill in every total ([#392](https://github.com/busyxiang/pinged/issues/392)) ([#395](https://github.com/busyxiang/pinged/issues/395)) ([cc18c70](https://github.com/busyxiang/pinged/commit/cc18c70900362635ef4103e8a7b2381ced1e5755))
+* link a friend's payback to its bill from the inbox, detail and manual entry ([#392](https://github.com/busyxiang/pinged/issues/392)) ([#396](https://github.com/busyxiang/pinged/issues/396)) ([a97397f](https://github.com/busyxiang/pinged/commit/a97397f67f4bf3d15014954f08d5d79293e804d9))
+* show paybacks and their bills in Search ([#392](https://github.com/busyxiang/pinged/issues/392)) ([#398](https://github.com/busyxiang/pinged/issues/398)) ([d2201c0](https://github.com/busyxiang/pinged/commit/d2201c04c3328c61f147f04ba7340e117e8e8046))
+* show paybacks and their bills in the list, detail and manual entry ([#392](https://github.com/busyxiang/pinged/issues/392)) ([#397](https://github.com/busyxiang/pinged/issues/397)) ([ae8a7b1](https://github.com/busyxiang/pinged/commit/ae8a7b151bac7b1bd4ce3fc874e3310ff80007f1))
+* store a payback's bill, in schema 8 and backup format 7 ([#392](https://github.com/busyxiang/pinged/issues/392)) ([#394](https://github.com/busyxiang/pinged/issues/394)) ([b11b8f7](https://github.com/busyxiang/pinged/commit/b11b8f7ea13e6910a134fdf4b6a70a53bae5b504))
+
+
+### Bug Fixes
+
+* leave room under Charts' last line above the tab bar ([#390](https://github.com/busyxiang/pinged/issues/390)) ([f722df5](https://github.com/busyxiang/pinged/commit/f722df5ee9be942336613e478a7a517af552f6d0)), closes [#389](https://github.com/busyxiang/pinged/issues/389)
+* say a payback counts against its bill only while both count ([#392](https://github.com/busyxiang/pinged/issues/392)) ([#399](https://github.com/busyxiang/pinged/issues/399)) ([e3c40f6](https://github.com/busyxiang/pinged/commit/e3c40f6955e2fed348a9e0dca08ba85c4c64fb5b))
+
 ## [0.16.0](https://github.com/busyxiang/pinged/compare/v0.15.0...v0.16.0) (2026-11-06)
 
 
