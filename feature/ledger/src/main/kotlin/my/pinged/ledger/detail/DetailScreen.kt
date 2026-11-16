@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +58,16 @@ import my.pinged.parse.TaughtTemplate
 import my.pinged.read.LedgerAccess
 import my.pinged.read.rememberReadState
 import my.pinged.data.LocalDates
+import my.pinged.data.Seed
+import my.pinged.data.dao.BillChoice
 import my.pinged.data.dao.DetailRow
+import my.pinged.ledger.bill.BillChooser
+import my.pinged.ledger.bill.BillFor
+import my.pinged.ledger.bill.BillLabel
+import my.pinged.ledger.bill.BillOffer
+import my.pinged.ledger.bill.billDay
+import my.pinged.ledger.bill.billLabel
+import my.pinged.ledger.bill.shortDay
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.ChangedLine
@@ -95,6 +105,7 @@ import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.TornEdge
 import my.pinged.ui.theme.ValueDash
+import my.pinged.ui.theme.dashedOutline
 import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
 import my.pinged.ui.theme.heroFigure
@@ -127,6 +138,7 @@ fun DetailScreen(
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
+    val unlinked by viewModel.unlinked.collectAsState()
     DetailScreenContent(
         read = read.answer,
         ledger = read.ledger,
@@ -139,9 +151,14 @@ fun DetailScreen(
                 notSpending = { viewModel.notSpending() },
                 countAsSpending = { viewModel.countAsSpending() },
                 remove = { viewModel.remove(then = onBack) },
+                bills = viewModel::bills,
+                pickBill = { viewModel.pickBill(it) },
+                notAPayback = { viewModel.notAPayback() },
+                undo = { viewModel.undo() },
             )
         },
         modifier = modifier,
+        unlinked = unlinked != null,
     )
 }
 
@@ -154,6 +171,13 @@ internal class DetailActions(
     val notSpending: () -> Unit,
     val countAsSpending: () -> Unit,
     val remove: () -> Unit,
+    /** What the bill chooser lists; see [DetailViewModel.bills]. */
+    val bills: suspend (BillFor, String) -> BillOffer? = { _, _ -> null },
+    /** The chooser's pick, null for No bill. */
+    val pickBill: (Long?) -> Unit = {},
+    val notAPayback: () -> Unit = {},
+    /** Not a payback's Undo. */
+    val undo: () -> Unit = {},
 ) {
     companion object {
         val None = DetailActions({}, {}, {}, {})
@@ -168,6 +192,10 @@ internal class DetailActions(
  * Delete, and the confirm of a Not a payment sheet already open. Change
  * category and the pencil still open their sheets, which say so and turn
  * their own writes off.
+ *
+ * A refund offers spec 7.4's bill chooser (`design/DetailRefund.dc.html`,
+ * `DetailPayback`): from `+ BILL`, or a payback's Pays back chip. [unlinked]
+ * is a Not a payback whose Undo is on offer, drawn as a bar at the foot.
  */
 @Composable
 internal fun DetailScreenContent(
@@ -180,9 +208,11 @@ internal fun DetailScreenContent(
     modifier: Modifier = Modifier,
     actions: DetailActions = DetailActions.None,
     zone: ZoneId = ZoneId.systemDefault(),
+    unlinked: Boolean = false,
 ) {
     val busy = ledger.withholding
     var removing by rememberSaveable { mutableStateOf(false) }
+    var choosingBill by rememberSaveable { mutableStateOf(false) }
     val row = read?.row
     val host = rememberRowHost(
         chooser = read?.chooser,
@@ -193,28 +223,57 @@ internal fun DetailScreenContent(
         offerNewCategory = false,
     )
 
-    Column(modifier.fillMaxSize().background(Paper).verticalScroll(rememberScrollState())) {
-        Header(onBack)
-        when {
-            // First: a row drawn under a ledger that cannot be read would be a
-            // claim about money no read supports.
-            ledger.refused -> Notice(ledger.notice.orEmpty(), Stamp)
-            read == null -> NotReadYet()
-            row == null -> Notice(GONE, Muted)
-            else -> {
-                busy?.let { ChangedLine(it) }
-                DetailBody(
-                    row = row,
-                    zone = zone,
-                    canCategorize = host.canCategorize && !row.row.txn.isExcluded,
-                    onCategorize = { host.categorize(row.row.txn.id) },
-                    onRemove = { removing = true },
-                    actions = actions,
-                    merchants = merchants,
-                    writable = busy == null,
-                )
+    Box(modifier.fillMaxSize().background(Paper)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = if (unlinked) UNDO_ROOM else 0.dp)) {
+            Header(onBack)
+            when {
+                // First: a row drawn under a ledger that cannot be read would be a
+                // claim about money no read supports.
+                ledger.refused -> Notice(ledger.notice.orEmpty(), Stamp)
+                read == null -> NotReadYet()
+                row == null -> Notice(GONE, Muted)
+                else -> {
+                    busy?.let { ChangedLine(it) }
+                    DetailBody(
+                        row = row,
+                        bill = read.bill,
+                        zone = zone,
+                        // A payback is filed by its bill: Not a payback stands
+                        // where Change category would (spec 9.7).
+                        canCategorize = host.canCategorize && !row.row.txn.isExcluded && read.bill == null,
+                        onCategorize = { host.categorize(row.row.txn.id) },
+                        onChooseBill = { choosingBill = true },
+                        onRemove = { removing = true },
+                        actions = actions,
+                        merchants = merchants,
+                        writable = busy == null,
+                    )
+                }
             }
         }
+        if (unlinked) {
+            UndoBar(NOT_A_PAYBACK_SAID, enabled = busy == null, onUndo = actions.undo, modifier = Modifier.align(Alignment.BottomCenter))
+        }
+    }
+
+    val payback = row?.row
+    if (choosingBill && payback != null && busy == null && offersBill(payback.txn)) {
+        val subject = BillFor(
+            payback.displayName ?: payback.txn.merchantRaw ?: NO_MERCHANT,
+            payback.txn.amountSen,
+            payback.txn.currency,
+            LocalDates.calendarDay(payback.txn.localDate),
+        )
+        BillChooser(
+            payback = subject,
+            current = read.bill?.txn?.id,
+            offer = { query -> actions.bills(subject, query) },
+            onPick = { billId ->
+                choosingBill = false
+                if (billId != read.bill?.txn?.id) actions.pickBill(billId)
+            },
+            onDismiss = { choosingBill = false },
+        )
     }
 
     if (removing && row != null) {
@@ -291,9 +350,11 @@ private fun NotReadYet() {
 @Composable
 private fun DetailBody(
     row: DetailRow,
+    bill: BillChoice?,
     zone: ZoneId,
     canCategorize: Boolean,
     onCategorize: () -> Unit,
+    onChooseBill: () -> Unit,
     onRemove: () -> Unit,
     actions: DetailActions,
     merchants: MerchantActions,
@@ -303,7 +364,12 @@ private fun DetailBody(
     val name = row.row.displayName
     val excluded = txn.isExcluded
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp)) {
-        val paid = if (txn.direction == Direction.REFUND) CAME_BACK else PAID
+        val paid = when {
+            // Charts' came back never holds a payback (spec 9.3), so neither does its eyebrow.
+            bill != null -> PAID_BACK
+            txn.direction == Direction.REFUND -> CAME_BACK
+            else -> PAID
+        }
         Text(if (excluded) paid + Separator + NOT_COUNTED else paid, style = MonoLabel, color = Muted)
         Text(
             detailHero(money(txn.amountSen, txn.currency, symbol = true), counted = !excluded),
@@ -354,12 +420,33 @@ private fun DetailBody(
     Column(Modifier.fillMaxWidth().background(Card).padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Field(WHEN, whenOf(txn, zone))
-            Field(CATEGORY) {
+            if (offersBill(txn) || bill != null) {
+                Field(PAYS_BACK_FIELD) {
+                    val open = onChooseBill.takeIf { offersBill(txn) && writable }
+                    if (bill != null) PaysBackChip(bill, open) else AddBillChip(open)
+                }
+            }
+            if (bill?.counts == true) {
+                // The bill's, as plain text: it changes only by changing the bill's.
+                Field(COUNTS_AGAINST_FIELD) {
+                    Text(
+                        countsAgainstValue(bill),
+                        fontFamily = Body,
+                        fontSize = 13.5.sp,
+                        lineHeight = 18.sp,
+                        color = Ink,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.testTag(COUNTS_AGAINST_VALUE),
+                    )
+                }
+            } else Field(CATEGORY) {
                 // The category an excluded row keeps is filed nowhere while it
                 // is out, so the row says that instead of naming it. Muted
                 // where the board has Faint, which is 3.12:1 on Card.
                 if (excluded) {
                     Text(NOT_COUNTED_WHILE_LEFT_OUT, fontFamily = Body, fontSize = 12.5.sp, lineHeight = 16.sp, color = Muted)
+                } else if (row.categoryName == Seed.UNCATEGORIZED && canCategorize) {
+                    AddCategoryChip(onCategorize)
                 } else {
                     CategoryChip(row.categoryName ?: NO_CATEGORY, onCategorize.takeIf { canCategorize })
                 }
@@ -368,6 +455,15 @@ private fun DetailBody(
             // The raw acquirer string, only where it says something the name
             // above does not: KK MART under KK Mart says nothing.
             txn.merchantRaw?.takeIf { !it.equals(name, ignoreCase = true) }?.let { Field(NAME_ON_THE_BILL, it) }
+        }
+        if (bill?.counts == true) {
+            // Why the day it arrived does not count it (`design/DetailPayback.dc.html`).
+            Text(
+                countedOnLine(txn, bill),
+                style = MonoLabel.copy(lineHeight = 18.sp),
+                color = Muted,
+                modifier = Modifier.padding(top = 12.dp),
+            )
         }
 
         Text(WHAT_PINGED_READ, style = MonoLabel, color = Muted, modifier = Modifier.padding(top = 22.dp))
@@ -401,7 +497,7 @@ private fun DetailBody(
         }
     }
 
-    Actions(txn, canCategorize, onCategorize, onRemove, actions, writable)
+    Actions(txn, canCategorize, onCategorize, isPayback = bill != null, onRemove, actions, writable)
 }
 
 /**
@@ -439,7 +535,8 @@ private fun NoteField(txn: Txn, save: (String) -> Unit, writable: Boolean) {
 
 /**
  * The band at the foot: Change category beside Not spending, and Delete this
- * entry under them, each a full 44dp. A row the user left out has Count as
+ * entry under them, each a full 44dp. A payback ([isPayback]) has Not a
+ * payback in Change category's place (`design/DetailPayback.dc.html`). A row the user left out has Count as
  * spending in their place, filled, as `design/DetailExcluded.dc.html` draws it.
  *
  * Each is offered only where it can write, as `LedgerRow` gates its own
@@ -455,6 +552,7 @@ private fun Actions(
     txn: Txn,
     canCategorize: Boolean,
     onCategorize: () -> Unit,
+    isPayback: Boolean,
     onRemove: () -> Unit,
     actions: DetailActions,
     writable: Boolean,
@@ -463,6 +561,7 @@ private fun Actions(
     val countBack = committed && txn.isExcluded && txn.rawCaptureId != null
     val pair = buildList {
         if (canCategorize) add(Triple(CHANGE_CATEGORY, true, onCategorize))
+        if (isPayback) add(Triple(NOT_A_PAYBACK, writable, actions.notAPayback))
         if (committed && !txn.isExcluded) add(Triple(NOT_SPENDING, writable, actions.notSpending))
     }
     if (pair.isEmpty() && !committed) return
@@ -571,6 +670,107 @@ private fun CategoryChip(name: String, onClick: (() -> Unit)?) {
     )
 }
 
+/**
+ * `design/DetailRefund.dc.html`'s `+ CATEGORY` on a row filed under
+ * Uncategorized: the ledger's own chip, a dashed [Stamp] offer, since the
+ * row is one to sort.
+ */
+@Composable
+private fun AddCategoryChip(onClick: () -> Unit) {
+    Text(
+        ADD_CATEGORY,
+        style = MonoLabel,
+        color = Stamp,
+        modifier = Modifier
+            .testTag(CATEGORY_CHIP)
+            .clip(RoundedCornerShape(2.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .dashedOutline(Stamp)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+/**
+ * `+ BILL` on a committed refund that pays back nothing (spec 9.7): dashed
+ * in [Muted], never [Stamp], since on most refunds it never needs an answer
+ * and must not compete with `+ CATEGORY`, which does. Off while [onClick]
+ * is null.
+ */
+@Composable
+private fun AddBillChip(onClick: (() -> Unit)?) {
+    Text(
+        ADD_BILL,
+        style = MonoLabel,
+        color = Muted,
+        modifier = Modifier
+            .testTag(PAYS_BACK_CHIP)
+            .clip(RoundedCornerShape(2.dp))
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .dashedOutline(Muted)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+/**
+ * A payback's Pays back (`design/DetailPayback.dc.html`): its bill, `Yuen Kee ·
+ * 18 Sep`, in a [Stamp] outline as the category chip is drawn, reopening the
+ * chooser to move it to another bill.
+ */
+@Composable
+private fun PaysBackChip(bill: BillChoice, onClick: (() -> Unit)?) {
+    val shape = RoundedCornerShape(2.dp)
+    Box(
+        Modifier
+            .testTag(PAYS_BACK_CHIP)
+            .clip(shape)
+            .border(1.dp, Stamp, shape)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        BillLabel(bill, Stamp, fontSize = 12.sp, lineHeight = 16.sp)
+    }
+}
+
+/**
+ * Not a payback's snackbar (spec 9.7), pinned to the foot with Undo, as the
+ * review inbox draws its own: until Undo is used or the screen closes.
+ */
+@Composable
+private fun UndoBar(said: String, enabled: Boolean, onUndo: () -> Unit, modifier: Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(12.dp)
+            .background(Ink, RoundedCornerShape(2.dp))
+            .padding(start = 16.dp)
+            .testTag(DETAIL_UNDO_BAR),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(said, style = MonoLabel, color = Paper, modifier = Modifier.weight(1f))
+        Box(
+            Modifier
+                .clickable(enabled = enabled, role = Role.Button, onClick = onUndo)
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(UNDO, style = ButtonLabel.copy(fontSize = 14.sp), color = if (enabled) Paper else Muted)
+        }
+    }
+}
+
+/** Whether [txn] offers a bill (spec 9.7): a committed refund. */
+internal fun offersBill(txn: Txn): Boolean = txn.direction == Direction.REFUND && txn.state == TxnState.COMMITTED
+
+/** `Food & Drinks · Yuen Kee · 18 Sep`: the category, merchant and day a payback counts under. */
+internal fun countsAgainstValue(bill: BillChoice): String =
+    (bill.categoryName ?: NO_CATEGORY) + Separator + billLabel(bill)
+
+/** `IN THE LIST ON 20 SEP · COUNTED ON 18 SEP`: why the day [txn] arrived does not count it. */
+internal fun countedOnLine(txn: Txn, bill: BillChoice): String =
+    "IN THE LIST ON " + shortDay(LocalDates.calendarDay(txn.localDate)).uppercase(CALENDAR) + Separator +
+        "COUNTED ON " + shortDay(billDay(bill)).uppercase(CALENDAR)
+
 /** The artboard's pencil, in the accent: a stroke path on the 24-unit grid it is drawn on. */
 @Composable
 private fun Pencil() {
@@ -649,6 +849,14 @@ internal const val VERBATIM_NOT_READ_YET = "detail-verbatim-not-read-yet"
 internal const val EYEBROW = "CAPTURED, NOT TYPED"
 internal const val PAID = "PAID"
 internal const val CAME_BACK = "CAME BACK"
+internal const val PAID_BACK = "PAID BACK"
+internal const val PAYS_BACK_FIELD = "Pays back"
+internal const val COUNTS_AGAINST_FIELD = "Counts against"
+internal const val ADD_BILL = "+ BILL"
+internal const val ADD_CATEGORY = "+ CATEGORY"
+internal const val NOT_A_PAYBACK = "Not a payback"
+internal const val NOT_A_PAYBACK_SAID = "NOT A PAYBACK"
+internal const val UNDO = "Undo"
 internal const val NOT_COUNTED = "NOT COUNTED"
 internal const val NOT_COUNTED_WHILE_LEFT_OUT = "Not counted while left out"
 internal const val LEFT_OUT_SMALL_PRINT = "KEPT IN THE LIST, GREYED" + Separator + "LEFT OUT OF EVERY TOTAL AND CHART"
@@ -676,6 +884,18 @@ internal const val VERBATIM = "detail-verbatim"
 
 /** What a test finds the category chip by. */
 internal const val CATEGORY_CHIP = "detail-category"
+
+/** What a test finds the Pays back chip by, `+ BILL` or the bill. */
+internal const val PAYS_BACK_CHIP = "detail-pays-back"
+
+/** What a test finds a payback's Counts against value by. */
+internal const val COUNTS_AGAINST_VALUE = "detail-counts-against"
+
+/** What a test finds Not a payback's snackbar by. */
+internal const val DETAIL_UNDO_BAR = "detail-undo"
+
+/** Room under the scrolled column for [UndoBar], so it never covers Delete. */
+private val UNDO_ROOM = 72.dp
 
 /** What a test finds the hero amount by. */
 internal const val AMOUNT = "detail-amount"

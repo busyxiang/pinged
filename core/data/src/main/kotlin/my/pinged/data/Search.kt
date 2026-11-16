@@ -210,3 +210,35 @@ object SearchSql {
         return sql.toString() to args
     }
 }
+
+/**
+ * The SQL behind `TxnDao.billSearchRaw`: spec 7.4's chooser searching, by
+ * name or by amount, over the whole history.
+ *
+ * The words are [SearchMatch]'s, against the same `txn_fts` the Search
+ * screen reads, so a bill is found by the words that find it there. A
+ * search that is also an amount (`64`, `64.00`) finds a bill of exactly that
+ * amount too, whatever its name: [amountSen] is the caller's reading of the
+ * text, since the string-to-sen step belongs beside the field.
+ */
+object BillSearchSql {
+    /**
+     * The bills `TxnDao.billChoices` would offer in [currency], dated on or
+     * before [to], matching [text] or of [amountSen], newest first, at most
+     * [limit]; null when there is nothing to search for.
+     */
+    fun search(text: String, amountSen: Long?, currency: String, to: LocalDate, limit: Int): SimpleSQLiteQuery? {
+        val match = SearchMatch.of(text)
+        val found = listOfNotNull(
+            match?.let { "txn.id IN (SELECT rowid FROM txn_fts WHERE txn_fts MATCH ?)" to it },
+            amountSen?.let { "txn.amount_sen = ?" to it },
+        )
+        if (found.isEmpty()) return null
+        return SimpleSQLiteQuery(
+            TxnDao.BILL_CHOICE_SQL + "WHERE " + TxnDao.BILL_OFFERED_SQL.replace(":currency", "?") +
+                " AND txn.local_date <= ? AND (" + found.joinToString(" OR ") { it.first } + ") " +
+                TxnDao.BILL_ORDER + " LIMIT ?",
+            (listOf<Any>(currency, to.yyyymmdd) + found.map { it.second } + limit).toTypedArray(),
+        )
+    }
+}

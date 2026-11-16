@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import my.pinged.data.LocalDate
 import my.pinged.data.entity.Txn
+import my.pinged.data.entity.TxnState
 
 /**
  * One day's net spending, in one currency.
@@ -145,7 +146,39 @@ data class ReviewRow(
     @ColumnInfo(name = "capture_title") val captureTitle: String?,
     @ColumnInfo(name = "capture_text") val captureText: String?,
     @ColumnInfo(name = "capture_big_text") val captureBigText: String?,
+    /**
+     * The rule that read the capture (`raw_capture.matched_rule_id`), which
+     * decides whether a money-back card offers a bill (spec 9.2): only a
+     * received-money rule's does. Null for a row with no capture.
+     */
+    @ColumnInfo(name = "matched_rule_id") val matchedRuleId: String? = null,
 )
+
+/**
+ * A bill as spec 7.4's chooser offers it, and as a payback names it:
+ * `TxnDao.billChoices`, `TxnDao.billChoice`.
+ *
+ * @property displayName spec 6.4's resolved name, as the list draws it.
+ * @property categoryName the bill's category, which a payback counts against.
+ * @property paidBackSen what its counted paybacks add up to -- `COMMITTED`,
+ *   not excluded, as spec 7.4 counts one -- 0 when nothing is paid back. The
+ *   share is the bill's amount less this, and is below zero when friends
+ *   rounded up.
+ * @property counts the bill counts: `COMMITTED` and not excluded, which is
+ *   what lets a payback count against it (spec 7.4) and what the chooser
+ *   offers. A bill picked earlier can have stopped.
+ */
+data class BillChoice(
+    @Embedded val txn: Txn,
+    @ColumnInfo(name = "display_name") val displayName: String?,
+    @ColumnInfo(name = "category_name") val categoryName: String?,
+    @ColumnInfo(name = "paid_back_sen") val paidBackSen: Long,
+) {
+    val counts: Boolean get() = txn.state == TxnState.COMMITTED && !txn.isExcluded
+
+    /** The bill's amount less what is paid back against it: the user's share, below zero when friends rounded up. */
+    val shareSen: Long get() = txn.amountSen - paidBackSen
+}
 
 /**
  * One transaction for its detail screen (#153): `TxnDao.detail`.

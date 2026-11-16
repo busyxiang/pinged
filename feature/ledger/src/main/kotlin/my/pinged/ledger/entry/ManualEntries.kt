@@ -23,10 +23,14 @@ import my.pinged.capture.MerchantColumns
 import my.pinged.data.LiveLearnedRules
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
+import my.pinged.data.dao.BillChoice
 import my.pinged.data.dao.ManualEdit
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.bill.BillFor
+import my.pinged.ledger.bill.BillOffer
+import my.pinged.ledger.bill.offerBills
 import my.pinged.parse.Amount
 import my.pinged.parse.Confidence
 import my.pinged.parse.Direction
@@ -208,6 +212,11 @@ class ManualEntries(
      * gate is not asked: it would hold an entry with no merchant as
      * `MERCHANT_MISSING`, and a person typing a payment in is the review.
      *
+     * Money received with a bill picked ([ManualDraft.paysBack]) is a payback
+     * of it (spec 7.4, 9.4), linked in the insert's transaction and held to
+     * `TxnDao.setBill`'s guards: a bill that stopped counting, or is dated
+     * after the entry, writes nothing at all.
+     *
      * The typed merchant becomes the three merchant columns exactly as a
      * capture's string does ([MerchantColumns], #101): raw as typed, display
      * and key cleaned by the pack, all three null for text that cleans to
@@ -226,7 +235,7 @@ class ManualEntries(
             val chosen = draft.category
             val categories = db.categoryDao()
             if (chosen != null && !categories.exists(chosen.categoryId)) return@write null
-            db.txnDao().insert(
+            db.txnDao().insertManual(
                 Txn(
                     rawCaptureId = null,
                     amountSen = draft.amountSen,
@@ -245,6 +254,7 @@ class ManualEntries(
                     createdAt = now,
                     updatedAt = now,
                 ),
+                billId = draft.paysBack,
             )
         }.await().orNull()
     }
@@ -277,11 +287,29 @@ class ManualEntries(
                         note = it.note.orEmpty(),
                         category = shownChoice(it, db.categoryDao().requireUncategorizedId()),
                         direction = it.direction,
+                        bill = it.billTxnId,
                     ),
+                    earliestPayback = db.txnDao().earliestPaybackDate(it.id)?.let(LocalDates::calendarDay),
                 )
             } ?: Loaded.Gone
             loaded
         }.await().orNull()
+    }
+
+    /**
+     * What spec 7.4's bill chooser lists for [payback] and [query], or null
+     * when the ledger would not give it, which closes the chooser.
+     */
+    fun bills(payback: BillFor, query: String): Deferred<BillOffer?> = scope.async {
+        read.lookup("The bills could not be read") { db -> offerBills(db.txnDao(), payback, query) }.await().orNull()
+    }
+
+    /**
+     * Bill [id] as the `PAYS BACK` line names it, or null when it is gone or
+     * cannot be read.
+     */
+    fun bill(id: Long): Deferred<BillChoice?> = scope.async {
+        read.lookup("The bill could not be read") { db -> db.txnDao().billChoice(id) }.await().orNull()
     }
 
     /**
@@ -299,6 +327,10 @@ class ManualEntries(
      * - the note;
      * - the direction (#355), a column of its own: totals follow it, and
      *   no other column moves with it;
+     * - the bill it pays back (spec 7.4): a new pick, or none, under
+     *   Received only, so a payback switched to Paid is plain money spent.
+     *   `TxnDao` refuses the whole edit for a bill it may not name, and for
+     *   a date that puts a bill after its payback either way round;
      * - the category, by [refiled]: a merchant whose key changed on a
      *   rule-filed row is filed again by [ruleFiling], or Uncategorized; a
      *   one-off keeps its category; a chip tapped in this edit is a one-off.
@@ -325,6 +357,7 @@ class ManualEntries(
                 merchant = columns.takeIf { it != ManualEdit.Merchant(stored.merchantRaw, stored.merchantDisplay, stored.merchantKey) },
                 note = ManualEdit.Note(note).takeIf { note != stored.note },
                 direction = draft.direction.takeIf { it != stored.direction },
+                bill = ManualEdit.Bill(draft.paysBack).takeIf { it.id != stored.billTxnId },
                 filing = refiled(stored, draft.category, merchant.key != stored.merchantKey, uncategorized) {
                     merchant.key?.let { ruleFiling(db, it) } ?: uncategorized
                 }?.takeIf { it != ManualEdit.Filing(stored.categoryId, stored.userEdited) },
@@ -464,8 +497,12 @@ data class EditTarget(val id: Long, val createdAt: Long)
 
 /** What [ManualEntries.load] found. */
 sealed interface Loaded {
-    /** The manual entry, as the draft the edit screen opens with. */
-    data class Entry(val target: EditTarget, val draft: ManualDraft) : Loaded
+    /**
+     * The manual entry, as the draft the edit screen opens with; and, for a
+     * bill, the day of its earliest payback ([earliestPayback]), the latest
+     * day it may move to (spec 9.4).
+     */
+    data class Entry(val target: EditTarget, val draft: ManualDraft, val earliestPayback: LocalDate? = null) : Loaded
 
     /** No such manual entry: see [ManualEntries.load]. */
     data object Gone : Loaded
@@ -490,7 +527,15 @@ data class ManualDraft(
     val category: CategoryChoice? = null,
     /** `EXPENSE` for Paid, `REFUND` for Received (#355); the only two a manual entry holds. */
     val direction: Direction = Direction.EXPENSE,
+    /**
+     * The bill picked under Received (spec 9.4), kept through a switch to
+     * Paid, which hides it, so switching back shows it again; see [paysBack].
+     */
+    val bill: Long? = null,
 ) {
+    /** The bill a save writes: [bill] under Received, none under Paid, since an expense is never a payback. */
+    val paysBack: Long? get() = bill.takeIf { direction == Direction.REFUND }
+
     /**
      * The draft once the pre-selection lookup for [forMerchant] answered
      * [categoryId] ([ManualEntries.preselection]): that category as

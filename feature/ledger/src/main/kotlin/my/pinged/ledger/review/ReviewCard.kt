@@ -1,13 +1,16 @@
 package my.pinged.ledger.review
 
 import my.pinged.capture.CheckLimit
+import my.pinged.data.LocalDates
 import my.pinged.data.dao.Answered
+import my.pinged.data.dao.BillChoice
 import my.pinged.data.dao.GatewayMerge
 import my.pinged.data.dao.ReviewRow
 import my.pinged.data.entity.PendingReason
 import my.pinged.data.entity.StandingAnswer
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
+import my.pinged.ledger.bill.BillFor
 import my.pinged.parse.Direction
 import my.pinged.parse.Merchant
 import my.pinged.parse.MerchantNormalization
@@ -31,6 +34,10 @@ import my.pinged.ui.ringgit
  *   (`CheckLimit.sen`), the same for every card of one read: what Accept all
  *   leaves out by ([isBatchable]) and what [reason] names. The limit a row
  *   arrived under is not stored (#362).
+ * @property matchedRuleId the rule that read the capture; only a
+ *   received-money rule's card offers a bill ([offersBill]).
+ * @property bill the bill the row pays back (spec 7.4), picked on this card
+ *   or before; null for none.
  */
 data class ReviewCard(
     val txn: Txn,
@@ -41,8 +48,16 @@ data class ReviewCard(
     val pair: Txn? = null,
     val merge: MergeWay = MergeWay.HELD,
     val checkLimitSen: Long = CheckLimit.DEFAULT_SEN,
+    val matchedRuleId: String? = null,
+    val bill: BillChoice? = null,
 ) {
-    constructor(row: ReviewRow, checkLimitSen: Long, pair: Txn? = null, merge: MergeWay = MergeWay.HELD) : this(
+    constructor(
+        row: ReviewRow,
+        checkLimitSen: Long,
+        pair: Txn? = null,
+        merge: MergeWay = MergeWay.HELD,
+        bill: BillChoice? = null,
+    ) : this(
         txn = row.txn,
         merchant = row.displayName,
         category = row.categoryName,
@@ -51,6 +66,8 @@ data class ReviewCard(
         pair = pair,
         merge = merge,
         checkLimitSen = checkLimitSen,
+        matchedRuleId = row.matchedRuleId,
+        bill = bill,
     )
 
     /** Why the card is held, in words: [reasonSentence] for this card's amount and [checkLimitSen]. */
@@ -72,7 +89,39 @@ data class ReviewCard(
      * something else.
      */
     val asksCategory: Boolean get() = kind == CardKind.PLAIN && txn.direction == Direction.REFUND
+
+    /**
+     * Whether the card offers a bill, `PAYS BACK` (spec 9.2): a money-back
+     * card read by a received-money rule ([readsMoneyReceived]), which is
+     * where a friend's share arrives. A merchant's refund is read by another
+     * rule and never offers one here; its detail screen still does.
+     */
+    val offersBill: Boolean get() = asksCategory && readsMoneyReceived(matchedRuleId)
+
+    /**
+     * The bill decides where Accept counts the money (spec 9.2), so
+     * `COUNTS AGAINST` gives way to it -- while the bill counts. One that has
+     * stopped since it was picked leaves the money counting on its own, filed
+     * by the category line, which is then asked again.
+     */
+    val countsAgainstBill: Boolean get() = offersBill && bill?.counts == true
+
+    /** The payback the bill chooser picks for: the card's name and amount, on its own day. */
+    val billFor: BillFor get() = BillFor(merchant ?: NO_MERCHANT, txn.amountSen, txn.currency, LocalDates.calendarDay(txn.localDate))
 }
+
+/**
+ * Whether [ruleId] is a received-money rule (spec 9.2, 7.4): one that reads
+ * money a person sent the user, under that person's name. The pack names
+ * them `<app>-received-v<N>` (`tng-received-v1`, `mae-received-v1`), and the
+ * pack carries no other mark of one; `ReceivedMoneyRulesTest` holds every
+ * bundled rule so named to money received, and every other bundled refund
+ * rule out, so a rule added under another name is caught there.
+ */
+internal fun readsMoneyReceived(ruleId: String?): Boolean = ruleId != null && RECEIVED_RULE.matches(ruleId)
+
+/** `[0-9]`, never `\d`: CLAUDE.md's reason. */
+private val RECEIVED_RULE = Regex("^[a-z0-9-]+-received-v[0-9]+$")
 
 /**
  * The three kinds of card §9.2 answers differently.

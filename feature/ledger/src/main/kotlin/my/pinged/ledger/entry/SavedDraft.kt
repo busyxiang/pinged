@@ -7,7 +7,7 @@ import my.pinged.parse.Direction
 /**
  * The entry screen's draft in its `SavedStateHandle` (#108), so a process
  * death keeps everything typed: the amount, the day, the merchant, the note,
- * the chip and how it was chosen, and the entry being edited.
+ * the chip and how it was chosen, the bill picked, and the entry being edited.
  *
  * One key per field, each a `Long` or a `String`, which a `Bundle` holds on
  * every API level. The chip's [ChosenBy] is stored by name: it decides
@@ -22,6 +22,7 @@ internal object SavedDraft {
     private const val CATEGORY = "draft.categoryId"
     private const val CHOSEN_BY = "draft.chosenBy"
     private const val DIRECTION = "draft.direction"
+    private const val BILL = "draft.bill"
     private const val EDIT_TARGET = "draft.editTarget"
     private const val EDIT_CREATED_AT = "draft.editCreatedAt"
 
@@ -34,6 +35,7 @@ internal object SavedDraft {
         handle[CATEGORY] = draft.category?.categoryId
         handle[CHOSEN_BY] = draft.category?.by?.name
         handle[DIRECTION] = draft.direction.name
+        handle[BILL] = draft.bill
     }
 
     /** The draft [handle] holds, or null when nothing was ever written to it. */
@@ -48,6 +50,7 @@ internal object SavedDraft {
             note = handle.get<String>(NOTE).orEmpty(),
             category = if (categoryId != null && by != null) CategoryChoice(categoryId, by) else null,
             direction = handle.get<String>(DIRECTION)?.let(Direction::valueOf) ?: Direction.EXPENSE,
+            bill = handle.get<Long>(BILL),
         )
     }
 
