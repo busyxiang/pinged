@@ -2020,7 +2020,11 @@ COUNTS HERE`, the amount returns to Ink, and its own day's subtotal takes it
 (`PaybackListLeftOut`). A bill keeps the amount the bank sent, with a line
 under the row, `<x> PAID BACK · YOUR SHARE <y>`. That line runs under the
 amount column too, so it stays one line at 320dp, where a long bill name in
-a tag gives way and its date stays (`PaybackList320`).
+a tag gives way and its date stays (`PaybackList320`). Search's rows draw
+both the same way, with the tag and the line under the whole row, since its
+day column leaves the name too narrow for either at 320dp. Its hero names a
+payback it found as `N PAYBACKS COUNTED WITH THEIR BILLS`, apart from its
+payments, refunds and `N MORE NOT IN THE TOTAL`, as section 15.3 counts it.
 
 The month label above the summary opens the Charts' `Months` sheet (#192),
 the same read and the same rows. A pick moves the summary to that month and

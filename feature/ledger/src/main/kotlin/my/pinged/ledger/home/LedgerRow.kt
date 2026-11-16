@@ -424,17 +424,26 @@ private fun TxnRow(
         }
         if (link is RowLink.PaidBack) {
             // From the name's left edge, past the 18dp mark and the 12dp gap,
-            // to the row's right edge. Tracking 0, not MonoLabel's 1sp: at the
-            // 12sp floor `64.00 PAID BACK · YOUR SHARE 32.00` is 245dp of
-            // glyphs, and 320dp leaves the line 250dp.
-            Text(
-                link.line,
-                style = MonoLabel.copy(letterSpacing = 0.sp),
-                color = Muted,
-                modifier = Modifier.padding(start = 30.dp, top = 4.dp).testTag(PAID_BACK_LINE),
-            )
+            // to the row's right edge: 320dp leaves the line 250dp.
+            PaidBackLine(link, Modifier.padding(start = 30.dp, top = 4.dp))
         }
     }
+}
+
+/**
+ * A bill's `64.00 PAID BACK · YOUR SHARE 32.00` (spec 9.1), in [Muted].
+ * Tracking 0, not [MonoLabel]'s 1sp: at the 12sp floor that line is 245dp of
+ * glyphs, so a caller gives it at least that much of a 320dp row, under the
+ * amount column too, to keep it one line.
+ */
+@Composable
+internal fun PaidBackLine(link: RowLink.PaidBack, modifier: Modifier = Modifier) {
+    Text(
+        link.line,
+        style = MonoLabel.copy(letterSpacing = 0.sp),
+        color = Muted,
+        modifier = modifier.testTag(PAID_BACK_LINE),
+    )
 }
 
 /**
@@ -444,13 +453,14 @@ private fun TxnRow(
  * HERE` in [Ink] (`design/PaybackListLeftOut.dc.html`). Either opens the
  * bill, where Count as spending puts them back. A button laid out at its
  * drawn size, its target the free space round it, as [rowGestures] sets out.
+ * Search's rows draw it too.
  */
 @Composable
-private fun PaysBackTag(pays: RowLink.Pays, onClick: () -> Unit) {
+internal fun PaysBackTag(pays: RowLink.Pays, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colour = if (pays.here) Ink else Muted
     val shape = RoundedCornerShape(2.dp)
     Row(
-        Modifier
+        modifier
             .padding(top = 4.dp)
             .clip(shape)
             .clickable(role = Role.Button, onClickLabel = OPEN_BILL, onClick = onClick)
