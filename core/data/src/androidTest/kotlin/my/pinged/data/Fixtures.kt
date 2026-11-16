@@ -323,3 +323,33 @@ fun PingedDatabase.seedTheRankingsLedger() {
     }
     (0 until 100).forEach { merchantIdentityDao().merge(source = "SHOP $it", target = "SHOP ${it + 100}", targetName = "Shop ${it + 100}") }
 }
+
+/**
+ * Paybacks over [seedTheRankingsLedger]'s 20,000 rows (spec 7.4): every
+ * twentieth row, all of them counted, is a bill paid back twice, each a
+ * third of it, under a friend's name and Uncategorized, 0 to 39 days after
+ * the bill, so some land in the month after it. 1,000 bills and 2,000
+ * paybacks, about 83 of them a month: a heavier splitter than the design's
+ * September, so the counting fragment's join is measured where it costs.
+ */
+fun PingedDatabase.seedPaybacks() {
+    val uncategorized = categoryDao().requireUncategorizedId()
+    val bills = txnDao().pageFrom(0L, 20_000).filterIndexed { i, _ -> i % 20 == 5 }
+    runInTransaction {
+        txnDao().insertAll(
+            bills.flatMapIndexed { n, bill ->
+                (0..1).map { k ->
+                    val day = LocalDates.calendarDay(bill.localDate).plusDays((n % 40L) + k)
+                    val friend = "FRIEND ${(n + k) % 60}"
+                    sampleTxn(
+                        amountSen = bill.amountSen / 3,
+                        occurredAt = bill.occurredAt + 1 + k,
+                        localDate = LocalDates.of(day),
+                        categoryId = uncategorized,
+                        direction = Direction.REFUND,
+                    ).copy(merchantRaw = friend, merchantDisplay = friend.lowercase(), merchantKey = friend, billTxnId = bill.id)
+                }
+            },
+        )
+    }
+}

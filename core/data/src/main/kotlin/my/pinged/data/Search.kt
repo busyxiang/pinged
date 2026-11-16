@@ -81,9 +81,12 @@ data class SearchCursor(val localDate: LocalDate, val occurredAt: Long, val id: 
 
 /**
  * A search's money in one currency: every row it found that the feed would
- * draw ([rowCount]), those §8 counts ([countedCount]), the counted ones that
- * are money out rather than a refund ([paymentCount]), and the counted rows'
- * signed net (§15.3).
+ * draw ([rowCount]), those §8 counts here ([countedCount]), the counted ones
+ * that are money out rather than a refund ([paymentCount]), the counted rows'
+ * signed net (§15.3), and the rows found that are paybacks counted under
+ * their bill ([paybackCount]; spec 7.4), which are in no other count. A
+ * payback's money is in [netSen] when the search found its bill, whether or
+ * not it found the payback.
  */
 data class SearchTotal(
     val currency: String,
@@ -91,6 +94,7 @@ data class SearchTotal(
     val countedCount: Int,
     val paymentCount: Int,
     val netSen: Long,
+    val paybackCount: Int = 0,
 )
 
 /**
@@ -143,21 +147,42 @@ object SearchSql {
     /**
      * Per currency: the rows [rows] would find without its limit, and of them
      * those §8 counts, summed as every total is.
+     *
+     * Through spec 7.4's counting fragment, so a search's money is where the
+     * ledger counts it: a payback whose bill counts is in the net exactly
+     * when the search finds its bill -- every filter and the words asked of
+     * the bill, as [TxnDao.COUNTED_AS] asks the month of the bill -- and is
+     * in no count. Found itself, it is in [SearchTotal.rowCount] and
+     * [SearchTotal.paybackCount] and no other count, since its money is its
+     * bill's. The paybacks come from [TxnDao.PAYBACKS_OF_COUNTED_BILLS], with
+     * the search's `WHERE` applied to the bill, so its binds are passed twice.
      */
     fun totals(text: String, filter: SearchFilter): SimpleSQLiteQuery {
         val (where, args) = where(text, filter)
+        val counted = "(${TxnDao.COUNTED_ROW} AND NOT ${TxnDao.PAYS_BACK_A_COUNTED_BILL})"
         return SimpleSQLiteQuery(
             """
-            SELECT txn.currency AS currency, COUNT(*) AS rowCount,
-                   SUM(${TxnDao.COUNTED_ROW}) AS countedCount,
-                   SUM(${TxnDao.COUNTED_ROW} AND txn.direction = 'EXPENSE') AS paymentCount,
-                   SUM(CASE WHEN ${TxnDao.COUNTED_ROW} THEN
-                       CASE WHEN txn.direction = 'EXPENSE' THEN txn.amount_sen ELSE -txn.amount_sen END
+            SELECT counted.currency AS currency, SUM(counted.found) AS rowCount,
+                   SUM(counted.counted) AS countedCount,
+                   SUM(counted.counted AND counted.direction = 'EXPENSE') AS paymentCount,
+                   SUM(counted.found AND counted.pays_back) AS paybackCount,
+                   SUM(CASE WHEN counted.counted OR NOT counted.found THEN
+                       CASE WHEN counted.direction = 'EXPENSE' THEN counted.amount_sen ELSE -counted.amount_sen END
                        ELSE 0 END) AS netSen
-            FROM txn
-            WHERE txn.state != 'REJECTED'
-            """ + where + " GROUP BY txn.currency",
-            args.toTypedArray(),
+            FROM (
+                SELECT txn.currency AS currency, txn.direction AS direction, txn.amount_sen AS amount_sen,
+                       1 AS found, $counted AS counted,
+                       (${TxnDao.COUNTED_ROW} AND ${TxnDao.PAYS_BACK_A_COUNTED_BILL}) AS pays_back
+                FROM txn
+                WHERE txn.state != 'REJECTED'
+                """ + where + """
+                UNION ALL
+                SELECT currency, direction, amount_sen, 0, 0, 1
+                FROM (""" + TxnDao.PAYBACKS_OF_COUNTED_BILLS + where + """)
+            ) AS counted
+            GROUP BY counted.currency
+            """,
+            (args + args).toTypedArray(),
         )
     }
 

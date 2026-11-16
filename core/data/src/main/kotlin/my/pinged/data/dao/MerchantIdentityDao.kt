@@ -802,6 +802,16 @@ object MerchantSql {
     /** The merchant a `txn` row belongs to. Null exactly when `merchant_key` is. */
     const val IDENTITY = "COALESCE(merchant_alias.canonical_key, txn.merchant_key)"
 
+    /**
+     * [ALIAS_JOIN] and [IDENTITY] for a query over `TxnDao.COUNTED_AS`, the
+     * counting fragment, whose rows are `counted` and carry the merchant key
+     * they count under. The same resolution; only the row's name differs.
+     */
+    const val COUNTED_ALIAS_JOIN = "LEFT JOIN merchant_alias ON merchant_alias.merchant_key = counted.merchant_key"
+
+    /** [IDENTITY] for a `counted` row, under [COUNTED_ALIAS_JOIN]. */
+    const val COUNTED_IDENTITY = "COALESCE(merchant_alias.canonical_key, counted.merchant_key)"
+
     /** [ALIAS_JOIN], then the user's name for the identity. */
     const val JOINS = ALIAS_JOIN + " LEFT JOIN merchant_name ON merchant_name.merchant_key = " + IDENTITY
 

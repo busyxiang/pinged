@@ -296,8 +296,9 @@ interface TxnDao {
     /**
      * Net spending per day, for the list's day headers.
      *
-     * Filtered by [COUNTED], §8's "excluded and pending rows never enter a
-     * total", shared with [monthTotals] and [monthByCategory].
+     * Read through [COUNTED_AS], as every aggregate here is: §8's "excluded
+     * and pending rows never enter a total", and spec 7.4's payback counted
+     * on its bill's day and not on its own.
      *
      * Signed, so a `REFUND` reduces its day. Adding it would report a refunded
      * purchase as twice the spending.
@@ -334,7 +335,9 @@ interface TxnDao {
      * [monthTotals] split into its two halves, for the Charts hero's
      * `SPENT RMx · CAME BACK RMy` under a net of zero or less (#81, #68).
      * Every direction that is not `EXPENSE` counts as came back, as it
-     * subtracts in [monthTotals], so the halves always difference to its net.
+     * subtracts in [monthTotals], so the halves always difference to its net
+     * -- except a payback counted under its bill (spec 7.4), which is part
+     * of what the bill cost: it lowers spent and is never came back.
      */
     @Query(MONTH_SPLIT_SQL)
     fun monthSplit(from: LocalDate, to: LocalDate): List<MonthSplit>
@@ -369,6 +372,10 @@ interface TxnDao {
      * Grouped in SQL (spec 15.3). A line with no rows has no result row.
      * Measured on emulator-5554 over a year of 5,000 rows, a tenth of them on
      * each line: 0.29ms for a month and 0.21ms for one day.
+     *
+     * Not through [COUNTED_AS]: a row here is counted nowhere, so it is on
+     * its own date, category and merchant, where the feed draws it. That
+     * holds for a payback held for review or left out, whatever its bill.
      */
     @Query(NOT_IN_TOTAL_SQL)
     fun notInTotal(from: LocalDate, to: LocalDate): List<NotInTotal>
@@ -398,7 +405,9 @@ interface TxnDao {
      * How many transactions dated in `[from, to]` are to sort (CONTEXT.md):
      * [COUNTED], and filed under the category named [uncategorized]. Every
      * currency, as Search's Uncategorized filter finds them. Spending's
-     * `N TO SORT` (#273).
+     * `N TO SORT` (#273). A payback counted under its bill is no
+     * transaction to sort, since its bill files it; one whose bill does not
+     * count is filed on its own and is to sort like any refund (spec 7.4).
      */
     @Query(TO_SORT_COUNT_SQL)
     fun toSortCount(from: LocalDate, to: LocalDate, uncategorized: String = Seed.UNCATEGORIZED): Int
@@ -1094,9 +1103,11 @@ interface TxnDao {
      * largest first, grouped by spec 6.4's resolved identity rather than by
      * `merchant_key`, so a shop paid through two rails is one row.
      *
-     * [COUNTED]'s rows only, and per currency, for the reasons [dayTotals]
+     * [COUNTED_AS]'s rows only, and per currency, for the reasons [dayTotals]
      * gives. A row with no merchant is left out rather than ranked as a
-     * merchant called nothing.
+     * merchant called nothing. A payback counted under its bill is in its
+     * bill's merchant's net and not in its `N×` ([TXN_COUNT]), and never
+     * names the line, so a friend is never a merchant here (spec 7.4).
      *
      * The join costs `txn(merchant_key)` its ordered walk of the `GROUP BY`:
      * the period's rows are found through `index_txn_local_date_occurred_at`
@@ -1146,6 +1157,8 @@ interface TxnDao {
      * The rows behind one of [breakdownLines]' lines in [currency]: [identity]'s,
      * or with a null [identity] the rows with no merchant. Drawn as the feed
      * draws them, with its names and in its order (spec 9.3, Breakdown).
+     * Never a payback counted under its bill: its money is in its bill's
+     * line, and it is no row there or under itself (spec 9.3, Paybacks).
      *
      * `IS`, not `=`, so the null identity matches the null `merchant_key` and
      * nothing else: [MerchantSql.IDENTITY] is null exactly when that is.
@@ -1193,7 +1206,8 @@ interface TxnDao {
     /**
      * The rows behind [merchantMonth]'s figure in [currency], across every
      * category, drawn as the feed draws them, with its names and in its order
-     * (spec 9.3, Merchant month).
+     * (spec 9.3, Merchant month). Never a payback counted under its bill, as
+     * [breakdownRows] says.
      */
     @Query(MERCHANT_MONTH_ROWS_SQL)
     fun merchantMonthRows(key: String, from: LocalDate, to: LocalDate, currency: String): List<FeedRow>
@@ -1352,6 +1366,110 @@ interface TxnDao {
         const val COUNTED_ROW = "(txn.state = 'COMMITTED' AND txn.is_excluded = 0)"
 
         /**
+         * The row `txn` is a payback whose bill counts (spec 7.4): it names a
+         * bill that is `COMMITTED` and not excluded, found by primary key.
+         * Such a row counts, if it counts at all, under its bill and never
+         * under itself. A bill that stops counting keeps its paybacks, and
+         * this turns false for them, so each counts on its own again.
+         */
+        const val PAYS_BACK_A_COUNTED_BILL =
+            "(txn.bill_txn_id IS NOT NULL AND EXISTS (SELECT 1 FROM txn AS bill " +
+                "WHERE bill.id = txn.bill_txn_id AND bill.state = 'COMMITTED' AND bill.is_excluded = 0))"
+
+        /**
+         * The counted paybacks of the counted bills `txn` (spec 7.4), each
+         * with its own money and its bill's date, category and merchant:
+         * [COUNTED_AS]'s second half. It ends inside its `WHERE`, so a caller
+         * appends its bounds on the bill, as [COUNTED_AS] appends the period
+         * and `SearchSql.totals` the search. `+state` on both sides, for
+         * [COUNTED]'s reason. `pays_back` is 1.
+         */
+        const val PAYBACKS_OF_COUNTED_BILLS =
+            """
+            SELECT payback.currency AS currency, payback.direction AS direction,
+                   payback.amount_sen AS amount_sen, payback.raw_capture_id AS raw_capture_id,
+                   payback.source_package AS source_package,
+                   txn.local_date AS local_date, txn.category_id AS category_id,
+                   txn.merchant_key AS merchant_key, txn.merchant_display AS merchant_display,
+                   txn.merchant_raw AS merchant_raw, txn.occurred_at AS occurred_at,
+                   1 AS pays_back
+            FROM txn JOIN txn AS payback ON payback.bill_txn_id = txn.id
+            WHERE +txn.state = 'COMMITTED' AND txn.is_excluded = 0
+              AND +payback.state = 'COMMITTED' AND payback.is_excluded = 0
+            """
+
+        /**
+         * **The counting fragment** (spec 7.4, 15.3): the rows [COUNTED]
+         * counts in `[:from, :to]`, each with the date, category and merchant
+         * it counts under. A payback whose bill counts takes its bill's --
+         * `local_date`, `category_id`, `merchant_key`, and the name and
+         * `occurred_at` [MERCHANT_TOTALS_SQL] names a line by, so a friend
+         * never names a shop -- and every other row its own. Nothing is
+         * copied onto the payback row, so Not a payback restores it exactly.
+         *
+         * A derived table named `counted`, whose columns are named for the
+         * `txn` columns they stand in for; `pays_back` is 1 on a payback
+         * counted under its bill. Not named `txn`: its co-routine would read
+         * `SCAN txn` in a plan, which is how `QueryPlanTest` tells a scan of
+         * the whole table. [NET_SEN], [TXN_COUNT] and
+         * [MerchantSql.COUNTED_IDENTITY] read it. The period is in here rather than in the
+         * caller, because a payback is found by its bill's `local_date`, not
+         * its own: the first half walks the period's rows through
+         * `index_txn_local_date_occurred_at`, leaving out the paybacks the
+         * second half finds by their bill there, through `txn(bill_txn_id)`.
+         * A row that is not counted is on no line here, and a payback that
+         * is not counted itself stays out wherever its bill is: the kept-out
+         * reads ([NOT_IN_TOTAL_SQL] and the rest) read `txn` on its own
+         * fields, where such a row is drawn.
+         *
+         * Measured on emulator-5554 by `PaybackTimingTest`, over
+         * [merchantTotals]' constructed ledger of 20,000 rows with 1,000 bills
+         * paid back twice each (about 83 paybacks a month), for September,
+         * median of 50 after 10 warm-up reads, each against the same ledger
+         * read without the fragment: [monthTotals] 0.90ms (0.53ms),
+         * [monthSplit] 1.03ms (0.53ms), [dayTotals] 1.12ms (0.61ms),
+         * [monthByCategory] 1.02ms (0.63ms), [merchantTotals] 2.62ms (1.71ms),
+         * [breakdownLines] 0.67ms (0.47ms), [merchantMonth] 0.63ms (0.41ms),
+         * and `ChartsViewModel.readMonth`'s eight aggregates in one
+         * transaction 6.77ms (3.93ms): 2.8ms more on a read measured at 45ms,
+         * under the 66ms a gate waits for a lease. [monthlyTotals] over all
+         * 24 months, the `Months` sheet, went from 8.1ms to 15.9ms, since the
+         * second half probes `txn(bill_txn_id)` once for each bill in the
+         * span: the one read whose cost grows with the history it covers.
+         */
+        const val COUNTED_AS =
+            """
+            (SELECT txn.currency AS currency, txn.direction AS direction,
+                    txn.amount_sen AS amount_sen, txn.raw_capture_id AS raw_capture_id,
+                    txn.source_package AS source_package,
+                    txn.local_date AS local_date, txn.category_id AS category_id,
+                    txn.merchant_key AS merchant_key, txn.merchant_display AS merchant_display,
+                    txn.merchant_raw AS merchant_raw, txn.occurred_at AS occurred_at,
+                    0 AS pays_back
+             FROM txn
+             WHERE """ + COUNTED + """
+               AND txn.local_date BETWEEN :from AND :to
+               AND NOT """ + PAYS_BACK_A_COUNTED_BILL + """
+             UNION ALL """ + PAYBACKS_OF_COUNTED_BILLS + """
+               AND txn.local_date BETWEEN :from AND :to
+            ) AS counted
+            """
+
+        /**
+         * A group's signed net: payments in, refunds out (spec 15.3), the one
+         * expression every aggregate over [COUNTED_AS] sums by, so a row and
+         * the screen it opens agree. A payback is a `REFUND`, so it subtracts.
+         */
+        const val NET_SEN = "SUM(CASE WHEN counted.direction = 'EXPENSE' THEN counted.amount_sen ELSE -counted.amount_sen END)"
+
+        /**
+         * A group's transaction count, `N×` and `N TRANSACTIONS`: its rows
+         * less the paybacks counted in it, which add nothing to any count
+         * (spec 7.4). Over [COUNTED_AS].
+         */
+        const val TXN_COUNT = "SUM(counted.pays_back = 0)"
+
+        /**
          * [distinctMonthCount]'s query, hoisted for the same reason the
          * aggregates above are: no behavioural test can see a plan, and this
          * one reads the `txn` table itself at a cost its KDoc asserts.
@@ -1485,53 +1603,42 @@ interface TxnDao {
 
         const val DAY_TOTALS_SQL =
             """
-            SELECT local_date AS localDate, currency,
-                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
-            FROM txn
-            WHERE """ + COUNTED + """
-              AND local_date BETWEEN :from AND :to
-            GROUP BY local_date, currency
+            SELECT counted.local_date AS localDate, counted.currency AS currency, """ + NET_SEN + """ AS netSen
+            FROM """ + COUNTED_AS + """
+            GROUP BY counted.local_date, counted.currency
             """
 
         const val MONTH_TOTALS_SQL =
             """
-            SELECT currency,
-                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
-            FROM txn
-            WHERE """ + COUNTED + """
-              AND local_date BETWEEN :from AND :to
-            GROUP BY currency
+            SELECT counted.currency AS currency, """ + NET_SEN + """ AS netSen
+            FROM """ + COUNTED_AS + """
+            GROUP BY counted.currency
             """
 
         /** [monthSources]' query, hoisted for `QueryPlanTest`. */
         const val MONTH_SOURCES_SQL =
             """
-            SELECT DISTINCT raw_capture_id IS NULL AS byHand,
-                   CASE WHEN raw_capture_id IS NULL THEN NULL ELSE source_package END AS sourcePackage
-            FROM txn
-            WHERE """ + COUNTED + """
-              AND local_date BETWEEN :from AND :to
+            SELECT DISTINCT counted.raw_capture_id IS NULL AS byHand,
+                   CASE WHEN counted.raw_capture_id IS NULL THEN NULL ELSE counted.source_package END AS sourcePackage
+            FROM """ + COUNTED_AS + """
             """
 
         const val MONTHLY_TOTALS_SQL =
             """
-            SELECT local_date / 100 AS month, currency,
-                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
-            FROM txn
-            WHERE """ + COUNTED + """
-              AND local_date BETWEEN :from AND :to
-            GROUP BY local_date / 100, currency
+            SELECT counted.local_date / 100 AS month, counted.currency AS currency, """ + NET_SEN + """ AS netSen
+            FROM """ + COUNTED_AS + """
+            GROUP BY counted.local_date / 100, counted.currency
             """
 
         const val MONTH_SPLIT_SQL =
             """
-            SELECT currency,
-                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE 0 END) AS spentSen,
-                   SUM(CASE WHEN direction = 'EXPENSE' THEN 0 ELSE amount_sen END) AS cameBackSen
-            FROM txn
-            WHERE """ + COUNTED + """
-              AND local_date BETWEEN :from AND :to
-            GROUP BY currency
+            SELECT counted.currency AS currency,
+                   SUM(CASE WHEN counted.direction = 'EXPENSE' THEN counted.amount_sen
+                            WHEN counted.pays_back = 1 THEN -counted.amount_sen ELSE 0 END) AS spentSen,
+                   SUM(CASE WHEN counted.direction = 'EXPENSE' OR counted.pays_back = 1 THEN 0
+                            ELSE counted.amount_sen END) AS cameBackSen
+            FROM """ + COUNTED_AS + """
+            GROUP BY counted.currency
             """
 
         /** [NOT_IN_TOTAL_SQL] up to its `GROUP BY`, so [BREAKDOWN_KEPT_OUT_SQL] adds one clause and differs in nothing else. */
@@ -1564,29 +1671,20 @@ interface TxnDao {
          */
         const val NOT_IN_TOTAL_SQL = NOT_IN_TOTAL_ROWS + NOT_IN_TOTAL_GROUPS
 
-        /**
-         * A group's signed net: payments in, refunds out (spec 15.3), the one
-         * expression [MERCHANT_TOTALS_SQL], [BREAKDOWN_LINES_SQL] and
-         * [MERCHANT_MONTH_SQL] sum by, so a row and the screen it opens agree.
-         */
-        const val NET_SEN = "SUM(CASE WHEN txn.direction = 'EXPENSE' THEN txn.amount_sen ELSE -txn.amount_sen END)"
-
         const val MERCHANT_TOTALS_SQL =
             """
             SELECT g.identity_key AS identityKey,
                    COALESCE(merchant_name.display, g.derived) AS displayName,
                    g.currency AS currency, g.net_sen AS netSen, g.txn_count AS txnCount
             FROM (
-                SELECT """ + MerchantSql.IDENTITY + """ AS identity_key, txn.currency AS currency,
+                SELECT """ + MerchantSql.COUNTED_IDENTITY + """ AS identity_key, counted.currency AS currency,
                        """ + NET_SEN + """ AS net_sen,
-                       COUNT(*) AS txn_count,
-                       MAX(txn.occurred_at) AS last_at,
-                       COALESCE(txn.merchant_display, txn.merchant_raw) AS derived
-                FROM txn """ + MerchantSql.ALIAS_JOIN + """
-                WHERE """ + COUNTED + """
-                  AND txn.local_date BETWEEN :from AND :to
-                  AND txn.merchant_key IS NOT NULL
-                GROUP BY identity_key, txn.currency
+                       """ + TXN_COUNT + """ AS txn_count,
+                       MAX(counted.occurred_at) AS last_at,
+                       COALESCE(counted.merchant_display, counted.merchant_raw) AS derived
+                FROM """ + COUNTED_AS + MerchantSql.COUNTED_ALIAS_JOIN + """
+                WHERE counted.merchant_key IS NOT NULL
+                GROUP BY identity_key, counted.currency
             ) g
             LEFT JOIN merchant_name ON merchant_name.merchant_key = g.identity_key
             ORDER BY g.net_sen DESC
@@ -1604,16 +1702,14 @@ interface TxnDao {
                    COALESCE(merchant_name.display, g.derived) AS displayName,
                    g.currency AS currency, g.net_sen AS netSen, g.txn_count AS txnCount
             FROM (
-                SELECT """ + MerchantSql.IDENTITY + """ AS identity_key, txn.currency AS currency,
+                SELECT """ + MerchantSql.COUNTED_IDENTITY + """ AS identity_key, counted.currency AS currency,
                        """ + NET_SEN + """ AS net_sen,
-                       COUNT(*) AS txn_count,
-                       MAX(txn.occurred_at) AS last_at,
-                       COALESCE(txn.merchant_display, txn.merchant_raw) AS derived
-                FROM txn """ + MerchantSql.ALIAS_JOIN + """
-                WHERE """ + COUNTED + """
-                  AND txn.local_date BETWEEN :from AND :to
-                  AND +txn.category_id = :categoryId
-                GROUP BY identity_key, txn.currency
+                       """ + TXN_COUNT + """ AS txn_count,
+                       MAX(counted.occurred_at) AS last_at,
+                       COALESCE(counted.merchant_display, counted.merchant_raw) AS derived
+                FROM """ + COUNTED_AS + MerchantSql.COUNTED_ALIAS_JOIN + """
+                WHERE +counted.category_id = :categoryId
+                GROUP BY identity_key, counted.currency
             ) g
             LEFT JOIN merchant_name ON merchant_name.merchant_key = g.identity_key
             """
@@ -1621,6 +1717,7 @@ interface TxnDao {
         /** [breakdownRows]' query: [FEED_ROWS] cut to one line's [COUNTED] rows, in [FEED_ORDER]. */
         const val BREAKDOWN_ROWS_SQL = FEED_ROWS + """
             AND """ + COUNTED + """
+            AND NOT """ + PAYS_BACK_A_COUNTED_BILL + """
             AND txn.local_date BETWEEN :from AND :to
             AND +txn.category_id = :categoryId
             AND txn.currency = :currency
@@ -1654,16 +1751,14 @@ interface TxnDao {
                    COALESCE(merchant_name.display, g.derived) AS displayName,
                    g.currency AS currency, g.net_sen AS netSen, g.txn_count AS txnCount
             FROM (
-                SELECT """ + MerchantSql.IDENTITY_OF_KEY + """ AS identity_key, txn.currency AS currency,
+                SELECT """ + MerchantSql.IDENTITY_OF_KEY + """ AS identity_key, counted.currency AS currency,
                        """ + NET_SEN + """ AS net_sen,
-                       COUNT(*) AS txn_count,
-                       MAX(txn.occurred_at) AS last_at,
-                       COALESCE(txn.merchant_display, txn.merchant_raw) AS derived
-                FROM txn
-                WHERE """ + COUNTED + """
-                  AND txn.local_date BETWEEN :from AND :to
-                  """ + OF_MERCHANT + """
-                GROUP BY txn.currency
+                       """ + TXN_COUNT + """ AS txn_count,
+                       MAX(counted.occurred_at) AS last_at,
+                       COALESCE(counted.merchant_display, counted.merchant_raw) AS derived
+                FROM """ + COUNTED_AS + """
+                WHERE +counted.merchant_key IN """ + MerchantSql.KEYS_OF_KEY + """
+                GROUP BY counted.currency
             ) g
             LEFT JOIN merchant_name ON merchant_name.merchant_key = g.identity_key
             """
@@ -1671,6 +1766,7 @@ interface TxnDao {
         /** [merchantMonthRows]' query: [FEED_ROWS] cut to the merchant's [COUNTED] rows, in [FEED_ORDER]. */
         const val MERCHANT_MONTH_ROWS_SQL = FEED_ROWS + """
             AND """ + COUNTED + """
+            AND NOT """ + PAYS_BACK_A_COUNTED_BILL + """
             AND txn.local_date BETWEEN :from AND :to
             AND txn.currency = :currency
             """ + OF_MERCHANT + FEED_ORDER
@@ -1706,12 +1802,9 @@ interface TxnDao {
 
         const val MONTH_BY_CATEGORY_SQL =
             """
-            SELECT category_id AS categoryId, currency,
-                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
-            FROM txn
-            WHERE """ + COUNTED + """
-              AND local_date BETWEEN :from AND :to
-            GROUP BY category_id, currency
+            SELECT counted.category_id AS categoryId, counted.currency AS currency, """ + NET_SEN + """ AS netSen
+            FROM """ + COUNTED_AS + """
+            GROUP BY counted.category_id, counted.currency
             ORDER BY netSen DESC
             LIMIT :limit
             """
@@ -1723,13 +1816,10 @@ interface TxnDao {
          */
         const val MONTH_TOP_NAMED_SQL =
             """
-            SELECT category_id AS categoryId, currency,
-                   SUM(CASE WHEN direction = 'EXPENSE' THEN amount_sen ELSE -amount_sen END) AS netSen
-            FROM txn
-            WHERE """ + COUNTED + """
-              AND local_date BETWEEN :from AND :to
-              AND category_id IS NOT (SELECT id FROM category WHERE name = :uncategorized)
-            GROUP BY category_id, currency
+            SELECT counted.category_id AS categoryId, counted.currency AS currency, """ + NET_SEN + """ AS netSen
+            FROM """ + COUNTED_AS + """
+            WHERE counted.category_id IS NOT (SELECT id FROM category WHERE name = :uncategorized)
+            GROUP BY counted.category_id, counted.currency
             ORDER BY netSen DESC
             LIMIT :limit
             """
@@ -1743,10 +1833,9 @@ interface TxnDao {
          */
         const val TO_SORT_COUNT_SQL =
             """
-            SELECT COUNT(*) FROM txn
-            WHERE """ + COUNTED + """
-              AND local_date BETWEEN :from AND :to
-              AND +category_id = (SELECT id FROM category WHERE name = :uncategorized)
+            SELECT COUNT(*) FROM """ + COUNTED_AS + """
+            WHERE counted.pays_back = 0
+              AND +counted.category_id = (SELECT id FROM category WHERE name = :uncategorized)
             """
     }
 }
