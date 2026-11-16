@@ -212,10 +212,12 @@ internal fun MutableList<NavKey>.pushOnce(key: NavKey) {
  * [txnId] is the manual entry to open filled in, or null to add a new one;
  * [createdAt] is its `created_at`, which tells it from a later row a
  * delete-everything or a restore gives the same id (`EditTarget`).
+ * [paysBack] is a bill's **Add a cash payback** (spec 7.4): a new entry
+ * under Received with that bill picked.
  *
  * See [Ledger] for why it is registered nowhere.
  */
-@Serializable data class ManualEntry(val txnId: Long? = null, val createdAt: Long? = null) : NavKey
+@Serializable data class ManualEntry(val txnId: Long? = null, val createdAt: Long? = null, val paysBack: Long? = null) : NavKey
 
 /**
  * A captured transaction's detail screen (#153), pushed on the **current**

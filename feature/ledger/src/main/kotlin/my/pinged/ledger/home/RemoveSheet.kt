@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.data.dao.FeedRow
+import my.pinged.ledger.bill.paybacksStayLine
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
@@ -26,7 +27,8 @@ internal const val REMOVE_NOTE =
     "It leaves your list and every total. The notification is kept, so the app will not read it as a new payment."
 
 /**
- * Not a payment, asked of a captured row already counted (#132). A sheet and
+ * Not a payment, asked of a captured row already counted (#132), naming
+ * what happens to [paybacks] when the row is a bill. A sheet and
  * not an immediate write: a captured row is the bank's word, and nothing here
  * can put the row back, so a stray tap must not remove it. The confirm is
  * off unless [enabled]: a sheet already open when a ledger replacement starts
@@ -34,7 +36,13 @@ internal const val REMOVE_NOTE =
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun RemoveSheet(row: FeedRow, onConfirm: () -> Unit, onDismiss: () -> Unit, enabled: Boolean = true) {
+internal fun RemoveSheet(
+    row: FeedRow,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    enabled: Boolean = true,
+    paybacks: List<FeedRow> = emptyList(),
+) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -55,7 +63,9 @@ internal fun RemoveSheet(row: FeedRow, onConfirm: () -> Unit, onDismiss: () -> U
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
         )
         Text(
-            REMOVE_NOTE,
+            // A bill's paybacks keep their link and count on their own
+            // (spec 7.4), and the sheet says so (`NotPaymentBill`).
+            listOfNotNull(REMOVE_NOTE, paybacksStayLine(paybacks)).joinToString(" "),
             fontFamily = Body,
             fontSize = 13.sp,
             lineHeight = 18.sp,

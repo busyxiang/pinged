@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import my.pinged.capture.GuardedRunner
 import my.pinged.data.dao.BillChoice
+import my.pinged.data.dao.FeedRow
 import my.pinged.data.entity.Category
 import my.pinged.ledger.bill.BillFor
 import my.pinged.ledger.bill.BillOffer
@@ -93,6 +94,18 @@ data class ManualEntryState(
      */
     val earliestPayback: LocalDate? = null,
     /**
+     * For a typed bill being corrected, its paybacks as read with it (spec
+     * 9.4, `design/CashBill.dc.html`): its `PAID BACK` list and what Delete
+     * says of them.
+     */
+    val paybacks: List<FeedRow> = emptyList(),
+    /**
+     * How many rows name the entry being corrected as their bill, whatever
+     * their state: while any does, Received is off, since `TxnDao` refuses
+     * to make a bill money received.
+     */
+    val pointers: Int = 0,
+    /**
      * [editing]'s entry is no longer there -- deleted elsewhere, or replaced
      * by a delete-everything or a restore that may have given its id to
      * another payment: the screen's cue to close, as [deleted] is, with
@@ -136,6 +149,26 @@ data class ManualEntryState(
         }
     }
 
+    /**
+     * Received is off (spec 9.4, `CashBill`): the entry being corrected is a
+     * bill paybacks point at, and money received cannot be paid back.
+     */
+    val receivedOff: Boolean get() = editing != null && pointers > 0
+
+    /**
+     * The share as the amount is retyped (`CashBill`): the draft's amount
+     * less the counted paybacks, as every total counts it, below zero when
+     * friends rounded up.
+     */
+    val shareSen: Long get() = draft.amountSen - paybacks.filter { it.counts }.sumOf { it.txn.amountSen }
+
+    /**
+     * Leaving would lose an edit: a typed bill whose draft is not what is
+     * stored. Back and a payback's row ask first then (spec 9.4); a payback
+     * opens on its own screen, over this one.
+     */
+    val asksBeforeLeaving: Boolean get() = paybacks.isNotEmpty() && loaded != null && draft != loaded && !saved && !deleted
+
     /** [nearby]'s Add anyway: Save's conditions, the question aside. */
     val canAddAnyway: Boolean get() = nearby != null && writable
 
@@ -176,12 +209,21 @@ class ManualEntryViewModel internal constructor(
     clock: () -> Long = System::currentTimeMillis,
     runner: ReadRunner = GuardedRunner(app),
     replacement: StateFlow<LedgerReplacement?> = LedgerReplacements.current,
+    paysBack: Long? = null,
     preselection: ((merchant: String) -> Deferred<Long?>)?,
 ) : AndroidViewModel(app) {
 
     constructor(app: Application, handle: SavedStateHandle) : this(app, handle, null, preselection = null)
 
     constructor(app: Application, handle: SavedStateHandle, editing: EditTarget?) : this(app, handle, editing, preselection = null)
+
+    /**
+     * [paysBack] is a bill's **Add a cash payback** (spec 7.4): a new entry
+     * that starts under Received with that bill picked. Ignored for a
+     * correction, and under a draft a process death kept.
+     */
+    constructor(app: Application, handle: SavedStateHandle, editing: EditTarget?, paysBack: Long?) :
+        this(app, handle, editing, preselection = null, paysBack = paysBack)
 
     private val entries = ManualEntries(viewModelScope, runner, replacement, clock)
 
@@ -206,13 +248,18 @@ class ManualEntryViewModel internal constructor(
      */
     internal val editing: EditTarget? = SavedDraft.editTarget(handle, target)
 
-    private val draft = MutableStateFlow(restoredDraft ?: ManualDraft())
+    private val draft = MutableStateFlow(
+        restoredDraft ?: paysBack?.takeIf { editing == null }?.let { ManualDraft(direction = Direction.REFUND, bill = it) } ?: ManualDraft(),
+    )
 
     /** [ManualEntryState.bill]: the draft's bill, read whenever the pick changes. */
     private val bill = MutableStateFlow<BillChoice?>(null)
 
     /** [ManualEntryState.earliestPayback], read with a correction's entry. */
     private val earliestPayback = MutableStateFlow<LocalDate?>(null)
+
+    /** [ManualEntryState.paybacks] and [ManualEntryState.pointers], read with a correction's entry. */
+    private val paybacks = MutableStateFlow<Pair<List<FeedRow>, Int>>(emptyList<FeedRow>() to 0)
     private val progress = MutableStateFlow(Progress.EDITING)
 
     /**
@@ -238,8 +285,8 @@ class ManualEntryViewModel internal constructor(
             entries.categories,
             ledger,
             combine(progress, loaded, entries.today, ::Triple),
-            combine(bill, earliestPayback, ::Pair),
-        ) { (draft, nearby), categories, ledger, (progress, loaded, today), (bill, earliestPayback) ->
+            combine(bill, earliestPayback, paybacks, ::Triple),
+        ) { (draft, nearby), categories, ledger, (progress, loaded, today), (bill, earliestPayback, paybacks) ->
             ManualEntryState(
                 draft = draft,
                 categories = categories,
@@ -255,11 +302,14 @@ class ManualEntryViewModel internal constructor(
                 today = today,
                 bill = bill,
                 earliestPayback = earliestPayback,
+                paybacks = paybacks.first,
+                pointers = paybacks.second,
             )
         }.stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            ManualEntryState(editing = editing?.id, reading = editing != null && restoredDraft == null, today = entries.today.value),
+            // The draft too, so a cash payback's first frame is already under Received.
+            ManualEntryState(draft = draft.value, editing = editing?.id, reading = editing != null && restoredDraft == null, today = entries.today.value),
         )
 
     init {
@@ -353,9 +403,22 @@ class ManualEntryViewModel internal constructor(
                 val first = loaded.value == null
                 loaded.value = read.draft
                 earliestPayback.value = read.earliestPayback
+                paybacks.value = read.paybacks to read.pointers
                 if (first && restoredDraft == null) draft.value = read.draft
             }
         }
+    }
+
+    /**
+     * Read the entry being corrected again, keeping what is typed: what the
+     * screen does on each resume, so a payback added or changed over it is
+     * listed, and its share counted, on the way back. Nothing until the
+     * first read has landed, which is the arrival read's to do.
+     */
+    fun reread() {
+        val target = editing ?: return
+        if (loaded.value == null) return
+        viewModelScope.launch { read(target) }
     }
 
     /** The amount the field now holds, in sen; see [Keypad]. */

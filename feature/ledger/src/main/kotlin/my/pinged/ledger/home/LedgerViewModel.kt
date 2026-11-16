@@ -262,7 +262,7 @@ class LedgerViewModel internal constructor(
             )).also { feedSource = it }
         }
             .flow
-            .map { paging -> paging.map { LedgerItem.Row(it.txn, it.identityKey, it.displayName) as LedgerItem } }
+            .map { paging -> paging.map { LedgerItem.Row.of(it) as LedgerItem } }
             .map { paging ->
                 paging.insertSeparators { before, after ->
                     dayHeaderBetween(before, after)?.let { it.copy(subtotal = subtotalOf(it.date)) }

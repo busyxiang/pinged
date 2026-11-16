@@ -47,19 +47,21 @@ fun Modifier.dottedRule(atTop: Boolean = false, inset: Dp = 0.dp): Modifier = dr
 
 /**
  * [dottedRule] around all four sides: the artboard's `1px dotted` box, which
- * the review inbox draws around a notification quoted word for word.
+ * the review inbox draws around a notification quoted word for word, in
+ * [Rule] unless [colour] says otherwise: a typed bill's Received, off, is
+ * dotted in [Faint] (`design/CashBill.dc.html`).
  *
  * Stroked by hand and inset by half the stroke, as [dashedOutline] is and
  * for its reason; the same 1dp-on-2dp-off pattern as [dottedRule], from the
  * same declaration.
  */
-fun Modifier.dottedOutline(): Modifier = drawWithCache {
+fun Modifier.dottedOutline(colour: Color = Rule): Modifier = drawWithCache {
     val weight = 1.dp.toPx()
     val topLeft = Offset(weight / 2f, weight / 2f)
     val box = Size(size.width - weight, size.height - weight)
     val corner = CornerRadius(2.dp.toPx())
     val dots = Stroke(width = weight, pathEffect = perforation())
-    onDrawBehind { drawRoundRect(color = Rule, topLeft = topLeft, size = box, cornerRadius = corner, style = dots) }
+    onDrawBehind { drawRoundRect(color = colour, topLeft = topLeft, size = box, cornerRadius = corner, style = dots) }
 }
 
 /**

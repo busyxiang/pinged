@@ -13,8 +13,10 @@ import my.pinged.capture.GuardedRunner
 import my.pinged.data.Databases
 import my.pinged.data.dao.BillChoice
 import my.pinged.data.dao.DetailRow
+import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.TxnDao
 import my.pinged.ledger.bill.BillFor
+import my.pinged.parse.Direction
 import my.pinged.ledger.bill.BillOffer
 import my.pinged.ledger.bill.offerBills
 import my.pinged.ledger.home.ChooserRead
@@ -60,7 +62,13 @@ class DetailViewModel internal constructor(
      */
     internal val read: ScreenRead<Unit, DetailRead> = ScreenRead.fixed(viewModelScope, runner, "The payment cannot be read", replacement) { db ->
         val row = db.txnDao().detail(txnId)?.takeIf { it.row.txn.createdAt == createdAt }
-        DetailRead(row = row, chooser = rows.readChooser(db), bill = row?.row?.txn?.billTxnId?.let(db.txnDao()::billChoice))
+        DetailRead(
+            row = row,
+            chooser = rows.readChooser(db),
+            bill = row?.row?.txn?.billTxnId?.let(db.txnDao()::billChoice),
+            // Only an expense can be a bill; a refund is spared the probe.
+            paybacks = row?.row?.txn?.takeIf { it.direction == Direction.EXPENSE }?.let { db.txnDao().paybacksOf(it.id) }.orEmpty(),
+        )
     }
 
     /** The category chooser and the merchant sheet, shared with the list; the row is read again after each write. */
@@ -167,10 +175,12 @@ class DetailViewModel internal constructor(
 
 /**
  * What one read of [DetailViewModel.read] found: [row], null when the row is gone,
- * the chooser's half, and the [bill] the row pays back, null for none.
+ * the chooser's half, the [bill] the row pays back, null for none, and the
+ * [paybacks] that pay the row back, as `TxnDao.paybacksOf` lists them.
  */
 internal data class DetailRead(
     val row: DetailRow?,
     val chooser: ChooserRead,
     val bill: BillChoice? = null,
+    val paybacks: List<FeedRow> = emptyList(),
 )

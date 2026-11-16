@@ -32,6 +32,7 @@ import my.pinged.ledger.review.NOON
 import my.pinged.ledger.review.manual
 import my.pinged.ledger.settings.Operation
 import my.pinged.ledger.settings.Transfers
+import my.pinged.parse.Direction
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -94,6 +95,24 @@ class DraftSavedStateTest {
         val restored = ManualEntryViewModel(app, afterProcessDeath(handle), target = null, preselection = never).also(viewModels::add)
 
         assertEquals("The draft did not survive the process death", typed, restoredDraft(restored))
+    }
+
+    /**
+     * A bill's Add a cash payback (spec 7.4) opens a new entry under Received
+     * with the bill picked, and a process death keeps the draft the user then
+     * typed over it, not the one it began as.
+     */
+    @Test fun aCashPaybackStartsUnderReceivedWithItsBillPicked() = runBlocking {
+        val handle = SavedStateHandle()
+        val vm = ManualEntryViewModel(app, handle, target = null, paysBack = 70L, preselection = never).also(viewModels::add)
+
+        assertEquals(ManualDraft(direction = Direction.REFUND, bill = 70L), vm.state.value.draft)
+
+        vm.amount(2_000L)
+        vm.pickBill(null)
+        withTimeout(TIMEOUT) { vm.state.first { it.draft.bill == null && it.draft.amountSen == 2_000L } }
+        val restored = ManualEntryViewModel(app, afterProcessDeath(handle), target = null, paysBack = 70L, preselection = never).also(viewModels::add)
+        assertEquals("The bill a restored draft took off came back", ManualDraft(amountSen = 2_000L, direction = Direction.REFUND), restoredDraft(restored))
     }
 
     @Test fun aTappedChipComesBackTapped() = runBlocking {

@@ -1,5 +1,6 @@
 package my.pinged.ledger.entry
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,6 +48,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -69,6 +72,12 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import my.pinged.data.dao.BillChoice
+import my.pinged.data.dao.FeedRow
+import my.pinged.ledger.bill.PaidBackFooter
+import my.pinged.ledger.bill.PaidBackList
+import my.pinged.ledger.bill.paybacksStayLine
+import my.pinged.ledger.bill.receivedOffLine
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.data.entity.Category
 import my.pinged.ledger.bill.BillChooser
 import my.pinged.ledger.bill.BillFor
@@ -113,6 +122,7 @@ import my.pinged.ui.theme.Paper
 import my.pinged.ui.theme.ReceiptSheet
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.dashedOutline
+import my.pinged.ui.theme.dottedOutline
 import my.pinged.ui.theme.dottedRule
 
 /**
@@ -132,9 +142,16 @@ fun ManualEntryScreen(
     onSaved: () -> Unit,
     modifier: Modifier = Modifier,
     onDeleted: () -> Unit = onSaved,
+    openings: RowOpenings = RowOpenings.None,
 ) {
     // The chips read again on each resume and on `Databases.rewrites`, as every screen's read is.
     viewModel.chips.rememberReadState()
+    // A typed bill's paybacks too: one added or changed over this screen is
+    // listed on the way back to it.
+    LifecycleResumeEffect(viewModel) {
+        viewModel.reread()
+        onPauseOrDispose {}
+    }
     val state by viewModel.state.collectAsState()
     ManualEntryScreenContent(
         state = state,
@@ -155,6 +172,8 @@ fun ManualEntryScreen(
         onDeleted = onDeleted,
         onPickBill = viewModel::pickBill,
         bills = viewModel::bills,
+        onOpenPayback = openings::open,
+        onAddCashPayback = { id -> openings.addCashPayback(id) },
     )
 }
 
@@ -189,7 +208,14 @@ internal fun ManualEntryScreenContent(
     onDeleted: () -> Unit = onSaved,
     onPickBill: (Long?) -> Unit = {},
     bills: suspend (BillFor, String) -> BillOffer? = { _, _ -> null },
+    onOpenPayback: (FeedRow) -> Unit = {},
+    onAddCashPayback: (billId: Long) -> Unit = {},
 ) {
+    // Where a typed bill was leaving to when it asked first (spec 9.4): back,
+    // or a payback's row. Null while it is not asking.
+    var leaving by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val leave: (() -> Unit) -> Unit = { go -> if (state.asksBeforeLeaving) leaving = go else go() }
+    BackHandler(enabled = state.asksBeforeLeaving) { leaving = onBack }
     LaunchedEffect(state.saved) { if (state.saved) onSaved() }
     LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
     // The entry is no longer there to correct; closed as after a delete.
@@ -204,7 +230,7 @@ internal fun ManualEntryScreenContent(
             .verticalScroll(rememberScrollState()),
     ) {
         val title = entryTitle(state.editing != null, state.draft.direction)
-        Header(title, onBack)
+        Header(title) { leave(onBack) }
         if (state.reading) {
             // Not the fields: they would draw the empty default draft as the
             // payment, and a field typed into now is overwritten by the read.
@@ -220,8 +246,17 @@ internal fun ManualEntryScreenContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DirectionControl(state.draft.direction, onDirection)
+                DirectionControl(state.draft.direction, onDirection, receivedOff = state.receivedOff.takeIf { it }?.let { receivedOffLine(state.pointers) })
                 DateChip(day = state.draft.day, today = state.today, onDay = onDay, conflict = state.dateConflict != null)
+            }
+            if (state.receivedOff) {
+                // The reason, under the row: also the segment's TalkBack state.
+                Text(
+                    receivedOffLine(state.pointers),
+                    style = MonoLabel,
+                    color = Muted,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp).testTag(RECEIVED_OFF),
+                )
             }
             state.dateConflict?.let {
                 Text(it, style = MonoLabel, color = Stamp, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp).testTag(DATE_CONFLICT))
@@ -264,6 +299,19 @@ internal fun ManualEntryScreenContent(
                 onChoose = onChooseCategory,
                 label = COUNTS_AGAINST.takeIf { state.draft.direction == Direction.REFUND },
             )
+            val editing = state.editing
+            if (editing != null && state.paybacks.isNotEmpty() && state.draft.direction == Direction.EXPENSE) {
+                // Under the chips, as `design/CashBill.dc.html` draws it. The
+                // board leaves the merchant and note out to fit the list; they
+                // stay below it, since a bill's name is corrected here.
+                PaidBackList(
+                    paybacks = state.paybacks,
+                    onOpen = { row -> leave { onOpenPayback(row) } },
+                    onAdd = { onAddCashPayback(editing) },
+                    footer = PaidBackFooter.Share(state.shareSen, RINGGIT),
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp),
+                )
+            }
             OptionalLine(MERCHANT, state.draft.merchant, onMerchant, MERCHANT_FIELD, KeyboardCapitalization.Words)
             OptionalLine(NOTE, state.draft.note, onNote, NOTE_FIELD, KeyboardCapitalization.Sentences)
         }
@@ -283,7 +331,31 @@ internal fun ManualEntryScreenContent(
             NearbyWarning(nearby, canAddAnyway = state.canAddAnyway, onAddAnyway = onAddAnyway, onKeepEditing = onKeepEditing)
         }
         SaveButton(if (state.editing != null) SAVE_CHANGES else SAVE, enabled = state.canSave, onClick = onSave)
-        if (state.editing != null) DeleteEntry(state.loaded, enabled = state.canDelete, onDelete = onDelete)
+        if (state.editing != null) DeleteEntry(state.loaded, state.paybacks, enabled = state.canDelete, onDelete = onDelete)
+    }
+    leaving?.let { go ->
+        LeaveQuestion(
+            onLeave = {
+                leaving = null
+                go()
+            },
+            onStay = { leaving = null },
+        )
+    }
+}
+
+/**
+ * Asked before a typed bill with unsaved edits is left (spec 9.4): Leave
+ * goes where the user was going and keeps nothing typed, Keep editing stays.
+ */
+@Composable
+private fun LeaveQuestion(onLeave: () -> Unit, onStay: () -> Unit) {
+    ReceiptSheet(onDismissRequest = onStay) {
+        Text(LEAVE_QUESTION, style = MonoLabel, color = Ink)
+        Row(Modifier.padding(top = 16.dp)) {
+            WarningButton(LEAVE, enabled = true, onClick = onLeave)
+            WarningButton(KEEP_EDITING, enabled = true, onClick = onStay)
+        }
     }
 }
 
@@ -388,14 +460,14 @@ private fun PaysBack(
  * row back would give it a new id and a new `created_at`.
  */
 @Composable
-private fun DeleteEntry(loaded: ManualDraft?, enabled: Boolean, onDelete: () -> Unit) {
+private fun DeleteEntry(loaded: ManualDraft?, paybacks: List<FeedRow>, enabled: Boolean, onDelete: () -> Unit) {
     var asking by rememberSaveable { mutableStateOf(false) }
     Box(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
         WarningButton(DELETE_PAYMENT, enabled = enabled, onClick = { asking = true })
     }
     if (asking && loaded != null) {
         ReceiptSheet(onDismissRequest = { asking = false }) {
-            Text(deleteQuestion(loaded.amountSen), style = MonoLabel, color = Ink)
+            Text(deleteQuestion(loaded.amountSen, paybacks), style = MonoLabel, color = Ink)
             Row(Modifier.padding(top = 16.dp)) {
                 WarningButton(CONFIRM_DELETE, enabled = enabled) {
                     asking = false
@@ -407,8 +479,13 @@ private fun DeleteEntry(loaded: ManualDraft?, enabled: Boolean, onDelete: () -> 
     }
 }
 
-/** Delete's question (spec 9.4): `Delete this RM12.50 payment? This can't be undone.` */
-internal fun deleteQuestion(amountSen: Long): String = "Delete this " + ringgit(amountSen) + " payment? This can't be undone."
+/**
+ * Delete's question (spec 9.4): `Delete this RM12.50 payment? This can't be
+ * undone.`, saying of a bill that its [paybacks] stay, as money received
+ * (`design/DeleteBill.dc.html`).
+ */
+internal fun deleteQuestion(amountSen: Long, paybacks: List<FeedRow> = emptyList()): String =
+    listOfNotNull("Delete this " + ringgit(amountSen) + " payment?", paybacksStayLine(paybacks), "This can't be undone.").joinToString(" ")
 
 
 /**
@@ -727,13 +804,16 @@ private val SEGMENTS = listOf(
  * takes no tap on it. Each segment is a 44dp-high selectable of its own.
  */
 @Composable
-private fun DirectionControl(direction: Direction, onDirection: (Direction) -> Unit) {
+private fun DirectionControl(direction: Direction, onDirection: (Direction) -> Unit, receivedOff: String? = null) {
     // Each segment draws its own hairline and the pair overlap by 1dp, with
     // the selected one on top: a border on the row would be drawn over the
     // selected segment's Ink edge, leaving only its inner side dark.
     Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy((-1).dp)) {
         for ((value, label, tag) in SEGMENTS) {
             val on = direction == value
+            // A typed bill's Received ([receivedOff] its reason): dotted in
+            // Faint, the board's off control, and saying why to TalkBack.
+            val off = receivedOff != null && value == Direction.REFUND && !on
             val shape = RoundedCornerShape(2.dp)
             Box(
                 Modifier
@@ -742,14 +822,18 @@ private fun DirectionControl(direction: Direction, onDirection: (Direction) -> U
                     // Selected is the day header's Card tint inside an Ink
                     // hairline, not a fill: Save stays the one filled element.
                     .then(if (on) Modifier.background(Card) else Modifier)
-                    .border(1.dp, if (on) Ink else Border, shape)
-                    .selectable(selected = on, role = Role.RadioButton) { onDirection(value) }
+                    .then(if (off) Modifier.dottedOutline(Faint) else Modifier.border(1.dp, if (on) Ink else Border, shape))
+                    .selectable(selected = on, enabled = !off, role = Role.RadioButton) { onDirection(value) }
+                    .then(if (off) Modifier.semantics { stateDescription = receivedOff!! } else Modifier)
                     .heightIn(min = 44.dp)
                     .padding(horizontal = 10.dp)
                     .testTag(tag),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = MonoLabel, color = if (on) Ink else Muted)
+                // Faint as the board draws it: an off control's label is exempt
+                // from text's 4.5:1 (WCAG 1.4.3), and the line under the row
+                // says the same in Muted.
+                Text(label, style = MonoLabel, color = if (on) Ink else if (off) Faint else Muted)
             }
         }
     }
@@ -858,6 +942,14 @@ internal fun entryTitle(editing: Boolean, direction: Direction): String = when {
 
 /** What a test finds the Paid segment by. */
 internal const val PAID_SEGMENT = "manual-entry-paid"
+
+/** The question a typed bill with unsaved edits asks before it is left (spec 9.4), and its two answers. */
+internal const val LEAVE_QUESTION = "Leave without saving? Your changes to this payment are not saved."
+internal const val LEAVE = "Leave"
+internal const val KEEP_EDITING = "Keep editing"
+
+/** What a test finds Received's off line by. */
+internal const val RECEIVED_OFF = "manual-entry-received-off"
 
 /** What a test finds the Received segment by. */
 internal const val RECEIVED_SEGMENT = "manual-entry-received"

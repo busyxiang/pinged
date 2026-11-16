@@ -196,6 +196,23 @@ class QueryPlanTest {
     }
 
     /**
+     * A list row's ends of spec 7.4's link ([TxnDao.BILL_COLUMNS]), on every
+     * row of every page: the bill a payback names is found by its primary
+     * key, and what a bill's counted paybacks add up to through
+     * `txn(bill_txn_id)`, never by a walk of `txn`. Neither may cost the
+     * feed its order from the day index.
+     */
+    @Test fun theFeedFindsALinksEndsByKey() {
+        val p = plan(bindable(TxnDao.FEED_SQL), 20260930)
+        assertTrue("A payback's bill is not looked up by its key:\n$p", p.contains("SEARCH bill USING INTEGER PRIMARY KEY (rowid=?)"))
+        assertTrue("A bill's paybacks are not found through their index:\n$p", Regex("SEARCH payback USING (COVERING )?INDEX index_txn_bill_txn_id \\(bill_txn_id=\\?\\)").containsMatchIn(p))
+        assertTrue("The feed's own walk is gone:\n$p", p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at (local_date<?)"))
+        assertNoSort(p)
+        assertTrue("The bill's name is not looked up by its key:\n$p", p.contains("SEARCH named USING INDEX sqlite_autoindex_merchant_name_1"))
+        assertTrue("The bill's merge is not looked up by its key:\n$p", p.contains("SEARCH aliased USING INDEX sqlite_autoindex_merchant_alias_1"))
+    }
+
+    /**
      * `TxnDao.dayRows`, the `Day` screen's read (#69): [TxnDao.FEED_SQL] cut
      * to one `local_date`, so it must **seek** that day in the index the feed
      * walks -- `SEARCH`, since a `SCAN` of the same index also names it -- and

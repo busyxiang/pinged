@@ -11,7 +11,6 @@ import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
-import my.pinged.data.entity.TxnState
 import my.pinged.ledger.home.ChooserRead
 import my.pinged.ledger.home.RowActions
 import my.pinged.ledger.home.rowScreen
@@ -101,10 +100,10 @@ class DayViewModel internal constructor(
                 counted = counted,
                 notInTotal = keptOut,
                 status = status,
-                // [dayTotals]' COUNTED, over the rows already read.
-                payments = dayRows.count {
-                    it.txn.state == TxnState.COMMITTED && !it.txn.isExcluded && it.txn.currency == RINGGIT
-                },
+                // Counted by the fragment every total reads, not over the
+                // rows: a payback is in the list on the day it arrived, and
+                // in no count, there or on its bill's day (spec 7.4).
+                payments = txns.paymentCount(day, day, RINGGIT),
             ),
             chooser = chooser,
         )

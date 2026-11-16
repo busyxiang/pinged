@@ -66,6 +66,46 @@ data class FeedRow(
     @Embedded val txn: Txn,
     @ColumnInfo(name = "identity_key") val identityKey: String?,
     @ColumnInfo(name = "display_name") val displayName: String?,
+    /**
+     * The bill the row pays back (spec 7.4), null for a row that is no
+     * payback: what its `PAYS BACK` tag names and opens (spec 9.1).
+     */
+    @Embedded(prefix = "bill_") val bill: RowBill? = null,
+    /**
+     * What the row's counted paybacks add up to, as [BillChoice.paidBackSen]
+     * counts them, 0 for a row nothing pays back: the bill's `PAID BACK`
+     * line (spec 9.1).
+     */
+    @ColumnInfo(name = "paid_back_sen") val paidBackSen: Long = 0L,
+) {
+    /** The row counts: `COMMITTED` and not excluded, [TxnDao.COUNTED]'s rows. */
+    val counts: Boolean get() = txn.state == TxnState.COMMITTED && !txn.isExcluded
+
+    /**
+     * The row is a payback counted under its bill, so its money is in the
+     * bill's day, category and merchant and not its own:
+     * [TxnDao.PAYS_BACK_A_COUNTED_BILL], and the row itself counted.
+     */
+    val countsUnderBill: Boolean get() = bill?.counts == true && counts
+}
+
+/**
+ * A payback's bill as a list row names it ([FeedRow.bill]): enough to write
+ * `Yuen Kee · 18 SEP` and to open it, and whether it counts.
+ *
+ * @property typed the bill is a manual entry, which opens on its edit screen
+ *   rather than on a detail screen (spec 9.4).
+ * @property name spec 6.4's resolved name, as the list draws the bill's own row.
+ * @property counts `COMMITTED` and not excluded: while it does not, the
+ *   payback counts on its own (spec 7.4).
+ */
+data class RowBill(
+    val id: Long,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    val typed: Boolean,
+    val name: String?,
+    @ColumnInfo(name = "local_date") val localDate: LocalDate,
+    val counts: Boolean,
 )
 
 /**
