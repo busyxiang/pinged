@@ -10,6 +10,13 @@ import org.junit.Test
 class BillWordsTest {
     private val yuenKee = billChoice(1L, "Yuen Kee", 9_600L, SEP_18, paidBackSen = 3_200L)
 
+    /** Spec 7.4's 60 days count the payback's own: 20 Sep reaches back to 23 Jul, not 22 Jul. */
+    @Test fun theUnsearchedWindowIsSixtyDaysTheDayItselfIncluded() {
+        val day = java.time.LocalDate.of(2026, 9, 20)
+        assertEquals(java.time.LocalDate.of(2026, 7, 23), windowStart(day))
+        assertEquals(60L, java.time.temporal.ChronoUnit.DAYS.between(windowStart(day), day) + 1)
+    }
+
     @Test fun theAmountOrAWholeMultipleOfItRanksFirst() {
         assertTrue("the payback's own amount", isMultiple(3_200L, 3_200L))
         assertTrue("a dinner for three", isMultiple(9_600L, 3_200L))

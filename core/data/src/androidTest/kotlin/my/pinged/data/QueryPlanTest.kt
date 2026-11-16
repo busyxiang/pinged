@@ -738,6 +738,22 @@ class QueryPlanTest {
         assertNoSort(txns)
     }
 
+    // ---- the bill chooser, spec 7.4 ------------------------------------
+
+    /**
+     * Spec 7.4's bill chooser, unsearched (#392): sixty days of the day index
+     * walked newest first with no sort, every bill's paybacks found by
+     * `txn(bill_txn_id)` rather than a scan per bill, and the name and
+     * category by key.
+     */
+    @Test fun theBillChooserSeeksTheDaysAndFindsPaybacksByTheirBill() {
+        val p = plan(bindable(TxnDao.BILL_CHOICES_SQL), "MYR", 20260723, 20260920, 200)
+        assertUsesIndex("index_txn_local_date_occurred_at", p)
+        assertNoSort(p)
+        assertTrue("A bill's paybacks are not found by their bill:\n$p", p.contains("index_txn_bill_txn_id"))
+        assertTrue("The bill's category is scanned:\n$p", !p.contains("SCAN category"))
+    }
+
     // ---- the review inbox, spec 7.1 ------------------------------------
 
     /**
@@ -746,20 +762,6 @@ class QueryPlanTest {
      * included: it is the rowid every index entry ends in. The card's joins
      * are each a primary-key lookup.
      */
-    /**
-     * Spec 7.4's bill chooser, unsearched (#392): sixty days of the day index
-     * walked newest first with no sort, every bill's paybacks found by
-     * `txn(bill_txn_id)` rather than a scan per bill, and the name and
-     * category by key.
-     */
-    @Test fun theBillChooserSeeksTheDaysAndFindsPaybacksByTheirBill() {
-        val p = plan(bindable(TxnDao.BILL_CHOICES_SQL), "MYR", 20260722, 20260920, 200)
-        assertUsesIndex("index_txn_local_date_occurred_at", p)
-        assertNoSort(p)
-        assertTrue("A bill's paybacks are not found by their bill:\n$p", p.contains("index_txn_bill_txn_id"))
-        assertTrue("The bill's category is scanned:\n$p", !p.contains("SCAN category"))
-    }
-
     @Test fun reviewInboxDoesNotScanAndDoesNotSort() {
         val p = plan(TxnDao.AWAITING_REVIEW_SQL)
         assertUsesIndex("index_txn_state_occurred_at", p)

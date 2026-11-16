@@ -82,7 +82,8 @@ _Avoid_: unsorted, uncategorised, needs a category
 
 **Payback**:
 Money a friend sent the user for their share of a bill the user paid. It is the user's statement, never inferred, and no re-reading changes it. While its bill counts, it counts against the bill's month, category and merchant, not its own: it lowers spending, never what came back, and is never counted as a transaction of its own. While the bill counts nowhere, it counts on its own day as plain money received. The list keeps it on the day the money arrived.
-_Avoid_: repayment (reads as a loan), link (that is a merge), reimbursement, settlement, split
+A payback's tie to its bill, `bill_txn_id`, is its link: spec 7.4's word, used in code and never shown to the user. The screens say `PAYS BACK` for the link and `PAID BACK` for the amount.
+_Avoid_: repayment (reads as a loan), reimbursement, settlement, split; and "link" for the payback itself, or for a merge
 
 **Bill**:
 The counted expense a payback pays back, dated on or before it. One bill can have many paybacks; a payback has one bill. The user's **share** is the bill's amount less its counted paybacks, and it is negative when they paid back more than the bill. A bill keeps the amount the bank sent; the share is the ledger's figure.

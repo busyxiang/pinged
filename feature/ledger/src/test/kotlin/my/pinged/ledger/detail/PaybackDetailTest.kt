@@ -29,6 +29,7 @@ import my.pinged.ledger.home.FakeCategoryActions
 import my.pinged.ledger.home.FakeMerchantActions
 import my.pinged.ledger.ledgerTxn
 import my.pinged.parse.Direction
+import my.pinged.parse.ExclusionReason
 import my.pinged.read.LedgerAccess
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -134,6 +135,24 @@ class PaybackDetailTest {
         compose.onNodeWithTag(COUNTS_AGAINST_VALUE).assertTextEquals("Food & Drinks · Yuen Kee · 18 Sep")
         compose.onNodeWithText("IN THE LIST ON 20 SEP · COUNTED ON 18 SEP").assertExists()
         compose.onAllNodesWithText(CATEGORY).assertCountEquals(0)
+    }
+
+    /** Left out itself, a payback counts nowhere: no line may say it is counted under its bill. */
+    @Test fun aPaybackLeftOutSaysNothingOfCountingUnderItsBill() {
+        draw(refund(bill = 5L).copy(isExcluded = true, exclusionReason = ExclusionReason.USER), bill = yuenKee)
+
+        compose.onAllNodesWithTag(COUNTS_AGAINST_VALUE).assertCountEquals(0)
+        compose.onAllNodesWithText("IN THE LIST ON 20 SEP · COUNTED ON 18 SEP").assertCountEquals(0)
+    }
+
+    /** Its bill left out, a payback counts on its own as money received (spec 7.4), so its eyebrow is Charts' came back. */
+    @Test fun aPaybackWhoseBillStoppedCountingSaysCameBack() {
+        val leftOut = yuenKee.copy(txn = yuenKee.txn.copy(isExcluded = true, exclusionReason = ExclusionReason.USER))
+        draw(refund(bill = 5L), bill = leftOut)
+
+        compose.onNodeWithText(CAME_BACK).assertExists()
+        compose.onAllNodesWithText(PAID_BACK).assertCountEquals(0)
+        compose.onAllNodesWithTag(COUNTS_AGAINST_VALUE).assertCountEquals(0)
     }
 
     @Test fun aPaybackHasNotAPaybackInChangeCategorysPlace() {
