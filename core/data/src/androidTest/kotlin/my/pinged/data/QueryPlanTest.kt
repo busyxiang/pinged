@@ -223,7 +223,7 @@ class QueryPlanTest {
      * out.
      */
     @Test fun theMerchantRankingTakesTheRangeIndexAndLooksIdentitiesUpByKey() {
-        val p = plan(bindable(TxnDao.MERCHANT_TOTALS_SQL), *MONTH, 10)
+        val p = plan(bindable(TxnDao.MERCHANT_TOTALS_SQL), *COUNTED_MONTH, 10)
         assertUsesIndex("index_txn_local_date_occurred_at", p)
         assertTrue("Expected the grouping sort:\n$p", p.contains("TEMP B-TREE FOR GROUP BY"))
         assertLooksUpByKey(p, tables = listOf("merchant_alias", "merchant_name"))
@@ -239,7 +239,7 @@ class QueryPlanTest {
      */
     @Test fun breakdownsReadsSeekTheMonthAndNotTheCategory() {
         val category = db.categoryDao().requireUncategorizedId()
-        val lines = plan(bindable(TxnDao.BREAKDOWN_LINES_SQL), *MONTH, category)
+        val lines = plan(bindable(TxnDao.BREAKDOWN_LINES_SQL), *COUNTED_MONTH, category)
         val rows = plan(bindable(TxnDao.BREAKDOWN_ROWS_SQL), *MONTH, category, "MYR", "A")
         val keptOut = plan(bindable(TxnDao.BREAKDOWN_KEPT_OUT_SQL), *MONTH, category)
         val firstHeld = plan(bindable(TxnDao.BREAKDOWN_FIRST_HELD_SQL), *MONTH, category, "MYR")
@@ -269,7 +269,7 @@ class QueryPlanTest {
         // `:key` four times in [MerchantSql.KEYS_OF_KEY], once more in the
         // aggregate's select list, and twice in the name's stored-name lookup.
         val key = arrayOf<Any>("A", "A", "A", "A")
-        val month = plan(bindable(TxnDao.MERCHANT_MONTH_SQL), "A", "A", *MONTH, *key)
+        val month = plan(bindable(TxnDao.MERCHANT_MONTH_SQL), "A", "A", *COUNTED_MONTH, *key)
         val rows = plan(bindable(TxnDao.MERCHANT_MONTH_ROWS_SQL), *MONTH, "MYR", *key)
         val keptOut = plan(bindable(TxnDao.MERCHANT_MONTH_KEPT_OUT_SQL), *MONTH, *key)
         val firstHeld = plan(bindable(TxnDao.MERCHANT_MONTH_FIRST_HELD_SQL), *MONTH, "MYR", *key)
@@ -350,7 +350,7 @@ class QueryPlanTest {
     @Test fun aMonthsSearchSeeksTheMonth() {
         val filter = SearchFilter(from = LocalDate(MONTH[0] as Int), to = LocalDate(MONTH[1] as Int))
         val rows = plan(SearchSql.rows("", filter, 200).sql, *MONTH, 200)
-        val totals = plan(SearchSql.totals("", filter).sql, *MONTH)
+        val totals = plan(SearchSql.totals("", filter).sql, *MONTH, *MONTH)
         listOf(rows, totals).forEach { p ->
             assertTrue(
                 "The search does not seek its month:\n$p",
@@ -369,7 +369,7 @@ class QueryPlanTest {
         val filter = SearchFilter(sourcePackage = "my.com.tngdigital.ewallet")
         listOf(
             plan(SearchSql.rows("", filter, 200).sql, "my.com.tngdigital.ewallet", 200),
-            plan(SearchSql.totals("", filter).sql, "my.com.tngdigital.ewallet"),
+            plan(SearchSql.totals("", filter).sql, "my.com.tngdigital.ewallet", "my.com.tngdigital.ewallet"),
         ).forEach { p ->
             assertTrue(
                 "The search does not seek its app:\n$p",
@@ -387,7 +387,7 @@ class QueryPlanTest {
         val words = SearchMatch.of("a")!!
         listOf(
             plan(SearchSql.rows("a", SearchFilter(), 200).sql, words, 200),
-            plan(SearchSql.totals("a", SearchFilter()).sql, words),
+            plan(SearchSql.totals("a", SearchFilter()).sql, words, words),
         ).forEach { p ->
             assertTrue("txn is not reached by key:\n$p", p.contains("SEARCH txn USING INTEGER PRIMARY KEY (rowid=?)"))
             assertTrue("txn is scanned:\n$p", !p.contains("SCAN txn\n"))
@@ -479,14 +479,37 @@ class QueryPlanTest {
      * that is the one that grows.
      */
     @Test fun theThreeLedgerAggregatesTakeTheRangeIndex() {
-        val day = plan(bindable(TxnDao.DAY_TOTALS_SQL), *MONTH)
+        val day = plan(bindable(TxnDao.DAY_TOTALS_SQL), *COUNTED_MONTH)
         assertUsesIndex("index_txn_local_date_occurred_at", day)
 
-        val month = plan(bindable(TxnDao.MONTH_TOTALS_SQL), *MONTH)
+        val month = plan(bindable(TxnDao.MONTH_TOTALS_SQL), *COUNTED_MONTH)
         assertUsesIndex("index_txn_local_date_occurred_at", month)
 
-        val byCategory = plan(bindable(TxnDao.MONTH_BY_CATEGORY_SQL), *MONTH, 3)
+        val byCategory = plan(bindable(TxnDao.MONTH_BY_CATEGORY_SQL), *COUNTED_MONTH, 3)
         assertUsesIndex("index_txn_local_date_occurred_at", byCategory)
+    }
+
+    /**
+     * Spec 7.4's counting fragment ([TxnDao.COUNTED_AS]), as every aggregate
+     * over it reads it: both halves seek the period in the range index, the
+     * first looks a row's bill up by primary key, and the second finds each
+     * of the period's bills' paybacks in `txn(bill_txn_id)`. None of `txn`,
+     * the bill or the payback is scanned, so the fragment's cost is the
+     * period's rows and not the table's.
+     */
+    @Test fun theCountingFragmentFindsPaybacksThroughTheirBills() {
+        val p = plan(bindable(TxnDao.MONTH_TOTALS_SQL), *COUNTED_MONTH)
+        assertEquals(
+            "Both halves do not seek the period:\n$p",
+            2,
+            p.lines().count { it == "SEARCH txn USING INDEX index_txn_local_date_occurred_at (local_date>? AND local_date<?)" },
+        )
+        assertTrue("A bill is not looked up by its key:\n$p", p.contains("SEARCH bill USING INTEGER PRIMARY KEY (rowid=?)"))
+        assertTrue(
+            "A bill's paybacks are not sought in txn(bill_txn_id):\n$p",
+            p.contains("SEARCH payback USING INDEX index_txn_bill_txn_id (bill_txn_id=?)"),
+        )
+        listOf("txn", "bill", "payback").forEach { assertTrue("$it is scanned:\n$p", !p.contains("SCAN $it\n")) }
     }
 
     /**
@@ -496,8 +519,8 @@ class QueryPlanTest {
      * walks that category's every row ever.
      */
     @Test fun theTopNamedAndToSortTakeTheMonthRange() {
-        val top = plan(bindable(TxnDao.MONTH_TOP_NAMED_SQL), *MONTH, 3, Seed.UNCATEGORIZED)
-        val toSort = plan(bindable(TxnDao.TO_SORT_COUNT_SQL), *MONTH, Seed.UNCATEGORIZED)
+        val top = plan(bindable(TxnDao.MONTH_TOP_NAMED_SQL), *COUNTED_MONTH, Seed.UNCATEGORIZED, 3)
+        val toSort = plan(bindable(TxnDao.TO_SORT_COUNT_SQL), *COUNTED_MONTH, Seed.UNCATEGORIZED)
         for (p in listOf(top, toSort)) {
             assertTrue(
                 "Does not read txn by a local_date range:\n$p",
@@ -513,7 +536,7 @@ class QueryPlanTest {
      * row ever counted.
      */
     @Test fun theHeroSplitTakesTheMonthRange() {
-        val p = plan(bindable(TxnDao.MONTH_SPLIT_SQL), *MONTH)
+        val p = plan(bindable(TxnDao.MONTH_SPLIT_SQL), *COUNTED_MONTH)
         assertUsesIndex("index_txn_local_date_occurred_at", p)
         assertTrue(
             "The split does not read txn by a local_date range:\n$p",
@@ -527,7 +550,7 @@ class QueryPlanTest {
      * the reason the split gives.
      */
     @Test fun theSourcesLineTakesTheMonthRange() {
-        val p = plan(bindable(TxnDao.MONTH_SOURCES_SQL), *MONTH)
+        val p = plan(bindable(TxnDao.MONTH_SOURCES_SQL), *COUNTED_MONTH)
         assertTrue(
             "The sources line does not read txn by a local_date range:\n$p",
             p.contains("SEARCH txn USING INDEX index_txn_local_date_occurred_at"),
@@ -540,7 +563,7 @@ class QueryPlanTest {
      * the current month's end. `SEARCH` for the reason the split gives.
      */
     @Test fun theMonthsSheetTotalsTakeTheDayRange() {
-        val p = plan(bindable(TxnDao.MONTHLY_TOTALS_SQL), 0, 20260930)
+        val p = plan(bindable(TxnDao.MONTHLY_TOTALS_SQL), 0, 20260930, 0, 20260930)
         assertUsesIndex("index_txn_local_date_occurred_at", p)
         assertTrue(
             "The monthly totals do not read txn by a local_date range:\n$p",
@@ -641,7 +664,7 @@ class QueryPlanTest {
      * stops being true the hint may be droppable, and the failure says so.
      */
     @Test fun withoutTheHintTheAggregateReadsEveryCommittedRow() {
-        val p = plan(bindable(TxnDao.MONTH_TOTALS_SQL.replace("+state", "state")), *MONTH)
+        val p = plan(bindable(TxnDao.MONTH_TOTALS_SQL.replace("+state", "state")), *COUNTED_MONTH)
         assertTrue(
             "The unhinted aggregate no longer prefers the state index. Good " +
                 "news: check whether theThreeLedgerAggregatesTakeTheRangeIndex " +
@@ -1050,6 +1073,13 @@ class QueryPlanTest {
          */
         const val SEPTEMBER = 1_788_307_200_000L
         val MONTH = arrayOf<Any>(20260901, 20260930)
+
+        /**
+         * [MONTH] for a query read through `TxnDao.COUNTED_AS`, which bounds
+         * each of its halves by the period: [bindable] binds by position, so
+         * the two halves' `:from` and `:to` are four values.
+         */
+        val COUNTED_MONTH = arrayOf(*MONTH, *MONTH)
         val MONTH_ARGS = arrayOf<Any>(20260901, 20260930, "COMMITTED")
 
         /**

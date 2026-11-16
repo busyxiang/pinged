@@ -3161,7 +3161,9 @@ to itself on `bill_txn_id`, so a payback's date filter is on its bill's
 `local_date` and cannot use the payback's own index entry. That cost is
 measured on the emulator against a month's aggregates on a seeded ledger
 with paybacks before the fragment ships, and the number is recorded beside
-it. Search's totals read through the same fragment.
+it. Search's totals read through the same fragment: a payback whose bill
+counts is in a search's net exactly when the search finds its bill, every
+filter and word asked of the bill, and is in none of its counts.
 
 Refunds subtract, so the aggregate is
 `SUM(CASE WHEN direction = 'REFUND' THEN -amount_sen ELSE amount_sen END)`
