@@ -54,4 +54,36 @@ class HeroLinesTest {
 
         assertEquals(listOf("RM16.77 A PAYMENT", "1 MORE NOT IN THE TOTAL"), hero.notes)
     }
+
+    /**
+     * A found payback counted under its bill (spec 7.4) is in no count of
+     * payments, refunds or rows kept out, and is named on its own line, so
+     * the lines still add up to every row the export writes. September's
+     * search in `PaybackCountingTest`: 3 payments, 2 counted refunds, 2
+     * paybacks and 2 rows kept out are its 9 rows.
+     */
+    @Test fun aFoundPaybackIsNamedAsCountedWithItsBill() {
+        val totals = listOf(SearchTotal("MYR", rowCount = 9, countedCount = 5, paymentCount = 3, netSen = 6_200L, paybackCount = 2))
+        val hero = heroLines(totals, YearMonth.of(2026, 9), shown = 9)
+
+        assertEquals("3 PAYMENTS · SEPTEMBER 2026", hero.label)
+        assertEquals(
+            listOf("RM20.67 A PAYMENT", "2 REFUNDS IN THE TOTAL", "2 PAYBACKS COUNTED WITH THEIR BILLS", "2 MORE NOT IN THE TOTAL"),
+            hero.notes,
+        )
+        val said = (listOf(hero.label) + hero.notes).sumOf { line ->
+            Regex("^([0-9]+) (PAYMENTS?|REFUNDS?|PAYBACKS?|MORE NOT IN THE TOTAL)").find(line)?.groupValues?.get(1)?.toInt() ?: 0
+        }
+        assertEquals("the hero said ${hero.label} / ${hero.notes}", 9, said)
+    }
+
+    /** A search for the friend: their paybacks' money is their bills', which it did not find. */
+    @Test fun oneFoundPaybackIsNamedInTheSingular() {
+        val totals = listOf(SearchTotal("MYR", rowCount = 1, countedCount = 0, paymentCount = 0, netSen = 0L, paybackCount = 1))
+        val hero = heroLines(totals, null, shown = 1)
+
+        assertEquals("NO PAYMENTS · ALL TIME", hero.label)
+        assertEquals(null, hero.amount)
+        assertEquals(listOf("1 PAYBACK COUNTED WITH ITS BILL"), hero.notes)
+    }
 }

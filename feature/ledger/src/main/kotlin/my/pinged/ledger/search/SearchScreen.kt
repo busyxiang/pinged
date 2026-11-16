@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -71,8 +72,12 @@ import my.pinged.ledger.home.CategoryChip
 import my.pinged.ledger.home.CheckMark
 import my.pinged.ledger.home.ENTERED_BY_HAND
 import my.pinged.ledger.home.HERO_NOT_READ_YET
+import my.pinged.ledger.home.PaidBackLine
+import my.pinged.ledger.home.PaysBackTag
+import my.pinged.ledger.home.RowLink
 import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.home.rememberRowHost
+import my.pinged.ledger.home.rowLink
 import my.pinged.ledger.settings.SearchExportSheet
 import my.pinged.ledger.settings.TransferJob
 import my.pinged.ledger.settings.Transfers
@@ -289,7 +294,8 @@ internal fun SearchScreenContent(
                     item { TornEdge(Modifier.padding(top = 20.dp)) }
                     items(read.rows, key = { "txn-" + it.txn.id }) { row ->
                         // As `LedgerRow` offers it: never on an excluded row,
-                        // whose category is a fact about nothing.
+                        // whose category is a fact about nothing. A payback's
+                        // tag takes the chip's place, as the list's does.
                         val sortable = host.canCategorize && !row.txn.isExcluded &&
                             row.txn.categoryId == read.chooser.uncategorizedId
                         ResultRow(
@@ -298,6 +304,7 @@ internal fun SearchScreenContent(
                             onOpen = { openings.open(row) },
                             onCategorize = if (sortable) ({ host.categorize(row.txn.id) }) else null,
                             modifier = Modifier.updating(updating),
+                            onOpenBill = { row.bill?.let(openings::openBill) },
                         )
                     }
                 }
@@ -528,6 +535,15 @@ private fun Hero(read: SearchRead, modifier: Modifier = Modifier) {
  * row. A row the total leaves out is greyed and says so in words, excluded
  * rows struck through as the list strikes them. [onCategorize] draws the
  * ledger's "+ CATEGORY" ahead of the line, as `LedgerRow` places it.
+ *
+ * A payback and its bill are drawn as the list draws them (spec 9.1,
+ * `design/PaybackList.dc.html`), from the list's own [rowLink]: a payback's
+ * amount in [Muted] while it counts on its bill's day, its tag in place of
+ * the line and opening the bill through [onOpenBill], its row read as where
+ * its money counts; a bill's paid-back line under the row. The tag and the
+ * line run under the whole row, from the day column's edge, since the day
+ * column takes 60dp of a 320dp row from the name's: the line is 245dp of
+ * glyphs (see [PaidBackLine]), and under the name it would have 220dp.
  */
 @Composable
 private fun ResultRow(
@@ -536,56 +552,82 @@ private fun ResultRow(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     onCategorize: (() -> Unit)? = null,
+    onOpenBill: () -> Unit = {},
 ) {
     val txn = row.txn
     val counted = txn.state == TxnState.COMMITTED && !txn.isExcluded
     val tone = if (counted) Ink else Muted
-    Row(
+    val link = rowLink(row)
+    val pays = link as? RowLink.Pays
+    // A payback's row is read once, as the row's own label says it.
+    val readByRow = if (pays != null) Modifier.clearAndSetSemantics {} else Modifier
+    Column(
         modifier
             .fillMaxWidth()
             .background(Card)
             .clickable(onClick = onOpen)
+            .then(if (pays != null) Modifier.semantics { contentDescription = pays.spoken } else Modifier)
             .heightIn(min = 44.dp)
             .padding(horizontal = 20.dp)
             .dottedRule()
             .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
-        Text(rowDate(row), style = MonoLabel, color = Faint, modifier = Modifier.width(48.dp))
-        Column(Modifier.weight(1f)) {
-            Text(row.displayName ?: txn.merchantRaw ?: "Unknown merchant", fontFamily = Body, fontSize = 14.5.sp, color = tone)
-            // As `LedgerRow` words it: Uncategorized is no name, and a manual
-            // entry says how it arrived, never how it was paid.
-            val source = if (txn.rawCaptureId == null) ENTERED_BY_HAND else txn.sourceLabel ?: txn.sourcePackage
-            val line = listOfNotNull(category?.name?.takeUnless { it == Seed.UNCATEGORIZED }, source)
-                .joinToString(Separator)
-            if (onCategorize != null || line.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (onCategorize != null) CategoryChip(onClick = onCategorize)
-                    if (line.isNotEmpty()) {
-                        Text(
-                            (if (onCategorize != null) Separator else "") + line,
-                            fontFamily = Body,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            color = Muted,
-                        )
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(rowDate(row), style = MonoLabel, color = Faint, modifier = Modifier.width(48.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    row.displayName ?: txn.merchantRaw ?: "Unknown merchant",
+                    fontFamily = Body,
+                    fontSize = 14.5.sp,
+                    color = tone,
+                    modifier = readByRow,
+                )
+                // As `LedgerRow` words it: Uncategorized is no name, and a manual
+                // entry says how it arrived, never how it was paid.
+                val source = if (txn.rawCaptureId == null) ENTERED_BY_HAND else txn.sourceLabel ?: txn.sourcePackage
+                val line = listOfNotNull(category?.name?.takeUnless { it == Seed.UNCATEGORIZED }, source)
+                    .joinToString(Separator)
+                // A payback's tag stands where the line would: the bill decides
+                // its category, and the tag says where the money counts.
+                if (pays == null && (onCategorize != null || line.isNotEmpty())) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (onCategorize != null) CategoryChip(onClick = onCategorize)
+                        if (line.isNotEmpty()) {
+                            Text(
+                                (if (onCategorize != null) Separator else "") + line,
+                                fontFamily = Body,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                color = Muted,
+                            )
+                        }
                     }
                 }
+                if (!counted) {
+                    val why = if (txn.state == TxnState.PENDING) "AWAITING REVIEW" else "NOT IN THE TOTAL"
+                    Text(why, style = MonoLabel, color = Muted)
+                }
             }
-            if (!counted) {
-                val why = if (txn.state == TxnState.PENDING) "AWAITING REVIEW" else "NOT IN THE TOTAL"
-                Text(why, style = MonoLabel, color = Muted)
-            }
+            Text(
+                (if (txn.direction == Direction.REFUND) "+" else "") + money(txn.amountSen, txn.currency, symbol = false),
+                style = MonoNumerals,
+                fontSize = 14.sp,
+                // Muted, not struck through: it counts, just not on this day.
+                color = if (pays != null && !pays.here) Muted else tone,
+                textDecoration = if (txn.isExcluded) TextDecoration.LineThrough else null,
+                modifier = readByRow,
+            )
         }
-        Text(
-            (if (txn.direction == Direction.REFUND) "+" else "") + money(txn.amountSen, txn.currency, symbol = false),
-            style = MonoNumerals,
-            fontSize = 14.sp,
-            color = tone,
-            textDecoration = if (txn.isExcluded) TextDecoration.LineThrough else null,
-        )
+        when (link) {
+            is RowLink.Pays -> PaysBackTag(link, onOpenBill)
+            is RowLink.PaidBack -> PaidBackLine(link, Modifier.padding(top = 4.dp))
+            null -> Unit
+        }
     }
 }
 
@@ -823,15 +865,20 @@ internal fun heroLines(totals: List<SearchTotal>, month: YearMonth?, shown: Int)
         notes += money(averageSen(lead.netSen, paid), lead.currency, symbol = true) + " A PAYMENT"
     }
     val rows = totals.sumOf { it.rowCount }
-    // Payments, refunds and kept-out rows add up to [rows], the count
-    // "Export these N rows" names (#216): a counted refund is in neither of
-    // the other two, so it has a note of its own.
+    // Payments, refunds, paybacks and kept-out rows add up to [rows], the
+    // count "Export these N rows" names (#216): a counted refund is in none
+    // of the others, so it has a note of its own. So has a payback counted
+    // under its bill (spec 7.4): it is in no count, and its money is in the
+    // net exactly when the search found its bill, so the note says where it
+    // counts rather than that it is in or out of this total.
     val refunds = totals.sumOf { it.countedCount - it.paymentCount }
-    val keptOut = totals.sumOf { it.rowCount - it.countedCount }
+    val paybacks = totals.sumOf { it.paybackCount }
+    val keptOut = totals.sumOf { it.rowCount - it.countedCount - it.paybackCount }
     totals.filter { it !== lead && it.countedCount > 0 }.forEach {
         notes += "ALSO " + money(it.netSen, it.currency, symbol = true) + " IN " + payments(it.paymentCount)
     }
     if (refunds > 0) notes += (if (refunds == 1) "1 REFUND" else "$refunds REFUNDS") + " IN THE TOTAL"
+    if (paybacks > 0) notes += if (paybacks == 1) "1 PAYBACK COUNTED WITH ITS BILL" else "$paybacks PAYBACKS COUNTED WITH THEIR BILLS"
     if (keptOut > 0) notes += "$keptOut MORE NOT IN THE TOTAL"
     if (rows > shown) notes += "SHOWING THE NEWEST $shown OF $rows"
     return HeroLines(label, amount, notes)
