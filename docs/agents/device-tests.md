@@ -39,6 +39,10 @@ the way to make it fail on purpose.
   requeue](#a-capture-stage-two-may-requeue).
 - A tap on a word near a link in a text, asserting it opens nothing.
   [A link's touch area](#a-links-touch-area).
+- `Transfers.deleteEverything(...)` or `restoreFrom(...)` with no
+  `beforeStart`, then an assert on what a holder does when it ends.
+  [A claim shorter than the main thread's
+  queue](#a-claim-shorter-than-the-main-threads-queue).
 
 A rule added for a new flake gets a line here too, written as the code a
 reader would see in their own test, not as the cause.
@@ -382,3 +386,45 @@ refuses a bare `waitUntil`. It cannot see a loop written by hand, and
 `waitForIdle()`, waiting for the keyboard. A loop over a database row, a
 flag or a DataStore value, from a test with no screen, cannot hang this
 way and is fine.
+
+## A claim shorter than the main thread's queue
+
+`LedgerReplacements.current` is a `StateFlow`, and a collector reads the
+value that is current when it next runs, not each value set meanwhile. A
+holder that acts when a restore or a delete ends, as
+`ManualEntryViewModel` re-reads its entry, collects the claim on the main
+thread. If the main thread does not reach that collector while the claim
+is up, the collector reads `null` both times and does nothing.
+
+On a fresh test ledger a delete holds the claim for 4 to 25ms. With the
+class run alone on a starved host, the collector read the claim 1 to 6ms
+after it went up, in 4 runs of 4.
+`EditAcrossRewriteTest.aDeleteEverythingClosesTheOpenCorrection` failed in
+every full `:feature:ledger` run here that reached it: the one that found
+it, and 2 of 2 run with a log. In one logged run the delete held the claim
+4ms. The main thread then ran 383 `StateFlow` collector resumes in about
+40ms, and the holder's collector never ran while the claim was up. Those
+collectors belong to holders that earlier classes built by hand and never
+cleared. Counted after each test in the other logged run, the claim had
+267 collectors by this test and 376 by the end, added by 32 classes. A
+test's own `@After` can cancel only what that test built.
+
+A test that asserts on what a holder does when a replacement ends passes
+`beforeStart = { withContext(Dispatchers.Main) {} }`. `beforeStart` runs
+after the claim is published and before the operation does anything, so
+the claim is still up. The resume of each collector was posted to the
+main looper when the claim went up, and this dispatch queues behind all of
+them. So when it returns, the holder has seen the claim. The rule applies
+to a negative assert too: a holder that never saw the claim does not
+close, whatever the restore brought back.
+
+To make the class fail alone, subscribe 300 collectors to the claim on the
+main thread before the holder is built, each sleeping 1ms per value.
+Without the dispatch, the class failed 3 runs of 3 at the assertion CI
+saw. With it, the class passed 3 runs of 3. The same collectors
+subscribed after the holder failed none of 2 runs: only the collectors
+ahead of the holder in the queue delay it.
+
+In the app, the edit screen also re-reads on each resume. A delete started
+from Settings is therefore read when the user comes back, whatever the
+collector saw.
