@@ -103,4 +103,21 @@ class RowMarkRuleTest {
     @Test fun aRowWithNoCategoryAtAllLeavesTheSlotEmpty() {
         assertNull(rowMark(excluded = false, uncategorized = false, iconKey = null))
     }
+
+    /**
+     * A payback's return arrow, in Muted, before the uncategorized mark: one
+     * whose bill stopped counting is filed Uncategorized again
+     * (`design/PaybackListLeftOut.dc.html`) and still offered no chip, since
+     * its bill files it.
+     */
+    @Test fun aPaybackGetsTheReturnArrowEvenWhenUncategorized() {
+        val mark = rowMark(excluded = false, uncategorized = true, iconKey = "circle-dashed", payback = true)
+
+        assertEquals(R.drawable.ic_row_payback, mark?.icon)
+        assertEquals("A payback's mark was drawn in the accent, pointing at a chip it does not have", false, mark?.accent)
+    }
+
+    @Test fun anExcludedPaybackReadsAsNotCounted() {
+        assertEquals(R.drawable.ic_row_not_counted, rowMark(excluded = true, uncategorized = false, iconKey = null, payback = true)?.icon)
+    }
 }

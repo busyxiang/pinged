@@ -7,6 +7,9 @@ converted from the upstream Lucide SVGs.
 (`circle-plus`) are the two marks a transaction row draws instead of a
 category icon -- for an excluded row and for one still to be filed -- and come
 from the same place by the same route.
+`ic_row_payback.xml`, a payback's mark, is not Lucide's: it is the return
+arrow `design/PaybackList.dc.html` draws, its two paths copied from the board
+by hand, at the stroke width, caps and joins of the marks above.
 The conversion is mechanical, and is `lucide_to_vector.py` beside this file,
 which reproduces every one of those drawables from the pinned release byte for
 byte. Each `<path d>` becomes an `android:pathData`, `<circle>` becomes a

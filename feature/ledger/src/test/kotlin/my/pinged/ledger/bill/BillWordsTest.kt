@@ -51,4 +51,17 @@ class BillWordsTest {
         assertEquals("1 BILL, ALL HISTORY", foundHeading(BillOffer.Found("64", listOf(yuenKee), capped = false)))
         assertEquals("THE NEWEST 200, ALL HISTORY", foundHeading(BillOffer.Found("a", List(200) { yuenKee }, capped = true)))
     }
+
+    @Test fun aBillsPaybacksAreWordedByHowManyPointHereAndWhereTheyCount() {
+        assertEquals("RECEIVED IS OFF: 2 PAYBACKS POINT HERE", receivedOffLine(2))
+        assertEquals("RECEIVED IS OFF: 1 PAYBACK POINTS HERE", receivedOffLine(1))
+        val bill = rowBill(5L, "Yuen Kee", SEP_18, counts = false)
+        val arjun = listRow(52L, "Arjun Nair", 3_200L, SEP_20, my.pinged.parse.Direction.REFUND, bill)
+        val farid = listRow(53L, "Farid", 3_200L, SEP_20.plusDays(2), my.pinged.parse.Direction.REFUND, bill)
+        assertEquals("THEY COUNT ON THEIR OWN, ON 20 SEP, UNTIL THIS COUNTS AGAIN", onTheirOwnLine(listOf(arjun, arjun.copy())))
+        assertEquals("IT COUNTS ON ITS OWN, ON 20 SEP, UNTIL THIS COUNTS AGAIN", onTheirOwnLine(listOf(arjun)))
+        assertEquals("THEY COUNT ON THEIR OWN, EACH ON THE DAY IT ARRIVED, UNTIL THIS COUNTS AGAIN", onTheirOwnLine(listOf(arjun, farid)))
+        assertEquals("6 more", moreLine(6))
+        assertNull("a bill nothing pays back says nothing of paybacks", paybacksStayLine(emptyList()))
+    }
 }

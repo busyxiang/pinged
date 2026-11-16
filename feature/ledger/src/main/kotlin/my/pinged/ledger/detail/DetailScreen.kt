@@ -61,6 +61,11 @@ import my.pinged.data.LocalDates
 import my.pinged.data.Seed
 import my.pinged.data.dao.BillChoice
 import my.pinged.data.dao.DetailRow
+import my.pinged.data.dao.FeedRow
+import my.pinged.ledger.bill.PaidBackFooter
+import my.pinged.ledger.bill.PaidBackList
+import my.pinged.ledger.bill.onTheirOwnLine
+import my.pinged.ledger.home.RowOpenings
 import my.pinged.ledger.bill.BillChooser
 import my.pinged.ledger.bill.BillFor
 import my.pinged.ledger.bill.BillLabel
@@ -135,6 +140,7 @@ fun DetailScreen(
     viewModel: DetailViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    openings: RowOpenings = RowOpenings.None,
 ) {
     // Reads on each resume and on `Databases.rewrites`, through `rememberReadState`.
     val read = viewModel.read.rememberReadState()
@@ -145,7 +151,7 @@ fun DetailScreen(
         onBack = onBack,
         categories = viewModel.rows,
         merchants = viewModel.rows,
-        actions = remember(viewModel, onBack) {
+        actions = remember(viewModel, onBack, openings) {
             DetailActions(
                 saveNote = { viewModel.saveNote(it) },
                 notSpending = { viewModel.notSpending() },
@@ -155,6 +161,8 @@ fun DetailScreen(
                 pickBill = { viewModel.pickBill(it) },
                 notAPayback = { viewModel.notAPayback() },
                 undo = { viewModel.undo() },
+                openPayback = openings::open,
+                addCashPayback = { openings.addCashPayback(viewModel.txnId) },
             )
         },
         modifier = modifier,
@@ -178,6 +186,10 @@ internal class DetailActions(
     val notAPayback: () -> Unit = {},
     /** Not a payback's Undo. */
     val undo: () -> Unit = {},
+    /** A bill's payback's row: its own screen, as the list opens it. */
+    val openPayback: (FeedRow) -> Unit = {},
+    /** A bill's **Add a cash payback** (spec 7.4). */
+    val addCashPayback: () -> Unit = {},
 ) {
     companion object {
         val None = DetailActions({}, {}, {}, {})
@@ -237,6 +249,7 @@ internal fun DetailScreenContent(
                     DetailBody(
                         row = row,
                         bill = read.bill,
+                        paybacks = read.paybacks,
                         zone = zone,
                         // A payback is filed by its bill: Not a payback stands
                         // where Change category would (spec 9.7).
@@ -279,6 +292,7 @@ internal fun DetailScreenContent(
     if (removing && row != null) {
         RemoveSheet(
             row = row.row,
+            paybacks = read.paybacks,
             onConfirm = {
                 removing = false
                 actions.remove()
@@ -351,6 +365,7 @@ private fun NotReadYet() {
 private fun DetailBody(
     row: DetailRow,
     bill: BillChoice?,
+    paybacks: List<FeedRow>,
     zone: ZoneId,
     canCategorize: Boolean,
     onCategorize: () -> Unit,
@@ -463,6 +478,26 @@ private fun DetailBody(
                 style = MonoLabel.copy(lineHeight = 18.sp),
                 color = Muted,
                 modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+
+        if (paybacks.isNotEmpty()) {
+            // The hero stays the bank's amount; the share is a fact about the
+            // ledger, so it is here, under its paybacks (`design/DetailBill.dc.html`).
+            // A bill that counts nowhere cannot be picked, so it offers no
+            // cash payback, and says where its paybacks count instead
+            // (`DetailBillExcluded`).
+            val counts = row.row.counts
+            PaidBackList(
+                paybacks = paybacks,
+                onOpen = actions.openPayback,
+                onAdd = actions.addCashPayback.takeIf { counts && writable },
+                footer = if (counts) {
+                    PaidBackFooter.Share(txn.amountSen - row.row.paidBackSen, txn.currency)
+                } else {
+                    PaidBackFooter.OnTheirOwn(onTheirOwnLine(paybacks))
+                },
+                modifier = Modifier.padding(top = 22.dp),
             )
         }
 

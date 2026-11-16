@@ -24,6 +24,7 @@ import my.pinged.data.LiveLearnedRules
 import my.pinged.data.LocalDates
 import my.pinged.data.PingedDatabase
 import my.pinged.data.dao.BillChoice
+import my.pinged.data.dao.FeedRow
 import my.pinged.data.dao.ManualEdit
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
@@ -290,6 +291,9 @@ class ManualEntries(
                         bill = it.billTxnId,
                     ),
                     earliestPayback = db.txnDao().earliestPaybackDate(it.id)?.let(LocalDates::calendarDay),
+                    // Only an expense can be a bill; a refund is spared the probes.
+                    paybacks = if (it.direction == Direction.EXPENSE) db.txnDao().paybacksOf(it.id) else emptyList(),
+                    pointers = if (it.direction == Direction.EXPENSE) db.txnDao().paybackCount(it.id) else 0,
                 )
             } ?: Loaded.Gone
             loaded
@@ -500,9 +504,17 @@ sealed interface Loaded {
     /**
      * The manual entry, as the draft the edit screen opens with; and, for a
      * bill, the day of its earliest payback ([earliestPayback]), the latest
-     * day it may move to (spec 9.4).
+     * day it may move to, its [paybacks] as `TxnDao.paybacksOf` lists them,
+     * and how many rows name it whatever their state ([pointers]), which is
+     * what keeps it from becoming money received (spec 9.4).
      */
-    data class Entry(val target: EditTarget, val draft: ManualDraft, val earliestPayback: LocalDate? = null) : Loaded
+    data class Entry(
+        val target: EditTarget,
+        val draft: ManualDraft,
+        val earliestPayback: LocalDate? = null,
+        val paybacks: List<FeedRow> = emptyList(),
+        val pointers: Int = 0,
+    ) : Loaded
 
     /** No such manual entry: see [ManualEntries.load]. */
     data object Gone : Loaded

@@ -136,9 +136,11 @@ internal fun figure(sen: Long, currency: String): String = money(sen, currency, 
  * rounded up.
  */
 internal fun paidBackLine(bill: BillChoice): String? =
-    bill.paidBackSen.takeIf { it > 0 }?.let {
-        figure(it, bill.txn.currency) + " PAID BACK" + Separator + "YOUR SHARE " + figure(bill.shareSen, bill.txn.currency)
-    }
+    bill.paidBackSen.takeIf { it > 0 }?.let { paidBackLine(it, bill.txn.amountSen, bill.txn.currency) }
+
+/** `32.00 PAID BACK · YOUR SHARE 64.00` for a bill of [amountSen] with [paidBackSen] paid back. */
+internal fun paidBackLine(paidBackSen: Long, amountSen: Long, currency: String): String =
+    figure(paidBackSen, currency) + " PAID BACK" + Separator + "YOUR SHARE " + figure(amountSen - paidBackSen, currency)
 
 /**
  * Where the money will count once saved or accepted, and what the share

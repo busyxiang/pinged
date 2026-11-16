@@ -1,0 +1,21 @@
+<!-- A payback's mark in the list (spec 9.1): the return arrow design/PaybackList.dc.html
+     draws, path for path from the board, at the stroke width the row's other marks use.
+     Stroke colour is a placeholder: every call site tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M9,14 L5,10 L9,6"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M5,10 L14,10 A5,5,0,0,1,14,20 L12,20"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

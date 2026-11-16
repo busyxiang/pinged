@@ -2,6 +2,7 @@ package my.pinged.data
 
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import my.pinged.data.dao.TxnDao
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -66,5 +67,41 @@ class PaybackTimingTest {
             }.drop(10).sorted()
             Log.i(OpenTest.REPORT_TAG, "payback timing [$name]: median %.2fms, longest %.2fms".format(millis[millis.size / 2], millis.last()))
         }
+    }
+
+    /**
+     * What a list row's link columns (`TxnDao.BILL_COLUMNS`) cost the feed:
+     * a page as Room's paging source issues it, `LIMIT 40 OFFSET n`, at the
+     * top and 4,000 rows deep, and a day's rows, each against the same SQL
+     * without the columns, over the same ledger.
+     */
+    @Measurement @Test fun theFeedsLinkColumnsAreMeasured() {
+        db.seedTheRankingsLedger()
+        db.seedPaybacks()
+        val bare = TxnDao.FEED_SQL.replace(TxnDao.BILL_COLUMNS, "")
+        check(bare != TxnDao.FEED_SQL) { "the columns were not found in the feed's SQL" }
+        val through = 99_999_999
+        val pages = listOf(
+            "feed page, top" to "LIMIT 40 OFFSET 0",
+            "feed page, 4000 deep" to "LIMIT 40 OFFSET 4000",
+        )
+        val helper = db.openHelper.readableDatabase
+        fun time(sql: String, vararg args: Any): Pair<Double, Double> {
+            val millis = (0 until 60).map {
+                val start = System.nanoTime()
+                helper.query(sql, args).use { c -> while (c.moveToNext()) c.getLong(0) }
+                (System.nanoTime() - start) / 1_000_000.0
+            }.drop(10).sorted()
+            return millis[millis.size / 2] to millis.last()
+        }
+        pages.forEach { (name, page) ->
+            val (withColumns, longest) = time("SELECT * FROM (" + TxnDao.FEED_SQL.replace(":through", "?") + ") " + page, through)
+            val (without, _) = time("SELECT * FROM (" + bare.replace(":through", "?") + ") " + page, through)
+            Log.i(OpenTest.REPORT_TAG, "payback timing [$name]: median %.2fms (without the columns %.2fms), longest %.2fms".format(withColumns, without, longest))
+        }
+        val day = 20260918
+        val (withColumns, longest) = time(TxnDao.DAY_ROWS_SQL.replace(":date", "?"), day)
+        val (without, _) = time(TxnDao.DAY_ROWS_SQL.replace(TxnDao.BILL_COLUMNS, "").replace(":date", "?"), day)
+        Log.i(OpenTest.REPORT_TAG, "payback timing [dayRows]: median %.2fms (without the columns %.2fms), longest %.2fms".format(withColumns, without, longest))
     }
 }

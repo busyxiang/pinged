@@ -314,6 +314,15 @@ interface TxnDao {
     @Query(DAY_TOTALS_SQL)
     fun dayTotals(from: LocalDate, to: LocalDate): List<DayTotal>
 
+    /**
+     * How many counted rows in [currency] count in `[from, to]`, the `Day`
+     * header's `N PAYMENTS`: [TXN_COUNT] over [COUNTED_AS], so a payback
+     * counted under its bill adds nothing on its bill's day and is not on its
+     * own (spec 7.4), as no aggregate's count holds one.
+     */
+    @Query(DAY_PAYMENTS_SQL)
+    fun paymentCount(from: LocalDate, to: LocalDate, currency: String): Int
+
     /** [dayTotals]'s predicate over a whole period, for the pinned summary's headline. */
     @Query(MONTH_TOTALS_SQL)
     fun monthTotals(from: LocalDate, to: LocalDate): List<CurrencyTotal>
@@ -661,6 +670,23 @@ interface TxnDao {
      */
     @Query("SELECT MIN(local_date) FROM txn WHERE bill_txn_id = :billId")
     fun earliestPaybackDate(billId: Long): LocalDate?
+
+    /**
+     * Bill [billId]'s paybacks as the list draws them (spec 9.4, 9.7), the
+     * bill's `PAID BACK` list: every row naming it but a `REJECTED` one,
+     * which is no transaction, oldest first. Found through
+     * `txn(bill_txn_id)`, and sorted, since a bill has a few.
+     */
+    @Query(PAYBACKS_OF_SQL)
+    fun paybacksOf(billId: Long): List<FeedRow>
+
+    /**
+     * How many rows name [billId] as their bill, whatever their state: what
+     * keeps a typed bill's direction, since `UNLINKED_SQL` refuses its flip
+     * while any does (spec 9.4's Received off).
+     */
+    @Query("SELECT COUNT(*) FROM txn WHERE bill_txn_id = :billId")
+    fun paybackCount(billId: Long): Int
 
     /**
      * Whether [id] stands on either end of a link whose bill is dated after
@@ -1434,6 +1460,16 @@ interface TxnDao {
               )"""
 
         /**
+         * What the counted paybacks of `txn` add up to -- `COMMITTED`, not
+         * excluded, as spec 7.4 counts one -- 0 when none: a bill's `PAID
+         * BACK`, whose share is its amount less this. Found through
+         * `txn(bill_txn_id)`, so a row nothing pays back costs one probe.
+         */
+        const val PAID_BACK_SEN =
+            """(SELECT COALESCE(SUM(payback.amount_sen), 0) FROM txn AS payback
+                WHERE payback.bill_txn_id = txn.id AND payback.state = 'COMMITTED' AND payback.is_excluded = 0)"""
+
+        /**
          * A bill as the chooser draws it ([BillChoice]): its row, name and
          * category, and what its counted paybacks add up to, found through
          * `txn(bill_txn_id)`. Ends in the joins; the caller adds its `WHERE`.
@@ -1443,11 +1479,44 @@ interface TxnDao {
             SELECT txn.*,
                    """ + MerchantSql.NAME + """ AS display_name,
                    category.name AS category_name,
-                   (SELECT COALESCE(SUM(payback.amount_sen), 0) FROM txn AS payback
-                    WHERE payback.bill_txn_id = txn.id AND payback.state = 'COMMITTED' AND payback.is_excluded = 0
-                   ) AS paid_back_sen
+                   """ + PAID_BACK_SEN + """ AS paid_back_sen
             FROM txn """ + MerchantSql.JOINS + """
             LEFT JOIN category ON category.id = txn.category_id
+            """
+
+        /**
+         * A list row's ends of spec 7.4's link ([FeedRow.bill],
+         * [FeedRow.paidBackSen]), after its other columns: the bill a
+         * payback names, each column a primary-key lookup of it, with its
+         * name resolved as spec 6.4 resolves the bill's own row's; and what a
+         * bill's counted paybacks add up to. Every `bill_` column is null for
+         * a row that names no bill, which is what makes [FeedRow.bill] null.
+         *
+         * Subqueries rather than a join on `txn AS bill`: a join would make
+         * every unqualified column after it ambiguous ([COUNTED]'s `+state`
+         * among them), and a page's `OFFSET` evaluates a join for each row it
+         * skips, where a result column is evaluated only for the rows kept.
+         *
+         * Measured on emulator-5554 by `PaybackTimingTest` over [merchantTotals]'
+         * constructed ledger of 20,000 rows with 2,000 paybacks, median of 50
+         * after 10 warm-up reads, against the same SQL without these columns:
+         * the feed's first page in Room's `LIMIT 40 OFFSET 0` wrapper 4.03ms
+         * (2.27ms), a page 4,000 rows deep 207.6ms (204.4ms), which is the
+         * `OFFSET` walk and not these columns, and a day's rows 3.34ms (1.75ms).
+         */
+        const val BILL_COLUMNS =
+            """,
+                   txn.bill_txn_id AS bill_id,
+                   (SELECT bill.created_at FROM txn AS bill WHERE bill.id = txn.bill_txn_id) AS bill_created_at,
+                   (SELECT bill.local_date FROM txn AS bill WHERE bill.id = txn.bill_txn_id) AS bill_local_date,
+                   (SELECT bill.raw_capture_id IS NULL FROM txn AS bill WHERE bill.id = txn.bill_txn_id) AS bill_typed,
+                   (SELECT bill.state = 'COMMITTED' AND bill.is_excluded = 0 FROM txn AS bill WHERE bill.id = txn.bill_txn_id) AS bill_counts,
+                   (SELECT COALESCE(
+                        (SELECT named.display FROM merchant_name AS named WHERE named.merchant_key =
+                            COALESCE((SELECT aliased.canonical_key FROM merchant_alias AS aliased WHERE aliased.merchant_key = bill.merchant_key), bill.merchant_key)),
+                        bill.merchant_display, bill.merchant_raw)
+                    FROM txn AS bill WHERE bill.id = txn.bill_txn_id) AS bill_name,
+                   """ + PAID_BACK_SEN + """ AS paid_back_sen
             """
 
         /**
@@ -1478,7 +1547,7 @@ interface TxnDao {
             """
             SELECT txn.*,
                    """ + MerchantSql.IDENTITY + """ AS identity_key,
-                   """ + MerchantSql.NAME + """ AS display_name
+                   """ + MerchantSql.NAME + """ AS display_name""" + BILL_COLUMNS + """
             FROM txn """ + MerchantSql.JOINS + """
             WHERE txn.state != 'REJECTED'
             """
@@ -1698,7 +1767,7 @@ interface TxnDao {
                    raw_capture.text AS capture_text,
                    raw_capture.big_text AS capture_big_text,
                    raw_capture.matched_rule_id AS matched_rule_id,
-                   raw_capture.pack_version AS capture_pack_version
+                   raw_capture.pack_version AS capture_pack_version""" + BILL_COLUMNS + """
             FROM txn """ + MerchantSql.JOINS + """
             LEFT JOIN category ON category.id = txn.category_id
             LEFT JOIN raw_capture ON raw_capture.id = txn.raw_capture_id
@@ -1779,6 +1848,14 @@ interface TxnDao {
             FROM """ + COUNTED_AS + """
             GROUP BY counted.local_date, counted.currency
             """
+
+        /** [paymentCount]'s query. */
+        const val DAY_PAYMENTS_SQL =
+            "SELECT COALESCE(" + TXN_COUNT + ", 0) FROM " + COUNTED_AS + " WHERE counted.currency = :currency"
+
+        /** [paybacksOf]'s query: the feed's rows, cut to one bill's paybacks. */
+        const val PAYBACKS_OF_SQL =
+            FEED_ROWS + "AND txn.bill_txn_id = :billId ORDER BY txn.local_date, txn.occurred_at, txn.id"
 
         const val MONTH_TOTALS_SQL =
             """

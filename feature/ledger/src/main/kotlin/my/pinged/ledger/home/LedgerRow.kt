@@ -27,26 +27,39 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import my.pinged.data.LocalDate
+import my.pinged.data.LocalDates
 import my.pinged.data.dao.FeedRow
+import my.pinged.data.dao.RowBill
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.data.entity.TxnState
 import my.pinged.ledger.R
 import my.pinged.parse.Direction
 import my.pinged.parse.ExclusionReason
+import my.pinged.ledger.bill.PAYS_BACK
+import my.pinged.ledger.bill.paidBackLine
+import my.pinged.ledger.bill.shortDay
+import my.pinged.ui.CALENDAR
+import my.pinged.ui.RINGGIT
 import my.pinged.ui.money
+import java.time.format.TextStyle as JavaTextStyle
 import my.pinged.ui.theme.Body
 import my.pinged.ui.theme.Faint
 import my.pinged.ui.theme.Ink
 import my.pinged.ui.theme.MonoLabel
 import my.pinged.ui.theme.MonoNumerals
 import my.pinged.ui.theme.Muted
+import my.pinged.ui.theme.Rule
 import my.pinged.ui.theme.Separator
 import my.pinged.ui.theme.Stamp
 import my.pinged.ui.theme.dashedOutline
@@ -87,6 +100,7 @@ internal fun LedgerRow(
     greyed: Boolean = false,
 ) {
     val txn = row.txn
+    val link = rowLink(row)
     TxnRow(
         txn = txn,
         name = row.displayName,
@@ -102,8 +116,74 @@ internal fun LedgerRow(
         },
         onOpenReview = { openings.openReview(txn.id) },
         greyed = greyed,
+        link = link,
+        onOpenBill = row.bill?.let { bill -> { openings.openBill(bill) } },
     )
 }
+
+/**
+ * What a row says of spec 7.4's link (spec 9.1): a payback's tag, or a
+ * bill's paid-back line, or nothing.
+ */
+internal sealed interface RowLink {
+    /**
+     * A committed payback: its tag names [bill] and opens it. [here] while
+     * the bill counts nowhere and the payback does, so its money counts on
+     * its own day: `BILL NOT COUNTED · COUNTS HERE`, amount in Ink.
+     */
+    data class Pays(val bill: RowBill, val here: Boolean, val spoken: String) : RowLink
+
+    /** A counted bill something is paid back against: `64.00 PAID BACK · YOUR SHARE 32.00`. */
+    data class PaidBack(val line: String) : RowLink
+}
+
+/**
+ * [row]'s [RowLink], or null. A payback awaiting review counts nowhere yet,
+ * and is the inbox's to answer, so it is drawn as any held row is; a bill's
+ * line only while it counts, since a share of a bill in no total is a
+ * figure about nothing (`design/PaybackListLeftOut.dc.html` draws none).
+ */
+internal fun rowLink(row: FeedRow): RowLink? {
+    val txn = row.txn
+    val bill = row.bill
+    return when {
+        bill != null && txn.state == TxnState.COMMITTED -> {
+            val here = !bill.counts && !txn.isExcluded
+            RowLink.Pays(bill, here, paybackSpoken(row.displayName, txn.amountSen, txn.currency, bill, here))
+        }
+        row.counts && row.paidBackSen > 0 && txn.direction == Direction.EXPENSE ->
+            RowLink.PaidBack(paidBackLine(row.paidBackSen, txn.amountSen, txn.currency))
+        else -> null
+    }
+}
+
+/**
+ * What TalkBack reads for a payback's row (spec 9.1): where its money counts,
+ * `32 ringgit received from Arjun Nair, counted on 18 September with Yuen
+ * Kee`, or, [here], that it counts on its own day.
+ */
+internal fun paybackSpoken(name: String?, sen: Long, currency: String, bill: RowBill, here: Boolean): String {
+    val received = spokenMoney(sen, currency) + " received from " + (name ?: UNKNOWN_MERCHANT)
+    val billName = bill.name ?: NO_MERCHANT
+    return if (here) {
+        "$received, counted here, since its bill, $billName, is not counted"
+    } else {
+        val day = LocalDates.calendarDay(bill.localDate)
+        "$received, counted on ${day.dayOfMonth} ${day.month.getDisplayName(JavaTextStyle.FULL, CALENDAR)} with $billName"
+    }
+}
+
+/**
+ * An amount as TalkBack should say it: `32 ringgit`, `32 ringgit 50 sen`;
+ * any other currency as the screen prints it.
+ */
+internal fun spokenMoney(sen: Long, currency: String): String =
+    if (currency == RINGGIT) {
+        val whole = "${sen / 100} ringgit"
+        if (sen % 100 == 0L) whole else "$whole ${sen % 100} sen"
+    } else {
+        money(sen, currency, symbol = true)
+    }
 
 /**
  * What the chooser offers: every category but `Uncategorized`, which would
@@ -222,106 +302,209 @@ private fun TxnRow(
     onCategorize: (() -> Unit)?,
     onOpenReview: () -> Unit,
     greyed: Boolean = false,
+    link: RowLink? = null,
+    onOpenBill: (() -> Unit)? = null,
 ) {
     val excluded = txn.isExcluded
-    Row(
+    val pays = link as? RowLink.Pays
+    // A Column round the row, so a bill's paid-back line can run under the
+    // amount column too and stay one line at 320dp (spec 9.1). With no line
+    // it lays out as the Row alone.
+    Column(
         Modifier
             .fillMaxWidth()
-            .rowGestures(onOpen, openLabel, onOpenMerchant)
+            .rowGestures(onOpen, openLabel, onOpenMerchant, spoken = pays?.spoken)
             // The board's 11dp between rows, split so the 8 below keeps the
             // category line's target at WCAG 2.5.8's 24dp (see [rowGestures]).
             .padding(start = 20.dp, end = 20.dp, top = 3.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        RowIcon(excluded = excluded, uncategorized = uncategorized, iconKey = category?.iconKey)
-        Column(Modifier.weight(1f)) {
-            Text(
-                // Spec 6.4's resolved name. `merchant_key` is not offered as a
-                // fallback: it is the grouping identity, uppercased and
-                // stripped, not a name.
-                name ?: "Unknown merchant",
-                fontFamily = Body,
-                fontWeight = FontWeight.Medium,
-                fontSize = 15.sp,
-                lineHeight = 19.sp,
-                color = if (excluded) Muted else Ink,
-                // Not struck through, though the amount is: the number is the
-                // thing §7.3 says does not count, and striking both reads as
-                // deleted, which is exactly what an excluded row is not.
-                modifier = Modifier.fillMaxWidth().rowBody(),
-            )
-            // Spec 9.1: a manual entry says how it reached the ledger, never
-            // how it was paid. `raw_capture_id IS NULL` is what a manual
-            // entry is (spec 4), whatever its source columns hold.
-            val source = if (txn.rawCaptureId == null) ENTERED_BY_HAND else txn.sourceLabel ?: txn.sourcePackage
-            // One `Text`, so the line reads as one line to a screen reader
-            // rather than as fragments. The leading separator belongs only to
-            // the chip: in front of a source with no category before it, "·"
-            // is punctuation for a name that is not there.
-            val name = category?.name.takeUnless { uncategorized || excluded }
-            val line = listOfNotNull(name, source).joinToString(Separator)
-            // The chip is the marker on an uncategorized row; on a categorised
-            // one the line itself opens the sheet, as one control so the line
-            // still reads as one line to a screen reader.
-            val chip = onCategorize != null && uncategorized
-            val lineOpensSheet = onCategorize != null && !uncategorized && name != null
-            // No row at all when there is neither chip nor line, rather than an
-            // empty one: `source_package` and `source_label` are both nullable
-            // -- an imported row can have neither -- and the 2.dp would then be
-            // a gap under the merchant holding a line that is not there.
-            if (chip || line.isNotEmpty()) {
-                Row(
-                    Modifier.padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (chip) {
-                        CategoryChip(onClick = onCategorize!!)
-                    }
-                    if (line.isNotEmpty()) {
-                        Text(
-                            (if (chip) Separator else "") + line,
-                            // Karla: a category and a source are names, and
-                            // names are body copy. 12/16 rather than the
-                            // artboard's 11.5, the size and leading of the
-                            // chip it sits beside.
-                            fontFamily = Body,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            color = Muted,
-                            modifier = if (lineOpensSheet) {
-                                Modifier
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .clickable(role = Role.Button, onClick = onCategorize!!)
-                            } else {
-                                Modifier
-                            },
-                        )
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            RowIcon(excluded = excluded, uncategorized = uncategorized, iconKey = category?.iconKey, payback = pays != null)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    // Spec 6.4's resolved name. `merchant_key` is not offered as a
+                    // fallback: it is the grouping identity, uppercased and
+                    // stripped, not a name.
+                    name ?: UNKNOWN_MERCHANT,
+                    fontFamily = Body,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 15.sp,
+                    lineHeight = 19.sp,
+                    color = if (excluded) Muted else Ink,
+                    // Not struck through, though the amount is: the number is the
+                    // thing §7.3 says does not count, and striking both reads as
+                    // deleted, which is exactly what an excluded row is not.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .rowBody()
+                        // A payback's row is read once, as the row's own label says it.
+                        .then(if (pays != null) Modifier.clearAndSetSemantics {} else Modifier),
+                )
+                // Spec 9.1: a manual entry says how it reached the ledger, never
+                // how it was paid. `raw_capture_id IS NULL` is what a manual
+                // entry is (spec 4), whatever its source columns hold.
+                val source = if (txn.rawCaptureId == null) ENTERED_BY_HAND else txn.sourceLabel ?: txn.sourcePackage
+                // One `Text`, so the line reads as one line to a screen reader
+                // rather than as fragments. The leading separator belongs only to
+                // the chip: in front of a source with no category before it, "·"
+                // is punctuation for a name that is not there.
+                val name = category?.name.takeUnless { uncategorized || excluded }
+                val line = listOfNotNull(name, source).joinToString(Separator)
+                // The chip is the marker on an uncategorized row; on a categorised
+                // one the line itself opens the sheet, as one control so the line
+                // still reads as one line to a screen reader.
+                val chip = onCategorize != null && uncategorized
+                val lineOpensSheet = onCategorize != null && !uncategorized && name != null
+                // No row at all when there is neither chip nor line, rather than an
+                // empty one: `source_package` and `source_label` are both nullable
+                // -- an imported row can have neither -- and the 2.dp would then be
+                // a gap under the merchant holding a line that is not there.
+                if (pays != null) {
+                    // The tag stands where the category and source would: the
+                    // bill decides the category, and the tag says where the
+                    // money counts (`design/PaybackList.dc.html`).
+                    PaysBackTag(pays, onOpenBill ?: {})
+                } else if (chip || line.isNotEmpty()) {
+                    Row(
+                        Modifier.padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (chip) {
+                            CategoryChip(onClick = onCategorize!!)
+                        }
+                        if (line.isNotEmpty()) {
+                            Text(
+                                (if (chip) Separator else "") + line,
+                                // Karla: a category and a source are names, and
+                                // names are body copy. 12/16 rather than the
+                                // artboard's 11.5, the size and leading of the
+                                // chip it sits beside.
+                                fontFamily = Body,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                color = Muted,
+                                modifier = if (lineOpensSheet) {
+                                    Modifier
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .clickable(role = Role.Button, onClick = onCategorize!!)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                        }
                     }
                 }
+                if (txn.state == TxnState.PENDING) {
+                    // The reason, not just the state, so the row says which of
+                    // §7.1's gates fired before the inbox is opened. §9.1: the
+                    // badge is a way into the inbox, on this row's card.
+                    Badge(awaitingReviewBadge(txn.pendingReason?.name), Stamp, onClick = onOpenReview)
+                }
+                if (excluded) {
+                    Badge(notSpendingBadge(txn.exclusionReason), Muted)
+                }
             }
-            if (txn.state == TxnState.PENDING) {
-                // The reason, not just the state, so the row says which of
-                // §7.1's gates fired before the inbox is opened. §9.1: the
-                // badge is a way into the inbox, on this row's card.
-                Badge(awaitingReviewBadge(txn.pendingReason?.name), Stamp, onClick = onOpenReview)
-            }
-            if (excluded) {
-                Badge(notSpendingBadge(txn.exclusionReason), Muted)
-            }
+            Text(
+                // A refund is signed in every total (it reduces its day), so it is
+                // signed here too: two rows of the same size, one money out and one
+                // money back, are otherwise identical on screen.
+                (if (txn.direction == Direction.REFUND) "+" else "") +
+                    money(txn.amountSen, txn.currency, symbol = false),
+                style = MonoNumerals.copy(fontSize = 15.sp),
+                // A payback counted on its bill's day is Muted, not struck
+                // through: it counts, just not on this day (spec 9.1).
+                color = if (excluded || greyed || (pays != null && !pays.here)) Muted else Ink,
+                textDecoration = if (excluded) TextDecoration.LineThrough else null,
+                modifier = if (pays != null) Modifier.clearAndSetSemantics {} else Modifier,
+            )
         }
-        Text(
-            // A refund is signed in every total (it reduces its day), so it is
-            // signed here too: two rows of the same size, one money out and one
-            // money back, are otherwise identical on screen.
-            (if (txn.direction == Direction.REFUND) "+" else "") +
-                money(txn.amountSen, txn.currency, symbol = false),
-            style = MonoNumerals.copy(fontSize = 15.sp),
-            color = if (excluded || greyed) Muted else Ink,
-            textDecoration = if (excluded) TextDecoration.LineThrough else null,
-        )
+        if (link is RowLink.PaidBack) {
+            // From the name's left edge, past the 18dp mark and the 12dp gap,
+            // to the row's right edge. Tracking 0, not MonoLabel's 1sp: at the
+            // 12sp floor `64.00 PAID BACK · YOUR SHARE 32.00` is 245dp of
+            // glyphs, and 320dp leaves the line 250dp.
+            Text(
+                link.line,
+                style = MonoLabel.copy(letterSpacing = 0.sp),
+                color = Muted,
+                modifier = Modifier.padding(start = 30.dp, top = 4.dp).testTag(PAID_BACK_LINE),
+            )
+        }
     }
 }
+
+/**
+ * A payback's tag (spec 9.1): `PAYS BACK Yuen Kee · 18 SEP` in [Muted] on a
+ * [Rule] edge, the name in Karla giving way at a narrow width and the date
+ * never cut; or, while the bill counts nowhere, `BILL NOT COUNTED · COUNTS
+ * HERE` in [Ink] (`design/PaybackListLeftOut.dc.html`). Either opens the
+ * bill, where Count as spending puts them back. A button laid out at its
+ * drawn size, its target the free space round it, as [rowGestures] sets out.
+ */
+@Composable
+private fun PaysBackTag(pays: RowLink.Pays, onClick: () -> Unit) {
+    val colour = if (pays.here) Ink else Muted
+    val shape = RoundedCornerShape(2.dp)
+    Row(
+        Modifier
+            .padding(top = 4.dp)
+            .clip(shape)
+            .clickable(role = Role.Button, onClickLabel = OPEN_BILL, onClick = onClick)
+            .border(1.dp, if (pays.here) Ink else Rule, shape)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .testTag(PAYS_BACK_TAG)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (pays.here) {
+            Text(BILL_NOT_COUNTED_TAG, style = TagMono, color = colour, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        } else {
+            Text(PAYS_BACK, style = TagMono, color = colour, maxLines = 1, softWrap = false)
+            Text(
+                pays.bill.name ?: NO_MERCHANT,
+                fontFamily = Body,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = colour,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 5.dp).weight(1f, fill = false),
+            )
+            Text(
+                Separator.trim() + " " + shortDay(LocalDates.calendarDay(pays.bill.localDate)).uppercase(CALENDAR),
+                style = TagMono,
+                color = colour,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.padding(start = 5.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The tag's mono, at the 12sp floor with the bill chooser's 0.6sp tracking
+ * rather than [MonoLabel]'s 1sp: at 320dp the label and the date are what
+ * the bill's name gives way to, and every sp of tracking is 17 glyphs' worth.
+ */
+private val TagMono = MonoLabel.copy(letterSpacing = 0.6.sp)
+
+/** A payback's tag while its bill counts nowhere (`design/PaybackListLeftOut.dc.html`). */
+internal const val BILL_NOT_COUNTED_TAG = "BILL NOT COUNTED" + Separator + "COUNTS HERE"
+
+/** What the tag does, to a screen reader. */
+internal const val OPEN_BILL = "Open the bill"
+
+/** What a test finds a payback's tag and a bill's paid-back line by. */
+internal const val PAYS_BACK_TAG = "row-pays-back"
+internal const val PAID_BACK_LINE = "row-paid-back"
+
+private const val UNKNOWN_MERCHANT = "Unknown merchant"
+private const val NO_MERCHANT = "No merchant"
 
 /** A manual entry's source in its small print (spec 9.1): `Food · Entered by hand`. */
 const val ENTERED_BY_HAND = "Entered by hand"
@@ -365,7 +548,7 @@ internal const val OPEN_DETAIL = "Show what Pinged read"
  * taps the name and reaches the row. Grown to 44dp in layout instead, a
  * categorised row measured 85dp against 57dp.
  */
-private fun Modifier.rowGestures(onOpen: () -> Unit, openLabel: String, onOpenMerchant: (() -> Unit)?): Modifier =
+private fun Modifier.rowGestures(onOpen: () -> Unit, openLabel: String, onOpenMerchant: (() -> Unit)?, spoken: String? = null): Modifier =
     pointerInput(onOpen, onOpenMerchant) {
         detectTapGestures(
             onTap = { onOpen() },
@@ -375,6 +558,9 @@ private fun Modifier.rowGestures(onOpen: () -> Unit, openLabel: String, onOpenMe
         .semantics {
             onClick(label = openLabel) { onOpen(); true }
             if (onOpenMerchant != null) onLongClick(label = EDIT_MERCHANT) { onOpenMerchant(); true }
+            // A payback's row says where its money counts (spec 9.1), in place
+            // of its name and amount, which say it in pieces.
+            if (spoken != null) contentDescription = spoken
         }
 
 /**
@@ -433,9 +619,12 @@ internal data class RowMark(@DrawableRes val icon: Int, val accent: Boolean)
  * Only the third branch is the category's own icon, resolved from the category
  * row at render time as §4 requires.
  */
-internal fun rowMark(excluded: Boolean, uncategorized: Boolean, iconKey: String?): RowMark? =
+internal fun rowMark(excluded: Boolean, uncategorized: Boolean, iconKey: String?, payback: Boolean = false): RowMark? =
     when {
         excluded -> RowMark(R.drawable.ic_row_not_counted, accent = false)
+        // Before uncategorized: a payback whose bill stopped counting is filed
+        // Uncategorized again, and is still offered no chip (`PaybackListLeftOut`).
+        payback -> RowMark(R.drawable.ic_row_payback, accent = false)
         uncategorized -> RowMark(R.drawable.ic_row_uncategorized, accent = true)
         else -> iconKey?.let(::categoryIcon)?.let { RowMark(it, accent = false) }
     }
@@ -453,8 +642,8 @@ internal fun rowMark(excluded: Boolean, uncategorized: Boolean, iconKey: String?
  * twice.
  */
 @Composable
-private fun RowIcon(excluded: Boolean, uncategorized: Boolean, iconKey: String?) {
-    val mark = rowMark(excluded, uncategorized, iconKey)
+private fun RowIcon(excluded: Boolean, uncategorized: Boolean, iconKey: String?, payback: Boolean = false) {
+    val mark = rowMark(excluded, uncategorized, iconKey, payback)
     Box(Modifier.size(18.dp)) {
         if (mark != null) {
             Icon(

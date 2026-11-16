@@ -166,6 +166,7 @@ class MainActivity : ComponentActivity() {
                         openEntry = { target -> tabs.push(ManualEntry(target.id, target.createdAt)) },
                         openDetail = { target -> tabs.push(Detail(target.id, target.createdAt)) },
                         openReview = { focus -> tabs.push(Review(focus)) },
+                        addCashPayback = { billId -> tabs.push(ManualEntry(paysBack = billId)) },
                     )
                 }
                 val predictivePop = defaultPredictivePopTransitionSpec<NavKey>()
@@ -318,11 +319,13 @@ class MainActivity : ComponentActivity() {
                                     // The entry's own `createSavedStateHandle`, as
                                     // Charts': the draft survives a process death
                                     // there (#108). A new entry starts from an
-                                    // empty draft, a correction (#105) from the
-                                    // row `txnId` and `createdAt` name.
+                                    // empty draft, or under Received with
+                                    // `paysBack`'s bill picked; a correction
+                                    // (#105) from the row `txnId` and
+                                    // `createdAt` name.
                                     val target = key.txnId?.let { id -> key.createdAt?.let { EditTarget(id, it) } }
                                     val entry: ManualEntryViewModel = viewModel {
-                                        ManualEntryViewModel(application, createSavedStateHandle(), target)
+                                        ManualEntryViewModel(application, createSavedStateHandle(), target, key.paysBack)
                                     }
                                     ManualEntryScreen(
                                         viewModel = entry,
@@ -333,6 +336,7 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.fillMaxSize(),
                                         // Back to the list the deleted row was on (#106).
                                         onDeleted = tabs::pop,
+                                        openings = openings,
                                     )
                                 }
                                 entry<Review> { key ->
@@ -428,6 +432,7 @@ class MainActivity : ComponentActivity() {
                                         // leaves by it too.
                                         onBack = tabs::pop,
                                         modifier = Modifier.fillMaxSize(),
+                                        openings = openings,
                                     )
                                 }
                                 entry<Settings> {

@@ -1,6 +1,7 @@
 package my.pinged.ledger.home
 
 import my.pinged.data.dao.FeedRow
+import my.pinged.data.dao.RowBill
 import my.pinged.ledger.entry.EditTarget
 
 /**
@@ -18,11 +19,22 @@ class RowOpenings(
     val openEntry: (EditTarget) -> Unit,
     val openDetail: (EditTarget) -> Unit,
     val openReview: (focus: Long?) -> Unit,
+    /**
+     * A bill's **Add a cash payback** (spec 7.4): spec 9.4's entry screen
+     * under Received, with the bill picked.
+     */
+    val addCashPayback: (billId: Long) -> Unit = {},
 ) {
     /** [row]'s own screen: a manual entry's edit screen, a captured row's detail. */
     fun open(row: FeedRow) {
         val target = EditTarget(row.txn.id, row.txn.createdAt)
         if (row.isManual) openEntry(target) else openDetail(target)
+    }
+
+    /** A payback's bill's own screen, as [open] would open the bill's row (spec 9.1's tag). */
+    fun openBill(bill: RowBill) {
+        val target = EditTarget(bill.id, bill.createdAt)
+        if (bill.typed) openEntry(target) else openDetail(target)
     }
 
     /** What [open] does with [row], as the accessibility action names it. */

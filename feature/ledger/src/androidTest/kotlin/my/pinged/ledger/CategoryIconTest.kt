@@ -51,14 +51,15 @@ class CategoryIconTest {
     }
 
     /**
-     * The two marks that are not a category's, and so are not reached by the
-     * seed walk above. They are generated from upstream the same way and can
-     * fail to inflate the same way.
+     * The marks that are not a category's, and so are not reached by the
+     * seed walk above: two generated from upstream the same way, and the
+     * payback's, drawn from its board. Each can fail to inflate the same way.
      */
     @Test fun theRowMarksThatAreNotCategoryIconsAlsoInflate() {
         for ((name, id) in listOf(
             "ic_row_not_counted" to R.drawable.ic_row_not_counted,
             "ic_row_uncategorized" to R.drawable.ic_row_uncategorized,
+            "ic_row_payback" to R.drawable.ic_row_payback,
         )) {
             assertNotNull(
                 "$name would not inflate, so the row that draws it shows a " +

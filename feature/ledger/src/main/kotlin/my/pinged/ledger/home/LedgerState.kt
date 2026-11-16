@@ -5,6 +5,7 @@ import my.pinged.data.SourcesLine
 import my.pinged.data.dao.CategoryTotal
 import my.pinged.data.dao.CurrencyTotal
 import my.pinged.data.dao.FeedRow
+import my.pinged.data.dao.RowBill
 import my.pinged.data.entity.Category
 import my.pinged.data.entity.Txn
 import my.pinged.parse.Filer
@@ -30,14 +31,23 @@ sealed interface LedgerItem {
      * @property identityKey the merchant the row groups under, and what the
      *   merchant sheet edits; null exactly when `merchant_key` is.
      * @property displayName the user's name for that merchant, else the row's own.
+     * @property bill the bill the row pays back, as [FeedRow.bill].
+     * @property paidBackSen what the row's counted paybacks add up to, as [FeedRow.paidBackSen].
      */
     data class Row(
         val txn: Txn,
         val identityKey: String? = txn.merchantKey,
         val displayName: String? = txn.merchantDisplay ?: txn.merchantRaw,
+        val bill: RowBill? = null,
+        val paidBackSen: Long = 0L,
     ) : LedgerItem {
         /** The same row as the shared `LedgerRow` takes it. */
-        val feedRow: FeedRow get() = FeedRow(txn, identityKey, displayName)
+        val feedRow: FeedRow get() = FeedRow(txn, identityKey, displayName, bill, paidBackSen)
+
+        companion object {
+            /** [row] as the feed holds it, every column the list draws kept: [feedRow] gives it back whole. */
+            fun of(row: FeedRow): Row = Row(row.txn, row.identityKey, row.displayName, row.bill, row.paidBackSen)
+        }
     }
 
     /**
