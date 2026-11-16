@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import my.pinged.data.Databases
@@ -94,7 +95,14 @@ class EditAcrossRewriteTest {
         val vm = editing(SavedStateHandle(), id)
         vm.note("typed before the delete")
 
-        Transfers.deleteEverything(context, requester = Job()).await()
+        // The holder hears of the delete from a main-thread collector of the
+        // claim, which reads only the value current when it runs. This delete
+        // holds the claim 4 to 25ms, and in a full run the main thread had
+        // ~380 resumes of collectors earlier classes left behind to get
+        // through first. A dispatch to Main posted once the claim is up
+        // queues behind the holder's, so the delete starts after it has run.
+        // device-tests.md, "A claim shorter than the main thread's queue".
+        Transfers.deleteEverything(context, requester = Job(), beforeStart = { withContext(Dispatchers.Main) {} }).await()
 
         assertEquals(
             "The edit screen stayed open over an entry delete-everything took",
@@ -133,7 +141,9 @@ class EditAcrossRewriteTest {
         vm.note("typed across the restore")
         withTimeout(TIMEOUT) { vm.state.first { it.draft.note == "typed across the restore" } }
 
-        Transfers.restoreFrom(context, open = { ByteArrayInputStream(backup) }, requester = Job()).await()
+        // So the holder has seen the restore and re-reads at its end: one
+        // that missed the claim stays open whatever the restore did.
+        Transfers.restoreFrom(context, open = { ByteArrayInputStream(backup) }, requester = Job(), beforeStart = { withContext(Dispatchers.Main) {} }).await()
         // Past the restore's re-read: an answer the restore changed would have landed by now.
         withTimeout(TIMEOUT) { Transfers.state.first { it.running == null } }
         assertEquals(
