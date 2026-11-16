@@ -378,10 +378,15 @@ private fun DetailBody(
     val txn = row.row.txn
     val name = row.row.displayName
     val excluded = txn.isExcluded
+    // Counted against its bill only while both count (spec 7.4); a payback
+    // left out, or awaiting review, counts nowhere, and one whose bill stopped
+    // counts on its own as money received.
+    val underBill = bill?.counts == true && row.row.counts
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp)) {
         val paid = when {
-            // Charts' came back never holds a payback (spec 9.3), so neither does its eyebrow.
-            bill != null -> PAID_BACK
+            // Charts' came back holds a payback only while its bill counts
+            // nowhere (spec 9.3, 7.4), so the eyebrow follows the bill.
+            bill?.counts == true -> PAID_BACK
             txn.direction == Direction.REFUND -> CAME_BACK
             else -> PAID
         }
@@ -441,11 +446,11 @@ private fun DetailBody(
                     if (bill != null) PaysBackChip(bill, open) else AddBillChip(open)
                 }
             }
-            if (bill?.counts == true) {
+            if (underBill) {
                 // The bill's, as plain text: it changes only by changing the bill's.
                 Field(COUNTS_AGAINST_FIELD) {
                     Text(
-                        countsAgainstValue(bill),
+                        countsAgainstValue(bill!!),
                         fontFamily = Body,
                         fontSize = 13.5.sp,
                         lineHeight = 18.sp,
@@ -471,10 +476,10 @@ private fun DetailBody(
             // above does not: KK MART under KK Mart says nothing.
             txn.merchantRaw?.takeIf { !it.equals(name, ignoreCase = true) }?.let { Field(NAME_ON_THE_BILL, it) }
         }
-        if (bill?.counts == true) {
+        if (underBill) {
             // Why the day it arrived does not count it (`design/DetailPayback.dc.html`).
             Text(
-                countedOnLine(txn, bill),
+                countedOnLine(txn, bill!!),
                 style = MonoLabel.copy(lineHeight = 18.sp),
                 color = Muted,
                 modifier = Modifier.padding(top = 12.dp),

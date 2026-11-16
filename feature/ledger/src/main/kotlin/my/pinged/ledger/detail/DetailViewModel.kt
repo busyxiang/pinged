@@ -122,7 +122,7 @@ class DetailViewModel internal constructor(
      */
     fun notAPayback(): Job {
         val bill = read.state.value.answer?.row?.row?.txn?.billTxnId
-        return write("The payment could not be unlinked", after = { wrote -> if (wrote && bill != null) _unlinked.value = bill }) {
+        return write("The payback could not be taken off its bill", after = { wrote -> if (wrote && bill != null) _unlinked.value = bill }) {
             it.clearBill(txnId, now())
         }
     }

@@ -79,6 +79,13 @@ internal fun chooserLines(offer: BillOffer, payback: BillFor): List<ChooserLine>
 internal const val WINDOW_DAYS = 60L
 
 /**
+ * The first day the unsearched chooser offers for a payback dated [day]:
+ * [WINDOW_DAYS] days counting [day] itself, since the range read is
+ * inclusive at both ends.
+ */
+internal fun windowStart(day: LocalDate): LocalDate = day.minusDays(WINDOW_DAYS - 1)
+
+/**
  * The most bills one read holds. Sixty days of a busy ledger is about two
  * hundred expenses; a search for a common word can find thousands, and the
  * newest of them are the ones a payback is for.
@@ -93,7 +100,7 @@ internal fun offerBills(dao: TxnDao, payback: BillFor, query: String): BillOffer
     val to = LocalDates.of(payback.day)
     val asked = query.trim()
     if (asked.isEmpty()) {
-        val from = LocalDates.of(payback.day.minusDays(WINDOW_DAYS))
+        val from = LocalDates.of(windowStart(payback.day))
         val bills = dao.billChoices(payback.currency, from, to, MOST_BILLS)
         val (multiples, rest) = bills.partition { isMultiple(it.txn.amountSen, payback.amountSen) }
         return BillOffer.Recent(multiples, rest)
