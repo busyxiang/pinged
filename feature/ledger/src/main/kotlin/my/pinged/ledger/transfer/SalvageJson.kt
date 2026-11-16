@@ -54,6 +54,11 @@ import my.pinged.data.entity.UserRejectRule
  *    a merchant mapped to a category and nothing else; pointed at
  *    `Uncategorized` it would go on filing that merchant there over whatever
  *    is learned next, and a rule can be learned again.
+ * 6. **`txn.bill_txn_id`: the payback kept, the link cleared**, when its
+ *    bill is not in the file, for whatever reason it is not. The money
+ *    arrived and the transaction read; without its bill it counts as plain
+ *    money received, which is what a backup from before paybacks restores
+ *    (spec 12).
  *
  * Each is counted in [SalvageReport], so the user is told.
  *
@@ -76,6 +81,10 @@ import my.pinged.data.entity.UserRejectRule
  * complete. Deciding them by a read of the target instead could disagree
  * with the walk at the one row `RowReader` can lose although it
  * reads, and a wrong guess there refuses the whole file.
+ *
+ * A payback's `bill_txn_id` is the same: a cash bill typed after the
+ * transfer it was paid back by arrived has the higher id. Such a payback is
+ * held to the end of `txn`'s walk the same way, under the same bound.
  *
  * **At most [FORWARD_HELD] are held**, the memory of one page of the walk.
  * How many a ledger has is not known -- one needs a catch-up arrival parsed
@@ -206,6 +215,8 @@ object SalvageJson {
  *   not: stage two writes each again after the restore (`ImportJson`).
  * @property unhidden captures kept with `user_reject_rule_id` cleared, the
  *   rule not in the file: back in the unread list after the restore.
+ * @property paybacksUnlinked paybacks kept with `bill_txn_id` cleared, their
+ *   bill not in the file: plain money received after the restore.
  */
 data class SalvageReport(
     val rows: Int,
@@ -223,6 +234,7 @@ data class SalvageReport(
     val linksUnheld: Int = 0,
     val txnsReread: Int = 0,
     val unhidden: Int = 0,
+    val paybacksUnlinked: Int = 0,
 )
 
 /** The filter of [SalvageJson]'s KDoc, as the sections are read in order. */
@@ -241,6 +253,11 @@ private class References {
     private val matched = AscendingIds()
     private var matchedWithTxn = 0
     private val forward = ArrayList<RawCapture>()
+
+    /** The transactions written by the walk, and the paybacks held for a later bill. */
+    private val txnsWritten = AscendingIds()
+    private val forwardPaybacks = ArrayList<Txn>()
+    private var paybacksUnlinked = 0
     private val lostWhole = LinkedHashSet<String>()
     private var txnsLeftOut = 0
     private var linksCleared = 0
@@ -293,6 +310,7 @@ private class References {
             nextPage = { after -> reader.page(PagedTable.TXN, after, ExportJson.PAGE) },
             idOf = Txn::id,
             keep = ::txn,
+            afterLastPage = { forwardPaybacks.map(::paying) },
         ),
         // Kept whole, with nothing filtered: an alias or a name refers to no
         // row, so one whose transactions did not read refers to nothing worse
@@ -328,6 +346,7 @@ private class References {
         linksUnheld = linksUnheld,
         txnsReread = matched.size - matchedWithTxn,
         unhidden = unhidden,
+        paybacksUnlinked = paybacksUnlinked,
     )
 
     private fun <T> lost(table: String): List<T> {
@@ -415,15 +434,37 @@ private class References {
         }
         // `txn.raw_capture_id` is unique, so no capture is counted twice.
         if (capture != null && capture in matched) matchedWithTxn++
-        if (txn.categoryId in knownCategories) return txn
-        if (madeSince(txn.categoryId)) txnsUncategorizedSince++ else txnsUncategorized++
-        return txn.copy(categoryId = uncategorized)
+        val filed = if (txn.categoryId in knownCategories) {
+            txn
+        } else {
+            if (madeSince(txn.categoryId)) txnsUncategorizedSince++ else txnsUncategorized++
+            txn.copy(categoryId = uncategorized)
+        }
+        txnsWritten.add(filed.id)
+        val bill = filed.billTxnId ?: return filed
+        if (bill > filed.id) {
+            if (forwardPaybacks.size < SalvageJson.FORWARD_HELD) {
+                forwardPaybacks += filed
+                return null
+            }
+            paybacksUnlinked++
+            return filed.copy(billTxnId = null)
+        }
+        return paying(filed)
+    }
+
+    /** [payback] as written: its bill kept if the walk wrote it, else cleared. */
+    private fun paying(payback: Txn): Txn {
+        val bill = payback.billTxnId ?: return payback
+        if (bill in txnsWritten) return payback
+        paybacksUnlinked++
+        return payback.copy(billTxnId = null)
     }
 }
 
 /**
  * Ids added in ascending order, as a walk returns them: 8 bytes each, 400 KB
- * at 50,000, searched by halving.
+ * at 50,000, searched by halving. Two are held, captures' and transactions'.
  */
 private class AscendingIds {
     private var ids = LongArray(1024)
@@ -431,7 +472,7 @@ private class AscendingIds {
         private set
 
     fun add(id: Long) {
-        check(size == 0 || id > ids[size - 1]) { "Capture $id arrived after ${ids[size - 1]}" }
+        check(size == 0 || id > ids[size - 1]) { "Id $id arrived after ${ids[size - 1]}" }
         if (size == ids.size) ids = ids.copyOf(size * 2)
         ids[size++] = id
     }

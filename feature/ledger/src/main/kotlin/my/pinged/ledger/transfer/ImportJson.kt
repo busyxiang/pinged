@@ -87,7 +87,10 @@ import my.pinged.parse.Direction
  *
  * Two references the **schema does not enforce** are checked explicitly at the
  * end of the same transaction: `raw_capture.duplicate_of_id` has no foreign
- * key, and `txn.raw_capture_id` has a unique index and no foreign key. The last
+ * key, and `txn.raw_capture_id` has a unique index and no foreign key. A third
+ * is enforced only at the commit: `txn.bill_txn_id`'s foreign key is deferred,
+ * so a payback may come before its bill, and it is checked here first, with
+ * spec 7.4's rule that the bill is money spent. The last
  * check is that the restored `category` table still holds the row spec 7.1
  * files unrecognised money into -- without it the ledger opens and then throws
  * on the first capture, which is a restore that looks successful and is not.
@@ -253,10 +256,11 @@ object ImportJson {
                 e,
             )
         } catch (e: IllegalArgumentException) {
-            // `Txn.requireStorable`, reached through `TxnDao.insert`: a backup carrying a
-            // PENDING transaction with no reason is refused by the same guard the app's
-            // own write path goes through, so the importer cannot write a row no other
-            // code here can produce.
+            // `Txn.requireStorable` and `Txn.requirePaybackShape`, reached through
+            // `TxnDao.insertAll`: a backup carrying a PENDING transaction with no
+            // reason, or spending that names a bill, is refused by the same guards the
+            // app's own write path goes through, so the importer cannot write a row no
+            // other code here can produce.
             throw ImportIntegrityException(
                 "A transaction in this backup contradicts itself: ${e.message} " +
                     "Nothing was imported.",
@@ -364,6 +368,15 @@ object ImportJson {
                     "the backup does not contain. Spec 4 keeps raw captures forever so " +
                     "that every transaction can be traced back to the notification that " +
                     "produced it, and these could not be. Nothing was imported.",
+            )
+        }
+        val billless = db.txnDao().paybacksWithoutAnExpenseCount()
+        if (billless > 0) {
+            throw ImportIntegrityException(
+                "$billless payback(s) in this backup pay back a bill the backup does not " +
+                    "hold as money spent. Spec 7.4 counts a payback against its bill, so one " +
+                    "pointing at nothing, or at money received, has nowhere to count, and " +
+                    "Pinged never writes a file like this. Nothing was imported.",
             )
         }
         val unruled = db.rawCaptureDao().danglingUserRejectRuleCount()
@@ -653,6 +666,7 @@ object ImportJson {
         isExcluded = r.bool("is_excluded"),
         exclusionReason = r.optEnum("exclusion_reason", ExclusionReason.entries),
         note = r.optText("note"),
+        billTxnId = if (r.format >= 7) r.optRowId("bill_txn_id") else null,
         userEdited = r.bool("user_edited"),
         createdAt = r.long("created_at"),
         updatedAt = r.long("updated_at"),

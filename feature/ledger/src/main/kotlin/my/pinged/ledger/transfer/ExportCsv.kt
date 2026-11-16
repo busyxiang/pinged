@@ -39,7 +39,7 @@ object ExportCsv {
     /** Spec 12's columns, in its order. */
     val HEADER = listOf(
         "date", "amount", "currency", "direction", "merchant_display",
-        "merchant_raw", "category", "source_app", "excluded", "note",
+        "merchant_raw", "category", "source_app", "excluded", "note", "pays_back",
     )
 
     /**
@@ -87,7 +87,8 @@ object ExportCsv {
      * [row] as [HEADER]'s columns. The merchant is the name the screen draws
      * (spec 6.4's, through `FeedRow.displayName`), beside the raw string the
      * notification carried; the source app is the label its rows carry, and
-     * a manual entry has none.
+     * a manual entry has none. `pays_back` is empty on every row that is
+     * not a payback.
      */
     fun fields(row: FeedRow, category: String?): List<String?> {
         val txn = row.txn
@@ -102,6 +103,9 @@ object ExportCsv {
             txn.sourceLabel ?: txn.sourcePackage,
             txn.isExcluded.toString(),
             txn.note,
+            // Spec 12: the bill's `txn.id`, the number a backup's `txns[].id`
+            // carries. This file has no id column, so it names no row here.
+            txn.billTxnId?.toString(),
         )
     }
 }

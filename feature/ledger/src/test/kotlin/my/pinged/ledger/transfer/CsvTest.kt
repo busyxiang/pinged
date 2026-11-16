@@ -68,14 +68,14 @@ class CsvTest {
         }
     }
 
-    @Test fun theHeaderNamesSpecTwelvesTenColumnsInItsOrder() {
+    @Test fun theHeaderNamesSpecTwelvesElevenColumnsInItsOrder() {
         assertEquals(
-            "date,amount,currency,direction,merchant_display,merchant_raw,category,source_app,excluded,note\r\n",
+            "date,amount,currency,direction,merchant_display,merchant_raw,category,source_app,excluded,note,pays_back\r\n",
             Csv.line(ExportCsv.HEADER),
         )
     }
 
-    @Test fun aRowIsItsTenColumns() {
+    @Test fun aRowIsItsElevenColumns() {
         val row = FeedRow(
             txn = Txn(
                 rawCaptureId = 1,
@@ -95,6 +95,7 @@ class CsvTest {
                 isExcluded = true,
                 exclusionReason = ExclusionReason.USER,
                 note = "airport",
+                billTxnId = 41,
                 createdAt = 0,
                 updatedAt = 0,
             ),
@@ -102,7 +103,7 @@ class CsvTest {
             displayName = "Grab rides",
         )
         assertEquals(
-            listOf("2026-09-30", "18.40", "MYR", "REFUND", "Grab rides", "GRAB*TRIP-A1", "Transport", "Grab", "true", "airport"),
+            listOf("2026-09-30", "18.40", "MYR", "REFUND", "Grab rides", "GRAB*TRIP-A1", "Transport", "Grab", "true", "airport", "41"),
             ExportCsv.fields(row, "Transport"),
         )
     }
@@ -130,7 +131,7 @@ class CsvTest {
             displayName = "Warung",
         )
         assertEquals(
-            listOf("2026-09-01", "5.00", "MYR", "EXPENSE", "Warung", null, "Food", null, "false", null),
+            listOf("2026-09-01", "5.00", "MYR", "EXPENSE", "Warung", null, "Food", null, "false", null, null),
             ExportCsv.fields(row, "Food"),
         )
     }
