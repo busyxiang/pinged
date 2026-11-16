@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body { margin: 0; }
+a { color: #a03826; } a:hover { color: #7a2a1c; }
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; background: #efe7d8; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden;">
+  <div style="flex: 1; min-height: 40px; background: rgba(26,23,20,0.42);"></div>
+  <div style="background: #fbf6ea; border-top: 1.5px dashed #1a1714;">
+
+    <!-- A search that finds nothing (#392). The line says what was searched and how far, so an empty list is never read as a broken one. No bill stays, so the sheet always has an answer. With nothing to offer in the last 60 days at all, the unsearched list reads the same line about the 60 days. -->
+    <div style="padding: 18px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+      <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 23px;">Which bill?</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </div>
+
+    <div style="padding: 12px 20px 0;">
+      <div style="border: 1px dotted #cfc4ae; background: #f5eddd; padding: 9px 11px; display: flex; align-items: baseline; justify-content: space-between;">
+        <span style="font-size: 13px; color: #4a423a;">Arjun Nair</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-variant-numeric: tabular-nums;">+32.00</span>
+      </div>
+    </div>
+
+    <!-- No bill, always first: it takes the pick off and counts the money
+         as plain money received, filed by COUNTS AGAINST. -->
+    <div style="padding: 10px 20px 0;">
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px dotted #cfc4ae;">
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">No bill</div>
+          <div style="font-size: 12px; color: #8a8175; margin-top: 3px;">Count it as money received</div>
+        </div>
+        <span style="width: 18px; flex: none;"></span>
+      </div>
+    </div>
+
+    <div style="padding: 10px 20px 0;">
+      <div style="display: flex; align-items: center; gap: 9px; min-height: 44px; border-bottom: 1px solid #1a1714;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+        <span style="flex: 1; font-size: 14px;">kfc<span style="display: inline-block; width: 1.5px; height: 16px; background: #a03826; margin-left: 2px; vertical-align: -3px;"></span></span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+    </div>
+
+    <div style="padding: 22px 20px 0;">
+      <div style="font-size: 14px; line-height: 20px; color: #6b6459;">No bill matches &ldquo;kfc&rdquo; on or before 20 Sep, in all of your history.</div>
+    </div>
+
+    <div style="padding: 14px 20px 26px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; line-height: 1.6; letter-spacing: 0.04em; color: #8a8175;">ONLY BILLS THAT COUNT CAN BE PICKED. ONE LEFT OUT OF SPENDING IS NOT OFFERED</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

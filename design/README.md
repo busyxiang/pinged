@@ -11,12 +11,17 @@ These are the source of truth; the pages below are generated from them.
 | Group | Files |
 |---|---|
 | First run | `Onboarding` `Stored` `Battery` `Sources` `Empty` |
-| Every day | `Main` `MainScrolled` `MainScrolled320` `MainEnd` `Inbox` `Detail` `DetailExcluded` `Cash` |
+| Every day | `Main` `MainScrolled` `MainScrolled320` `MainEnd` `Inbox` `InboxMoneyBack` `Detail` `DetailExcluded` `Cash` |
 | Looking back | `Charts` `ChartsMonth` `Day` `Breakdown` `BreakdownUntrusted` `Search` |
 | When it breaks | `Stopped` `Backup` `Settings` |
 | While it loads | `LoadingSpending` `LoadingWaiting` `LoadingCharts` `LoadingInbox` `LoadingDetail` `LoadingDay` `LoadingList` `LoadingSettings` `LoadingSheet` `LoadingSearch` `LoadingBreakdown` |
 | Sheets and lists | `Chooser` `Categories` `Category` `Merge` `Months` `EverythingElse` `MerchantSheet` `Export` `Wipe` `Teach` `PackImport` `Rules` `Unread` |
+| Paybacks, proposed in #392 | `PaybackList` `PaybackList320` `PaybackListLeftOut` `DetailBill` `DetailBillExcluded` `NotPaymentBill` `DetailPayback` `DetailRefund` `DetailRefundFiled` `InboxPayback` `BillChooser` `BillChooserSearch` `BillChooserEmpty` `BreakdownPayback` `CashPayback` `CashPaybackEdit` `CashBill` `DeleteBill` |
 | Rejected directions | `Quiet` `Warung` `Dark` |
+
+`Cash` predates the shipped Paid / Received control (#355) and the screen's
+header. `CashPayback`, `CashPaybackEdit` and `CashBill` are drawn to the
+screen as built in `ManualEntryScreen.kt`.
 
 `canvas.json` — artboard layout, two pages. Only consumed by the Claude
 Design canvas editor, which needs Node or Bun to assemble and was not
@@ -66,6 +71,16 @@ is taken to be `Inbox`'s unnamed RM45.00 debit, filed under Food & Drinks.
 `BreakdownUntrusted` is the same month with one day not captured, which the
 scenario does not have; it differs from `Breakdown` only in grey, its one
 explaining line and the board's note.
+
+The payback boards are September's own and move no figure on another board.
+
+- **Yuen Kee, 18 September.** A RM96.00 dinner for three. Mei Ling Tan and Arjun Nair each paid RM32.00 back on the 20th. A payback counts on its bill's day and adds nothing to a merchant's count, so Breakdown's Yuen Kee line of RM152.00 across 14 payments already holds the RM32.00 share. `BreakdownPayback` opens that line.
+- **`BillChooser` and its two states.** Opened on the 20th, from Arjun's card before he was accepted, so Yuen Kee shows one payback.
+- **Other bills it names.** foodpanda's 14 September RM64.00 bill, paid back RM64.50, sits inside its own line, and so does Restoran Sri Melayu's 8 September RM64.00 bill. Farid paid his half of the Sri Melayu bill by MAE on the 22nd (`PaybackList320`).
+- **`DetailRefund`.** Ahmad Bin Abdullah's RM27.95 is one of `Main`'s 6 TO SORT.
+- **`DetailRefundFiled`.** Breakdown's Domino's line, its one refund.
+- **`PaybackListLeftOut`, `DetailBillExcluded` and `NotPaymentBill`.** The same month with Yuen Kee left out. They differ from the scenario only by what the bill and its paybacks move.
+- **The typed-by-hand boards: `CashPayback`, `CashPaybackEdit`, `CashBill` and `DeleteBill`.** Pinned to August, since September has nothing typed by hand. Warung Pak Din on 15 August is a RM60.00 cash dinner for three. Daniel Lim paid RM20.00 back by MAE on the 16th, and Siti Hajar paid RM20.00 in cash on the 17th.
 
 `EverythingElse` is pinned to August 2026. `Charts` draws September as six
 bars, and folds only above six, so no September bar opens it. Its

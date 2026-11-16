@@ -36,6 +36,44 @@ groups = [
   ("Cash", "Cash.dc.html", "Manual entry",
    "The only typing in the whole app. Keypad open and focused, category chips ordered by what you use most, merchant optional."),
  ]),
+ ("Paybacks", "Proposed in #392, not built. You pay for dinner and your friends pay their shares back. Until now each share counted as money received under the friend&rsquo;s name, filed nowhere, while Food &amp; Drinks kept the whole bill. A payback counts against the bill it pays back: the bill&rsquo;s month, category and merchant. PAYS BACK names the link and PAID BACK the amount; a bill is written as its name, then its date. Yuen Kee on 18 September is a RM96.00 dinner for three with two RM32.00 paybacks, so its Breakdown line of RM152.00 across 14 payments already holds the RM32.00 share, and no other board&rsquo;s figure moves. The typed-by-hand boards are pinned to August, since September has nothing typed by hand.", [
+  ("Spending, 16 to 20 September", "PaybackList.dc.html", "New, a bill and its paybacks",
+   "A payback stays on the day the money arrived, so the list still says when it came, and counts on its bill&rsquo;s day instead. The 20th&rsquo;s subtotal is Tealive alone, and the 18th&rsquo;s is the share plus Rapid KL. Its amount is Muted rather than struck through: it is counted, just not here. The tag names the bill in Karla with its date in mono, opens the bill, and is read by TalkBack as where the money counts. The bill keeps the amount the bank sent, with a line under it saying what was paid back and what is left."),
+  ("At 320dp", "PaybackList320.dc.html", "New, the same at CI&rsquo;s size",
+   "Scrolled two days higher, to Farid&rsquo;s payback for the Sri Melayu dinner, the longest name a tag carries. The name gives way and the date stays. The bill&rsquo;s paid-back line runs under the amount column, so it fits on one line."),
+  ("The bill left out", "PaybackListLeftOut.dc.html", "New, a bill that stopped counting",
+   "Yuen Kee marked Not spending. Its paybacks keep their link but count on their own day, as plain money received: the amount returns to Ink, the tag says BILL NOT COUNTED &middot; COUNTS HERE, and the 20th&rsquo;s subtotal takes both. Filed as they would be with no bill, they join TO SORT. The tag still opens the bill, where Count as spending puts everything back."),
+  ("A bill", "DetailBill.dc.html", "New, Detail with its paybacks",
+   "The hero is the amount the bank sent, never the share. PAID BACK lists each payback, each one opening its own detail, then Add a cash payback for a share handed over in cash, and the share as a leader: the one figure every total uses for this bill. Past three paybacks the list shows three and a &ldquo;6 more&rdquo; row."),
+  ("A bill, left out", "DetailBillExcluded.dc.html", "New, in Left out&rsquo;s grammar",
+   "The same bill after Not spending. The paybacks stay listed, one line says they count on their own until the bill counts again, and there is no Add a cash payback, since a bill that counts nowhere cannot be picked."),
+  ("Not a payment", "NotPaymentBill.dc.html", "New, on a captured bill",
+   "The shipped sheet with one more sentence: the paybacks stay, as money received. Typed bills say the same in Delete payment."),
+  ("A payback", "DetailPayback.dc.html", "New, Detail of the money paid back",
+   "PAID BACK, not CAME BACK, since Charts&rsquo; came back never includes a payback. Pays back is a chip, so it can move to another bill. Counts against names the bill&rsquo;s category, merchant and day as plain text, and the small print under it says why the day it arrived does not count it. Change category gives way to Not a payback, with Undo on its snackbar."),
+  ("Money received, no bill", "DetailRefund.dc.html", "New, where a payback starts after the fact",
+   "One of September&rsquo;s 6 TO SORT: a friend&rsquo;s transfer accepted without a category. Any money received offers a bill as a dashed chip in Muted, not Stamp: a bill is an offer, never something the row needs, so it does not compete with + CATEGORY."),
+  ("A refund, filed", "DetailRefundFiled.dc.html", "New, why the bill chip is quiet",
+   "Breakdown&rsquo;s Domino&rsquo;s line, a merchant&rsquo;s refund already filed. It carries the same Muted chip, and on most refunds that chip never needs an answer."),
+  ("Needs a look", "InboxPayback.dc.html", "New, the received card with a bill",
+   "PAYS BACK comes first and reads None in Ink; only the category line is in Stamp, so the card does not look like it needs two answers. Once a bill is picked, COUNTS AGAINST goes, because the bill decides it, and one line in Karla says where Accept will count the money and what the share becomes. A pick is not an answer; Accept still is. InboxMoneyBack carries the same None line."),
+  ("Which bill?", "BillChooser.dc.html", "New, the bill chooser",
+   "No bill first, always, to take a pick off. Then counted expenses on or before the payback from the last 60 days, bills of the payback&rsquo;s amount or a multiple of it first. That only orders the list: nothing is ever picked for you. The current pick is ticked, a bill already paid back says how much and what the share is now, below zero when friends rounded up, and a tap picks and closes."),
+  ("Searching", "BillChooserSearch.dc.html", "New, the whole history",
+   "The field reaches the whole history and matches an amount as well as a name, so 64 finds every RM64.00 bill back to July and May."),
+  ("Nothing found", "BillChooserEmpty.dc.html", "New, an empty search",
+   "Says what was searched and how far, so an empty list is never read as a broken one, and keeps No bill so the sheet always has an answer."),
+  ("Spending by merchant", "BreakdownPayback.dc.html", "New, Yuen Kee opened",
+   "Breakdown with Yuen Kee open in place. The bill row keeps the bank&rsquo;s 96.00 and says what was paid back, so RM152.00 across 14 reads true: the line counts the share, and paybacks are never rows or counts here."),
+  ("Add money received", "CashPayback.dc.html", "New, a payback typed by hand",
+   "Siti Hajar handed over her share in cash. Under Received, PAYS BACK comes before the category; once a bill is picked the chips go and one line says where Save will count the money. Switching to Paid keeps the pick but hides it. Drawn to the entry screen as built, which Cash predates."),
+  ("Edit money received", "CashPaybackEdit.dc.html", "New, a date before its bill",
+   "A typed payback opens here, never on Detail, so this is where its bill changes or comes off, through the chooser&rsquo;s No bill. Its date moved a day before the bill&rsquo;s, so the chip and one line turn Stamp and Save changes is off until either moves."),
+  ("Edit payment, a bill", "CashBill.dc.html", "New, a typed bill with paybacks",
+   "Received is off while paybacks point here, because money received cannot be paid back, and the line under the row says why, which TalkBack reads too. The amount is being retyped and the share follows each digit. Leaving with unsaved edits asks first."),
+  ("Delete payment", "DeleteBill.dc.html", "New, deleting a typed bill",
+   "Today&rsquo;s question gains one sentence: the paybacks stay, as money received. One payback is named, with its amount and day."),
+ ]),
  ("Looking back", "Three ways of asking where the money went. None of them needs a charting library.", [
   ("September", "Charts.dc.html", "Charts",
    "A daily rhythm grid, category bars on the same single-hue ramp, and a merchant ranking. The grid is the one that needed a rule: a day Pinged was not watching is hatched, never left empty &mdash; an empty cell would claim you spent nothing on a day it knows nothing about. The comparison against August appears only because the month is complete."),
@@ -300,7 +338,7 @@ page = f'''<title>Pinged Screen Set</title>
 <style>{css}</style>
 <div class="wrap">
   <p class="eyebrow">Pinged &middot; Receipt direction</p>
-  <h1>Forty-six screens, one paper trail</h1>
+  <h1>Sixty-five screens, one paper trail</h1>
   <p class="stand">The whole v1 surface &mdash; every screen, sheet and list &mdash; grouped the way a person meets it. The populated scenario is pinned to <strong>Wednesday 30 September 2026</strong>, month end, so every figure reconciles: RM2,847.30 across 112 captured transactions, RM100.00 of transfers excluded, four items awaiting review.</p>
   <p class="stand">The system below is the handoff &mdash; those hex values and type roles become the Compose theme directly.</p>
 

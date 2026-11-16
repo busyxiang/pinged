@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body { margin: 0; }
+a { color: #a03826; } a:hover { color: #7a2a1c; }
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- Edit payment on a manual entry that is a bill (#392). Pinned to August, since September has nothing typed by hand: a RM60.00 cash dinner for three at Warung Pak Din on 15 August. Daniel Lim paid RM20.00 back by MAE on the 16th, and Siti Hajar RM20.00 in cash on the 17th. Received is off while paybacks point here, because money received cannot be paid back. It is drawn dotted in Faint, and the line under the row gives the reason, which is also the segment's TalkBack state. -->
+  <div style="padding: 12px 0 0 8px;">
+    <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+    </div>
+  </div>
+  <div style="padding: 8px 20px 0; font-family: 'Instrument Serif', Georgia, serif; font-size: 24px; line-height: 28px;">Edit payment</div>
+
+  <div style="padding: 16px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex;">
+      <div style="min-height: 44px; padding: 0 10px; display: flex; align-items: center; border: 1px solid #1a1714; border-radius: 2px; background: #efe7d8; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #1a1714; position: relative; z-index: 1;">PAID</div>
+      <div style="min-height: 44px; padding: 0 10px; display: flex; align-items: center; border: 1px dotted #8a8175; border-radius: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #8a8175; margin-left: -1px;">RECEIVED</div>
+    </div>
+    <div style="min-height: 44px; padding: 0 12px; display: flex; align-items: center; border: 1px solid #ded5c4; border-radius: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #1a1714;">15 AUG</div>
+  </div>
+  <div style="padding: 8px 20px 0; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: #6b6459;">RECEIVED IS OFF: 2 PAYBACKS POINT HERE</div>
+
+  <div style="padding: 22px 20px 0; display: flex; align-items: baseline; gap: 4px;">
+    <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 30px; color: #8a8175;">RM</span>
+    <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 58px; line-height: 1; font-variant-numeric: tabular-nums lining-nums;">66.00</span><span style="width: 2px; height: 44px; background: #a03826; margin-left: 3px; align-self: center;"></span>
+  </div>
+
+  <div style="padding: 16px 20px 0; display: flex; flex-wrap: wrap; gap: 8px;">
+    <span style="background: #a03826; color: #fbf6ea; border-radius: 2px; padding: 9px 13px; font-size: 13px; font-weight: 500; min-height: 36px; display: flex; align-items: center; box-sizing: border-box;">Food &amp; Drinks</span>
+    <span style="border: 1px solid #ded5c4; border-radius: 2px; padding: 9px 13px; font-size: 13px; min-height: 36px; display: flex; align-items: center; box-sizing: border-box;">Transport</span>
+    <span style="border: 1px solid #ded5c4; border-radius: 2px; padding: 9px 13px; font-size: 13px; min-height: 36px; display: flex; align-items: center; box-sizing: border-box;">Groceries</span>
+    <span style="border: 1px dashed #6b6459; border-radius: 2px; padding: 9px 13px; font-size: 13px; color: #6b6459; min-height: 36px; display: flex; align-items: center; box-sizing: border-box;">More</span>
+  </div>
+
+  <!-- The bill's paybacks, as Detail lists a captured bill's. The amount is
+       being retyped, 60.00 to 66.00 for the drinks, and the share follows
+       each digit: 66.00 - 40.00. A smaller amount only makes the share
+       smaller, or negative. Leaving with unsaved edits, by back or by a
+       payback's row, asks first. -->
+  <div style="padding: 20px 20px 0;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #6b6459;">PAID BACK</div>
+    <div style="display: flex; align-items: center; gap: 10px; min-height: 44px; border-bottom: 1px dotted #cfc4ae; margin-top: 4px;">
+      <div style="flex: 1;">
+        <div style="font-size: 14px; font-weight: 500;">Daniel Lim</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; color: #8a8175; margin-top: 2px;">16 AUG &middot; MAYBANK MAE</div>
+      </div>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-variant-numeric: tabular-nums;">20.00</span>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M9 6l6 6-6 6"/></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; min-height: 44px; border-bottom: 1px dotted #cfc4ae;">
+      <div style="flex: 1;">
+        <div style="font-size: 14px; font-weight: 500;">Siti Hajar</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; color: #8a8175; margin-top: 2px;">17 AUG &middot; ENTERED BY HAND</div>
+      </div>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-variant-numeric: tabular-nums;">20.00</span>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M9 6l6 6-6 6"/></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px dotted #cfc4ae; color: #6b6459; font-size: 14px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b6459" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span>Add a cash payback</span>
+    </div>
+    <div style="display: flex; align-items: baseline; font-size: 13.5px; margin-top: 12px;"><span style="font-weight: 500;">Your share</span><span style="flex: 1; border-bottom: 1px dotted #cfc4ae; margin: 0 8px 4px;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-variant-numeric: tabular-nums;">26.00</span></div>
+  </div>
+
+  <div style="flex: 1;"></div>
+  <div style="padding: 14px 20px 0px; border-top: 1px dotted #cfc4ae;">
+    <div style="background: #a03826; color: #fbf6ea; min-height: 52px; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 15.5px; font-weight: 500; box-sizing: border-box;">Save changes</div>
+  </div>
+  <div style="padding: 9px 20px 20px;">
+    <div style="border: 1px solid #a03826; color: #a03826; min-height: 46px; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 14px; box-sizing: border-box;">Delete payment</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

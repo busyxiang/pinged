@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body { margin: 0; }
+a { color: #a03826; } a:hover { color: #7a2a1c; }
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; background: #efe7d8; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden;">
+  <div style="flex: 1; min-height: 40px; background: rgba(26,23,20,0.42);"></div>
+  <div style="background: #fbf6ea; border-top: 1.5px dashed #1a1714;">
+
+    <!-- Reopened from Arjun Nair's card on 20 September (#392), after Yuen Kee was picked: the pick is ticked in Stamp, as Chooser marks its category. Offers counted expenses on or before the payback, so nothing after the 20th. Ranked first: the payback's amount or a whole multiple. That only orders the list; nothing is picked for you. A bill already paid back says how much and what the share is now, below zero when friends rounded up. Arjun is not yet accepted, so Yuen Kee shows Mei Ling's payback alone. -->
+    <div style="padding: 18px 20px 0; display: flex; align-items: center; justify-content: space-between;">
+      <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 23px;">Which bill?</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1714" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </div>
+
+    <div style="padding: 12px 20px 0;">
+      <div style="border: 1px dotted #cfc4ae; background: #f5eddd; padding: 9px 11px; display: flex; align-items: baseline; justify-content: space-between;">
+        <span style="font-size: 13px; color: #4a423a;">Arjun Nair</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-variant-numeric: tabular-nums;">+32.00</span>
+      </div>
+    </div>
+
+    <!-- No bill, always first: it takes the pick off and counts the money
+         as plain money received, filed by COUNTS AGAINST. -->
+    <div style="padding: 10px 20px 0;">
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px dotted #cfc4ae;">
+        <div style="flex: 1;">
+          <div style="font-size: 15px; font-weight: 500;">No bill</div>
+          <div style="font-size: 12px; color: #8a8175; margin-top: 3px;">Count it as money received</div>
+        </div>
+        <span style="width: 18px; flex: none;"></span>
+      </div>
+    </div>
+
+    <div style="padding: 10px 20px 0;">
+      <div style="display: flex; align-items: center; gap: 9px; min-height: 44px; border-bottom: 1px dashed #cfc4ae;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a8175" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+        <span style="font-size: 14px; color: #8a8175;">Search all bills, by name or amount</span>
+      </div>
+    </div>
+
+    <div style="padding: 16px 20px 0;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #6b6459;">32.00, OR A MULTIPLE OF IT</div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px dotted #cfc4ae; padding: 6px 0; box-sizing: border-box;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 15px; font-weight: 500; color: #a03826; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Yuen Kee</div>
+          <div style="display: flex; align-items: baseline; gap: 6px; margin-top: 3px; color: #8a8175;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; flex: none;">FRI 18 SEP</span><span style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;">&middot; Food &amp; Drinks</span></div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; color: #6b6459; margin-top: 3px;">32.00 PAID BACK &middot; YOUR SHARE 64.00</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: #a03826; flex: none;">96.00</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a03826" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px dotted #cfc4ae; padding: 6px 0; box-sizing: border-box;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 15px; font-weight: 500; color: #1a1714; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">foodpanda</div>
+          <div style="display: flex; align-items: baseline; gap: 6px; margin-top: 3px; color: #8a8175;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; flex: none;">MON 14 SEP</span><span style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;">&middot; Food &amp; Drinks</span></div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; color: #6b6459; margin-top: 3px;">64.50 PAID BACK &middot; YOUR SHARE &minus;0.50</div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: #1a1714; flex: none;">64.00</span>
+        <span style="width: 18px; flex: none;"></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px dotted #cfc4ae; padding: 6px 0; box-sizing: border-box;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 15px; font-weight: 500; color: #1a1714; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Restoran Sri Melayu Masakan Kampung Baru</div>
+          <div style="display: flex; align-items: baseline; gap: 6px; margin-top: 3px; color: #8a8175;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; flex: none;">TUE 8 SEP</span><span style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;">&middot; Food &amp; Drinks</span></div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: #1a1714; flex: none;">64.00</span>
+        <span style="width: 18px; flex: none;"></span>
+      </div>
+    </div>
+
+    <div style="padding: 18px 20px 0;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #6b6459;">LAST 60 DAYS</div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px dotted #cfc4ae; padding: 6px 0; box-sizing: border-box;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 15px; font-weight: 500; color: #1a1714; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Tealive</div>
+          <div style="display: flex; align-items: baseline; gap: 6px; margin-top: 3px; color: #8a8175;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; flex: none;">SUN 20 SEP</span><span style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;">&middot; Food &amp; Drinks</span></div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: #1a1714; flex: none;">8.90</span>
+        <span style="width: 18px; flex: none;"></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; border-bottom: 1px dotted #cfc4ae; padding: 6px 0; box-sizing: border-box;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 15px; font-weight: 500; color: #1a1714; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Mydin USJ</div>
+          <div style="display: flex; align-items: baseline; gap: 6px; margin-top: 3px; color: #8a8175;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.06em; flex: none;">SAT 19 SEP</span><span style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;">&middot; Groceries</span></div>
+        </div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: #1a1714; flex: none;">41.60</span>
+        <span style="width: 18px; flex: none;"></span>
+      </div>
+    </div>
+
+    <div style="padding: 14px 20px 26px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; line-height: 1.6; letter-spacing: 0.04em; color: #8a8175;">ONLY BILLS THAT COUNT, ON OR BEFORE 20 SEP. A TAP PICKS AND CLOSES</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

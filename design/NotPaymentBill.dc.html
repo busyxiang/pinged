@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Karla:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body { margin: 0; }
+a { color: #a03826; } a:hover { color: #7a2a1c; }
+</style>
+</helmet>
+<div style="width: 390px; height: 340px; background: #fbf6ea; font-family: Karla, system-ui, sans-serif; color: #1a1714; display: flex; flex-direction: column; overflow: hidden;">
+  <div style="flex: 1; background: rgba(26,23,20,0.42);"></div>
+
+  <!-- Not a payment on a captured bill (#392): the shipped RemoveSheet with
+       one more sentence, the same one DeleteBill adds for a typed bill. Two
+       or more paybacks are counted; one is named, with its amount and day. -->
+  <div style="background: #fbf6ea; border-top: 1.5px dashed #1a1714; padding: 22px 20px 26px;">
+    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #6b6459;">NOT A PAYMENT?</div>
+    <div style="font-size: 17px; line-height: 22px; margin-top: 8px;">Yuen Kee</div>
+    <div style="font-size: 13px; line-height: 18px; color: #6b6459; margin-top: 8px;">It leaves your list and every total. The notification is kept, so the app will not read it as a new payment. Its 2 paybacks stay, as money received.</div>
+    <div style="min-height: 46px; margin-top: 16px; background: #a03826; color: #fbf6ea; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500;">Not a payment</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

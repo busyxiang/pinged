@@ -347,6 +347,7 @@ we failed to extract recoverable later by re-parsing. A user-initiated
 | is_excluded | Bool | transfers/reloads: kept, not counted |
 | exclusion_reason | Enum? | `TRANSFER`, `CARD_PAYMENT`, `ATM_WITHDRAWAL`, `USER` |
 | note | Text? | |
+| bill_txn_id | Long?, indexed | the payback's bill (section 7.4): FK to `txn.id`, `ON DELETE SET NULL`. Non-null only on a `REFUND`, and only ever naming an `EXPENSE`; the writer refuses anything else. Added in schema 8. No re-read writes it |
 | user_edited | Bool | blocks re-parse overwrite |
 | created_at, updated_at | Long | |
 
@@ -1624,6 +1625,77 @@ Cash withdrawn at an ATM is excluded as a transfer. Spending that cash is
 covered by manual entry (section 9.4); v1 does not attempt to model a cash
 wallet.
 
+### 7.4 Paybacks
+
+A friend's share of a bill the user paid arrives as money received under the
+friend's name (`tng-received-v1`, `mae-received-v1`). Left alone it files
+where that name files, Uncategorized, since a friend is no merchant: Food
+keeps the whole bill and Uncategorized goes negative. The month's total is
+right and its categories are wrong, and a share paid the next month makes
+both months wrong. A **payback** (`CONTEXT.md`) is the user's statement that a
+`REFUND` pays back an earlier `EXPENSE`, its **bill** (#392).
+
+**What it is.** `txn.bill_txn_id` on the payback (section 4). Several
+paybacks can pay back one bill; a payback pays back one bill, so a transfer
+that covers two dinners goes on one of them or stays plain money received.
+Only money that arrived is recorded: nothing says who still owes what. A
+payback is always a `REFUND` and a bill always an `EXPENSE`, so a bill is
+never itself a payback.
+
+**Where it counts.** While its bill counts -- `COMMITTED` and not excluded --
+a payback counts in the bill's month, category and merchant identity, never
+its own. One SQL fragment gives every row the date, category and merchant
+key it counts under: its bill's, for a payback whose bill counts, and its
+own otherwise. Every aggregate reads through it (section 15.3). Nothing is
+copied onto the payback, so its own `local_date`, `category_id` and
+`merchant_key` never change, and Not a payback restores it exactly with no
+re-filing. A payback lowers **spent**, never **came back** (section 9.3),
+because it is part of what the bill cost; for the same reason it adds nothing
+to any count, `N×` or `N TRANSACTIONS`. The **share** is the bill's amount
+less its counted paybacks, and it is negative when they exceed the bill: a
+category bar that ends below zero is clamped as section 15.3 says. A share
+paid in a later month changes the bill's month after it has ended, as a
+backdated manual entry already does.
+
+**When the bill stops counting** -- Not spending, Not a payment, or a Merge
+that rejects it -- the link is kept, and each payback counts on its own date,
+category and merchant as plain money received, filed as it would be with no
+bill: Uncategorized for a friend's transfer, so it joins `TO SORT`. Once the
+bill counts again its paybacks count against it again. Nothing is asked.
+
+**Linking is the user's, never automatic** (section 3's default-deny). The
+ways in: the review inbox's `PAYS BACK` line on a card read by a
+received-money rule (section 9.2); a committed `REFUND`'s detail, `+ BILL` or
+its **Pays back** chip (section 9.7); manual entry's `PAYS BACK` under
+Received (section 9.4); and a bill's **Add a cash payback**, which opens
+manual entry with the bill already picked. Every one opens the bill chooser.
+A re-read never touches the link: like a one-off category it is history the
+user has confirmed.
+
+**The bill chooser** (`design/BillChooser.dc.html`, with
+`BillChooserSearch` and `BillChooserEmpty`) is a sheet titled *Which bill?*
+over the payback it is choosing for:
+
+- **No bill** first, always. It takes a pick off, and the money counts as
+  plain money received.
+- A search field reaching the whole history, by merchant name or by amount.
+- Unsearched, the counted expenses dated on or before the payback in the last
+  60 days. Those whose amount is the payback's or a whole multiple of it come
+  first, under `<amount>, OR A MULTIPLE OF IT`; the rest follow under
+  `LAST 60 DAYS`, newest first. Ranking only orders the list.
+- Each bill: its name, date, category and amount, and once anything has
+  been paid back against it, `<x> PAID BACK · YOUR SHARE <y>`, below zero when
+  friends rounded up. The current pick is ticked in Stamp.
+- A tap picks and closes the sheet; there is no Save. A search that finds
+  nothing says what it searched and how far, and No bill stays.
+
+**Words.** `PAYS BACK` names the link and `PAID BACK` the amount. A bill is
+written as its name and then its date, `Yuen Kee · 18 Sep`: the name in
+Karla, which gives way at narrow widths, and the date never cut.
+
+Not built: tracking what is still owed, one transfer split across several
+bills, and suggesting a link.
+
 ## 8. Visualization
 
 v1 ships three, none of which needs a charting dependency.
@@ -1934,6 +2006,19 @@ entry (section 9.4) names how it reached the ledger in place of the source:
 its small print reads `<category> · Entered by hand`, on every screen that
 draws the row. Search and filter by category, source, date range, amount range.
 
+**A payback stays on the day it arrived** (section 7.4;
+`design/PaybackList.dc.html`). Its amount is Muted, not struck through,
+since it counts, just not on that day, and its second line is a tag,
+`PAYS BACK <bill> · <DATE>`, that opens the bill. TalkBack reads it as where
+the money counts: "32 ringgit received from Arjun Nair, counted on 18
+September with Yuen Kee". It is outside its own day's subtotal and inside its
+bill's day's. While the bill counts nowhere the tag reads `BILL NOT COUNTED ·
+COUNTS HERE`, the amount returns to Ink, and its own day's subtotal takes it
+(`PaybackListLeftOut`). A bill keeps the amount the bank sent, with a line
+under the row, `<x> PAID BACK · YOUR SHARE <y>`. That line runs under the
+amount column too, so it stays one line at 320dp, where a long bill name in
+a tag gives way and its date stays (`PaybackList320`).
+
 The month label above the summary opens the Charts' `Months` sheet (#192),
 the same read and the same rows. A pick moves the summary to that month and
 starts the feed at its last day, older months running on below it; picking
@@ -1985,20 +2070,36 @@ The actions per reason:
 | `TRANSFER_SUSPECT` | **Leave out** (the default), **Keep as expense**, **Not a payment** |
 | `DUPLICATE_SUSPECT` | **Merge**, **Keep both**; a card whose pair cannot be found is a plain card |
 
-**A plain card of money coming back asks which category it counts against.**
-A `REFUND` that reaches the inbox is often a friend paying a bill back, which
-arrives under the friend's name and files under Uncategorized while the bill
-it lowers sits in Food. The card draws one line, `COUNTS AGAINST` and the
-category it is filed under (`Choose a category` while that is Uncategorized),
-between the reading and the answers, and a tap opens the chooser of section 9.1
-without its "Always call this" switch, since a friend's name is not a merchant
-to teach. A pick is one targeted `UPDATE` of `category_id` and `user_edited`
+**A plain card of money coming back asks which bill it pays back, else which
+category it counts against.** A `REFUND` that reaches the inbox is often a
+friend paying a bill back, which arrives under the friend's name and files
+under Uncategorized while the bill it lowers sits in Food.
+
+A card read by a received-money rule draws `PAYS BACK` first, between the
+reading and the answers, reading `None` in Ink: a bill is an offer the card
+does not need answered, so only the category line under it is in Stamp. A
+tap opens section 7.4's bill chooser. Once a bill is picked the line names it
+in Ink, `Yuen Kee · 18 Sep`, and `COUNTS AGAINST` gives way to one line in
+Karla saying where Accept will count the money and what the share becomes:
+`Counts against Food & Drinks on 18 Sep. Your share of Yuen Kee becomes
+RM32.00.` The chooser's No bill brings `COUNTS AGAINST` back. A merchant's
+refund, read by any other rule, never offers a bill here.
+
+The pick is stored like the category's, one targeted `UPDATE` of
+`bill_txn_id` with the same guards, and **it is not an answer**: Accept still
+commits the card, and Accept all commits a card with no bill as plain money
+received. Drawn as `design/InboxPayback.dc.html`.
+
+`COUNTS AGAINST` shows the category the row is filed under
+(`Choose a category` while that is Uncategorized), and a tap opens the
+chooser of section 9.1 without its "Always call this" switch, since a
+friend's name is not a merchant to teach. A pick is one targeted `UPDATE` of `category_id` and `user_edited`
 (`TxnDao.fileAwaiting`), guarded on the row still being `PENDING` for the
 reason the card showed and on the category still existing. **It is not an
 answer**: the card stays, nothing is offered for Undo and what was on offer
 stays, and the category stays on the row through Accept, Not a payment and an
 Undo of either. Payment, transfer and duplicate cards do not ask. Drawn as
-`design/InboxMoneyBack.dc.html`; the line adds 44dp to a money-back card and
+`design/InboxMoneyBack.dc.html`; each line adds 44dp to a money-back card and
 to no other.
 
 Each answer is one targeted `UPDATE` of `state`, `pending_reason`,
@@ -2082,6 +2183,12 @@ under it gives the two halves: `SPENT RMx · CAME BACK RMy`. In the month
 still running the labels are `SPENT SO FAR` and `NET SPENT SO FAR`. An untrusted
 month greys the figure and adds `MAY BE INCOMPLETE · N DAYS NOT CAPTURED`,
 never "at least", since a missed refund makes the real figure lower.
+
+**Paybacks** (section 7.4) count in their bill's month, category and
+merchant. A payback lowers `SPENT`, never `CAME BACK`, and is never a row or
+a count in a Breakdown line or a Merchant month. Its bill's row there keeps
+the bank's amount with its `PAID BACK` line, so a line's net and `N×` read
+true together (`design/BreakdownPayback.dc.html`).
 
 **Sources line.** Under the hero and its own lines (the split, then
 `MAY BE INCOMPLETE`, which stays beside the figure it qualifies), above the
@@ -2283,6 +2390,15 @@ One screen, pushed over the list with the tab bar hidden:
 - **A date chip** on that row, reading `Today`, moving the entry to any
   past day, the history start's before included, at the current time of day.
   Never a future day.
+- **Pays back**, under Received only, above the category chips: section
+  7.4's bill chooser, reading `None` until a bill is picked. Once one is, the
+  chips go, since the bill decides the category, and one line says where
+  Save will count the money (`design/CashPayback.dc.html`). Switching to Paid
+  keeps the pick but hides it. A bill's **Add a cash payback** opens this
+  screen under Received with the bill picked. A date moved before the
+  bill's turns the chip Stamp, with `THE BILL, <DATE>, IS AFTER THIS DATE`
+  under it, and Save is off until one of them moves (`CashPaybackEdit`). A
+  bill's date moved after a payback's is refused the same way.
 - **A row of category chips**, most used in the last 90 days first, then
   `sort_order`. Uncategorized is never a chip: no chip saves as
   Uncategorized. A merchant Pinged already files pre-selects its category; a
@@ -2295,6 +2411,20 @@ ten minutes, or the whole day for a backdated entry) is named above Save, with *
 and **Cancel**. Tapping a manual entry's row reopens the screen filled in;
 every field can change, the direction included (a targeted write of
 `direction` alone), and **Delete** removes it after one confirmation.
+
+**A typed entry that is a bill** (`design/CashBill.dc.html`) lists its
+paybacks under `PAID BACK`, as section 9.7 does a captured bill's, then
+**Add a cash payback** and `Your share`, which follows each digit while the
+amount is retyped. Received is off while paybacks point at it, since money
+received cannot be paid back: drawn dotted in Faint, with
+`RECEIVED IS OFF: N PAYBACKS POINT HERE` under the row, which is also the
+segment's TalkBack state. Leaving with unsaved edits, by back or by a
+payback's row, asks first. Deleting it keeps its paybacks, and the question
+says so: `Delete this RM60.00 payment? Its 2 paybacks stay, as money
+received. This can't be undone.`, or with one, `Daniel Lim's RM20.00 stays,
+as money received on 16 Aug.` (`DeleteBill`). A typed payback opens here,
+never on section 9.7's detail, so this is where its bill changes or comes
+off, through the chooser's No bill.
 A captured row's amount, date and merchant never change: they are the bank's
 word. Its tap opens section 9.7's detail instead, whose Delete is Not a
 payment, a state change that keeps the capture. While a
@@ -2449,11 +2579,34 @@ screen, since it has no notification to show. The screen shows:
   capture rather than the `txn`. It reads **EDITED** once `user_edited` is
   set.
 
+Paybacks and bills (section 7.4) add to it:
+
+- **A bill** (`design/DetailBill.dc.html`). The hero is the amount the bank
+  sent, never the share. Under the fields, `PAID BACK` lists each payback,
+  each opening its own detail. Past three it shows three and an `N more` row.
+  Then come **Add a cash payback** and `Your share` as a leader. Left out
+  (`DetailBillExcluded`), the paybacks stay listed and one line,
+  `THEY COUNT ON THEIR OWN, ON <DATE>, UNTIL THIS COUNTS AGAIN`, takes the
+  share's place; there is no Add a cash payback, since a bill that counts
+  nowhere cannot be picked.
+- **A payback** (`DetailPayback`). The hero's label is `PAID BACK`, not
+  `CAME BACK`. **Pays back** is a chip that reopens the bill chooser, and
+  **Counts against** names the bill's category, merchant and day as plain
+  text with no chip. Under the fields:
+  `IN THE LIST ON <DATE> · COUNTED ON <DATE>`.
+- **Any other committed refund** (`DetailRefund`, `DetailRefundFiled`)
+  offers a bill as a dashed `+ BILL` chip in Muted, never Stamp: on most
+  refunds it never needs an answer, and it must not compete with
+  `+ CATEGORY`.
+
 Its actions write only what the row can take:
 
 - **A note**, stored trimmed. It does not set `user_edited`, because it is
   not something the parser decided.
-- **Change category**, the list's chooser, on a row that is not excluded.
+- **Change category**, the list's chooser, on a row that is not excluded and
+  is not a payback. A payback has **Not a payback** in its place: one
+  targeted write of `bill_txn_id = NULL`, making it plain money received,
+  filed as it would be with no bill, with Undo on its snackbar.
 - **Not spending**, on a committed row that is not excluded:
   `is_excluded = 1`, `exclusion_reason = USER`. The row stays in the list,
   greyed, and leaves every total. **Count as spending** clears any exclusion
@@ -2464,7 +2617,8 @@ Its actions write only what the row can take:
   exclusion columns over unchanged.
 - **Delete this entry**, on a committed row: Not a payment (`REJECTED`),
   after one confirmation. The capture stays as evidence, and the screen
-  leaves.
+  leaves. On a bill the confirmation adds `Its N paybacks stay, as money
+  received.` (`NotPaymentBill`).
 
 A row awaiting review is the inbox's to answer, so it is offered neither
 Not spending nor Delete. A merged duplicate shows the surviving row's own
@@ -2736,12 +2890,15 @@ app's attack surface to other apps.
 ## 12. Export
 
 - **CSV** for spreadsheets: date, amount, currency, direction, merchant
-  display, merchant raw, category, source app, excluded flag, note.
+  display, merchant raw, category, source app, excluded flag, note, and
+  `pays_back`, the bill's id for a payback (section 7.4).
 - **JSON** for full fidelity: transactions plus raw captures plus learned
   rules plus categories plus section 6.4's merchant aliases and names, sufficient to rebuild the database — and read back
   by the importer in section 11.2, which is what makes that claim true. It
   carries no setting of this phone's: the check limit (section 7.1) stays
-  with the phone, and a restore keeps the one it has.
+  with the phone, and a restore keeps the one it has. A transaction carries
+  `bill_txn_id` from backup format 7; an older backup imports it as null,
+  so its paybacks come back as plain money received.
 
 Both are written through the Storage Access Framework.
 
@@ -2938,6 +3095,7 @@ Every query that runs per-capture or per-frame has an index behind it.
 | Stage two work queue | `raw_capture(parse_status, posted_at)`, same index |
 | Learned rule lookup | `merchant_rule(pattern)` |
 | "used by N transactions", and the category foreign keys | `txn(category_id)`, `merchant_rule(category_id)` |
+| A bill's paybacks, the counting fragment's join, and `ON DELETE SET NULL` | `txn(bill_txn_id)` |
 | Reject rule lookup | `user_reject_rule(source_package, skeleton)` |
 
 Duplicate layer 2 deserves the note: it runs on every single capture, and
@@ -2995,6 +3153,15 @@ predicates applied alongside the FTS match.
 Category totals, merchant rankings, month totals and day subtotals are all
 `SUM` and `GROUP BY` queries, keyed on `local_date`. Rows are never loaded
 to be summed in application code.
+
+**Every aggregate reads through one counting fragment** (section 7.4), which
+gives each row the date, category and merchant key it counts under: a
+payback's bill's while the bill counts, else the row's own. It joins `txn`
+to itself on `bill_txn_id`, so a payback's date filter is on its bill's
+`local_date` and cannot use the payback's own index entry. That cost is
+measured on the emulator against a month's aggregates on a seeded ledger
+with paybacks before the fragment ships, and the number is recorded beside
+it. Search's totals read through the same fragment.
 
 Refunds subtract, so the aggregate is
 `SUM(CASE WHEN direction = 'REFUND' THEN -amount_sen ELSE amount_sen END)`
